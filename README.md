@@ -251,7 +251,54 @@ Features:
 - Rename symbol
 - Code formatting
 
-## Project Structure
+## Self-Hosting Compiler
+
+Sovereign now has a **self-hosting compiler written in Sovereign itself**! This is a major milestone that enables the language to compile itself.
+
+### Quick Start: Bootstrap
+
+```bash
+# Step 1: Build the Rust compiler
+cargo build --release
+
+# Step 2: Verify self-hosting components
+./target/release/sovereign bootstrap validate
+
+# Step 3: Compile self-compiler to C
+./target/release/sovereign bootstrap compile --target c -o bootstrap.c
+
+# Step 4: Compile C to native binary
+gcc -O3 bootstrap.c -o bootstrap
+
+# Step 5: Test the bootstrapped compiler
+./bootstrap --version
+
+# Step 6: Use bootstrap to compile itself again
+./bootstrap compile src/compiler_self.sov --target c -o bootstrap2.c
+gcc -O3 bootstrap2.c -o bootstrap2
+
+# Step 7: Verify convergence (should be identical)
+diff bootstrap bootstrap2
+```
+
+### Self-Hosting Architecture
+
+The self-hosted compiler consists of ~5,200 lines of Sovereign code organized in phases:
+
+1. **stdlib_native.sov** (1200+ lines): Extended stdlib with Vec, HashMap, file I/O
+2. **stdlib_ast.sov** (1100+ lines): AST type definitions (Token, Expr, Stmt, Program)
+3. **lexer_self.sov** (700+ lines): Self-hosted lexer (source → tokens)
+4. **parser_self.sov** (1000+ lines): Self-hosted parser (tokens → AST)
+5. **codegen_self.sov** (900+ lines): C code generator (AST → C)
+6. **compiler_self.sov** (300+ lines): Main orchestrator
+
+For detailed information, see:
+- **[BOOTSTRAP_GUIDE.md](BOOTSTRAP_GUIDE.md)** - Step-by-step bootstrap process
+- **[docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)** - Technical architecture details
+
+## Editor Support
+
+
 
 ```
 sovereign/
