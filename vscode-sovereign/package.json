@@ -1,0 +1,142 @@
+{
+  "name": "sovereign-lang",
+  "displayName": "Sovereign Language",
+  "description": "Syntax highlighting, IntelliSense, and language support for Sovereign",
+  "version": "1.0.0",
+  "publisher": "sovereign-lang",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sovereign-lang/sovereign"
+  },
+  "engines": { "vscode": "^1.75.0" },
+  "categories": ["Programming Languages", "Linters", "Formatters"],
+  "icon": "icon.png",
+  "activationEvents": ["onLanguage:sovereign"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "sovereign",
+        "aliases": ["Sovereign", "sov"],
+        "extensions": [".sov"],
+        "configuration": "./language-configuration.json",
+        "icon": { "light": "./icon.png", "dark": "./icon.png" }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "sovereign",
+        "scopeName": "source.sovereign",
+        "path": "./syntaxes/sovereign.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "sovereign",
+        "path": "./snippets/sovereign.json"
+      }
+    ],
+    "configuration": {
+      "title": "Sovereign",
+      "properties": {
+        "sovereign.serverPath": {
+          "type": "string",
+          "default": "sovereign",
+          "description": "Path to the sovereign compiler binary"
+        },
+        "sovereign.enableLSP": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable language server features"
+        },
+        "sovereign.formatOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Format file on save"
+        },
+        "sovereign.buildOnSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "Check for errors on save"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "sovereign.build",
+        "title": "Sovereign: Build",
+        "icon": "$(play)"
+      },
+      {
+        "command": "sovereign.buildRelease",
+        "title": "Sovereign: Build (Release)",
+        "icon": "$(package)"
+      },
+      {
+        "command": "sovereign.runTests",
+        "title": "Sovereign: Run Tests",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "sovereign.check",
+        "title": "Sovereign: Check (type-check only)",
+        "icon": "$(check)"
+      },
+      {
+        "command": "sovereign.format",
+        "title": "Sovereign: Format File",
+        "icon": "$(symbol-color)"
+      },
+      {
+        "command": "sovereign.newProject",
+        "title": "Sovereign: New Project"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "sovereign.build",
+        "key": "ctrl+shift+b",
+        "when": "editorLangId == sovereign"
+      },
+      {
+        "command": "sovereign.runTests",
+        "key": "ctrl+shift+t",
+        "when": "editorLangId == sovereign"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "sovereign.build",
+          "when": "editorLangId == sovereign",
+          "group": "navigation"
+        }
+      ]
+    },
+    "taskDefinitions": [
+      {
+        "type": "sovereign",
+        "properties": {
+          "file": { "type": "string", "description": "Source file" },
+          "release": { "type": "boolean", "description": "Build in release mode" }
+        }
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package",
+    "publish": "vsce publish"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.75.0",
+    "typescript": "^5.0.0",
+    "@vscode/vsce": "^2.0.0"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.0"
+  }
+}

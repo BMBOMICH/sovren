@@ -1,0 +1,179 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Sovereign",
+  "scopeName": "source.sovereign",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#keywords" },
+    { "include": "#types" },
+    { "include": "#numbers" },
+    { "include": "#operators" },
+    { "include": "#functions" },
+    { "include": "#variables" },
+    { "include": "#constants" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.sovereign",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.line.documentation.sovereign",
+          "match": "///.*$"
+        },
+        {
+          "name": "comment.block.sovereign",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.sovereign",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.sovereign",
+              "match": "\\\\[ntr0\"\\\\{}]|\\\\u\\{[0-9a-fA-F]+\\}"
+            },
+            {
+              "name": "meta.interpolation.sovereign",
+              "begin": "\\{",
+              "end": "\\}",
+              "patterns": [
+                { "include": "#variables" },
+                { "include": "#numbers" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.sovereign",
+          "match": "\\b(check|else|loop|from|to|in|times|match|break|continue|return|defer)\\b"
+        },
+        {
+          "name": "keyword.declaration.sovereign",
+          "match": "\\b(set|task|inline|async|extern|struct|enum|type|const|namespace|use)\\b"
+        },
+        {
+          "name": "keyword.operator.sovereign",
+          "match": "\\b(and|or|not|as|copy)\\b"
+        },
+        {
+          "name": "keyword.security.sovereign",
+          "match": "\\b(sensitive|override|constant_time|purge)\\b"
+        },
+        {
+          "name": "keyword.memory.sovereign",
+          "match": "\\b(alloc|free|spawn|await|where)\\b"
+        },
+        {
+          "name": "keyword.other.sovereign",
+          "match": "\\b(import|print|print_fmt|asm|test|assert|static_assert|comptime)\\b"
+        },
+        {
+          "name": "constant.language.sovereign",
+          "match": "\\b(true|false|null)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "support.type.sovereign",
+          "match": "\\b(int|int8|int16|int64|uint8|uint16|uint32|uint64|float|float32|bool|string|ptr|void)\\b"
+        },
+        {
+          "name": "entity.name.type.sovereign",
+          "match": "\\b[A-Z][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.binary.sovereign",
+          "match": "0[bB][01_]+"
+        },
+        {
+          "name": "constant.numeric.hex.sovereign",
+          "match": "0[xX][0-9a-fA-F_]+"
+        },
+        {
+          "name": "constant.numeric.octal.sovereign",
+          "match": "0[oO][0-7_]+"
+        },
+        {
+          "name": "constant.numeric.float.sovereign",
+          "match": "\\b[0-9][0-9_]*\\.[0-9][0-9_]*\\b"
+        },
+        {
+          "name": "constant.numeric.integer.sovereign",
+          "match": "\\b[0-9][0-9_]*\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.arithmetic.sovereign",
+          "match": "\\+|-|\\*|/|%|\\+=|-=|\\*=|/="
+        },
+        {
+          "name": "keyword.operator.comparison.sovereign",
+          "match": "==|!=|<=|>=|<|>"
+        },
+        {
+          "name": "keyword.operator.bitwise.sovereign",
+          "match": "\\||\\^|~|<<|>>|&"
+        },
+        {
+          "name": "keyword.operator.range.sovereign",
+          "match": "\\.\\.|\\.\\.="
+        },
+        {
+          "name": "keyword.operator.arrow.sovereign",
+          "match": "->|=>"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "entity.name.function.sovereign",
+          "match": "\\b([a-z_][a-zA-Z0-9_]*)\\s*(?=\\()"
+        },
+        {
+          "name": "entity.name.function.declaration.sovereign",
+          "match": "(?<=task\\s)([a-z_][a-zA-Z0-9_]*)"
+        }
+      ]
+    },
+    "variables": {
+      "patterns": [
+        {
+          "name": "variable.other.sovereign",
+          "match": "\\b[a-z_][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.other.sovereign",
+          "match": "\\b[A-Z_][A-Z0-9_]{2,}\\b"
+        }
+      ]
+    }
+  }
+}

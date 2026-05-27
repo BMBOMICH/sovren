@@ -1,0 +1,298 @@
+/// Sovereign Standard Library — Native Implementation
+/// Everything here is pure Sovereign, no C FFI required for basic use.
+
+// ── Dynamic Array (Vec) ────────────────────────────────────────────────────
+struct Vec {
+    data:     ptr
+    length:   int
+    capacity: int
+}
+
+task vec_new() -> Vec {
+    return Vec { data: alloc(4, 8), length: 0, capacity: 4 }
+}
+
+task vec_push(v: Vec, item: int) -> Vec {
+    check v.length >= v.capacity {
+        set new_cap  = v.capacity * 2
+        set new_data = alloc(new_cap, 8)
+        override {
+            memcpy(new_data, v.data, v.length * 8)
+        }
+        free v.data
+        v.data     = new_data
+        v.capacity = new_cap
+    }
+    override {
+        ptr_set_int(v.data, v.length, item)
+    }
+    v.length = v.length + 1
+    return v
+}
+
+task vec_get(v: Vec, index: int) -> int {
+    assert(index >= 0 and index < v.length, "Vec index out of bounds")
+    override {
+        return ptr_get_int(v.data, index)
+    }
+    return 0
+}
+
+task vec_len(v: Vec) -> int {
+    return v.length
+}
+
+task vec_free(v: Vec) {
+    free v.data
+}
+
+// ── HashMap ────────────────────────────────────────────────────────────────
+struct HashMap {
+    buckets:   ptr
+    n_buckets: int
+    n_items:   int
+}
+
+const HASHMAP_INITIAL_BUCKETS = 16
+
+task hashmap_new() -> HashMap {
+    set buckets = alloc(HASHMAP_INITIAL_BUCKETS, 16)
+    override { memset(buckets, 0, HASHMAP_INITIAL_BUCKETS * 16) }
+    return HashMap {
+        buckets:   buckets,
+        n_buckets: HASHMAP_INITIAL_BUCKETS,
+        n_items:   0
+    }
+}
+
+task hashmap_hash(key: string, buckets: int) -> int {
+    set h = 2166136261
+    set i = 0
+    set n = str_len(key)
+    loop i from 0 to n - 1 {
+        override {
+            h = h ^ ptr_get_byte(key, i)
+            h = h * 16777619
+        }
+    }
+    return (h & 0x7FFFFFFF) % buckets
+}
+
+// ── String methods ─────────────────────────────────────────────────────────
+task str_len(s: string) -> int {
+    return strlen(s)
+}
+
+task str_eq(a: string, b: string) -> bool {
+    return strcmp(a, b) == 0
+}
+
+task str_starts_with(s: string, prefix: string) -> bool {
+    set plen = str_len(prefix)
+    set slen = str_len(s)
+    check plen > slen { return false }
+    return strncmp(s, prefix, plen) == 0
+}
+
+task str_ends_with(s: string, suffix: string) -> bool {
+    set suflen = str_len(suffix)
+    set slen   = str_len(s)
+    check suflen > slen { return false }
+    override {
+        return strncmp(ptr_offset(s, slen - suflen), suffix, suflen) == 0
+    }
+    return false
+}
+
+task str_contains(s: string, needle: string) -> bool {
+    return strstr(s, needle) != null
+}
+
+task str_concat(a: string, b: string) -> string {
+    set alen = str_len(a)
+    set blen = str_len(b)
+    set buf  = alloc(alen + blen + 1, 1)
+    override {
+        memcpy(buf, a, alen)
+        memcpy(ptr_offset(buf, alen), b, blen)
+        ptr_set_byte(buf, alen + blen, 0)
+    }
+    return buf
+}
+
+task str_repeat(s: string, n: int) -> string {
+    set slen = str_len(s)
+    set buf  = alloc(slen * n + 1, 1)
+    loop i from 0 to n - 1 {
+        override {
+            memcpy(ptr_offset(buf, i * slen), s, slen)
+        }
+    }
+    return buf
+}
+
+task str_to_int(s: string) -> int {
+    return atoi(s)
+}
+
+task str_to_float(s: string) -> float {
+    return atof(s)
+}
+
+task int_to_str(n: int) -> string {
+    set buf = alloc(32, 1)
+    override { sprintf(buf, "%d", n) }
+    return buf
+}
+
+task float_to_str(f: float) -> string {
+    set buf = alloc(64, 1)
+    override { sprintf(buf, "%g", f) }
+    return buf
+}
+
+// ── Math ────────────────────────────────────────────────────────────────────
+inline task min(a: int, b: int) -> int {
+    check a < b { return a }
+    return b
+}
+
+inline task max(a: int, b: int) -> int {
+    check a > b { return a }
+    return b
+}
+
+inline task abs(n: int) -> int {
+    check n < 0 { return -n }
+    return n
+}
+
+inline task clamp(v: int, lo: int, hi: int) -> int {
+    check v < lo { return lo }
+    check v > hi { return hi }
+    return v
+}
+
+inline task sign(n: int) -> int {
+    check n > 0 { return 1 }
+    check n < 0 { return -1 }
+    return 0
+}
+
+inline task pow_int(base: int, exp: int) -> int {
+    set result = 1
+    loop exp times {
+        result *= base
+    }
+    return result
+}
+
+// ── I/O built-ins ───────────────────────────────────────────────────────────
+task read_line() -> string {
+    set buf = alloc(4096, 1)
+    override { fgets(buf, 4096, stdin_ptr()) }
+    return buf
+}
+
+task read_file(path: string) -> string {
+    set f = fopen(path, "r")
+    check f == null { return "" }
+    override {
+        fseek(f, 0, 2)
+        set size = ftell(f)
+        fseek(f, 0, 0)
+        set buf = alloc(size + 1, 1)
+        fread(buf, 1, size, f)
+        fclose(f)
+        return buf
+    }
+    return ""
+}
+
+task write_file(path: string, content: string) -> bool {
+    set f = fopen(path, "w")
+    check f == null { return false }
+    fputs(content, f)
+    fclose(f)
+    return true
+}
+
+task file_exists(path: string) -> bool {
+    set f = fopen(path, "r")
+    check f == null { return false }
+    fclose(f)
+    return true
+}
+
+// ── Time ────────────────────────────────────────────────────────────────────
+task now() -> int {
+    return time(null)
+}
+
+task sleep_ms(ms: int) {
+    override {
+        platform_sleep(ms)
+    }
+}
+
+// ── Random (cryptographically secure) ─────────────────────────────────────
+task rand_bytes(n: int) -> ptr {
+    set buf = alloc(n, 1)
+    override {
+        platform_rand_bytes(buf, n)
+    }
+    return buf
+}
+
+task rand_int(min: int, max: int) -> int {
+    set range = max - min + 1
+    set bytes = rand_bytes(4)
+    set n = 0
+    override {
+        n = ptr_get_int(bytes, 0)
+        n = n & 0x7FFFFFFF
+    }
+    free bytes
+    return min + (n % range)
+}
+
+// ── Cryptographic primitives (constant-time) ──────────────────────────────
+task sha256(data: ptr, len: int) -> ptr {
+    set hash = alloc(32, 1)
+    constant_time {
+        platform_sha256(data, len, hash)
+    }
+    return hash
+}
+
+task sha256_hex(data: ptr, len: int) -> string {
+    set hash = sha256(data, len)
+    set hex  = alloc(65, 1)
+    override {
+        bytes_to_hex(hash, 32, hex)
+    }
+    free hash
+    return hex
+}
+
+task hmac_sha256(key: ptr, key_len: int, data: ptr, data_len: int) -> ptr {
+    set result = alloc(32, 1)
+    constant_time {
+        platform_hmac_sha256(key, key_len, data, data_len, result)
+    }
+    return result
+}
+
+// Constant-time memory comparison — prevents timing attacks
+// Use this instead of strcmp for secrets
+task secure_compare(a: ptr, b: ptr, len: int) -> bool {
+    set diff = 0
+    constant_time {
+        loop i from 0 to len - 1 {
+            override {
+                diff = diff | (ptr_get_byte(a, i) ^ ptr_get_byte(b, i))
+            }
+        }
+    }
+    return diff == 0
+}

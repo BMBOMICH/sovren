@@ -1,0 +1,141 @@
+{
+  "Task declaration": {
+    "prefix": "task",
+    "body": ["task ${1:name}(${2:params}) -> ${3:int} {", "\t${0}", "}"],
+    "description": "Declare a task (function)"
+  },
+  "Async task": {
+    "prefix": "async",
+    "body": ["async task ${1:name}(${2:params}) -> ${3:int} {", "\t${0}", "}"],
+    "description": "Declare an async task"
+  },
+  "Variable declaration": {
+    "prefix": "set",
+    "body": ["set ${1:name} = ${0}"],
+    "description": "Declare a variable"
+  },
+  "Sensitive variable": {
+    "prefix": "sensitive",
+    "body": ["sensitive set ${1:name} = ${0}"],
+    "description": "Declare a sensitive variable (auto-zeroed)"
+  },
+  "Constant": {
+    "prefix": "const",
+    "body": ["const ${1:NAME} = ${0}"],
+    "description": "Declare a constant"
+  },
+  "Check (if)": {
+    "prefix": "check",
+    "body": ["check ${1:condition} {", "\t${0}", "}"],
+    "description": "Conditional check"
+  },
+  "Check/else": {
+    "prefix": "checkelse",
+    "body": ["check ${1:condition} {", "\t${2}", "} else {", "\t${0}", "}"],
+    "description": "Conditional check with else"
+  },
+  "Loop from/to": {
+    "prefix": "loop",
+    "body": ["loop ${1:i} from ${2:0} to ${3:10} {", "\t${0}", "}"],
+    "description": "Loop from N to M"
+  },
+  "Loop N times": {
+    "prefix": "times",
+    "body": ["loop ${1:5} times {", "\t${0}", "}"],
+    "description": "Loop N times"
+  },
+  "For-each loop": {
+    "prefix": "foreach",
+    "body": ["loop ${1:item} in ${2:collection} {", "\t${0}", "}"],
+    "description": "For-each loop"
+  },
+  "While loop": {
+    "prefix": "while",
+    "body": ["loop ${1:condition} {", "\t${0}", "}"],
+    "description": "While loop"
+  },
+  "Infinite loop": {
+    "prefix": "infinite",
+    "body": ["loop {", "\t${0}", "}"],
+    "description": "Infinite loop"
+  },
+  "Struct": {
+    "prefix": "struct",
+    "body": ["struct ${1:Name} {", "\t${2:field}: ${3:int}", "}"],
+    "description": "Struct declaration"
+  },
+  "Generic struct": {
+    "prefix": "structg",
+    "body": ["struct ${1:Name}[${2:T}] {", "\t${3:field}: ${2:T}", "}"],
+    "description": "Generic struct"
+  },
+  "Enum": {
+    "prefix": "enum",
+    "body": ["enum ${1:Name} {", "\t${2:Variant1},", "\t${3:Variant2}", "}"],
+    "description": "Enum declaration"
+  },
+  "Match": {
+    "prefix": "match",
+    "body": [
+      "match ${1:value} {",
+      "\t${2:Pattern} => { ${3} }",
+      "\t_ => { ${0} }",
+      "}"
+    ],
+    "description": "Match expression"
+  },
+  "Spawn thread": {
+    "prefix": "spawn",
+    "body": ["spawn ${1:handle} {", "\t${0}", "}"],
+    "description": "Spawn OS thread"
+  },
+  "Override block": {
+    "prefix": "override",
+    "body": ["override {", "\t${0}", "}"],
+    "description": "Unsafe override block"
+  },
+  "Constant-time block": {
+    "prefix": "consttime",
+    "body": ["constant_time {", "\t${0}", "}"],
+    "description": "Constant-time security block"
+  },
+  "Test": {
+    "prefix": "test",
+    "body": ["test \"${1:test name}\" {", "\tassert(${0})", "}"],
+    "description": "Test declaration"
+  },
+  "Assert": {
+    "prefix": "assert",
+    "body": ["assert(${1:condition}, \"${2:message}\")"],
+    "description": "Runtime assertion"
+  },
+  "Extern task": {
+    "prefix": "extern",
+    "body": ["extern task ${1:name}(${2:type}) -> ${3:int}"],
+    "description": "External C function declaration"
+  },
+  "Defer": {
+    "prefix": "defer",
+    "body": ["defer {", "\t${0}", "}"],
+    "description": "Deferred cleanup"
+  },
+  "Print formatted": {
+    "prefix": "printf",
+    "body": ["print_fmt(\"${1:format}\", ${0})"],
+    "description": "Formatted print"
+  },
+  "Main program structure": {
+    "prefix": "main",
+    "body": [
+      "// ${1:My Sovereign Program}",
+      "",
+      "task greet(name: string) {",
+      "\tprint \"Hello, {name}!\"",
+      "}",
+      "",
+      "greet(\"World\")",
+      "${0}"
+    ],
+    "description": "Basic Sovereign program structure"
+  }
+}

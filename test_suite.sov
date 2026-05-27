@@ -1,0 +1,30 @@
+// Run with: sovereign test test_suite.sov
+
+task square(n: int) -> int { return n * n }
+task add(a: int, b: int) -> int { return a + b }
+
+test "arithmetic" {
+    assert(1 + 1 == 2)
+    assert(10 - 3 == 7)
+    assert(4 * 5 == 20)
+    assert(10 / 2 == 5)
+}
+
+test "square function" {
+    assert(square(0) == 0)
+    assert(square(4) == 16)
+    assert(square(10) == 100)
+}
+
+test "add function" {
+    assert(add(0, 0) == 0)
+    assert(add(3, 7) == 10)
+    assert(add(-1, 1) == 0)
+}
+
+test "bitwise ops" {
+    assert(0b1010 | 0b0101 == 15)
+    assert(15 & 0b1010 == 10)
+    assert(1 << 3 == 8)
+    assert(16 >> 2 == 4)
+}

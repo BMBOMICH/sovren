@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Sovereign Playground</title>
+        <style>
+            * {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
+            body {
+                font-family: "Segoe UI", system-ui, sans-serif;
+                background: #0d1117;
+                color: #e6edf3;
+                height: 100vh;
+                display: flex;
+                flex-direction: column;
+            }
+            header {
+                background: #161b22;
+                border-bottom: 1px solid #30363d;
+                padding: 12px 20px;
+                display: flex;
+                align-items: center;
+                gap: 20px;
+            }
+            .logo {
+                font-size: 1.3rem;
+                font-weight: 700;
+                color: #58a6ff;
+                letter-spacing: -0.5px;
+            }
+            .logo span {
+                color: #e6edf3;
+            }
+            .tagline {
+                font-size: 0.85rem;
+                color: #8b949e;
+            }
+            .controls {
+                display: flex;
+                gap: 10px;
+                margin-left: auto;
+            }
+            button {
+                padding: 6px 16px;
+                border-radius: 6px;
+                border: 1px solid #30363d;
+                cursor: pointer;
+                font-size: 0.9rem;
+                font-family: inherit;
+                transition: all 0.15s;
+            }
+            .btn-run {
+                background: #238636;
+                color: white;
+                border-color: #238636;
+                font-weight: 600;
+            }
+            .btn-run:hover {
+                background: #2ea043;
+            }
+            .btn-run:disabled {
+                background: #1a4020;
+                color: #8b949e;
+                cursor: not-allowed;
+            }
+            .btn-secondary {
+                background: #21262d;
+                color: #e6edf3;
+            }
+            .btn-secondary:hover {
+                background: #30363d;
+            }
+            .main {
+                display: flex;
+                flex: 1;
+                overflow: hidden;
+            }
+            .editor-pane {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                border-right: 1px solid #30363d;
+            }
+            .output-pane {
+                width: 380px;
+                display: flex;
+                flex-direction: column;
+            }
+            .pane-header {
+                background: #161b22;
+                padding: 8px 16px;
+                font-size: 0.8rem;
+                color: #8b949e;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                border-bottom: 1px solid #30363d;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            .status-dot {
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                background: #8b949e;
+            }
+            .status-dot.running {
+                background: #f0883e;
+                animation: pulse 1s infinite;
+            }
+            .status-dot.success {
+                background: #3fb950;
+            }
+            .status-dot.error {
+                background: #f85149;
+            }
+            @keyframes pulse {
+                0%,
+                100% {
+                    opacity: 1;
+                }
+                50% {
+                    opacity: 0.5;
+                }
+            }
+            #editor {
+                flex: 1;
+                background: #0d1117;
+                color: #e6edf3;
+                font-family:
+                    "Cascadia Code", "Fira Code", "Consolas", monospace;
+                font-size: 14px;
+                line-height: 1.6;
+                padding: 16px;
+                border: none;
+                outline: none;
+                resize: none;
+                tab-size: 4;
+            }
+            #output {
+                flex: 1;
+                background: #0d1117;
+                color: #e6edf3;
+                font-family:
+                    "Cascadia Code", "Fira Code", "Consolas", monospace;
+                font-size: 13px;
+                line-height: 1.5;
+                padding: 16px;
+                overflow-y: auto;
+                white-space: pre-wrap;
+            }
+            .output-error {
+                color: #f85149;
+            }
+            .output-info {
+                color: #58a6ff;
+            }
+            .output-success {
+                color: #3fb950;
+            }
+            .examples {
+                padding: 8px 16px;
+                border-top: 1px solid #30363d;
+                background: #161b22;
+            }
+            .examples label {
+                font-size: 0.8rem;
+                color: #8b949e;
+                margin-right: 8px;
+            }
+            select {
+                background: #21262d;
+                color: #e6edf3;
+                border: 1px solid #30363d;
+                border-radius: 6px;
+                padding: 4px 8px;
+                font-size: 0.85rem;
+                cursor: pointer;
+            }
+            .share-btn {
+                font-size: 0.8rem;
+            }
+            .info-bar {
+                padding: 6px 16px;
+                background: #0d1117;
+                border-top: 1px solid #30363d;
+                font-size: 0.75rem;
+                color: #8b949e;
+                display: flex;
+                gap: 20px;
+            }
+            .info-bar span {
+                color: #58a6ff;
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <div class="logo">Sovereign <span>Playground</span></div>
+            <div class="tagline">The privacy-first systems language</div>
+            <div class="controls">
+                <button class="btn-secondary share-btn" onclick="shareCode()">
+                    📋 Share
+                </button>
+                <button class="btn-run" id="runBtn" onclick="runCode()">
+                    ▶ Run
+                </button>
+            </div>
+        </header>
+
+        <div class="main">
+            <div class="editor-pane">
+                <div class="pane-header">
+                    <div class="status-dot" id="editorStatus"></div>
+                    main.sov
+                </div>
+                <textarea
+                    id="editor"
+                    spellcheck="false"
+                    onkeydown="handleTab(event)"
+                ></textarea>
+                <div class="examples">
+                    <label>Examples:</label>
+                    <select onchange="loadExample(this.value)">
+                        <option value="">Choose an example...</option>
+                        <option value="hello">Hello World</option>
+                        <option value="fibonacci">Fibonacci</option>
+                        <option value="structs">Structs</option>
+                        <option value="generics">Generics</option>
+                        <option value="security">Security features</option>
+                        <option value="concurrent">Concurrency</option>
+                        <option value="algorithms">Sorting algorithm</option>
+                    </select>
+                </div>
+            </div>
+            <div class="output-pane">
+                <div class="pane-header">
+                    <div class="status-dot" id="outputStatus"></div>
+                    Output
+                </div>
+                <div id="output">
+                    <span style="color: #8b949e"
+                        >Click ▶ Run to execute your program.</span
+                    >
+                </div>
+                <div class="info-bar">
+                    <span id="compileTime">Ready</span>
+                    <span id="targetInfo">WASM32 / Browser</span>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            const EXAMPLES = {
+                hello: `// Hello World in Sovereign
+print "Hello, World!"
+print "The privacy-first systems language."`,
+
+                fibonacci: `// Fibonacci sequence
+task fib(n: int) -> int {
+    check n <= 1 { return n }
+    return fib(n - 1) + fib(n - 2)
+}
+
+loop i from 0 to 10 {
+    print fib(i)
+}`,
+
+                structs: `// Structs in Sovereign
+struct Point {
+    x: int
+    y: int
+}
+
+task distance_sq(p: Point) -> int {
+    return p.x * p.x + p.y * p.y
+}
+
+set origin = Point { x: 0, y: 0 }
+set p = Point { x: 3, y: 4 }
+
+print p.x
+print p.y
+print distance_sq(p)`,
+
+                generics: `// Generic functions
+task max[T](a: T, b: T) -> T {
+    check a > b { return a }
+    return b
+}
+
+task min[T](a: T, b: T) -> T {
+    check a < b { return a }
+    return b
+}
+
+print max(3, 7)
+print max(1.5, 2.5)
+print min(10, 5)`,
+
+                security: `// Security features
+sensitive set api_key = 0xDEADBEEF
+
+// Variables marked sensitive are automatically
+// zeroed with volatile stores when they go out of scope
+
+constant_time {
+    // No timing side-channels in this block
+    set masked = api_key & 0xFF
+    print masked
+}
+
+// api_key is zeroed here automatically`,
+
+                concurrent: `// Concurrency with spawn
+task worker(id: int) {
+    print_fmt("Worker %d starting\n", id)
+    loop i from 0 to 3 {
+        print i
+    }
+    print_fmt("Worker %d done\n", id)
+}
+
+// Spawn 3 OS threads
+loop i from 1 to 3 {
+    spawn {
+        worker(i)
+    }
+}`,
+
+                algorithms: `// Bubble sort
+task bubble_sort(arr: [int], n: int) {
+    loop i from 0 to n - 1 {
+        loop j from 0 to n - i - 2 {
+            check arr[j] > arr[j + 1] {
+                set tmp = arr[j]
+                arr[j] = arr[j + 1]
+                arr[j + 1] = tmp
+            }
+        }
+    }
+}
+
+set data = [64, 34, 25, 12, 22, 11, 90]
+bubble_sort(data, 7)
+loop i from 0 to 6 {
+    print data[i]
+}`,
+            };
+
+            document.getElementById("editor").value = EXAMPLES.hello;
+
+            function handleTab(e) {
+                if (e.key !== "Tab") return;
+                e.preventDefault();
+                const el = e.target;
+                const start = el.selectionStart;
+                const end = el.selectionEnd;
+                el.value =
+                    el.value.substring(0, start) +
+                    "    " +
+                    el.value.substring(end);
+                el.selectionStart = el.selectionEnd = start + 4;
+            }
+
+            function loadExample(name) {
+                if (!name || !EXAMPLES[name]) return;
+                document.getElementById("editor").value = EXAMPLES[name];
+                document.getElementById("output").innerHTML =
+                    '<span style="color:#8b949e">Click ▶ Run to execute.</span>';
+            }
+
+            function setStatus(el, state) {
+                const dot = document.getElementById(el);
+                dot.className = "status-dot " + state;
+            }
+
+            async function runCode() {
+                const code = document.getElementById("editor").value;
+                const btn = document.getElementById("runBtn");
+                const out = document.getElementById("output");
+
+                btn.disabled = true;
+                btn.textContent = "⏳ Compiling...";
+                setStatus("editorStatus", "running");
+                setStatus("outputStatus", "running");
+                out.innerHTML =
+                    '<span class="output-info">Compiling...</span>\n';
+
+                const start = Date.now();
+
+                try {
+                    // In production: POST to /api/run on the playground server
+                    // The server runs: sovereign build source.sov --target wasm32
+                    // Then executes the WASM and returns stdout
+                    const response = await fetch("/api/run", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ code, lang: "sovereign" }),
+                    });
+
+                    const elapsed = Date.now() - start;
+                    document.getElementById("compileTime").textContent =
+                        `Compiled in ${elapsed}ms`;
+
+                    if (!response.ok) {
+                        const err = await response.text();
+                        out.innerHTML = `<span class="output-error">${escapeHtml(err)}</span>`;
+                        setStatus("editorStatus", "error");
+                        setStatus("outputStatus", "error");
+                    } else {
+                        const result = await response.json();
+                        if (result.error) {
+                            out.innerHTML = `<span class="output-error">${escapeHtml(result.error)}</span>`;
+                            setStatus("editorStatus", "error");
+                            setStatus("outputStatus", "error");
+                        } else {
+                            out.innerHTML =
+                                escapeHtml(result.output) +
+                                '\n<span class="output-success">── Process exited with code 0 ──</span>';
+                            setStatus("editorStatus", "success");
+                            setStatus("outputStatus", "success");
+                        }
+                    }
+                } catch (err) {
+                    // Demo mode: simulate output without a real server
+                    out.innerHTML = simulateOutput(code);
+                    setStatus("editorStatus", "success");
+                    setStatus("outputStatus", "success");
+                    document.getElementById("compileTime").textContent =
+                        "Demo mode (no server)";
+                }
+
+                btn.disabled = false;
+                btn.textContent = "▶ Run";
+            }
+
+            function simulateOutput(code) {
+                // Very basic simulation for demo purposes
+                const lines = [];
+                for (const line of code.split("\n")) {
+                    const t = line.trim();
+                    if (t.startsWith('print "')) {
+                        const s = t.slice(7, -1);
+                        lines.push(escapeHtml(s));
+                    } else if (
+                        t.startsWith("print ") &&
+                        !t.startsWith("print_fmt")
+                    ) {
+                        const expr = t.slice(6).trim();
+                        if (/^\d+$/.test(expr)) lines.push(expr);
+                    }
+                }
+                if (lines.length === 0) {
+                    lines.push(
+                        '<span class="output-info">(Connect to playground server for full execution)</span>',
+                    );
+                }
+                lines.push(
+                    '\n<span class="output-success">── Demo output ──</span>',
+                );
+                return lines.join("\n");
+            }
+
+            function escapeHtml(s) {
+                return s
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;");
+            }
+
+            async function shareCode() {
+                const code = document.getElementById("editor").value;
+                const encoded = btoa(encodeURIComponent(code));
+                const url = `${location.origin}${location.pathname}?code=${encoded}`;
+                await navigator.clipboard.writeText(url);
+                const btn = event.target;
+                btn.textContent = "✅ Copied!";
+                setTimeout(() => (btn.textContent = "📋 Share"), 2000);
+            }
+
+            // Load shared code from URL
+            const params = new URLSearchParams(location.search);
+            if (params.has("code")) {
+                try {
+                    document.getElementById("editor").value =
+                        decodeURIComponent(atob(params.get("code")));
+                } catch (e) {}
+            }
+        </script>
+    </body>
+</html>

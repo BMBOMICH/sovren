@@ -1,0 +1,94 @@
+// ── Sovereign Standard Library v1.0 ──────────────────────────────────────
+// Included automatically. No import needed.
+
+// ── String operations ─────────────────────────────────────────────────────
+extern task strlen(string) -> int
+extern task strcmp(string, string) -> int
+extern task strncmp(string, string, int) -> int
+extern task strcpy(ptr, string) -> ptr
+extern task strcat(ptr, string) -> ptr
+extern task sprintf(ptr, string) -> int
+extern task atoi(string) -> int
+extern task atof(string) -> float
+
+// ── Memory ────────────────────────────────────────────────────────────────
+extern task malloc(int) -> ptr
+extern task free(ptr) -> void
+extern task memcpy(ptr, ptr, int) -> ptr
+extern task memset(ptr, int, int) -> ptr
+extern task realloc(ptr, int) -> ptr
+
+// ── I/O ───────────────────────────────────────────────────────────────────
+extern task printf(string) -> int
+extern task puts(string) -> int
+extern task fopen(string, string) -> ptr
+extern task fclose(ptr) -> int
+extern task fgets(ptr, int, ptr) -> ptr
+extern task fputs(string, ptr) -> int
+extern task feof(ptr) -> int
+extern task fread(ptr, int, int, ptr) -> int
+extern task fwrite(ptr, int, int, ptr) -> int
+
+// ── Math ──────────────────────────────────────────────────────────────────
+extern task sin(float) -> float
+extern task cos(float) -> float
+extern task tan(float) -> float
+extern task sqrt(float) -> float
+extern task pow(float, float) -> float
+extern task log(float) -> float
+extern task log2(float) -> float
+extern task exp(float) -> float
+extern task fabs(float) -> float
+extern task ceil(float) -> float
+extern task floor(float) -> float
+
+// ── Time ──────────────────────────────────────────────────────────────────
+extern task clock() -> int
+extern task time(ptr) -> int
+
+// ── Process ───────────────────────────────────────────────────────────────
+extern task exit(int) -> void
+extern task abort() -> void
+extern task getenv(string) -> ptr
+
+// ── Pure Sovereign math tasks ─────────────────────────────────────────────
+inline task min(a: int, b: int) -> int {
+    check a < b { return a }
+    return b
+}
+
+inline task max(a: int, b: int) -> int {
+    check a > b { return a }
+    return b
+}
+
+inline task abs(n: int) -> int {
+    check n < 0 { return -n }
+    return n
+}
+
+inline task clamp(val: int, lo: int, hi: int) -> int {
+    check val < lo { return lo }
+    check val > hi { return hi }
+    return val
+}
+
+// Float versions
+inline task minf(a: float, b: float) -> float {
+    check a < b { return a }
+    return b
+}
+
+inline task maxf(a: float, b: float) -> float {
+    check a > b { return a }
+    return b
+}
+
+// ── String helpers ────────────────────────────────────────────────────────
+task str_eq(a: string, b: string) -> bool {
+    return strcmp(a, b) == 0
+}
+
+task str_len(s: string) -> int {
+    return strlen(s)
+}

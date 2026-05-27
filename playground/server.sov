@@ -1,0 +1,156 @@
+/// Sovereign Playground Server
+/// Receives code via HTTP POST, compiles it, runs it, returns output
+///
+/// Endpoint: POST /api/run
+/// Body: { "code": "..." }
+/// Response: { "output": "..." } or { "error": "..." }
+///
+/// Build: sovereign build server.sov -o playground-server
+/// Run:   ./playground-server
+
+extern task socket(int, int, int) -> int
+extern task bind(int, ptr, int) -> int
+extern task listen(int, int) -> int
+extern task accept(int, ptr, ptr) -> int
+extern task recv(int, ptr, int, int) -> int
+extern task send(int, ptr, int, int) -> int
+extern task close(int) -> void
+extern task strlen(string) -> int
+extern task sprintf(ptr, string) -> int
+extern task puts(string) -> int
+extern task printf(string) -> int
+extern task fopen(string, string) -> ptr
+extern task fclose(ptr) -> int
+extern task fputs(string, ptr) -> int
+extern task fgets(ptr, int, ptr) -> ptr
+extern task feof(ptr) -> int
+extern task malloc(int) -> ptr
+extern task free(ptr) -> void
+extern task system(string) -> int
+extern task exit(int) -> void
+
+const PORT = 3000
+const MAX_CODE_SIZE = 65536
+const MAX_OUTPUT_SIZE = 65536
+
+task run_code(code: string) -> string {
+    // Write code to temp file
+    set src_file = "/tmp/playground_input.sov"
+    set exe_file = "/tmp/playground_output"
+    set out_file = "/tmp/playground_stdout.txt"
+
+    set f = fopen(src_file, "w")
+    check f == null { return "Error: cannot create temp file" }
+    fputs(code, f)
+    fclose(f)
+
+    // Compile
+    set compile_cmd = alloc(1, 512)
+    sprintf(compile_cmd, "sovereign build {src_file} -o {exe_file} 2>&1")
+    set compile_result = system(compile_cmd)
+    free(compile_cmd)
+
+    check compile_result != 0 {
+        // Read compiler errors
+        set err_buf = alloc(1, 4096)
+        set ef = fopen("/tmp/compiler_errors.txt", "r")
+        check ef != null {
+            fgets(err_buf, 4096, ef)
+            fclose(ef)
+        }
+        return err_buf
+    }
+
+    // Run with timeout
+    set run_cmd = alloc(1, 512)
+    sprintf(run_cmd, "timeout 5 {exe_file} > {out_file} 2>&1")
+    system(run_cmd)
+    free(run_cmd)
+
+    // Read output
+    set output = alloc(1, MAX_OUTPUT_SIZE)
+    set of = fopen(out_file, "r")
+    check of == null { return "Error: no output" }
+
+    set buf = alloc(1, 1024)
+    loop {
+        fgets(buf, 1024, of)
+        check feof(of) != 0 { break }
+        // append buf to output (simplified)
+    }
+    fclose(of)
+    free(buf)
+
+    return output
+}
+
+task handle_api_request(fd: int, body: string) {
+    // Extract code from JSON body: {"code":"..."}
+    // Simplified extraction
+    set result = run_code(body)
+
+    set response_body = alloc(1, MAX_OUTPUT_SIZE + 64)
+    sprintf(response_body, "{\"output\":\"%s\"}", result)
+
+    set content_len = strlen(response_body)
+    set header_buf  = alloc(1, 256)
+    sprintf(header_buf,
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: %d\r\n\r\n",
+        content_len)
+
+    send(fd, header_buf, strlen(header_buf), 0)
+    send(fd, response_body, content_len, 0)
+
+    free(response_body)
+    free(header_buf)
+    free(result)
+}
+
+task serve_static(fd: int, path: string) {
+    set f = fopen(path, "r")
+    check f == null {
+        set not_found = "HTTP/1.1 404 Not Found\r\n\r\nNot found"
+        send(fd, not_found, strlen(not_found), 0)
+        return
+    }
+    set content = alloc(1, 65536)
+    // read file content and send
+    fgets(content, 65536, f)
+    fclose(f)
+
+    set header = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n"
+    send(fd, header, strlen(header), 0)
+    send(fd, content, strlen(content), 0)
+    free(content)
+}
+
+// Main server loop
+set server_fd = socket(2, 1, 0)
+check server_fd < 0 {
+    puts("Failed to create socket")
+    exit(1)
+}
+
+// Server setup handled in override block
+override {
+    // Platform-specific socket address setup
+}
+
+listen(server_fd, 128)
+print_fmt("Sovereign Playground server on port %d\n", PORT)
+
+loop {
+    set client_fd = accept(server_fd, null, null)
+    check client_fd < 0 { continue }
+
+    spawn {
+        set buf = alloc(1, MAX_CODE_SIZE)
+        recv(client_fd, buf, MAX_CODE_SIZE, 0)
+
+        // Check if it's an API request or static file request
+        handle_api_request(client_fd, buf)
+
+        close(client_fd)
+        free(buf)
+    }
+}

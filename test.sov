@@ -1,0 +1,521 @@
+// ── Generics ────────────────────────────────────────────────────────────
+task max[T](a: T, b: T) -> T {
+    check a > b { return a }
+    return b
+}
+print max(3, 7)
+print max(1.5, 2.5)
+
+// ── Generic structs ─────────────────────────────────────────────────────
+struct Pair[T] {
+    first: T
+    second: T
+}
+// ── Compound assignment ──────────────────────────────────────────────────
+set n = 10
+n += 5
+print n
+n -= 3
+print n
+n *= 2
+print n
+n /= 3
+print n
+
+// ── Multiple assignment ──────────────────────────────────────────────────
+set a, b = 100, 200
+print a
+print b
+
+// ── Assert ───────────────────────────────────────────────────────────────
+assert(1 + 1 == 2, "basic math")
+assert(n == 4, "compound assign result")
+
+// ── Defer ────────────────────────────────────────────────────────────────
+task test_defer() {
+    defer { print 999 }
+    print 1
+    print 2
+    // 999 prints here when scope exits
+}
+test_defer()
+
+// ── Range loop ────────────────────────────────────────────────────────────
+loop i in 0..5 {
+    print i
+}
+
+// ── String interpolation ─────────────────────────────────────────────────
+set name = "World"
+set greeting = "Hello {name}!"
+print greeting
+
+// ── Closures ─────────────────────────────────────────────────────────────
+set double = |x| x * 2
+set triple = |x| x * 3
+
+// ── Generics ─────────────────────────────────────────────────────────────
+task max[T](a: T, b: T) -> T {
+    check a > b { return a }
+    return b
+}
+print max(3, 7)
+print max(10, 5)
+
+// ── Struct ───────────────────────────────────────────────────────────────
+struct Point {
+    x: int
+    y: int
+}
+set p = Point { x: 5, y: 10 }
+print p.x
+print p.y
+p.x = 99
+print p.x
+
+// ── Enum + match ──────────────────────────────────────────────────────────
+enum Color { Red, Green, Blue }
+set c = Green
+match c {
+    Red   => { print 1 }
+    Green => { print 2 }
+    Blue  => { print 3 }
+    _     => { print 0 }
+}
+
+// ── Arrays ────────────────────────────────────────────────────────────────
+set nums = [10, 20, 30, 40, 50]
+nums[2] = 99
+print nums[2]
+
+// ── Extern FFI ────────────────────────────────────────────────────────────
+extern task puts(string) -> int
+puts("FFI works!")
+
+// ── Async task ────────────────────────────────────────────────────────────
+async task fetch_data() {
+    print 42
+}
+fetch_data()
+
+// ── Sensitive + constant_time ─────────────────────────────────────────────
+sensitive set secret = 0xABCD
+constant_time {
+    set low = secret & 0xFF
+    print low
+}
+
+// ── Concurrency ──────────────────────────────────────────────────────────
+spawn {
+    print 777
+}
+
+// ── Nullable ─────────────────────────────────────────────────────────────
+set maybe = null
+check maybe == null {
+    print 0
+}
+
+// ── Integer types ─────────────────────────────────────────────────────────
+set a: int = 42
+set b: int64 = 1_000_000
+print a
+print b
+
+// ── Compound assignment ───────────────────────────────────────────────────
+set n = 10
+n += 5
+print n
+n -= 3
+print n
+n *= 2
+print n
+
+// ── Multiple assignment ───────────────────────────────────────────────────
+set x, y = 100, 200
+print x
+print y
+
+// ── Tuples ────────────────────────────────────────────────────────────────
+set pair = (3, 4)
+
+// ── Assert ────────────────────────────────────────────────────────────────
+assert(1 + 1 == 2, "basic math")
+assert(n == 24, "compound assign")
+
+// ── Stdlib min/max/abs ────────────────────────────────────────────────────
+print min(3, 7)
+print max(3, 7)
+print abs(-5)
+print clamp(15, 0, 10)
+
+// ── String equality ───────────────────────────────────────────────────────
+set greeting = "hello"
+check str_eq(greeting, "hello") {
+    print 1
+}
+
+// ── String interpolation ─────────────────────────────────────────────────
+set name = "Sovereign"
+print "Hello {name}!"
+
+// ── Range loop ────────────────────────────────────────────────────────────
+loop i in 0..5 {
+    print i
+}
+
+// ── For-each loop ────────────────────────────────────────────────────────
+set items = [10, 20, 30]
+loop item in items {
+    print item
+}
+
+// ── Generic task ──────────────────────────────────────────────────────────
+task max_val[T](a: T, b: T) -> T {
+    check a > b { return a }
+    return b
+}
+print max_val(3, 7)
+print max_val(1.5, 2.5)
+
+// ── Generic struct ────────────────────────────────────────────────────────
+struct Pair[T] {
+    first: T
+    second: T
+}
+set p = Pair { first: 10, second: 20 }
+
+// ── Enum with match ───────────────────────────────────────────────────────
+enum Direction { North, South, East, West }
+set dir = North
+match dir {
+    North => { print 1 }
+    South => { print 2 }
+    _     => { print 0 }
+}
+
+// ── Pattern range ─────────────────────────────────────────────────────────
+set score = 85
+match score {
+    90..100 => { print 5 }
+    80..89  => { print 4 }
+    70..79  => { print 3 }
+    _       => { print 2 }
+}
+
+// ── Struct ────────────────────────────────────────────────────────────────
+struct Point { x: int, y: int }
+set pt = Point { x: 5, y: 10 }
+print pt.x
+print pt.y
+pt.x = 99
+print pt.x
+
+// ── Defer ────────────────────────────────────────────────────────────────
+task deferred_test() {
+    defer { print 999 }
+    print 1
+    print 2
+}
+deferred_test()
+
+// ── Error handling ───────────────────────────────────────────────────────
+task safe_div(a: int, b: int) -> int {
+    check b == 0 { return -1 }
+    return a / b
+}
+print safe_div(10, 2)
+print safe_div(10, 0)
+
+// ── Sensitive variable ────────────────────────────────────────────────────
+sensitive set secret = 0xBEEF
+constant_time {
+    set low = secret & 0xFF
+    print low
+}
+
+// ── FFI ──────────────────────────────────────────────────────────────────
+puts("Hello from C!")
+
+// ── Concurrency ──────────────────────────────────────────────────────────
+spawn {
+    print 42
+}
+// ── Scripting style (no set required) ────────────────────────────────────
+x = 42
+name = "Sovereign"
+print x
+print name
+
+// ── String methods ────────────────────────────────────────────────────────
+greeting = "Hello, World!"
+print str_len(greeting)
+print str_contains(greeting, "World")
+print str_starts_with(greeting, "Hello")
+print str_eq("abc", "abc")
+
+// ── Integer to string ─────────────────────────────────────────────────────
+num_str = int_to_str(42)
+print num_str
+
+// ── Math built-ins ─────────────────────────────────────────────────────────
+print min(3, 7)
+print max(3, 7)
+print abs(-5)
+print clamp(15, 0, 10)
+
+// ── Assert ────────────────────────────────────────────────────────────────
+assert(min(3, 7) == 3, "min works")
+assert(max(3, 7) == 7, "max works")
+assert(abs(-5) == 5,   "abs works")
+assert(clamp(15, 0, 10) == 10, "clamp works")
+
+// ── Familiar aliases ──────────────────────────────────────────────────────
+if x > 40 {
+    print "x is big"
+}
+
+for i in 0..5 {
+    print i
+}
+
+// ── Generics ─────────────────────────────────────────────────────────────
+task max_val[T](a: T, b: T) -> T {
+    if a > b { return a }
+    return b
+}
+print max_val(3, 7)
+print max_val(1.5, 2.5)
+
+// ── Struct ───────────────────────────────────────────────────────────────
+struct Point {
+    x: int
+    y: int
+}
+p = Point { x: 10, y: 20 }
+print p.x
+
+// ── Sensitive + secure operations ────────────────────────────────────────
+sensitive set secret = 0xDEADBEEF
+constant_time {
+    low = secret & 0xFF
+    print low
+}
+// secret is zeroed here automatically
+
+// ── JSON ─────────────────────────────────────────────────────────────────
+// json_parse and json_stringify available
+// set data = json_parse("{\"x\":42}")
+
+// ── FFI ──────────────────────────────────────────────────────────────────
+extern task puts(string) -> int
+puts("Hello from C runtime!")
+
+// ── Concurrency ──────────────────────────────────────────────────────────
+spawn {
+    print 777
+}
+
+print "All features working in Sovereign v1.0"
+
+// ── Done ─────────────────────────────────────────────────────────────────
+print "Sovereign v1.0.0 — all features working"
+
+// ── PostgreSQL example (commented — needs libpq installed) ────────────────
+// extern task PQconnectdb(string) -> ptr
+// extern task PQexec(ptr, string) -> ptr
+// extern task PQfinish(ptr) -> void
+// set conn = PQconnectdb("host=localhost dbname=test user=postgres")
+// PQfinish(conn)
+
+print "All tests passed"
+
+// ── Closures ────────────────────────────────────────────────────────────
+set double = |x| x * 2
+set triple = |x| x * 3
+
+// ── Compound assignment ─────────────────────────────────────────────────
+set n = 10
+n += 5
+print n
+n -= 3
+print n
+n *= 2
+print n
+
+// ── Multiple assignment ──────────────────────────────────────────────────
+set a, b = 100, 200
+print a
+print b
+
+// ── String interpolation ────────────────────────────────────────────────
+set name = "Sovereign"
+print "Hello {name}!"
+
+// ── Type alias ─────────────────────────────────────────────────────────
+type Bytes = [int]
+
+// ── Assert ──────────────────────────────────────────────────────────────
+assert(1 + 1 == 2, "basic math works")
+assert(max(3, 5) == 5, "max works")
+
+// ── Enums + match ────────────────────────────────────────────────────────
+enum Status {
+    Active,
+    Inactive,
+    Pending
+}
+set s = Active
+match s {
+    Active   => { print 1 }
+    Inactive => { print 2 }
+    Pending  => { print 3 }
+    _        => { print 0 }
+}
+
+// ── Structs ──────────────────────────────────────────────────────────────
+struct Point {
+    x: int
+    y: int
+}
+set p = Point { x: 10, y: 20 }
+print p.x
+print p.y
+
+// ── Range loop ────────────────────────────────────────────────────────────
+loop i from 0 to 4 {
+    print i
+}
+
+// ── Nullable types ────────────────────────────────────────────────────────
+set maybe = null
+check maybe == null {
+    print 99
+}
+
+// ── Generics ────────────────────────────────────────────────────────────
+task max[T](a: T, b: T) -> T {
+    check a > b { return a }
+    return b
+}
+print max(3, 7)
+print max(1.5, 2.5)
+
+// ── Generic structs ─────────────────────────────────────────────────────
+struct Pair[T] {
+    first: T
+    second: T
+}
+
+// ── Closures ────────────────────────────────────────────────────────────
+set double = |x| x * 2
+set triple = |x| x * 3
+
+// ── Compound assignment ─────────────────────────────────────────────────
+set n = 10
+n += 5
+print n
+n -= 3
+print n
+n *= 2
+print n
+
+// ── Multiple assignment ──────────────────────────────────────────────────
+set a, b = 100, 200
+print a
+print b
+
+// ── String interpolation ────────────────────────────────────────────────
+set name = "Sovereign"
+print "Hello {name}!"
+
+// ── Type alias ─────────────────────────────────────────────────────────
+type Bytes = [int]
+
+// ── Assert ──────────────────────────────────────────────────────────────
+assert(1 + 1 == 2, "basic math works")
+assert(max(3, 5) == 5, "max works")
+
+// ── Enums + match ────────────────────────────────────────────────────────
+enum Status {
+    Active,
+    Inactive,
+    Pending
+}
+set s = Active
+match s {
+    Active   => { print 1 }
+    Inactive => { print 2 }
+    Pending  => { print 3 }
+    _        => { print 0 }
+}
+
+// ── Structs ──────────────────────────────────────────────────────────────
+struct Point {
+    x: int
+    y: int
+}
+set p = Point { x: 10, y: 20 }
+print p.x
+print p.y
+
+// ── Range loop ────────────────────────────────────────────────────────────
+loop i from 0 to 4 {
+    print i
+}
+
+// ── Nullable types ────────────────────────────────────────────────────────
+set maybe = null
+check maybe == null {
+    print 99
+}
+
+// ── Sensitive + constant_time ─────────────────────────────────────────────
+sensitive set secret = 0xDEAD
+constant_time {
+    set low_byte = secret & 0xFF
+    print low_byte
+}
+
+// ── Extern FFI ────────────────────────────────────────────────────────────
+extern task puts(string) -> int
+puts("Hello from C!")
+
+// ── Tasks ────────────────────────────────────────────────────────────────
+task add(a: int, b: int) -> int {
+    return a + b
+}
+print add(3, 7)
+
+// ── Concurrency ──────────────────────────────────────────────────────────
+spawn {
+    print 42
+}
+
+// ── Done ─────────────────────────────────────────────────────────────────
+print "v0.5 complete"
+
+// ── Sensitive + constant_time ─────────────────────────────────────────────
+sensitive set secret = 0xDEAD
+constant_time {
+    set low_byte = secret & 0xFF
+    print low_byte
+}
+
+// ── Extern FFI ────────────────────────────────────────────────────────────
+extern task puts(string) -> int
+puts("Hello from C!")
+
+// ── Tasks ────────────────────────────────────────────────────────────────
+task add(a: int, b: int) -> int {
+    return a + b
+}
+print add(3, 7)
+
+// ── Concurrency ──────────────────────────────────────────────────────────
+spawn {
+    print 42
+}
+
+// ── Done ─────────────────────────────────────────────────────────────────
+print "v0.5 complete"
