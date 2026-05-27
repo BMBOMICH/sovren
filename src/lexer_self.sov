@@ -1,0 +1,798 @@
+/// Sovereign Self-Hosted Lexer
+/// Tokenizes Sovereign source code into a stream of tokens.
+/// 
+/// Dependencies:
+///   - stdlib_native.sov (string operations, collections)
+///   - stdlib_ast.sov (Token types, VecToken)
+///
+/// Usage:
+///   set source = file_read_all("program.sov")
+///   set lexer = lexer_new(source, "program.sov")
+///   set tokens = lexer_tokenize(lexer)
+///   // tokens is now a VecToken
+
+// ============================================================================
+// LEXER STATE
+// ============================================================================
+
+struct Lexer {
+    source:    string   // The source code
+    filename:  string   // For error messages
+    pos:       int      // Current position in source
+    line:      int      // Current line number (1-based)
+    col:       int      // Current column number (1-based)
+    length:    int      // Length of source
+}
+
+/// Create a new lexer for the given source
+task lexer_new(source: string, filename: string) -> Lexer {
+    return Lexer {
+        source:   source,
+        filename: filename,
+        pos:      0,
+        line:     1,
+        col:      1,
+        length:   str_len(source)
+    }
+}
+
+/// Check if lexer is at end of input
+task lexer_at_end(lex: Lexer) -> bool {
+    return lex.pos >= lex.length
+}
+
+/// Get current character (0 if at end)
+task lexer_current(lex: Lexer) -> int {
+    check lex.pos >= lex.length { return 0 }
+    return str_char_at(lex.source, lex.pos)
+}
+
+/// Peek at next character (0 if at end)
+task lexer_peek(lex: Lexer) -> int {
+    check lex.pos + 1 >= lex.length { return 0 }
+    return str_char_at(lex.source, lex.pos + 1)
+}
+
+/// Peek at character n positions ahead
+task lexer_peek_n(lex: Lexer, n: int) -> int {
+    check lex.pos + n >= lex.length { return 0 }
+    return str_char_at(lex.source, lex.pos + n)
+}
+
+/// Advance one character
+task lexer_advance(lex: Lexer) -> Lexer {
+    check lex.pos < lex.length {
+        set c = str_char_at(lex.source, lex.pos)
+        lex.pos = lex.pos + 1
+        check c == 10 {  // newline
+            lex.line = lex.line + 1
+            lex.col = 1
+        } else {
+            lex.col = lex.col + 1
+        }
+    }
+    return lex
+}
+
+/// Skip whitespace (except newlines which are tokens)
+task lexer_skip_whitespace(lex: Lexer) -> Lexer {
+    loop not lexer_at_end(lex) {
+        set c = lexer_current(lex)
+        // Space, tab, carriage return
+        check c == 32 or c == 9 or c == 13 {
+            lex = lexer_advance(lex)
+            continue
+        }
+        break
+    }
+    return lex
+}
+
+/// Skip line comment (// ...)
+task lexer_skip_line_comment(lex: Lexer) -> Lexer {
+    loop not lexer_at_end(lex) {
+        set c = lexer_current(lex)
+        check c == 10 { break }  // Stop at newline
+        lex = lexer_advance(lex)
+    }
+    return lex
+}
+
+/// Skip block comment (/* ... */)
+task lexer_skip_block_comment(lex: Lexer) -> Lexer {
+    set depth = 1
+    lex = lexer_advance(lex)  // skip *
+    lex = lexer_advance(lex)  // skip second char
+    
+    loop depth > 0 and not lexer_at_end(lex) {
+        set c = lexer_current(lex)
+        set n = lexer_peek(lex)
+        
+        check c == 47 and n == 42 {  // /*
+            depth = depth + 1
+            lex = lexer_advance(lex)
+            lex = lexer_advance(lex)
+            continue
+        }
+        
+        check c == 42 and n == 47 {  // */
+            depth = depth - 1
+            lex = lexer_advance(lex)
+            lex = lexer_advance(lex)
+            continue
+        }
+        
+        lex = lexer_advance(lex)
+    }
+    return lex
+}
+
+// ============================================================================
+// KEYWORD RECOGNITION
+// ============================================================================
+
+/// Check if string is a keyword and return its token kind
+task keyword_to_token(s: string) -> int {
+    // Primary Sovereign keywords
+    check str_eq(s, "set") { return TOK_SET }
+    check str_eq(s, "task") { return TOK_TASK }
+    check str_eq(s, "check") { return TOK_CHECK }
+    check str_eq(s, "loop") { return TOK_LOOP }
+    check str_eq(s, "return") { return TOK_RETURN }
+    check str_eq(s, "break") { return TOK_BREAK }
+    check str_eq(s, "continue") { return TOK_CONTINUE }
+    check str_eq(s, "const") { return TOK_CONST }
+    check str_eq(s, "struct") { return TOK_STRUCT }
+    check str_eq(s, "enum") { return TOK_ENUM }
+    check str_eq(s, "match") { return TOK_MATCH }
+    check str_eq(s, "import") { return TOK_IMPORT }
+    check str_eq(s, "from") { return TOK_FROM }
+    check str_eq(s, "to") { return TOK_TO }
+    check str_eq(s, "times") { return TOK_TIMES }
+    check str_eq(s, "in") { return TOK_IN }
+    check str_eq(s, "else") { return TOK_ELSE }
+    check str_eq(s, "and") { return TOK_AND }
+    check str_eq(s, "or") { return TOK_OR }
+    check str_eq(s, "not") { return TOK_NOT }
+    check str_eq(s, "true") { return TOK_TRUE }
+    check str_eq(s, "false") { return TOK_FALSE }
+    check str_eq(s, "null") { return TOK_NULL }
+    check str_eq(s, "print") { return TOK_PRINT }
+    check str_eq(s, "print_fmt") { return TOK_PRINT_FMT }
+    check str_eq(s, "assert") { return TOK_ASSERT }
+    check str_eq(s, "static_assert") { return TOK_STATIC_ASSERT }
+    check str_eq(s, "extern") { return TOK_EXTERN }
+    check str_eq(s, "inline") { return TOK_INLINE }
+    check str_eq(s, "sensitive") { return TOK_SENSITIVE }
+    check str_eq(s, "constant_time") { return TOK_CONSTANT_TIME }
+    check str_eq(s, "override") { return TOK_OVERRIDE }
+    check str_eq(s, "purge") { return TOK_PURGE }
+    check str_eq(s, "copy") { return TOK_COPY }
+    check str_eq(s, "alloc") { return TOK_ALLOC }
+    check str_eq(s, "free") { return TOK_FREE }
+    check str_eq(s, "spawn") { return TOK_SPAWN }
+    check str_eq(s, "async") { return TOK_ASYNC }
+    check str_eq(s, "await") { return TOK_AWAIT }
+    check str_eq(s, "chan") { return TOK_CHAN }
+    check str_eq(s, "make_chan") { return TOK_MAKE_CHAN }
+    check str_eq(s, "defer") { return TOK_DEFER }
+    check str_eq(s, "type") { return TOK_TYPE }
+    check str_eq(s, "comptime") { return TOK_COMPTIME }
+    check str_eq(s, "namespace") { return TOK_NAMESPACE }
+    check str_eq(s, "use") { return TOK_USE }
+    check str_eq(s, "where") { return TOK_WHERE }
+    check str_eq(s, "test") { return TOK_TEST }
+    check str_eq(s, "ok") { return TOK_OK }
+    check str_eq(s, "err") { return TOK_ERR }
+    check str_eq(s, "as") { return TOK_AS }
+    check str_eq(s, "asm") { return TOK_ASM }
+    
+    // Type keywords
+    check str_eq(s, "int8") { return TOK_INT8 }
+    check str_eq(s, "int16") { return TOK_INT16 }
+    check str_eq(s, "int64") { return TOK_INT64 }
+    check str_eq(s, "uint8") { return TOK_UINT8 }
+    check str_eq(s, "uint16") { return TOK_UINT16 }
+    check str_eq(s, "uint32") { return TOK_UINT32 }
+    check str_eq(s, "uint64") { return TOK_UINT64 }
+    
+    // Aliases (familiar syntax from other languages)
+    check str_eq(s, "fn") { return TOK_FN }
+    check str_eq(s, "def") { return TOK_TASK }
+    check str_eq(s, "func") { return TOK_TASK }
+    check str_eq(s, "let") { return TOK_SET }
+    check str_eq(s, "var") { return TOK_SET }
+    check str_eq(s, "if") { return TOK_CHECK }
+    check str_eq(s, "for") { return TOK_LOOP }
+    check str_eq(s, "while") { return TOK_LOOP }
+    check str_eq(s, "unsafe") { return TOK_OVERRIDE }
+    check str_eq(s, "None") { return TOK_NULL }
+    check str_eq(s, "nil") { return TOK_NULL }
+    check str_eq(s, "switch") { return TOK_MATCH }
+    
+    return TOK_IDENTIFIER
+}
+
+// ============================================================================
+// NUMBER LEXING
+// ============================================================================
+
+/// Lex an integer or float number
+task lexer_lex_number(lex: Lexer, tokens: VecToken) -> Lexer {
+    set start_line = lex.line
+    set start_col = lex.col
+    set start_pos = lex.pos
+    
+    set c = lexer_current(lex)
+    set is_hex = false
+    set is_bin = false
+    set is_oct = false
+    set is_float = false
+    
+    // Check for hex/binary/octal prefix
+    check c == 48 {  // '0'
+        set n = lexer_peek(lex)
+        check n == 120 or n == 88 {  // 'x' or 'X'
+            is_hex = true
+            lex = lexer_advance(lex)
+            lex = lexer_advance(lex)
+        } else check n == 98 or n == 66 {  // 'b' or 'B'
+            is_bin = true
+            lex = lexer_advance(lex)
+            lex = lexer_advance(lex)
+        } else check n == 111 or n == 79 {  // 'o' or 'O'
+            is_oct = true
+            lex = lexer_advance(lex)
+            lex = lexer_advance(lex)
+        }
+    }
+    
+    // Collect digits
+    set digits = sb_new()
+    
+    check is_hex {
+        loop not lexer_at_end(lex) {
+            set d = lexer_current(lex)
+            check (d >= 48 and d <= 57) or (d >= 65 and d <= 70) or (d >= 97 and d <= 102) or d == 95 {
+                check d != 95 { digits = sb_append_char(digits, d) }
+                lex = lexer_advance(lex)
+            } else {
+                break
+            }
+        }
+        set num_str = sb_to_string(digits)
+        set value = parse_hex(num_str)
+        tokens = vectok_push(tokens, token_with_int(TOK_INTEGER, value, start_line, start_col))
+        free num_str
+        lex.pos = lex.pos  // force struct update
+        return lex
+    }
+    
+    check is_bin {
+        loop not lexer_at_end(lex) {
+            set d = lexer_current(lex)
+            check d == 48 or d == 49 or d == 95 {
+                check d != 95 { digits = sb_append_char(digits, d) }
+                lex = lexer_advance(lex)
+            } else {
+                break
+            }
+        }
+        set num_str = sb_to_string(digits)
+        set value = parse_binary(num_str)
+        tokens = vectok_push(tokens, token_with_int(TOK_INTEGER, value, start_line, start_col))
+        free num_str
+        return lex
+    }
+    
+    check is_oct {
+        loop not lexer_at_end(lex) {
+            set d = lexer_current(lex)
+            check d >= 48 and d <= 55 or d == 95 {
+                check d != 95 { digits = sb_append_char(digits, d) }
+                lex = lexer_advance(lex)
+            } else {
+                break
+            }
+        }
+        set num_str = sb_to_string(digits)
+        set value = parse_octal(num_str)
+        tokens = vectok_push(tokens, token_with_int(TOK_INTEGER, value, start_line, start_col))
+        free num_str
+        return lex
+    }
+    
+    // Decimal integer or float
+    loop not lexer_at_end(lex) {
+        set d = lexer_current(lex)
+        check d >= 48 and d <= 57 or d == 95 {
+            check d != 95 { digits = sb_append_char(digits, d) }
+            lex = lexer_advance(lex)
+        } else check d == 46 and not is_float {  // '.'
+            // Check it's not a method call (e.g., 123.to_string())
+            set next = lexer_peek(lex)
+            check next >= 48 and next <= 57 {
+                is_float = true
+                digits = sb_append_char(digits, d)
+                lex = lexer_advance(lex)
+            } else {
+                break
+            }
+        } else check (d == 101 or d == 69) and not is_float {  // 'e' or 'E' for scientific notation
+            is_float = true
+            digits = sb_append_char(digits, d)
+            lex = lexer_advance(lex)
+            // Optional + or -
+            set sign = lexer_current(lex)
+            check sign == 43 or sign == 45 {
+                digits = sb_append_char(digits, sign)
+                lex = lexer_advance(lex)
+            }
+        } else {
+            break
+        }
+    }
+    
+    set num_str = sb_to_string(digits)
+    
+    check is_float {
+        set fval = str_to_float(num_str)
+        tokens = vectok_push(tokens, token_with_float(TOK_FLOAT, fval, start_line, start_col))
+    } else {
+        set ival = str_to_int(num_str)
+        tokens = vectok_push(tokens, token_with_int(TOK_INTEGER, ival, start_line, start_col))
+    }
+    
+    free num_str
+    return lex
+}
+
+/// Parse a hexadecimal string to integer
+task parse_hex(s: string) -> int {
+    set result = 0
+    set len = str_len(s)
+    loop i from 0 to len - 1 {
+        set c = str_char_at(s, i)
+        set digit = 0
+        check c >= 48 and c <= 57 { digit = c - 48 }
+        else check c >= 65 and c <= 70 { digit = c - 65 + 10 }
+        else check c >= 97 and c <= 102 { digit = c - 97 + 10 }
+        result = result * 16 + digit
+    }
+    return result
+}
+
+/// Parse a binary string to integer
+task parse_binary(s: string) -> int {
+    set result = 0
+    set len = str_len(s)
+    loop i from 0 to len - 1 {
+        set c = str_char_at(s, i)
+        result = result * 2 + (c - 48)
+    }
+    return result
+}
+
+/// Parse an octal string to integer
+task parse_octal(s: string) -> int {
+    set result = 0
+    set len = str_len(s)
+    loop i from 0 to len - 1 {
+        set c = str_char_at(s, i)
+        result = result * 8 + (c - 48)
+    }
+    return result
+}
+
+// ============================================================================
+// STRING LEXING
+// ============================================================================
+
+/// Lex a string literal
+task lexer_lex_string(lex: Lexer, tokens: VecToken) -> Lexer {
+    set start_line = lex.line
+    set start_col = lex.col
+    set quote = lexer_current(lex)
+    lex = lexer_advance(lex)  // skip opening quote
+    
+    set content = sb_new()
+    
+    loop not lexer_at_end(lex) {
+        set c = lexer_current(lex)
+        
+        check c == quote {
+            lex = lexer_advance(lex)  // skip closing quote
+            break
+        }
+        
+        check c == 92 {  // backslash - escape sequence
+            lex = lexer_advance(lex)
+            set escaped = lexer_current(lex)
+            check escaped == 110 { content = sb_append_char(content, 10) }   // \n
+            else check escaped == 116 { content = sb_append_char(content, 9) }   // \t
+            else check escaped == 114 { content = sb_append_char(content, 13) }  // \r
+            else check escaped == 48 { content = sb_append_char(content, 0) }    // \0
+            else check escaped == 92 { content = sb_append_char(content, 92) }   // \\
+            else check escaped == 34 { content = sb_append_char(content, 34) }   // \"
+            else check escaped == 39 { content = sb_append_char(content, 39) }   // \'
+            else { content = sb_append_char(content, escaped) }
+            lex = lexer_advance(lex)
+            continue
+        }
+        
+        check c == 10 {  // newline in string
+            eprintln("Error: unterminated string literal")
+            break
+        }
+        
+        content = sb_append_char(content, c)
+        lex = lexer_advance(lex)
+    }
+    
+    set str_val = sb_to_string(content)
+    tokens = vectok_push(tokens, token_with_str(TOK_STRING, str_val, start_line, start_col))
+    return lex
+}
+
+// ============================================================================
+// IDENTIFIER/KEYWORD LEXING
+// ============================================================================
+
+/// Lex an identifier or keyword
+task lexer_lex_identifier(lex: Lexer, tokens: VecToken) -> Lexer {
+    set start_line = lex.line
+    set start_col = lex.col
+    
+    set ident = sb_new()
+    
+    loop not lexer_at_end(lex) {
+        set c = lexer_current(lex)
+        check char_is_ident(c) {
+            ident = sb_append_char(ident, c)
+            lex = lexer_advance(lex)
+        } else {
+            break
+        }
+    }
+    
+    set name = sb_to_string(ident)
+    set kind = keyword_to_token(name)
+    
+    check kind == TOK_IDENTIFIER {
+        tokens = vectok_push(tokens, token_with_str(TOK_IDENTIFIER, name, start_line, start_col))
+    } else check kind == TOK_TRUE or kind == TOK_FALSE {
+        tokens = vectok_push(tokens, token_new(kind, start_line, start_col))
+        free name
+    } else {
+        tokens = vectok_push(tokens, token_new(kind, start_line, start_col))
+        free name
+    }
+    
+    return lex
+}
+
+// ============================================================================
+// MAIN TOKENIZE FUNCTION
+// ============================================================================
+
+/// Tokenize the source code and return a vector of tokens
+task lexer_tokenize(lex: Lexer) -> VecToken {
+    set tokens = vectok_new()
+    
+    loop not lexer_at_end(lex) {
+        lex = lexer_skip_whitespace(lex)
+        check lexer_at_end(lex) { break }
+        
+        set c = lexer_current(lex)
+        set n = lexer_peek(lex)
+        set line = lex.line
+        set col = lex.col
+        
+        // Newline
+        check c == 10 {
+            tokens = vectok_push(tokens, token_new(TOK_NEWLINE, line, col))
+            lex = lexer_advance(lex)
+            continue
+        }
+        
+        // Comments
+        check c == 47 and n == 47 {  // //
+            lex = lexer_skip_line_comment(lex)
+            continue
+        }
+        check c == 47 and n == 42 {  // /*
+            lex = lexer_skip_block_comment(lex)
+            continue
+        }
+        
+        // String literals
+        check c == 34 or c == 39 {  // " or '
+            lex = lexer_lex_string(lex, tokens)
+            continue
+        }
+        
+        // Numbers
+        check char_is_digit(c) {
+            lex = lexer_lex_number(lex, tokens)
+            continue
+        }
+        
+        // Identifiers and keywords
+        check char_is_alpha(c) or c == 95 {  // letter or underscore
+            lex = lexer_lex_identifier(lex, tokens)
+            continue
+        }
+        
+        // Two-character operators
+        check c == 61 and n == 61 {  // ==
+            tokens = vectok_push(tokens, token_new(TOK_EQUAL, line, col))
+            lex = lexer_advance(lex)
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 33 and n == 61 {  // !=
+            tokens = vectok_push(tokens, token_new(TOK_NOT_EQUAL, line, col))
+            lex = lexer_advance(lex)
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 60 and n == 61 {  // <=
+            tokens = vectok_push(tokens, token_new(TOK_LESS_EQUAL, line, col))
+            lex = lexer_advance(lex)
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 62 and n == 61 {  // >=
+            tokens = vectok_push(tokens, token_new(TOK_GREATER_EQUAL, line, col))
+            lex = lexer_advance(lex)
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 45 and n == 62 {  // ->
+            tokens = vectok_push(tokens, token_new(TOK_ARROW, line, col))
+            lex = lexer_advance(lex)
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 61 and n == 62 {  // =>
+            tokens = vectok_push(tokens, token_new(TOK_FAT_ARROW, line, col))
+            lex = lexer_advance(lex)
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 58 and n == 58 {  // ::
+            tokens = vectok_push(tokens, token_new(TOK_DOUBLE_COLON, line, col))
+            lex = lexer_advance(lex)
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 60 and n == 60 {  // <<
+            tokens = vectok_push(tokens, token_new(TOK_LSHIFT, line, col))
+            lex = lexer_advance(lex)
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 62 and n == 62 {  // >>
+            tokens = vectok_push(tokens, token_new(TOK_RSHIFT, line, col))
+            lex = lexer_advance(lex)
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 43 and n == 61 {  // +=
+            tokens = vectok_push(tokens, token_new(TOK_PLUS_ASSIGN, line, col))
+            lex = lexer_advance(lex)
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 45 and n == 61 {  // -=
+            tokens = vectok_push(tokens, token_new(TOK_MINUS_ASSIGN, line, col))
+            lex = lexer_advance(lex)
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 42 and n == 61 {  // *=
+            tokens = vectok_push(tokens, token_new(TOK_STAR_ASSIGN, line, col))
+            lex = lexer_advance(lex)
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 47 and n == 61 {  // /=
+            tokens = vectok_push(tokens, token_new(TOK_SLASH_ASSIGN, line, col))
+            lex = lexer_advance(lex)
+            lex = lexer_advance(lex)
+            continue
+        }
+        
+        // Single-character operators and punctuation
+        check c == 43 {  // +
+            tokens = vectok_push(tokens, token_new(TOK_PLUS, line, col))
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 45 {  // -
+            tokens = vectok_push(tokens, token_new(TOK_MINUS, line, col))
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 42 {  // *
+            tokens = vectok_push(tokens, token_new(TOK_STAR, line, col))
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 47 {  // /
+            tokens = vectok_push(tokens, token_new(TOK_SLASH, line, col))
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 37 {  // %
+            tokens = vectok_push(tokens, token_new(TOK_PERCENT, line, col))
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 38 {  // &
+            tokens = vectok_push(tokens, token_new(TOK_AMPERSAND, line, col))
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 124 {  // |
+            tokens = vectok_push(tokens, token_new(TOK_PIPE, line, col))
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 94 {  // ^
+            tokens = vectok_push(tokens, token_new(TOK_CARET, line, col))
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 126 {  // ~
+            tokens = vectok_push(tokens, token_new(TOK_TILDE, line, col))
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 61 {  // =
+            tokens = vectok_push(tokens, token_new(TOK_ASSIGN, line, col))
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 60 {  // <
+            tokens = vectok_push(tokens, token_new(TOK_LESS, line, col))
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 62 {  // >
+            tokens = vectok_push(tokens, token_new(TOK_GREATER, line, col))
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 40 {  // (
+            tokens = vectok_push(tokens, token_new(TOK_LPAREN, line, col))
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 41 {  // )
+            tokens = vectok_push(tokens, token_new(TOK_RPAREN, line, col))
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 123 {  // {
+            tokens = vectok_push(tokens, token_new(TOK_LBRACE, line, col))
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 125 {  // }
+            tokens = vectok_push(tokens, token_new(TOK_RBRACE, line, col))
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 91 {  // [
+            tokens = vectok_push(tokens, token_new(TOK_LBRACKET, line, col))
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 93 {  // ]
+            tokens = vectok_push(tokens, token_new(TOK_RBRACKET, line, col))
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 44 {  // ,
+            tokens = vectok_push(tokens, token_new(TOK_COMMA, line, col))
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 46 {  // .
+            tokens = vectok_push(tokens, token_new(TOK_DOT, line, col))
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 58 {  // :
+            tokens = vectok_push(tokens, token_new(TOK_COLON, line, col))
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 59 {  // ;
+            tokens = vectok_push(tokens, token_new(TOK_SEMICOLON, line, col))
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 63 {  // ?
+            tokens = vectok_push(tokens, token_new(TOK_QUESTION, line, col))
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 64 {  // @
+            tokens = vectok_push(tokens, token_new(TOK_AT, line, col))
+            lex = lexer_advance(lex)
+            continue
+        }
+        check c == 35 {  // #
+            tokens = vectok_push(tokens, token_new(TOK_HASH, line, col))
+            lex = lexer_advance(lex)
+            continue
+        }
+        
+        // Unknown character - skip and report error
+        set err_msg = sb_new()
+        err_msg = sb_append(err_msg, "Unknown character '")
+        err_msg = sb_append_char(err_msg, c)
+        err_msg = sb_append(err_msg, "' at line ")
+        err_msg = sb_append_int(err_msg, line)
+        eprintln(sb_to_string(err_msg))
+        sb_free(err_msg)
+        lex = lexer_advance(lex)
+    }
+    
+    // Add EOF token
+    tokens = vectok_push(tokens, token_new(TOK_EOF, lex.line, lex.col))
+    
+    return tokens
+}
+
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
+/// Print tokens for debugging
+task print_tokens(tokens: VecToken) {
+    set len = vectok_len(tokens)
+    println("Tokens:")
+    loop i from 0 to len - 1 {
+        set tok = vectok_get(tokens, i)
+        set kind_name = token_kind_name(tok.kind)
+        set line_str = int_to_str(tok.line)
+        set col_str = int_to_str(tok.col)
+        
+        set msg = sb_new()
+        msg = sb_append(msg, "  [")
+        msg = sb_append(msg, line_str)
+        msg = sb_append(msg, ":")
+        msg = sb_append(msg, col_str)
+        msg = sb_append(msg, "] ")
+        msg = sb_append(msg, kind_name)
+        
+        check tok.kind == TOK_INTEGER {
+            msg = sb_append(msg, " = ")
+            msg = sb_append_int(msg, tok.int_val)
+        }
+        check tok.kind == TOK_STRING or tok.kind == TOK_IDENTIFIER {
+            msg = sb_append(msg, " = \"")
+            msg = sb_append(msg, tok.str_val)
+            msg = sb_append(msg, "\"")
+        }
+        
+        println(sb_to_string(msg))
+        sb_free(msg)
+        free line_str
+        free col_str
+    }
+}
+
+/// Tokenize a file by path
+task tokenize_file(path: string) -> VecToken {
+    set source = file_read_all(path)
+    check str_len(source) == 0 {
+        eprintln("Error: could not read file")
+        return vectok_new()
+    }
+    set lex = lexer_new(source, path)
+    return lexer_tokenize(lex)
+}
