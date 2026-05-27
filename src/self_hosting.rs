@@ -12,6 +12,7 @@ pub struct SelfHostingCompiler {
     stdlib_ast: String,
     lexer_self: String,
     parser_self: String,
+    semantic_self: String,
     codegen_self: String,
     compiler_self: String,
 }
@@ -31,6 +32,9 @@ impl SelfHostingCompiler {
         let parser_self = fs::read_to_string(Path::new(src_dir).join("parser_self.sov"))
             .map_err(|e| format!("Failed to load parser_self.sov: {}", e))?;
         
+        let semantic_self = fs::read_to_string(Path::new(src_dir).join("semantic_self.sov"))
+            .map_err(|e| format!("Failed to load semantic_self.sov: {}", e))?;
+        
         let codegen_self = fs::read_to_string(Path::new(src_dir).join("codegen_self.sov"))
             .map_err(|e| format!("Failed to load codegen_self.sov: {}", e))?;
         
@@ -42,6 +46,7 @@ impl SelfHostingCompiler {
             stdlib_ast,
             lexer_self,
             parser_self,
+            semantic_self,
             codegen_self,
             compiler_self,
         })
@@ -59,7 +64,9 @@ impl SelfHostingCompiler {
             &self.lexer_self,
             "\n\n// Phase 3: Parser\n",
             &self.parser_self,
-            "\n\n// Phase 4: C Code Generator\n",
+            "\n\n// Phase 4: Semantic Analyzer\n",
+            &self.semantic_self,
+            "\n\n// Phase 5: C Code Generator\n",
             &self.codegen_self,
             "\n\n// Main Compiler Entry Point\n",
             &self.compiler_self,
@@ -74,6 +81,7 @@ impl SelfHostingCompiler {
             ast_lines: self.stdlib_ast.lines().count(),
             lexer_lines: self.lexer_self.lines().count(),
             parser_lines: self.parser_self.lines().count(),
+            semantic_lines: self.semantic_self.lines().count(),
             codegen_lines: self.codegen_self.lines().count(),
             compiler_lines: self.compiler_self.lines().count(),
         }
@@ -108,6 +116,12 @@ impl SelfHostingCompiler {
         match compiler.compile_source(&self.parser_self, "parser_self") {
             Ok(_) => println!("✓ parser_self.sov compiles successfully"),
             Err(e) => errors.push(format!("parser_self.sov: {}", e)),
+        }
+
+        // Parse and validate semantic analyzer
+        match compiler.compile_source(&self.semantic_self, "semantic_self") {
+            Ok(_) => println!("✓ semantic_self.sov compiles successfully"),
+            Err(e) => errors.push(format!("semantic_self.sov: {}", e)),
         }
 
         // Parse and validate codegen
@@ -301,13 +315,14 @@ pub struct SelfHostingStats {
     pub ast_lines: usize,
     pub lexer_lines: usize,
     pub parser_lines: usize,
+    pub semantic_lines: usize,
     pub codegen_lines: usize,
     pub compiler_lines: usize,
 }
 
 impl SelfHostingStats {
     pub fn total(&self) -> usize {
-        self.stdlib_lines + self.ast_lines + self.lexer_lines + self.parser_lines + self.codegen_lines + self.compiler_lines
+        self.stdlib_lines + self.ast_lines + self.lexer_lines + self.parser_lines + self.semantic_lines + self.codegen_lines + self.compiler_lines
     }
 
     pub fn print_summary(&self) {
@@ -316,6 +331,7 @@ impl SelfHostingStats {
         println!("stdlib_ast.sov:     {:5} lines", self.ast_lines);
         println!("lexer_self.sov:     {:5} lines", self.lexer_lines);
         println!("parser_self.sov:    {:5} lines", self.parser_lines);
+        println!("semantic_self.sov:  {:5} lines", self.semantic_lines);
         println!("codegen_self.sov:   {:5} lines", self.codegen_lines);
         println!("compiler_self.sov:  {:5} lines", self.compiler_lines);
         println!("----------------------------------------");

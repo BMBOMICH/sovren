@@ -1,0 +1,879 @@
+/// Sovereign Self-Hosted Semantic Analyzer
+/// 
+/// This module performs semantic analysis on the parsed AST:
+/// - Type checking and inference
+/// - Symbol table management
+/// - Scope resolution
+/// - Borrow checking (basic)
+/// - Error reporting
+
+// ============================================================================
+// SYMBOL TABLE
+// ============================================================================
+
+/// A symbol in the symbol table
+struct Symbol {
+    name:       string      // Symbol name
+    kind:       int         // SYMBOL_VAR, SYMBOL_FUNC, SYMBOL_TYPE, etc.
+    type_name:  string      // Type as string
+    is_const:   bool        // Is this a constant?
+    is_mutable: bool        // Is this mutable?
+    is_sensitive: bool      // Marked sensitive?
+    scope_depth: int        // Scope nesting level
+    defined_at: int         // Line number
+}
+
+// Symbol kinds
+const SYMBOL_VAR = 1
+const SYMBOL_FUNC = 2
+const SYMBOL_TYPE = 3
+const SYMBOL_STRUCT = 4
+const SYMBOL_ENUM = 5
+const SYMBOL_CONST = 6
+const SYMBOL_PARAM = 7
+const SYMBOL_FIELD = 8
+
+/// Scope - a collection of symbols
+struct Scope {
+    symbols:    HashMap     // name -> Symbol
+    parent:     ptr         // Parent scope (or null)
+    depth:      int         // Nesting depth
+    is_loop:    bool        // Is this a loop scope?
+    is_func:    bool        // Is this a function scope?
+}
+
+/// Symbol table - manages scopes
+struct SymbolTable {
+    scopes:     Vec         // Stack of Scope pointers
+    current:    ptr         // Current scope
+    global:     ptr         // Global scope
+}
+
+task symtab_new() -> ptr {
+    set st = alloc(1, 64) as ptr(SymbolTable)
+    set global_scope = scope_new(null, 0)
+    
+    st.scopes = vec_new()
+    st.global = global_scope
+    st.current = global_scope
+    
+    vec_push(st.scopes, global_scope)
+    
+    // Add built-in types
+    symtab_define_builtin(st, "int", SYMBOL_TYPE)
+    symtab_define_builtin(st, "int8", SYMBOL_TYPE)
+    symtab_define_builtin(st, "int16", SYMBOL_TYPE)
+    symtab_define_builtin(st, "int64", SYMBOL_TYPE)
+    symtab_define_builtin(st, "uint8", SYMBOL_TYPE)
+    symtab_define_builtin(st, "uint16", SYMBOL_TYPE)
+    symtab_define_builtin(st, "uint32", SYMBOL_TYPE)
+    symtab_define_builtin(st, "uint64", SYMBOL_TYPE)
+    symtab_define_builtin(st, "float", SYMBOL_TYPE)
+    symtab_define_builtin(st, "bool", SYMBOL_TYPE)
+    symtab_define_builtin(st, "string", SYMBOL_TYPE)
+    symtab_define_builtin(st, "ptr", SYMBOL_TYPE)
+    symtab_define_builtin(st, "void", SYMBOL_TYPE)
+    
+    // Add built-in functions
+    symtab_define_builtin_func(st, "print", "void")
+    symtab_define_builtin_func(st, "println", "void")
+    symtab_define_builtin_func(st, "alloc", "ptr")
+    symtab_define_builtin_func(st, "free", "void")
+    symtab_define_builtin_func(st, "sizeof", "int")
+    symtab_define_builtin_func(st, "strlen", "int")
+    symtab_define_builtin_func(st, "strcmp", "int")
+    
+    return st
+}
+
+task scope_new(parent: ptr, depth: int) -> ptr {
+    set s = alloc(1, 48) as ptr(Scope)
+    s.symbols = hashmap_new()
+    s.parent = parent
+    s.depth = depth
+    s.is_loop = false
+    s.is_func = false
+    return s
+}
+
+task symtab_define_builtin(st: ptr(SymbolTable), name: string, kind: int) {
+    set sym = symbol_new(name, kind, name, false, false, false, 0, 0)
+    hashmap_insert(st.global as ptr(Scope).symbols, name, sym)
+}
+
+task symtab_define_builtin_func(st: ptr(SymbolTable), name: string, ret_type: string) {
+    set sym = symbol_new(name, SYMBOL_FUNC, ret_type, false, false, false, 0, 0)
+    hashmap_insert(st.global as ptr(Scope).symbols, name, sym)
+}
+
+task symbol_new(name: string, kind: int, type_name: string, is_const: bool, 
+                is_mutable: bool, is_sensitive: bool, scope_depth: int, 
+                defined_at: int) -> ptr {
+    set sym = alloc(1, 64) as ptr(Symbol)
+    sym.name = str_copy(name)
+    sym.kind = kind
+    sym.type_name = str_copy(type_name)
+    sym.is_const = is_const
+    sym.is_mutable = is_mutable
+    sym.is_sensitive = is_sensitive
+    sym.scope_depth = scope_depth
+    sym.defined_at = defined_at
+    return sym
+}
+
+task symtab_enter_scope(st: ptr(SymbolTable)) {
+    set depth = st.current as ptr(Scope).depth + 1
+    set new_scope = scope_new(st.current, depth)
+    vec_push(st.scopes, new_scope)
+    st.current = new_scope
+}
+
+task symtab_exit_scope(st: ptr(SymbolTable)) {
+    check st.current != st.global {
+        st.current = st.current as ptr(Scope).parent
+    }
+}
+
+task symtab_define(st: ptr(SymbolTable), sym: ptr(Symbol)) -> bool {
+    set scope = st.current as ptr(Scope)
+    
+    // Check for redefinition in current scope
+    check hashmap_contains(scope.symbols, sym.name) {
+        return false  // Already defined
+    }
+    
+    sym.scope_depth = scope.depth
+    hashmap_insert(scope.symbols, sym.name, sym)
+    return true
+}
+
+task symtab_lookup(st: ptr(SymbolTable), name: string) -> ptr {
+    set scope = st.current as ptr(Scope)
+    
+    loop scope != null {
+        set sym = hashmap_get(scope.symbols, name)
+        check sym != null {
+            return sym
+        }
+        scope = scope.parent as ptr(Scope)
+    }
+    
+    return null
+}
+
+task symtab_lookup_current(st: ptr(SymbolTable), name: string) -> ptr {
+    set scope = st.current as ptr(Scope)
+    return hashmap_get(scope.symbols, name)
+}
+
+// ============================================================================
+// SEMANTIC ANALYZER
+// ============================================================================
+
+/// Semantic analysis error
+struct SemanticError {
+    message:    string
+    line:       int
+    column:     int
+    severity:   int     // 0=error, 1=warning
+}
+
+/// Semantic analyzer state
+struct Analyzer {
+    symtab:     ptr             // Symbol table
+    errors:     Vec             // List of SemanticError
+    warnings:   Vec             // List of warnings
+    current_func: string        // Current function being analyzed
+    in_loop:    bool            // Are we inside a loop?
+    in_unsafe:  bool            // Are we inside an override block?
+    return_type: string         // Expected return type
+}
+
+task analyzer_new() -> ptr {
+    set a = alloc(1, 80) as ptr(Analyzer)
+    a.symtab = symtab_new()
+    a.errors = vec_new()
+    a.warnings = vec_new()
+    a.current_func = ""
+    a.in_loop = false
+    a.in_unsafe = false
+    a.return_type = "void"
+    return a
+}
+
+task analyzer_error(a: ptr(Analyzer), msg: string, line: int) {
+    set err = alloc(1, 32) as ptr(SemanticError)
+    err.message = str_copy(msg)
+    err.line = line
+    err.column = 0
+    err.severity = 0
+    vec_push(a.errors, err)
+}
+
+task analyzer_warning(a: ptr(Analyzer), msg: string, line: int) {
+    set warn = alloc(1, 32) as ptr(SemanticError)
+    warn.message = str_copy(msg)
+    warn.line = line
+    warn.column = 0
+    warn.severity = 1
+    vec_push(a.warnings, warn)
+}
+
+/// Analyze a complete program
+task analyze_program(a: ptr(Analyzer), prog: ptr(Program)) -> bool {
+    // First pass: collect all top-level declarations
+    loop i from 0 to program_stmt_count(prog) - 1 {
+        set stmt = program_get_stmt(prog, i)
+        analyze_top_level_decl(a, stmt)
+    }
+    
+    // Second pass: analyze function bodies
+    loop i from 0 to program_stmt_count(prog) - 1 {
+        set stmt = program_get_stmt(prog, i)
+        analyze_stmt(a, stmt)
+    }
+    
+    return vec_len(a.errors) == 0
+}
+
+/// First pass: collect declarations
+task analyze_top_level_decl(a: ptr(Analyzer), stmt: ptr(Stmt)) {
+    set kind = stmt_kind(stmt)
+    
+    check kind == STMT_TASK_DECL or kind == STMT_FN_DECL {
+        set name = stmt_get_name(stmt)
+        set ret_type = stmt_get_return_type(stmt)
+        check str_len(ret_type) == 0 {
+            ret_type = "void"
+        }
+        
+        set sym = symbol_new(name, SYMBOL_FUNC, ret_type, false, false, false, 0, 0)
+        
+        check not symtab_define(a.symtab as ptr(SymbolTable), sym) {
+            analyzer_error(a, str_concat("Function already defined: ", name), 0)
+        }
+    }
+    
+    check kind == STMT_STRUCT_DECL {
+        set name = stmt_get_name(stmt)
+        set sym = symbol_new(name, SYMBOL_STRUCT, name, false, false, false, 0, 0)
+        
+        check not symtab_define(a.symtab as ptr(SymbolTable), sym) {
+            analyzer_error(a, str_concat("Struct already defined: ", name), 0)
+        }
+    }
+    
+    check kind == STMT_ENUM_DECL {
+        set name = stmt_get_name(stmt)
+        set sym = symbol_new(name, SYMBOL_ENUM, name, false, false, false, 0, 0)
+        
+        check not symtab_define(a.symtab as ptr(SymbolTable), sym) {
+            analyzer_error(a, str_concat("Enum already defined: ", name), 0)
+        }
+    }
+    
+    check kind == STMT_CONST_DECL {
+        set name = stmt_get_name(stmt)
+        set sym = symbol_new(name, SYMBOL_CONST, "int", true, false, false, 0, 0)
+        
+        check not symtab_define(a.symtab as ptr(SymbolTable), sym) {
+            analyzer_error(a, str_concat("Constant already defined: ", name), 0)
+        }
+    }
+}
+
+/// Analyze a statement
+task analyze_stmt(a: ptr(Analyzer), stmt: ptr(Stmt)) {
+    set kind = stmt_kind(stmt)
+    
+    check kind == STMT_VAR_DECL {
+        analyze_var_decl(a, stmt)
+        return
+    }
+    
+    check kind == STMT_TASK_DECL or kind == STMT_FN_DECL {
+        analyze_func_decl(a, stmt)
+        return
+    }
+    
+    check kind == STMT_IF {
+        analyze_if_stmt(a, stmt)
+        return
+    }
+    
+    check kind == STMT_LOOP or kind == STMT_LOOP_RANGE or kind == STMT_LOOP_COND {
+        analyze_loop_stmt(a, stmt)
+        return
+    }
+    
+    check kind == STMT_RETURN {
+        analyze_return_stmt(a, stmt)
+        return
+    }
+    
+    check kind == STMT_BREAK or kind == STMT_CONTINUE {
+        check not a.in_loop {
+            set kw = "break"
+            check kind == STMT_CONTINUE {
+                kw = "continue"
+            }
+            analyzer_error(a, str_concat(kw, " outside of loop"), 0)
+        }
+        return
+    }
+    
+    check kind == STMT_EXPR {
+        set expr = stmt_get_expr(stmt)
+        analyze_expr(a, expr)
+        return
+    }
+    
+    check kind == STMT_BLOCK {
+        symtab_enter_scope(a.symtab as ptr(SymbolTable))
+        set block = stmt_get_block(stmt)
+        loop i from 0 to block_stmt_count(block) - 1 {
+            analyze_stmt(a, block_get_stmt(block, i))
+        }
+        symtab_exit_scope(a.symtab as ptr(SymbolTable))
+        return
+    }
+    
+    check kind == STMT_OVERRIDE {
+        set prev_unsafe = a.in_unsafe
+        a.in_unsafe = true
+        set block = stmt_get_block(stmt)
+        loop i from 0 to block_stmt_count(block) - 1 {
+            analyze_stmt(a, block_get_stmt(block, i))
+        }
+        a.in_unsafe = prev_unsafe
+        return
+    }
+}
+
+/// Analyze variable declaration
+task analyze_var_decl(a: ptr(Analyzer), stmt: ptr(Stmt)) {
+    set name = stmt_get_name(stmt)
+    set type_name = stmt_get_type(stmt)
+    set init_expr = stmt_get_expr(stmt)
+    
+    // Check for shadowing in current scope
+    check symtab_lookup_current(a.symtab as ptr(SymbolTable), name) != null {
+        analyzer_warning(a, str_concat("Variable shadows existing binding: ", name), 0)
+    }
+    
+    // Infer type from initializer if not specified
+    check str_len(type_name) == 0 and init_expr != null {
+        type_name = infer_type(a, init_expr)
+    }
+    
+    check str_len(type_name) == 0 {
+        type_name = "int"  // Default
+    }
+    
+    // Analyze initializer
+    check init_expr != null {
+        set init_type = analyze_expr(a, init_expr)
+        check not types_compatible(type_name, init_type) {
+            set msg = str_concat("Type mismatch: expected ", type_name)
+            msg = str_concat(msg, ", got ")
+            msg = str_concat(msg, init_type)
+            analyzer_error(a, msg, 0)
+        }
+    }
+    
+    // Check if marked sensitive
+    set is_sensitive = stmt_is_sensitive(stmt)
+    
+    // Define the variable
+    set sym = symbol_new(name, SYMBOL_VAR, type_name, false, true, is_sensitive, 0, 0)
+    check not symtab_define(a.symtab as ptr(SymbolTable), sym) {
+        analyzer_error(a, str_concat("Variable already defined: ", name), 0)
+    }
+}
+
+/// Analyze function declaration
+task analyze_func_decl(a: ptr(Analyzer), stmt: ptr(Stmt)) {
+    set name = stmt_get_name(stmt)
+    set ret_type = stmt_get_return_type(stmt)
+    check str_len(ret_type) == 0 {
+        ret_type = "void"
+    }
+    
+    // Save state
+    set prev_func = a.current_func
+    set prev_ret_type = a.return_type
+    a.current_func = name
+    a.return_type = ret_type
+    
+    // Enter function scope
+    symtab_enter_scope(a.symtab as ptr(SymbolTable))
+    a.symtab as ptr(SymbolTable).current as ptr(Scope).is_func = true
+    
+    // Add parameters
+    set params = stmt_get_params(stmt)
+    check params != null {
+        loop i from 0 to params_count(params) - 1 {
+            set param = params_get(params, i)
+            set param_name = param_get_name(param)
+            set param_type = param_get_type(param)
+            check str_len(param_type) == 0 {
+                param_type = "int"
+            }
+            
+            set sym = symbol_new(param_name, SYMBOL_PARAM, param_type, false, true, false, 0, 0)
+            check not symtab_define(a.symtab as ptr(SymbolTable), sym) {
+                analyzer_error(a, str_concat("Duplicate parameter: ", param_name), 0)
+            }
+        }
+    }
+    
+    // Analyze body
+    set body = stmt_get_block(stmt)
+    check body != null {
+        loop i from 0 to block_stmt_count(body) - 1 {
+            analyze_stmt(a, block_get_stmt(body, i))
+        }
+    }
+    
+    // Check for return statement if non-void
+    check not str_eq(ret_type, "void") {
+        check not has_return_path(body) {
+            analyzer_warning(a, str_concat("Function may not return a value: ", name), 0)
+        }
+    }
+    
+    // Exit scope
+    symtab_exit_scope(a.symtab as ptr(SymbolTable))
+    
+    // Restore state
+    a.current_func = prev_func
+    a.return_type = prev_ret_type
+}
+
+/// Analyze if statement
+task analyze_if_stmt(a: ptr(Analyzer), stmt: ptr(Stmt)) {
+    set cond = stmt_get_condition(stmt)
+    set cond_type = analyze_expr(a, cond)
+    
+    check not str_eq(cond_type, "bool") and not str_eq(cond_type, "int") {
+        analyzer_error(a, "Condition must be bool or int", 0)
+    }
+    
+    // Analyze then branch
+    symtab_enter_scope(a.symtab as ptr(SymbolTable))
+    set then_block = stmt_get_then_block(stmt)
+    check then_block != null {
+        loop i from 0 to block_stmt_count(then_block) - 1 {
+            analyze_stmt(a, block_get_stmt(then_block, i))
+        }
+    }
+    symtab_exit_scope(a.symtab as ptr(SymbolTable))
+    
+    // Analyze else branch
+    set else_block = stmt_get_else_block(stmt)
+    check else_block != null {
+        symtab_enter_scope(a.symtab as ptr(SymbolTable))
+        loop i from 0 to block_stmt_count(else_block) - 1 {
+            analyze_stmt(a, block_get_stmt(else_block, i))
+        }
+        symtab_exit_scope(a.symtab as ptr(SymbolTable))
+    }
+}
+
+/// Analyze loop statement
+task analyze_loop_stmt(a: ptr(Analyzer), stmt: ptr(Stmt)) {
+    set prev_in_loop = a.in_loop
+    a.in_loop = true
+    
+    symtab_enter_scope(a.symtab as ptr(SymbolTable))
+    a.symtab as ptr(SymbolTable).current as ptr(Scope).is_loop = true
+    
+    // Check loop variable if range loop
+    set kind = stmt_kind(stmt)
+    check kind == STMT_LOOP_RANGE {
+        set var_name = stmt_get_loop_var(stmt)
+        set sym = symbol_new(var_name, SYMBOL_VAR, "int", false, true, false, 0, 0)
+        symtab_define(a.symtab as ptr(SymbolTable), sym)
+        
+        // Check range bounds
+        set start_expr = stmt_get_start_expr(stmt)
+        set end_expr = stmt_get_end_expr(stmt)
+        
+        check start_expr != null {
+            set start_type = analyze_expr(a, start_expr)
+            check not str_eq(start_type, "int") {
+                analyzer_error(a, "Loop start must be int", 0)
+            }
+        }
+        
+        check end_expr != null {
+            set end_type = analyze_expr(a, end_expr)
+            check not str_eq(end_type, "int") {
+                analyzer_error(a, "Loop end must be int", 0)
+            }
+        }
+    }
+    
+    // Check condition if conditional loop
+    check kind == STMT_LOOP_COND {
+        set cond = stmt_get_condition(stmt)
+        check cond != null {
+            set cond_type = analyze_expr(a, cond)
+            check not str_eq(cond_type, "bool") and not str_eq(cond_type, "int") {
+                analyzer_error(a, "Loop condition must be bool or int", 0)
+            }
+        }
+    }
+    
+    // Analyze body
+    set body = stmt_get_block(stmt)
+    check body != null {
+        loop i from 0 to block_stmt_count(body) - 1 {
+            analyze_stmt(a, block_get_stmt(body, i))
+        }
+    }
+    
+    symtab_exit_scope(a.symtab as ptr(SymbolTable))
+    a.in_loop = prev_in_loop
+}
+
+/// Analyze return statement
+task analyze_return_stmt(a: ptr(Analyzer), stmt: ptr(Stmt)) {
+    set expr = stmt_get_expr(stmt)
+    
+    check str_eq(a.return_type, "void") {
+        check expr != null {
+            analyzer_error(a, "Cannot return value from void function", 0)
+        }
+        return
+    }
+    
+    check expr == null {
+        analyzer_error(a, "Must return a value", 0)
+        return
+    }
+    
+    set ret_type = analyze_expr(a, expr)
+    check not types_compatible(a.return_type, ret_type) {
+        set msg = str_concat("Return type mismatch: expected ", a.return_type)
+        msg = str_concat(msg, ", got ")
+        msg = str_concat(msg, ret_type)
+        analyzer_error(a, msg, 0)
+    }
+}
+
+/// Analyze an expression and return its type
+task analyze_expr(a: ptr(Analyzer), expr: ptr(Expr)) -> string {
+    check expr == null {
+        return "void"
+    }
+    
+    set kind = expr_kind(expr)
+    
+    // Integer literal
+    check kind == EXPR_INT {
+        return "int"
+    }
+    
+    // Float literal
+    check kind == EXPR_FLOAT {
+        return "float"
+    }
+    
+    // String literal
+    check kind == EXPR_STRING {
+        return "string"
+    }
+    
+    // Boolean literal
+    check kind == EXPR_BOOL {
+        return "bool"
+    }
+    
+    // Null literal
+    check kind == EXPR_NULL {
+        return "ptr"
+    }
+    
+    // Variable reference
+    check kind == EXPR_VAR {
+        set name = expr_get_name(expr)
+        set sym = symtab_lookup(a.symtab as ptr(SymbolTable), name)
+        
+        check sym == null {
+            analyzer_error(a, str_concat("Undefined variable: ", name), 0)
+            return "int"
+        }
+        
+        return sym as ptr(Symbol).type_name
+    }
+    
+    // Binary operation
+    check kind == EXPR_BINARY {
+        set left = expr_get_left(expr)
+        set right = expr_get_right(expr)
+        set op = expr_get_op(expr)
+        
+        set left_type = analyze_expr(a, left)
+        set right_type = analyze_expr(a, right)
+        
+        // Comparison operators return bool
+        check is_comparison_op(op) {
+            check not types_compatible(left_type, right_type) {
+                analyzer_error(a, "Cannot compare different types", 0)
+            }
+            return "bool"
+        }
+        
+        // Logical operators
+        check is_logical_op(op) {
+            return "bool"
+        }
+        
+        // Arithmetic operators
+        check not types_compatible(left_type, right_type) {
+            analyzer_error(a, "Type mismatch in binary operation", 0)
+        }
+        
+        return left_type
+    }
+    
+    // Unary operation
+    check kind == EXPR_UNARY {
+        set operand = expr_get_operand(expr)
+        set op = expr_get_op(expr)
+        
+        set operand_type = analyze_expr(a, operand)
+        
+        // Logical not
+        check str_eq(op, "not") or str_eq(op, "!") {
+            return "bool"
+        }
+        
+        // Numeric negation
+        check str_eq(op, "-") {
+            check not str_eq(operand_type, "int") and not str_eq(operand_type, "float") {
+                analyzer_error(a, "Cannot negate non-numeric type", 0)
+            }
+            return operand_type
+        }
+        
+        // Address-of
+        check str_eq(op, "&") {
+            return "ptr"
+        }
+        
+        // Dereference
+        check str_eq(op, "*") {
+            check not str_eq(operand_type, "ptr") {
+                analyzer_error(a, "Cannot dereference non-pointer", 0)
+            }
+            return "int"  // Simplified - should track pointed-to type
+        }
+        
+        return operand_type
+    }
+    
+    // Function call
+    check kind == EXPR_CALL {
+        set name = expr_get_name(expr)
+        set sym = symtab_lookup(a.symtab as ptr(SymbolTable), name)
+        
+        check sym == null {
+            analyzer_error(a, str_concat("Undefined function: ", name), 0)
+            return "int"
+        }
+        
+        check sym as ptr(Symbol).kind != SYMBOL_FUNC {
+            analyzer_error(a, str_concat("Not a function: ", name), 0)
+            return "int"
+        }
+        
+        // Analyze arguments
+        set args = expr_get_args(expr)
+        check args != null {
+            loop i from 0 to args_count(args) - 1 {
+                analyze_expr(a, args_get(args, i))
+            }
+        }
+        
+        return sym as ptr(Symbol).type_name
+    }
+    
+    // Field access
+    check kind == EXPR_FIELD {
+        set obj = expr_get_object(expr)
+        set field = expr_get_field(expr)
+        
+        set obj_type = analyze_expr(a, obj)
+        
+        // Look up struct and field
+        set sym = symtab_lookup(a.symtab as ptr(SymbolTable), obj_type)
+        check sym == null or sym as ptr(Symbol).kind != SYMBOL_STRUCT {
+            analyzer_error(a, str_concat("Not a struct: ", obj_type), 0)
+            return "int"
+        }
+        
+        // TODO: Look up field type from struct definition
+        return "int"
+    }
+    
+    // Array index
+    check kind == EXPR_INDEX {
+        set arr = expr_get_array(expr)
+        set idx = expr_get_index(expr)
+        
+        analyze_expr(a, arr)
+        set idx_type = analyze_expr(a, idx)
+        
+        check not str_eq(idx_type, "int") {
+            analyzer_error(a, "Array index must be int", 0)
+        }
+        
+        return "int"  // Simplified
+    }
+    
+    // Struct literal
+    check kind == EXPR_STRUCT_LIT {
+        set type_name = expr_get_type_name(expr)
+        set sym = symtab_lookup(a.symtab as ptr(SymbolTable), type_name)
+        
+        check sym == null {
+            analyzer_error(a, str_concat("Unknown struct: ", type_name), 0)
+        }
+        
+        return type_name
+    }
+    
+    // Cast expression
+    check kind == EXPR_CAST {
+        set operand = expr_get_operand(expr)
+        set target_type = expr_get_cast_type(expr)
+        
+        analyze_expr(a, operand)
+        return target_type
+    }
+    
+    return "int"  // Default
+}
+
+// ============================================================================
+// TYPE UTILITIES
+// ============================================================================
+
+/// Check if two types are compatible
+task types_compatible(t1: string, t2: string) -> bool {
+    check str_eq(t1, t2) {
+        return true
+    }
+    
+    // Numeric types are compatible with each other
+    check is_numeric_type(t1) and is_numeric_type(t2) {
+        return true
+    }
+    
+    // ptr is compatible with any pointer type
+    check str_eq(t1, "ptr") or str_eq(t2, "ptr") {
+        return true
+    }
+    
+    return false
+}
+
+task is_numeric_type(t: string) -> bool {
+    return str_eq(t, "int") or str_eq(t, "int8") or str_eq(t, "int16") or 
+           str_eq(t, "int64") or str_eq(t, "uint8") or str_eq(t, "uint16") or
+           str_eq(t, "uint32") or str_eq(t, "uint64") or str_eq(t, "float")
+}
+
+task is_comparison_op(op: string) -> bool {
+    return str_eq(op, "==") or str_eq(op, "!=") or str_eq(op, "<") or
+           str_eq(op, ">") or str_eq(op, "<=") or str_eq(op, ">=")
+}
+
+task is_logical_op(op: string) -> bool {
+    return str_eq(op, "and") or str_eq(op, "or") or str_eq(op, "&&") or str_eq(op, "||")
+}
+
+/// Infer type from expression
+task infer_type(a: ptr(Analyzer), expr: ptr(Expr)) -> string {
+    return analyze_expr(a, expr)
+}
+
+/// Check if a block has a return path
+task has_return_path(block: ptr(Block)) -> bool {
+    check block == null {
+        return false
+    }
+    
+    set count = block_stmt_count(block)
+    check count == 0 {
+        return false
+    }
+    
+    loop i from 0 to count - 1 {
+        set stmt = block_get_stmt(block, i)
+        set kind = stmt_kind(stmt)
+        
+        check kind == STMT_RETURN {
+            return true
+        }
+        
+        // Check if-else
+        check kind == STMT_IF {
+            set then_block = stmt_get_then_block(stmt)
+            set else_block = stmt_get_else_block(stmt)
+            
+            check else_block != null {
+                check has_return_path(then_block) and has_return_path(else_block) {
+                    return true
+                }
+            }
+        }
+    }
+    
+    return false
+}
+
+// ============================================================================
+// ERROR REPORTING
+// ============================================================================
+
+task analyzer_print_errors(a: ptr(Analyzer)) {
+    set error_count = vec_len(a.errors)
+    set warn_count = vec_len(a.warnings)
+    
+    loop i from 0 to error_count - 1 {
+        set err = vec_get(a.errors, i) as ptr(SemanticError)
+        print_str("error: ")
+        println(err.message)
+    }
+    
+    loop i from 0 to warn_count - 1 {
+        set warn = vec_get(a.warnings, i) as ptr(SemanticError)
+        print_str("warning: ")
+        println(warn.message)
+    }
+    
+    check error_count > 0 {
+        print_int(error_count)
+        println(" error(s) found")
+    }
+    
+    check warn_count > 0 {
+        print_int(warn_count)
+        println(" warning(s) found")
+    }
+}
+
+task analyzer_has_errors(a: ptr(Analyzer)) -> bool {
+    return vec_len(a.errors) > 0
+}
+
+task analyzer_error_count(a: ptr(Analyzer)) -> int {
+    return vec_len(a.errors)
+}
+
+task analyzer_warning_count(a: ptr(Analyzer)) -> int {
+    return vec_len(a.warnings)
+}
