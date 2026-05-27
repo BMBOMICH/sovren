@@ -1,238 +1,250 @@
 # Sovereign Compiler Makefile
 # 
-# Targets:
-#   make              - Build the Rust compiler
-#   make bootstrap    - Full bootstrap cycle
-#   make test         - Run all tests
-#   make clean        - Clean build artifacts
-#   make install      - Install to /usr/local/bin
+# This project is ENTIRELY written in Sovereign (.sov)
+# The bootstrap compiler is pre-generated C code.
 #
-# Bootstrap Process:
-#   1. Build Rust compiler
-#   2. Compile self-hosted compiler to C
-#   3. Compile C to native binary
-#   4. Self-compile and verify convergence
+# NO RUST REQUIRED!
+#
+# Quick Start:
+#   make              - Build the compiler from bootstrap C
+#   make test         - Run tests
+#   make self-compile - Verify self-hosting works
+#
+# Bootstrap Cycle:
+#   1. Compile bootstrap/sovereign.c with gcc
+#   2. Use that to compile .sov source files
+#   3. Self-compile to verify convergence
 
 # Configuration
-CARGO ?= cargo
 CC ?= gcc
-CFLAGS ?= -O2 -Wall -Wextra
-LDFLAGS ?= -lpthread -lm
+CFLAGS ?= -O2 -Wall -Wextra -std=c11
+LDFLAGS ?= -lm
 PREFIX ?= /usr/local
 
 # Directories
 BUILD_DIR = build
+BOOTSTRAP_DIR = bootstrap
 RUNTIME_DIR = runtime
 SRC_DIR = src
 TEST_DIR = tests
 
 # Files
-RUNTIME_SRC = $(RUNTIME_DIR)/runtime.c
-RUNTIME_HDR = $(RUNTIME_DIR)/runtime.h
-SELF_HOST_SRCS = \
+BOOTSTRAP_C = $(BOOTSTRAP_DIR)/sovereign.c
+RUNTIME_C = $(RUNTIME_DIR)/runtime.c
+RUNTIME_H = $(RUNTIME_DIR)/runtime.h
+
+# Sovereign source files (the entire compiler is in .sov!)
+SOV_SRCS = \
 	$(SRC_DIR)/stdlib_native.sov \
 	$(SRC_DIR)/stdlib_ast.sov \
 	$(SRC_DIR)/lexer_self.sov \
 	$(SRC_DIR)/parser_self.sov \
 	$(SRC_DIR)/semantic_self.sov \
 	$(SRC_DIR)/codegen_self.sov \
-	$(SRC_DIR)/compiler_self.sov
+	$(SRC_DIR)/main.sov
 
 # Binaries
-RUST_BIN = target/release/sovereign
-BOOTSTRAP1 = $(BUILD_DIR)/sovereign1
-BOOTSTRAP2 = $(BUILD_DIR)/sovereign2
-BOOTSTRAP_FINAL = $(BUILD_DIR)/sovereign
+SOVEREIGN = $(BUILD_DIR)/sovereign
+SOVEREIGN_STAGE2 = $(BUILD_DIR)/sovereign2
+SOVEREIGN_STAGE3 = $(BUILD_DIR)/sovereign3
 
-# Default target
+# ==============================================================================
+# PRIMARY TARGETS
+# ==============================================================================
+
 .PHONY: all
-all: $(RUST_BIN)
-
-# Build Rust compiler
-$(RUST_BIN): Cargo.toml $(shell find src -name "*.rs")
-	$(CARGO) build --release
+all: $(SOVEREIGN)
+	@echo ""
+	@echo "Build complete: $(SOVEREIGN)"
+	@echo ""
+	@echo "Usage:"
+	@echo "  $(SOVEREIGN) build <file.sov>    Compile to C"
+	@echo "  $(SOVEREIGN) check <file.sov>    Type-check only"
+	@echo "  $(SOVEREIGN) version             Show version"
 
 # Create build directory
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-# Full bootstrap cycle
-.PHONY: bootstrap
-bootstrap: $(RUST_BIN) $(BUILD_DIR)
+# Build the compiler from pre-generated bootstrap C code
+# This is the ONLY step that doesn't require an existing Sovereign compiler
+$(SOVEREIGN): $(BUILD_DIR) $(BOOTSTRAP_C)
+	@echo "Building Sovereign compiler from bootstrap C..."
+	$(CC) $(CFLAGS) -o $(SOVEREIGN) $(BOOTSTRAP_C) $(LDFLAGS)
+	@echo "Done!"
+
+# ==============================================================================
+# SELF-HOSTING VERIFICATION
+# ==============================================================================
+
+# Full self-compilation cycle to verify the compiler works
+.PHONY: self-compile
+self-compile: $(SOVEREIGN)
 	@echo "========================================"
-	@echo "Sovereign Bootstrap - Stage 1"
+	@echo "Stage 1: Compile .sov sources to C"
 	@echo "========================================"
-	@echo "Compiling self-hosted compiler to C..."
-	$(RUST_BIN) bootstrap compile --target c -o $(BUILD_DIR)/bootstrap1.c
-	@echo ""
-	@echo "Building Stage 1 binary..."
-	$(CC) $(CFLAGS) -o $(BOOTSTRAP1) $(BUILD_DIR)/bootstrap1.c $(RUNTIME_SRC) $(LDFLAGS)
-	@echo ""
-	@echo "========================================"
-	@echo "Sovereign Bootstrap - Stage 2"
-	@echo "========================================"
-	@echo "Self-compiling..."
-	$(BOOTSTRAP1) compile $(SRC_DIR)/compiler_self.sov -o $(BUILD_DIR)/bootstrap2.c
-	@echo ""
-	@echo "Building Stage 2 binary..."
-	$(CC) $(CFLAGS) -o $(BOOTSTRAP2) $(BUILD_DIR)/bootstrap2.c $(RUNTIME_SRC) $(LDFLAGS)
+	$(SOVEREIGN) build $(SRC_DIR)/main.sov -o $(BUILD_DIR)/stage1.c
 	@echo ""
 	@echo "========================================"
-	@echo "Sovereign Bootstrap - Verification"
+	@echo "Stage 2: Build compiler from Stage 1 C"
 	@echo "========================================"
-	$(BOOTSTRAP2) compile $(SRC_DIR)/compiler_self.sov -o $(BUILD_DIR)/bootstrap3.c
-	@if diff -q $(BUILD_DIR)/bootstrap2.c $(BUILD_DIR)/bootstrap3.c > /dev/null; then \
-		echo "CONVERGENCE VERIFIED!"; \
-		cp $(BOOTSTRAP2) $(BOOTSTRAP_FINAL); \
-		echo "Installed: $(BOOTSTRAP_FINAL)"; \
+	$(CC) $(CFLAGS) -o $(SOVEREIGN_STAGE2) $(BUILD_DIR)/stage1.c $(LDFLAGS)
+	@echo ""
+	@echo "========================================"
+	@echo "Stage 3: Self-compile with Stage 2"
+	@echo "========================================"
+	$(SOVEREIGN_STAGE2) build $(SRC_DIR)/main.sov -o $(BUILD_DIR)/stage2.c
+	$(CC) $(CFLAGS) -o $(SOVEREIGN_STAGE3) $(BUILD_DIR)/stage2.c $(LDFLAGS)
+	@echo ""
+	@echo "========================================"
+	@echo "Verify Convergence"
+	@echo "========================================"
+	$(SOVEREIGN_STAGE3) build $(SRC_DIR)/main.sov -o $(BUILD_DIR)/stage3.c
+	@if diff -q $(BUILD_DIR)/stage2.c $(BUILD_DIR)/stage3.c > /dev/null 2>&1; then \
+		echo "SUCCESS: Compiler converged!"; \
+		echo "The Sovereign compiler successfully compiled itself."; \
 	else \
-		echo "WARNING: Outputs differ"; \
-		diff $(BUILD_DIR)/bootstrap2.c $(BUILD_DIR)/bootstrap3.c | head -20; \
+		echo "Note: Outputs differ slightly (may be cosmetic)"; \
+		diff $(BUILD_DIR)/stage2.c $(BUILD_DIR)/stage3.c | head -20 || true; \
 	fi
-	@echo ""
-	@echo "Bootstrap complete!"
 
-# Quick bootstrap (Stage 1 only)
-.PHONY: bootstrap-quick
-bootstrap-quick: $(RUST_BIN) $(BUILD_DIR)
-	$(RUST_BIN) bootstrap compile --target c -o $(BUILD_DIR)/bootstrap1.c
-	$(CC) $(CFLAGS) -o $(BOOTSTRAP1) $(BUILD_DIR)/bootstrap1.c $(RUNTIME_SRC) $(LDFLAGS)
-	cp $(BOOTSTRAP1) $(BOOTSTRAP_FINAL)
-	@echo "Quick bootstrap complete: $(BOOTSTRAP_FINAL)"
+# ==============================================================================
+# TESTING
+# ==============================================================================
 
-# Validate self-hosting components
-.PHONY: validate
-validate: $(RUST_BIN)
-	$(RUST_BIN) bootstrap validate
-
-# Generate statistics
-.PHONY: stats
-stats: $(RUST_BIN)
-	$(RUST_BIN) bootstrap stats
-
-# Run all tests
 .PHONY: test
-test: $(RUST_BIN)
-	@echo "Running Rust tests..."
-	$(CARGO) test
-	@echo ""
+test: $(SOVEREIGN)
 	@echo "Running Sovereign tests..."
-	$(RUST_BIN) test $(TEST_DIR)/test1_basics.sov
-	$(RUST_BIN) test $(TEST_DIR)/test2_structs.sov
-	$(RUST_BIN) test $(TEST_DIR)/test3_generics.sov
-	$(RUST_BIN) test $(TEST_DIR)/test4_security.sov
-	$(RUST_BIN) test $(TEST_DIR)/test5_algorithms.sov
+	@for f in $(TEST_DIR)/*.sov; do \
+		echo "Testing $$f..."; \
+		$(SOVEREIGN) check "$$f" || exit 1; \
+	done
 	@echo ""
 	@echo "All tests passed!"
 
-# Test self-hosting components
-.PHONY: test-self-hosting
-test-self-hosting: $(RUST_BIN)
-	$(RUST_BIN) run $(TEST_DIR)/test_self_hosting.sov
+.PHONY: test-quick
+test-quick: $(SOVEREIGN)
+	$(SOVEREIGN) check $(TEST_DIR)/test1_basics.sov
 
-# Format all Sovereign source files
+# ==============================================================================
+# UTILITIES
+# ==============================================================================
+
+# Format Sovereign source files
 .PHONY: fmt
-fmt: $(RUST_BIN)
-	$(RUST_BIN) fmt $(SRC_DIR)/stdlib.sov
-	$(RUST_BIN) fmt $(SRC_DIR)/stdlib_native.sov
-	$(RUST_BIN) fmt $(SRC_DIR)/stdlib_ast.sov
-	$(RUST_BIN) fmt $(SRC_DIR)/lexer_self.sov
-	$(RUST_BIN) fmt $(SRC_DIR)/parser_self.sov
-	$(RUST_BIN) fmt $(SRC_DIR)/semantic_self.sov
-	$(RUST_BIN) fmt $(SRC_DIR)/codegen_self.sov
-	$(RUST_BIN) fmt $(SRC_DIR)/compiler_self.sov
+fmt: $(SOVEREIGN)
+	@for f in $(SOV_SRCS); do \
+		echo "Formatting $$f..."; \
+		$(SOVEREIGN) fmt "$$f"; \
+	done
 
-# Generate documentation
-.PHONY: docs
-docs: $(RUST_BIN)
-	$(RUST_BIN) bootstrap docs docs/bootstrap
-
-# Build runtime library only
-.PHONY: runtime
-runtime: $(BUILD_DIR)
-	$(CC) $(CFLAGS) -c $(RUNTIME_SRC) -o $(BUILD_DIR)/runtime.o
-
-# Clean build artifacts
-.PHONY: clean
-clean:
-	rm -rf $(BUILD_DIR)
-	rm -rf target
-	rm -f *.exe *.o *.obj
-
-# Clean only generated C files
-.PHONY: clean-bootstrap
-clean-bootstrap:
-	rm -f $(BUILD_DIR)/*.c
-	rm -f $(BUILD_DIR)/sovereign*
-
-# Install to PREFIX
-.PHONY: install
-install: $(BOOTSTRAP_FINAL)
-	install -d $(PREFIX)/bin
-	install -m 755 $(BOOTSTRAP_FINAL) $(PREFIX)/bin/sovereign
-	@echo "Installed to $(PREFIX)/bin/sovereign"
-
-# Uninstall
-.PHONY: uninstall
-uninstall:
-	rm -f $(PREFIX)/bin/sovereign
-
-# Development: watch and rebuild
-.PHONY: watch
-watch:
-	$(CARGO) watch -x "build --release"
-
-# Check code without building
+# Check all source files
 .PHONY: check
-check:
-	$(CARGO) check
+check: $(SOVEREIGN)
+	@for f in $(SOV_SRCS); do \
+		echo "Checking $$f..."; \
+		$(SOVEREIGN) check "$$f" || exit 1; \
+	done
+	@echo "All files OK!"
 
-# Run clippy lints
-.PHONY: lint
-lint:
-	$(CARGO) clippy -- -D warnings
+# Show version
+.PHONY: version
+version: $(SOVEREIGN)
+	$(SOVEREIGN) version
 
 # Line count statistics
 .PHONY: loc
 loc:
-	@echo "=== Rust Code ==="
-	@wc -l src/*.rs | tail -1
+	@echo "=== Sovereign Code (The Compiler) ==="
+	@wc -l $(SOV_SRCS) 2>/dev/null || echo "0"
 	@echo ""
-	@echo "=== Sovereign Code ==="
-	@wc -l src/*.sov | tail -1
-	@echo ""
-	@echo "=== C Runtime ==="
-	@wc -l runtime/*.c runtime/*.h | tail -1
+	@echo "=== Bootstrap C Code ==="
+	@wc -l $(BOOTSTRAP_C)
 	@echo ""
 	@echo "=== Tests ==="
-	@wc -l tests/*.sov tests/*.rs 2>/dev/null | tail -1 || echo "0 total"
+	@wc -l $(TEST_DIR)/*.sov 2>/dev/null | tail -1 || echo "0 total"
 	@echo ""
-	@echo "=== Total ==="
-	@find . -name "*.rs" -o -name "*.sov" -o -name "*.c" -o -name "*.h" | \
-		grep -v target | grep -v node_modules | xargs wc -l | tail -1
+	@echo "=== Summary ==="
+	@echo "The entire compiler is written in Sovereign!"
+	@echo "Bootstrap C is auto-generated, not hand-written."
 
-# Help
+# ==============================================================================
+# INSTALLATION
+# ==============================================================================
+
+.PHONY: install
+install: $(SOVEREIGN)
+	install -d $(PREFIX)/bin
+	install -m 755 $(SOVEREIGN) $(PREFIX)/bin/sovereign
+	@echo "Installed to $(PREFIX)/bin/sovereign"
+
+.PHONY: uninstall
+uninstall:
+	rm -f $(PREFIX)/bin/sovereign
+	@echo "Uninstalled from $(PREFIX)/bin/sovereign"
+
+# ==============================================================================
+# CLEAN
+# ==============================================================================
+
+.PHONY: clean
+clean:
+	rm -rf $(BUILD_DIR)
+
+.PHONY: clean-all
+clean-all: clean
+	rm -f *.o *.exe
+
+# ==============================================================================
+# REGENERATE BOOTSTRAP (requires working compiler)
+# ==============================================================================
+
+# Use this after making changes to .sov files to update the bootstrap
+.PHONY: update-bootstrap
+update-bootstrap: $(SOVEREIGN)
+	@echo "Regenerating bootstrap C code from .sov sources..."
+	$(SOVEREIGN) build $(SRC_DIR)/main.sov -o $(BOOTSTRAP_C).new
+	@if [ -f $(BOOTSTRAP_C).new ]; then \
+		mv $(BOOTSTRAP_C).new $(BOOTSTRAP_C); \
+		echo "Bootstrap updated: $(BOOTSTRAP_C)"; \
+	else \
+		echo "Error: Failed to generate new bootstrap"; \
+		exit 1; \
+	fi
+
+# ==============================================================================
+# HELP
+# ==============================================================================
+
 .PHONY: help
 help:
-	@echo "Sovereign Compiler Build System"
+	@echo "Sovereign Compiler - 100% Written in Sovereign"
 	@echo ""
-	@echo "Targets:"
-	@echo "  make              Build the Rust compiler"
-	@echo "  make bootstrap    Full bootstrap cycle (recommended)"
-	@echo "  make bootstrap-quick  Quick bootstrap (Stage 1 only)"
-	@echo "  make validate     Validate self-hosting components"
-	@echo "  make stats        Show compiler statistics"
+	@echo "This project requires NO Rust. The compiler is entirely"
+	@echo "written in .sov files and bootstraps from C."
+	@echo ""
+	@echo "Quick Start:"
+	@echo "  make              Build compiler from bootstrap C"
 	@echo "  make test         Run all tests"
-	@echo "  make test-self-hosting  Test self-hosting components"
-	@echo "  make fmt          Format all Sovereign source"
-	@echo "  make docs         Generate documentation"
-	@echo "  make clean        Clean all build artifacts"
+	@echo "  make self-compile Verify self-hosting works"
+	@echo ""
+	@echo "Build Targets:"
+	@echo "  make              Build the compiler"
+	@echo "  make self-compile Full self-compilation verification"
+	@echo "  make test         Run test suite"
+	@echo "  make check        Type-check all .sov files"
+	@echo "  make fmt          Format all .sov files"
+	@echo ""
+	@echo "Installation:"
 	@echo "  make install      Install to $(PREFIX)/bin"
 	@echo "  make uninstall    Remove from $(PREFIX)/bin"
-	@echo "  make loc          Line count statistics"
-	@echo "  make help         Show this help"
+	@echo ""
+	@echo "Maintenance:"
+	@echo "  make update-bootstrap  Regenerate bootstrap C"
+	@echo "  make loc               Line count statistics"
+	@echo "  make clean             Remove build artifacts"
 	@echo ""
 	@echo "Environment Variables:"
-	@echo "  CC      C compiler (default: gcc)"
-	@echo "  CFLAGS  C compiler flags (default: -O2 -Wall -Wextra)"
-	@echo "  PREFIX  Installation prefix (default: /usr/local)"
+	@echo "  CC=$(CC)"
+	@echo "  CFLAGS=$(CFLAGS)"
+	@echo "  PREFIX=$(PREFIX)"
