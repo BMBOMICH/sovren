@@ -548,48 +548,180 @@ impl Lexer {
             _ => Token::Identifier(s),
         }
     }
-}
-use crate::token::Token;
 
-pub struct Lexer {
-    source: Vec<char>,
-    pos: usize,
-    line: usize,
-    col: usize,
-    // Indent tracking for Python-style optional blocks
-    indent_stack: Vec<usize>,
-    pending_dedents: usize,
+    /// Recognizes keyword aliases for familiar syntax from other languages.
+    /// This allows users to use `fn`, `let`, `if`, `for`, `while`, `unsafe`, `None`, `nil`, `switch`
+    /// as aliases for Sovereign's native keywords.
+    fn keyword_or_identifier_with_aliases(&mut self, s: &str) -> Token {
+        match s {
+            // Sovereign native keywords
+            "set" => Token::Set,
+            "task" => Token::Task,
+            "check" => Token::Check,
+            "loop" => Token::Loop,
+            "override" => Token::Override,
+            "purge" => Token::Purge,
+            "copy" => Token::Copy,
+            "print" => Token::Print,
+            "print_fmt" => Token::PrintFmt,
+            "return" => Token::Return,
+            "asm" => Token::Asm,
+            "import" => Token::Import,
+            "else" => Token::Else,
+            "from" => Token::From,
+            "to" => Token::To,
+            "times" => Token::Times,
+            "in" => Token::In,
+            "true" => Token::True,
+            "false" => Token::False,
+            "and" => Token::And,
+            "or" => Token::Or,
+            "not" => Token::Not,
+            "break" => Token::Break,
+            "continue" => Token::Continue,
+            "const" => Token::Const,
+            "as" => Token::As,
+            "sensitive" => Token::Sensitive,
+            "inline" => Token::Inline,
+            "extern" => Token::Extern,
+            "alloc" => Token::Alloc,
+            "free" => Token::Free,
+            "struct" => Token::Struct,
+            "enum" => Token::Enum,
+            "null" => Token::Null,
+            "constant_time" => Token::ConstantTime,
+            "ok" => Token::Ok,
+            "err" => Token::Err,
+            "match" => Token::Match,
+            "spawn" => Token::Spawn,
+            "async" => Token::Async,
+            "await" => Token::Await,
+            "chan" => Token::Chan,
+            "where" => Token::Where,
+            "test" => Token::Test,
+            "assert" => Token::Assert,
+            "static_assert" => Token::StaticAssert,
+            "defer" => Token::Defer,
+            "type" => Token::Type,
+            "comptime" => Token::Comptime,
+            "namespace" => Token::Namespace,
+            "use" => Token::Use,
+            "make_chan" => Token::MakeChan,
+            // Type keywords
+            "int8" => Token::Int8,
+            "int16" => Token::Int16,
+            "int64" => Token::Int64,
+            "uint8" => Token::Uint8,
+            "uint16" => Token::Uint16,
+            "uint32" => Token::Uint32,
+            "uint64" => Token::Uint64,
+            // Aliases for familiar syntax from other languages
+            "fn" => Token::Fn,          // Rust-style function
+            "def" => Token::Task,       // Python-style function
+            "func" => Token::Task,      // Go-style function
+            "let" => Token::Set,        // Rust-style variable
+            "var" => Token::Set,        // Go/JS-style variable
+            "if" => Token::Check,       // Universal conditional
+            "for" => Token::Loop,       // Universal loop
+            "while" => Token::Loop,     // C-style loop
+            "unsafe" => Token::Override, // Rust-style unsafe block
+            "None" => Token::Null,      // Python-style null
+            "nil" => Token::Null,       // Go-style null
+            "switch" => Token::Match,   // C/Go-style match
+            _ => Token::Identifier(s.to_string()),
+        }
+    }
 }
 
-impl Lexer {
-    pub fn new(source: &str) -> Self {
-        Lexer {
-            source: source.chars().collect(),
-            pos: 0,
-            line: 1,
-            col: 1,
-            indent_stack: vec![0],
-            pending_dedents: 0,
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_basic_tokens() {
+        let mut lexer = Lexer::new("set x = 42");
+        let (tokens, _) = lexer.tokenize();
+        assert!(matches!(tokens[0], Token::Set));
+        assert!(matches!(&tokens[1], Token::Identifier(s) if s == "x"));
+        assert!(matches!(tokens[2], Token::Assign));
+        assert!(matches!(tokens[3], Token::Integer(42)));
+    }
+
+    #[test]
+    fn test_string_literal() {
+        let mut lexer = Lexer::new("\"hello world\"");
+        let (tokens, _) = lexer.tokenize();
+        assert!(matches!(&tokens[0], Token::StringLiteral(s) if s == "hello world"));
+    }
+
+    #[test]
+    fn test_operators() {
+        let mut lexer = Lexer::new("+ - * / == != <= >= -> =>");
+        let (tokens, _) = lexer.tokenize();
+        assert!(matches!(tokens[0], Token::Plus));
+        assert!(matches!(tokens[1], Token::Minus));
+        assert!(matches!(tokens[2], Token::Star));
+        assert!(matches!(tokens[3], Token::Slash));
+        assert!(matches!(tokens[4], Token::EqualEqual));
+        assert!(matches!(tokens[5], Token::NotEqual));
+        assert!(matches!(tokens[6], Token::LessEqual));
+        assert!(matches!(tokens[7], Token::GreaterEqual));
+        assert!(matches!(tokens[8], Token::Arrow));
+        assert!(matches!(tokens[9], Token::FatArrow));
+    }
+
+    #[test]
+    fn test_hex_binary_octal() {
+        let mut lexer = Lexer::new("0xFF 0b1010 0o17");
+        let (tokens, _) = lexer.tokenize();
+        assert!(matches!(tokens[0], Token::Integer(255)));
+        assert!(matches!(tokens[1], Token::Integer(10)));
+        assert!(matches!(tokens[2], Token::Integer(15)));
+    }
+
+    #[test]
+    fn test_float() {
+        let mut lexer = Lexer::new("3.14159");
+        let (tokens, _) = lexer.tokenize();
+        if let Token::Float(f) = tokens[0] {
+            assert!((f - 3.14159).abs() < 0.0001);
+        } else {
+            panic!("Expected float token");
         }
     }
 
-    pub fn tokenize(&mut self) -> (Vec<Token>, Vec<(usize, usize)>) {
-        let mut tokens = Vec::new();
-        let mut spans = Vec::new();
+    #[test]
+    fn test_keywords_vs_identifiers() {
+        let mut lexer = Lexer::new("task my_task set my_var");
+        let (tokens, _) = lexer.tokenize();
+        assert!(matches!(tokens[0], Token::Task));
+        assert!(matches!(&tokens[1], Token::Identifier(s) if s == "my_task"));
+        assert!(matches!(tokens[2], Token::Set));
+        assert!(matches!(&tokens[3], Token::Identifier(s) if s == "my_var"));
+    }
 
-        while self.pos < self.source.len() {
-            let sl = self.line;
-            let sc = self.col;
+    #[test]
+    fn test_aliases() {
+        let mut lexer = Lexer::new("fn let if for while unsafe None nil switch");
+        let (tokens, _) = lexer.tokenize();
+        assert!(matches!(tokens[0], Token::Fn));
+        assert!(matches!(tokens[1], Token::Set));
+        assert!(matches!(tokens[2], Token::Check));
+        assert!(matches!(tokens[3], Token::Loop));
+        assert!(matches!(tokens[4], Token::Loop));
+        assert!(matches!(tokens[5], Token::Override));
+        assert!(matches!(tokens[6], Token::Null));
+        assert!(matches!(tokens[7], Token::Null));
+        assert!(matches!(tokens[8], Token::Match));
+    }
 
-            match self.current_char() {
-                ' ' | '\t' | '\r' => self.advance(),
-                '\n' => {
-                    tokens.push(Token::Newline);
-                    spans.push((sl, sc));
-                    self.advance_newline();
-                }
-                '/' if self.peek() == Some('/') => self.skip_line_comment(),
-                '/' if self.peek() == Some('*') => self.skip_block_comment(),
+    #[test]
+    fn test_numeric_separators() {
+        let mut lexer = Lexer::new("1_000_000");
+        let (tokens, _) = lexer.tokenize();
+        assert!(matches!(tokens[0], Token::Integer(1_000_000)));
+    }
+} => self.skip_block_comment(),
                 '"' => {
                     let t = self.read_string();
                     spans.push((sl, sc));

@@ -651,13 +651,13 @@ fn compile_c_file(c_path: &str, obj_out: &str) -> bool {
 fn run_repl() {
     use std::io::{self, BufRead, Write};
 
-    println!("Sovereign v1.0.0 REPL — type 'exit' to quit");
+    println!("Sovereign v1.0.0 REPL - type 'exit' to quit");
     println!("All language features available. Try: x = 42  or  print \"hello\"");
     println!();
 
     let mut interp = interpreter::Interpreter::new();
     let stdlib = find_stdlib();
-    let mut dummy = compile_source(&stdlib, "stdlib");
+    let dummy = compile_source(&stdlib, "stdlib");
     interp.run(&dummy);
 
     let stdin = io::stdin();
@@ -678,7 +678,7 @@ fn run_repl() {
             break;
         }
         if trimmed == "help" {
-            println!("Sovereign REPL — same syntax as compiled mode");
+            println!("Sovereign REPL - same syntax as compiled mode");
             println!("  x = 42                   declare variable");
             println!("  print x                  print value");
             println!("  task f(n) {{ return n*2 }}  declare function");
@@ -686,50 +686,7 @@ fn run_repl() {
             continue;
         }
 
-        // 1. Lex & Parse
-        // 2. Monomorphize (Generics)
-
-        // ── NEW: Sovereign Optimization Pass ──
-        let mut soe = optimizer::SovereignOptimizer::new();
-        soe.optimize(&mut program);
-
-        // 3. Type Inference
-        // 4. Safety & Borrow Checker
-        // 5. Codegen
-        //
-        // // Add mod declaration:
-        mod optimizer;
-
-        // In the build pipeline, AFTER borrow checking, BEFORE codegen:
-
-        // ── Sovereign Optimization Engine ──
-        let mut soe = optimizer::SovereignOptimizer::new();
-        soe.optimize(&mut program);
-
-        // Print report if requested
-        if args.contains(&"--report".to_string()) {
-            soe.print_report();
-        }
-
-        // ── Codegen using SOE results ──
-        let context  = Context::create();
-        let mut codegen = Codegen::new_with_target(
-            &context, "sovereign_module", active_target, optimize_size
-        );
-        codegen.set_debug_mode(debug_mode);
-        codegen.set_pgo_mode(pgo_mode);
-        if debug_mode { codegen.enable_debug_info(input_path); }
-
-        // This is now real — compile_with_soe is defined
-        codegen.compile_with_soe(&program, &soe);
-
-        // ── THE WINNING LINK STEP ──
-        // We enable PGO (Profile Guided Optimization) and LTO (Link Time Opt)
-        // plus the native CPU instructions.
-
-        println!("Applying Sovereign-Exclusive Optimizations...");
-        codegen.compile_with_soe(&program, &soe);
-
+        // Parse and interpret the single line
         let mut lexer = Lexer::new(trimmed);
         let (tokens, spans) = lexer.tokenize();
         let mut parser = Parser::new(tokens, spans).with_source(trimmed);
