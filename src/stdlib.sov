@@ -84,6 +84,35 @@ inline task maxf(a: float, b: float) -> float {
     return b
 }
 
+// ── Additional C FFI bindings ─────────────────────────────────────────────
+extern task strstr(string, string) -> ptr
+extern task snprintf(ptr, int, string) -> int
+extern task ftell(ptr) -> int
+extern task fseek(ptr, int, int) -> int
+extern task stdin_ptr() -> ptr
+extern task stderr_ptr() -> ptr
+extern task stdout_ptr() -> ptr
+extern task fprintf(ptr, string) -> int
+extern task fflush(ptr) -> int
+extern task isalpha(int) -> int
+extern task isdigit(int) -> int
+extern task isalnum(int) -> int
+extern task isspace(int) -> int
+extern task toupper(int) -> int
+extern task tolower(int) -> int
+
+// ── Platform-specific (implemented in runtime) ────────────────────────────
+extern task platform_sleep(int) -> void
+extern task platform_rand_bytes(ptr, int) -> void
+extern task platform_sha256(ptr, int, ptr) -> void
+extern task platform_hmac_sha256(ptr, int, ptr, int, ptr) -> void
+extern task ptr_offset(ptr, int) -> ptr
+extern task ptr_get_byte(ptr, int) -> int
+extern task ptr_set_byte(ptr, int, int) -> void
+extern task ptr_get_int(ptr, int) -> int
+extern task ptr_set_int(ptr, int, int) -> void
+extern task bytes_to_hex(ptr, int, ptr) -> void
+
 // ── String helpers ────────────────────────────────────────────────────────
 task str_eq(a: string, b: string) -> bool {
     return strcmp(a, b) == 0

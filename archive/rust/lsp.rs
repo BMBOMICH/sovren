@@ -159,6 +159,60 @@ pub fn run_lsp() {
                 send_response(&mut out, &response);
             }
 
+            Some("textDocument/definition") => {
+                let uri = extract_string(&msg, "\"uri\"").unwrap_or_default();
+                let line = extract_number(&msg, "\"line\"").unwrap_or(0) as usize;
+                let char_ = extract_number(&msg, "\"character\"").unwrap_or(0) as usize;
+
+                let result = if let Some(text) = documents.get(&uri) {
+                    find_definition(text, line, char_, &uri)
+                } else {
+                    "null".to_string()
+                };
+
+                let response = format!(
+                    r#"{{"jsonrpc":"2.0","id":{},"result":{}}}"#,
+                    id.unwrap_or(1),
+                    result
+                );
+                send_response(&mut out, &response);
+            }
+
+            Some("textDocument/rename") => {
+                let uri = extract_string(&msg, "\"uri\"").unwrap_or_default();
+                let new_name = extract_string(&msg, "\"newName\"").unwrap_or_default();
+                let line = extract_number(&msg, "\"line\"").unwrap_or(0) as usize;
+                let char_ = extract_number(&msg, "\"character\"").unwrap_or(0) as usize;
+
+                let result = if let Some(text) = documents.get(&uri) {
+                    compute_rename(text, line, char_, &new_name, &uri)
+                } else {
+                    r#"{"changes":{}}"#.to_string()
+                };
+
+                let response = format!(
+                    r#"{{"jsonrpc":"2.0","id":{},"result":{}}}"#,
+                    id.unwrap_or(1),
+                    result
+                );
+                send_response(&mut out, &response);
+            }
+
+            Some("textDocument/formatting") => {
+                let uri = extract_string(&msg, "\"uri\"").unwrap_or_default();
+                let result = if let Some(text) = documents.get(&uri) {
+                    format_document(text, &uri)
+                } else {
+                    "[]".to_string()
+                };
+                let response = format!(
+                    r#"{{"jsonrpc":"2.0","id":{},"result":{}}}"#,
+                    id.unwrap_or(1),
+                    result
+                );
+                send_response(&mut out, &response);
+            }
+
             Some("shutdown") => {
                 let response = format!(
                     r#"{{"jsonrpc":"2.0","id":{},"result":null}}"#,
@@ -201,8 +255,7 @@ fn compute_diagnostics(uri: &str, text: &str) -> String {
     let (tokens, spans) = lexer.tokenize();
     let mut parser = Parser::new(tokens, spans);
 
-    // Capture parse errors by catching process::exit — not ideal but works
-    // In production LSP, we'd use a recoverable parser
+    // Capture parse errors by catching panics - in production LSP, use a recoverable parser
     let program = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| parser.parse_program()));
 
     let mut diags = Vec::new();
@@ -221,7 +274,7 @@ fn compute_diagnostics(uri: &str, text: &str) -> String {
     } else {
         diags.push(
             r#"{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":100}},"severity":1,"message":"Parse error"}"#
-            .to_string()
+                .to_string(),
         );
     }
 
@@ -242,8 +295,8 @@ fn hover_content(word: &str) -> String {
         "purge" => "Securely zero a variable: `purge x`",
         "sensitive" => "Mark variable for auto-zeroing on scope exit: `sensitive set x = val`",
         "constant_time" => "Constant-time block: prevents timing side-channels",
-        "spawn" => "Spawn OS thread: `spawn h { code }` — no runtime needed",
-        "alloc" => "Heap allocate: `alloc(count, size)` → ptr",
+        "spawn" => "Spawn OS thread: `spawn h { code }` - no runtime needed",
+        "alloc" => "Heap allocate: `alloc(count, size)` -> ptr",
         "free" => "Free heap memory: `free ptr`",
         "inline" => "Force function inlining: `inline task name(...)`",
         "extern" => "Declare external C function: `extern task name(type) -> type`",
@@ -257,54 +310,12 @@ fn hover_content(word: &str) -> String {
     }
     .to_string()
 }
-Some("textDocument/definition") => {
-    let uri  = extract_string(&msg, "\"uri\"").unwrap_or_default();
-    let line = extract_number(&msg, "\"line\"").unwrap_or(0) as usize;
-    let char = extract_number(&msg, "\"character\"").unwrap_or(0) as usize;
-
-    let result = if let Some(text) = documents.get(&uri) {
-        find_definition(text, line, char, &uri)
-    } else {
-        "null".to_string()
-    };
-
-    let response = format!(
-        r#"{{"jsonrpc":"2.0","id":{},"result":{}}}"#,
-        id.unwrap_or(1), result
-    );
-    send_response(&mut out, &response);
-}
-
-Some("textDocument/rename") => {
-    let uri      = extract_string(&msg, "\"uri\"").unwrap_or_default();
-    let new_name = extract_string(&msg, "\"newName\"").unwrap_or_default();
-    let line     = extract_number(&msg, "\"line\"").unwrap_or(0) as usize;
-    let char_    = extract_number(&msg, "\"character\"").unwrap_or(0) as usize;
-
-    let result = if let Some(text) = documents.get(&uri) {
-        compute_rename(text, line, char_, &new_name, &uri)
-    } else {
-        r#"{"changes":{}}"#.to_string()
-    };
-
-    let response = format!(r#"{{"jsonrpc":"2.0","id":{},"result":{}}}"#, id.unwrap_or(1), result);
-    send_response(&mut out, &response);
-}
-
-Some("textDocument/formatting") => {
-    let uri = extract_string(&msg, "\"uri\"").unwrap_or_default();
-    let result = if let Some(text) = documents.get(&uri) {
-        format_document(text, &uri)
-    } else {
-        "[]".to_string()
-    };
-    let response = format!(r#"{{"jsonrpc":"2.0","id":{},"result":{}}}"#, id.unwrap_or(1), result);
-    send_response(&mut out, &response);
-}
 
 fn find_definition(text: &str, line: usize, char_: usize, uri: &str) -> String {
     let word = get_word_at(text, line, char_);
-    if word.is_empty() { return "null".to_string(); }
+    if word.is_empty() {
+        return "null".to_string();
+    }
 
     // Search for declaration of `word` in the document
     for (i, source_line) in text.lines().enumerate() {
@@ -313,7 +324,9 @@ fn find_definition(text: &str, line: usize, char_: usize, uri: &str) -> String {
         if trimmed.starts_with("task ") && trimmed.contains(&format!("{}(", word)) {
             return format!(
                 r#"{{"uri":{},"range":{{"start":{{"line":{},"character":0}},"end":{{"line":{},"character":100}}}}}}"#,
-                serde_json_string(uri), i, i
+                serde_json_string(uri),
+                i,
+                i
             );
         }
         // set/const declarations
@@ -322,37 +335,72 @@ fn find_definition(text: &str, line: usize, char_: usize, uri: &str) -> String {
         {
             return format!(
                 r#"{{"uri":{},"range":{{"start":{{"line":{},"character":0}},"end":{{"line":{},"character":100}}}}}}"#,
-                serde_json_string(uri), i, i
+                serde_json_string(uri),
+                i,
+                i
             );
         }
         // struct declarations
         if trimmed.starts_with("struct ") && trimmed.contains(&word) {
             return format!(
                 r#"{{"uri":{},"range":{{"start":{{"line":{},"character":0}},"end":{{"line":{},"character":100}}}}}}"#,
-                serde_json_string(uri), i, i
+                serde_json_string(uri),
+                i,
+                i
             );
         }
     }
     "null".to_string()
 }
 
-fn compute_rename(text: &str, _line: usize, _char: usize, new_name: &str, uri: &str) -> String {
+fn compute_rename(text: &str, line: usize, char_: usize, new_name: &str, uri: &str) -> String {
+    let old_name = get_word_at(text, line, char_);
+    if old_name.is_empty() {
+        return r#"{"changes":{}}"#.to_string();
+    }
+
     // Simple rename: replace all occurrences of the word
     // In production, use the symbol table for precise renaming
     let mut edits = Vec::new();
     for (i, source_line) in text.lines().enumerate() {
         let mut col = 0;
-        while let Some(pos) = source_line[col..].find(new_name) {
+        while let Some(pos) = source_line[col..].find(&old_name) {
             let abs_pos = col + pos;
-            edits.push(format!(
-                r#"{{"range":{{"start":{{"line":{},"character":{}}},"end":{{"line":{},"character":{}}}}},"newText":"{}"}}"#,
-                i, abs_pos, i, abs_pos + new_name.len(), new_name
-            ));
+            // Check it's a word boundary
+            let before_ok = abs_pos == 0
+                || !source_line
+                    .chars()
+                    .nth(abs_pos - 1)
+                    .map(|c| c.is_alphanumeric() || c == '_')
+                    .unwrap_or(false);
+            let after_ok = abs_pos + old_name.len() >= source_line.len()
+                || !source_line
+                    .chars()
+                    .nth(abs_pos + old_name.len())
+                    .map(|c| c.is_alphanumeric() || c == '_')
+                    .unwrap_or(false);
+
+            if before_ok && after_ok {
+                edits.push(format!(
+                    r#"{{"range":{{"start":{{"line":{},"character":{}}},"end":{{"line":{},"character":{}}}}},"newText":"{}"}}"#,
+                    i,
+                    abs_pos,
+                    i,
+                    abs_pos + old_name.len(),
+                    new_name
+                ));
+            }
             col = abs_pos + 1;
-            if col >= source_line.len() { break; }
+            if col >= source_line.len() {
+                break;
+            }
         }
     }
-    format!(r#"{{"changes":{{{}: [{}]}}}}"#, serde_json_string(uri), edits.join(","))
+    format!(
+        r#"{{"changes":{{{}: [{}]}}}}"#,
+        serde_json_string(uri),
+        edits.join(",")
+    )
 }
 
 fn format_document(text: &str, _uri: &str) -> String {
@@ -362,10 +410,15 @@ fn format_document(text: &str, _uri: &str) -> String {
 
     for line in text.lines() {
         let trimmed = line.trim();
-        if trimmed.is_empty() { formatted.push('\n'); continue; }
+        if trimmed.is_empty() {
+            formatted.push('\n');
+            continue;
+        }
 
         // Decrease indent before closing brace
-        if trimmed.starts_with('}') && indent > 0 { indent -= 1; }
+        if trimmed.starts_with('}') && indent > 0 {
+            indent -= 1;
+        }
 
         formatted.push_str(&"    ".repeat(indent));
         // Normalize spaces around = (but not ==)
@@ -374,7 +427,9 @@ fn format_document(text: &str, _uri: &str) -> String {
         formatted.push('\n');
 
         // Increase indent after opening brace
-        if trimmed.ends_with('{') { indent += 1; }
+        if trimmed.ends_with('{') {
+            indent += 1;
+        }
     }
 
     let escaped = serde_json_string(&formatted);
@@ -411,14 +466,11 @@ fn get_word_at(text: &str, line: usize, char_: usize) -> String {
     }
     String::new()
 }
+
 /// Public entry point for `sovereign fmt <file>`
 pub fn format_source(source: &str) -> String {
-    format_document(source, "").replace(
-        r#"[{"range":{"start":{"line":0,"character":0},"end":{"line":99999,"character":0}},"newText":"#, ""
-    );
-    // Actually just call the formatter directly
     let mut formatted = String::new();
-    let mut indent    = 0usize;
+    let mut indent = 0usize;
     let mut prev_blank = false;
 
     for line in source.lines() {
@@ -426,14 +478,18 @@ pub fn format_source(source: &str) -> String {
 
         // Collapse multiple blank lines into one
         if trimmed.is_empty() {
-            if !prev_blank { formatted.push('\n'); }
+            if !prev_blank {
+                formatted.push('\n');
+            }
             prev_blank = true;
             continue;
         }
         prev_blank = false;
 
         // Decrease indent before closing brace
-        if trimmed.starts_with('}') && indent > 0 { indent -= 1; }
+        if trimmed.starts_with('}') && indent > 0 {
+            indent -= 1;
+        }
 
         // Write indent + normalized line
         formatted.push_str(&"    ".repeat(indent));
@@ -441,7 +497,9 @@ pub fn format_source(source: &str) -> String {
         formatted.push('\n');
 
         // Increase indent after opening brace
-        if trimmed.ends_with('{') { indent += 1; }
+        if trimmed.ends_with('{') {
+            indent += 1;
+        }
     }
     formatted
 }
@@ -458,10 +516,19 @@ fn normalize_operator_spacing(line: &str) -> String {
             result.push(c);
             i += 1;
             while i < chars.len() && chars[i] != '"' {
-                if chars[i] == '\\' { result.push(chars[i]); i += 1; }
-                if i < chars.len() { result.push(chars[i]); i += 1; }
+                if chars[i] == '\\' {
+                    result.push(chars[i]);
+                    i += 1;
+                }
+                if i < chars.len() {
+                    result.push(chars[i]);
+                    i += 1;
+                }
             }
-            if i < chars.len() { result.push(chars[i]); i += 1; }
+            if i < chars.len() {
+                result.push(chars[i]);
+                i += 1;
+            }
             continue;
         }
         result.push(c);
@@ -469,6 +536,7 @@ fn normalize_operator_spacing(line: &str) -> String {
     }
     result
 }
+
 fn extract_string(json: &str, key: &str) -> Option<String> {
     let pos = json.find(key)? + key.len();
     let rest = &json[pos..];
@@ -489,8 +557,6 @@ fn extract_change_text(json: &str) -> String {
     if let Some(pos) = json.find("\"text\"") {
         let rest = &json[pos + 6..];
         let start = rest.find('"').unwrap_or(0) + 1;
-        let mut depth = 0usize;
-        let mut end = start;
         let chars: Vec<char> = rest[start..].chars().collect();
         let mut i = 0;
         while i < chars.len() {
@@ -498,13 +564,11 @@ fn extract_change_text(json: &str) -> String {
                 i += 2;
                 continue;
             }
-            if chars[i] == '"' && depth == 0 {
-                end = start + i;
-                break;
+            if chars[i] == '"' {
+                return rest[start..start + i].to_string();
             }
             i += 1;
         }
-        return rest[start..end].to_string();
     }
     String::new()
 }
@@ -512,24 +576,58 @@ fn extract_change_text(json: &str) -> String {
 fn extract_hover_word(json: &str, documents: &HashMap<String, String>) -> String {
     let uri = extract_string(json, "\"uri\"").unwrap_or_default();
     let line = extract_number(json, "\"line\"").unwrap_or(0) as usize;
-    let char = extract_number(json, "\"character\"").unwrap_or(0) as usize;
+    let char_pos = extract_number(json, "\"character\"").unwrap_or(0) as usize;
 
     if let Some(text) = documents.get(&uri) {
-        if let Some(source_line) = text.lines().nth(line) {
-            let start = source_line[..char.min(source_line.len())]
-                .rfind(|c: char| !c.is_alphanumeric() && c != '_')
-                .map(|i| i + 1)
-                .unwrap_or(0);
-            let end = source_line[char..]
-                .find(|c: char| !c.is_alphanumeric() && c != '_')
-                .map(|i| i + char)
-                .unwrap_or(source_line.len());
-            return source_line[start..end].to_string();
-        }
+        return get_word_at(text, line, char_pos);
     }
     String::new()
 }
 
 fn serde_json_string(s: &str) -> String {
-    format!("\"{}\"", s.replace('"', "\\\""))
+    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_string() {
+        let json = r#"{"method":"initialize","id":1}"#;
+        assert_eq!(extract_string(json, "\"method\""), Some("initialize".to_string()));
+    }
+
+    #[test]
+    fn test_extract_number() {
+        let json = r#"{"id":42,"method":"test"}"#;
+        assert_eq!(extract_number(json, "\"id\""), Some(42));
+    }
+
+    #[test]
+    fn test_hover_content() {
+        assert!(hover_content("set").contains("variable"));
+        assert!(hover_content("task").contains("function"));
+        assert_eq!(hover_content("unknown_word"), "unknown_word");
+    }
+
+    #[test]
+    fn test_get_word_at() {
+        let text = "set my_var = 42";
+        assert_eq!(get_word_at(text, 0, 4), "my_var");
+        assert_eq!(get_word_at(text, 0, 0), "set");
+    }
+
+    #[test]
+    fn test_format_source() {
+        let source = "task main() {\nprint 42\n}";
+        let formatted = format_source(source);
+        assert!(formatted.contains("    print"));
+    }
+
+    #[test]
+    fn test_serde_json_string() {
+        assert_eq!(serde_json_string("hello"), "\"hello\"");
+        assert_eq!(serde_json_string("he\"llo"), "\"he\\\"llo\"");
+    }
 }
