@@ -17,6 +17,7 @@ Just `make` and you have a working compiler.
 
 ## Quick Start
 
+### Linux/macOS
 ```bash
 # Build the compiler
 make
@@ -29,6 +30,21 @@ gcc -O2 hello.c -o hello
 # Type-check only
 ./build/sovereign check myfile.sov
 ```
+
+### Windows (PowerShell/CMD)
+
+```powershell
+# Verify installation and check status
+.\verify.ps1
+
+# Or use CMD:
+verify.bat
+
+# For full Windows guide:
+notepad WINDOWS_VERIFICATION.md
+```
+
+See **[WINDOWS_VERIFICATION.md](WINDOWS_VERIFICATION.md)** for complete Windows setup and verification instructions.
 
 ## Project Structure
 
