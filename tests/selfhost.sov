@@ -1,0 +1,345 @@
+// Test suite for the self-hosted Sovereign compiler
+// Run with: sovereign run tests/test_self_hosting.sov
+
+// ============================================================================
+// TEST: Lexer
+// ============================================================================
+
+task test_lexer() {
+    println("Testing lexer...")
+    
+    // Test basic tokenization
+    set source = "set x = 42"
+    set lex = lexer_new(source, "test")
+    set tokens = lexer_tokenize(lex)
+    
+    assert(vectok_len(tokens) == 5, "expected 5 tokens (set, x, =, 42, EOF)")
+    
+    set t0 = vectok_get(tokens, 0)
+    assert(t0.kind == TOK_SET, "first token should be SET")
+    
+    set t1 = vectok_get(tokens, 1)
+    assert(t1.kind == TOK_IDENTIFIER, "second token should be IDENTIFIER")
+    assert(str_eq(t1.str_val, "x"), "identifier should be 'x'")
+    
+    set t2 = vectok_get(tokens, 2)
+    assert(t2.kind == TOK_ASSIGN, "third token should be ASSIGN")
+    
+    set t3 = vectok_get(tokens, 3)
+    assert(t3.kind == TOK_INTEGER, "fourth token should be INTEGER")
+    assert(t3.int_val == 42, "integer should be 42")
+    
+    vectok_free(tokens)
+    println("  Basic tokenization: PASS")
+    
+    // Test string literals
+    set source2 = "\"hello world\""
+    set lex2 = lexer_new(source2, "test")
+    set tokens2 = lexer_tokenize(lex2)
+    
+    set s = vectok_get(tokens2, 0)
+    assert(s.kind == TOK_STRING, "should be STRING token")
+    assert(str_eq(s.str_val, "hello world"), "string value mismatch")
+    
+    vectok_free(tokens2)
+    println("  String literals: PASS")
+    
+    // Test operators
+    set source3 = "+ - * / == != <= >= -> =>"
+    set lex3 = lexer_new(source3, "test")
+    set tokens3 = lexer_tokenize(lex3)
+    
+    assert(vectok_get(tokens3, 0).kind == TOK_PLUS, "PLUS")
+    assert(vectok_get(tokens3, 1).kind == TOK_MINUS, "MINUS")
+    assert(vectok_get(tokens3, 2).kind == TOK_STAR, "STAR")
+    assert(vectok_get(tokens3, 3).kind == TOK_SLASH, "SLASH")
+    assert(vectok_get(tokens3, 4).kind == TOK_EQUAL, "EQUAL")
+    assert(vectok_get(tokens3, 5).kind == TOK_NOT_EQUAL, "NOT_EQUAL")
+    assert(vectok_get(tokens3, 6).kind == TOK_LESS_EQUAL, "LESS_EQUAL")
+    assert(vectok_get(tokens3, 7).kind == TOK_GREATER_EQUAL, "GREATER_EQUAL")
+    assert(vectok_get(tokens3, 8).kind == TOK_ARROW, "ARROW")
+    assert(vectok_get(tokens3, 9).kind == TOK_FAT_ARROW, "FAT_ARROW")
+    
+    vectok_free(tokens3)
+    println("  Operators: PASS")
+    
+    // Test hex/binary/octal numbers
+    set source4 = "0xFF 0b1010 0o17"
+    set lex4 = lexer_new(source4, "test")
+    set tokens4 = lexer_tokenize(lex4)
+    
+    assert(vectok_get(tokens4, 0).int_val == 255, "hex 0xFF = 255")
+    assert(vectok_get(tokens4, 1).int_val == 10, "binary 0b1010 = 10")
+    assert(vectok_get(tokens4, 2).int_val == 15, "octal 0o17 = 15")
+    
+    vectok_free(tokens4)
+    println("  Number formats: PASS")
+    
+    println("Lexer tests: ALL PASSED")
+}
+
+// ============================================================================
+// TEST: Parser
+// ============================================================================
+
+task test_parser() {
+    println("Testing parser...")
+    
+    // Test variable declaration
+    set source1 = "set x = 42"
+    set tokens1 = lexer_tokenize(lexer_new(source1, "test"))
+    set parser1 = parser_new(tokens1, "test")
+    set prog1 = parser_parse(parser1)
+    
+    assert(program_stmt_count(prog1) == 1, "should have 1 statement")
+    set stmt1 = program_get_stmt(prog1, 0)
+    assert(stmt_kind(stmt1) == STMT_VAR_DECL, "should be VAR_DECL")
+    assert(str_eq(stmt_get_name(stmt1), "x"), "var name should be 'x'")
+    
+    program_free(prog1)
+    println("  Variable declaration: PASS")
+    
+    // Test function declaration
+    set source2 = "task add(a: int, b: int) -> int { return a + b }"
+    set tokens2 = lexer_tokenize(lexer_new(source2, "test"))
+    set parser2 = parser_new(tokens2, "test")
+    set prog2 = parser_parse(parser2)
+    
+    assert(program_stmt_count(prog2) == 1, "should have 1 statement")
+    set stmt2 = program_get_stmt(prog2, 0)
+    assert(stmt_kind(stmt2) == STMT_TASK_DECL, "should be TASK_DECL")
+    assert(str_eq(stmt_get_name(stmt2), "add"), "func name should be 'add'")
+    
+    program_free(prog2)
+    println("  Function declaration: PASS")
+    
+    // Test if statement
+    set source3 = "check x > 0 { print x }"
+    set tokens3 = lexer_tokenize(lexer_new(source3, "test"))
+    set parser3 = parser_new(tokens3, "test")
+    set prog3 = parser_parse(parser3)
+    
+    assert(program_stmt_count(prog3) == 1, "should have 1 statement")
+    set stmt3 = program_get_stmt(prog3, 0)
+    assert(stmt_kind(stmt3) == STMT_IF, "should be IF")
+    
+    program_free(prog3)
+    println("  If statement: PASS")
+    
+    // Test loop
+    set source4 = "loop i from 0 to 10 { print i }"
+    set tokens4 = lexer_tokenize(lexer_new(source4, "test"))
+    set parser4 = parser_new(tokens4, "test")
+    set prog4 = parser_parse(parser4)
+    
+    assert(program_stmt_count(prog4) == 1, "should have 1 statement")
+    set stmt4 = program_get_stmt(prog4, 0)
+    assert(stmt_kind(stmt4) == STMT_LOOP_RANGE, "should be LOOP_RANGE")
+    
+    program_free(prog4)
+    println("  Loop statement: PASS")
+    
+    println("Parser tests: ALL PASSED")
+}
+
+// ============================================================================
+// TEST: Code Generator
+// ============================================================================
+
+task test_codegen() {
+    println("Testing code generator...")
+    
+    // Test simple program
+    set source = "task main() -> int { set x = 42\n return x }"
+    set tokens = lexer_tokenize(lexer_new(source, "test"))
+    set parser = parser_new(tokens, "test")
+    set prog = parser_parse(parser)
+    
+    set cgen = codegen_new(prog)
+    set c_code = codegen_generate(cgen)
+    
+    // Check output contains expected elements
+    assert(str_contains(c_code, "#include <stdio.h>"), "should include stdio.h")
+    assert(str_contains(c_code, "int64_t"), "should use int64_t")
+    assert(str_contains(c_code, "sov_main"), "should have mangled main")
+    assert(str_contains(c_code, "return"), "should have return")
+    
+    free c_code
+    program_free(prog)
+    println("  Simple program: PASS")
+    
+    // Test struct generation
+    set source2 = "struct Point { x: int\n y: int }"
+    set tokens2 = lexer_tokenize(lexer_new(source2, "test"))
+    set parser2 = parser_new(tokens2, "test")
+    set prog2 = parser_parse(parser2)
+    
+    set cgen2 = codegen_new(prog2)
+    set c_code2 = codegen_generate(cgen2)
+    
+    assert(str_contains(c_code2, "typedef struct"), "should have typedef struct")
+    assert(str_contains(c_code2, "sov_Point"), "should have mangled struct name")
+    
+    free c_code2
+    program_free(prog2)
+    println("  Struct generation: PASS")
+    
+    println("Codegen tests: ALL PASSED")
+}
+
+// ============================================================================
+// TEST: Standard Library
+// ============================================================================
+
+task test_stdlib() {
+    println("Testing standard library...")
+    
+    // Test Vec
+    set v = vec_new()
+    v = vec_push(v, 10)
+    v = vec_push(v, 20)
+    v = vec_push(v, 30)
+    
+    assert(vec_len(v) == 3, "vec length should be 3")
+    assert(vec_get(v, 0) == 10, "vec[0] should be 10")
+    assert(vec_get(v, 1) == 20, "vec[1] should be 20")
+    assert(vec_get(v, 2) == 30, "vec[2] should be 30")
+    
+    vec_free(v)
+    println("  Vec: PASS")
+    
+    // Test HashMap
+    set hm = hashmap_new()
+    hm = hashmap_insert(hm, "key1", 100)
+    hm = hashmap_insert(hm, "key2", 200)
+    
+    assert(hashmap_contains(hm, "key1"), "should contain key1")
+    assert(hashmap_contains(hm, "key2"), "should contain key2")
+    assert(not hashmap_contains(hm, "key3"), "should not contain key3")
+    assert(hashmap_get(hm, "key1") == 100, "key1 should be 100")
+    assert(hashmap_get(hm, "key2") == 200, "key2 should be 200")
+    
+    hashmap_free(hm)
+    println("  HashMap: PASS")
+    
+    // Test String operations
+    assert(str_len("hello") == 5, "str_len")
+    assert(str_eq("abc", "abc"), "str_eq true")
+    assert(not str_eq("abc", "def"), "str_eq false")
+    assert(str_starts_with("hello world", "hello"), "str_starts_with")
+    assert(str_ends_with("hello world", "world"), "str_ends_with")
+    assert(str_contains("hello world", "lo wo"), "str_contains")
+    
+    set concat = str_concat("hello", " world")
+    assert(str_eq(concat, "hello world"), "str_concat")
+    free concat
+    
+    set upper = str_to_upper("hello")
+    assert(str_eq(upper, "HELLO"), "str_to_upper")
+    free upper
+    
+    set lower = str_to_lower("HELLO")
+    assert(str_eq(lower, "hello"), "str_to_lower")
+    free lower
+    
+    println("  String operations: PASS")
+    
+    // Test StringBuilder
+    set sb = sb_new()
+    sb = sb_append(sb, "Hello")
+    sb = sb_append(sb, " ")
+    sb = sb_append(sb, "World")
+    set built = sb_to_string(sb)
+    
+    assert(str_eq(built, "Hello World"), "StringBuilder")
+    free built
+    
+    println("  StringBuilder: PASS")
+    
+    println("Stdlib tests: ALL PASSED")
+}
+
+// ============================================================================
+// TEST: Integration
+// ============================================================================
+
+task test_integration() {
+    println("Testing integration...")
+    
+    // Compile a complete program
+    set source = "
+const MAGIC = 42
+
+struct Point {
+    x: int
+    y: int
+}
+
+task add(a: int, b: int) -> int {
+    return a + b
+}
+
+task main() -> int {
+    set p = Point { x: 10, y: 20 }
+    set sum = add(p.x, p.y)
+    check sum == 30 {
+        println(sum)
+    }
+    return 0
+}
+"
+    
+    set tokens = lexer_tokenize(lexer_new(source, "integration_test"))
+    set parser = parser_new(tokens, "integration_test")
+    set prog = parser_parse(parser)
+    
+    assert(program_stmt_count(prog) >= 4, "should have at least 4 top-level items")
+    
+    set cgen = codegen_new(prog)
+    set c_code = codegen_generate(cgen)
+    
+    // Verify the generated C code has all components
+    assert(str_contains(c_code, "MAGIC"), "should have MAGIC constant")
+    assert(str_contains(c_code, "sov_Point"), "should have Point struct")
+    assert(str_contains(c_code, "sov_add"), "should have add function")
+    assert(str_contains(c_code, "sov_main"), "should have main function")
+    assert(str_contains(c_code, "if ("), "should have if statement")
+    
+    free c_code
+    program_free(prog)
+    
+    println("  Full program compilation: PASS")
+    println("Integration tests: ALL PASSED")
+}
+
+// ============================================================================
+// MAIN TEST RUNNER
+// ============================================================================
+
+task main() -> int {
+    println("========================================")
+    println("Sovereign Self-Hosted Compiler Test Suite")
+    println("========================================")
+    println("")
+    
+    test_stdlib()
+    println("")
+    
+    test_lexer()
+    println("")
+    
+    test_parser()
+    println("")
+    
+    test_codegen()
+    println("")
+    
+    test_integration()
+    println("")
+    
+    println("========================================")
+    println("ALL TESTS PASSED")
+    println("========================================")
+    
+    return 0
+}

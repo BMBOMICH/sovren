@@ -1,0 +1,2136 @@
+/// Sovereign Self-Hosted Code Generator (LLVM IR Backend)
+/// Converts AST to LLVM IR (.ll) for direct compilation with clang/llc.
+///
+/// Dependencies:
+///   - stdlib_native.sov (string operations, collections, StringBuilder)
+///   - stdlib_ast.sov (AST types)
+///   - parser_self.sov (Program, Stmt, Expr types)
+///
+/// Usage:
+///   set prog = parse_file("program.sov")
+///   set llgen = llvm_codegen_new(prog)
+///   set ll_code = llvm_codegen_generate(llgen)
+///   file_write_all("output.ll", ll_code)
+
+// ============================================================================
+// LLVM CODE GENERATOR STATE
+// ============================================================================
+
+struct LLVMCodegen {
+    program:        Program       // The AST to compile
+    output:         StringBuilder // Generated LLVM IR code
+    indent:         int           // Current indentation level
+    temp_count:     int           // Counter for %N temporary SSA registers
+    label_count:    int           // Counter for label names
+    in_function:    bool          // Whether we're inside a function
+    locals:         VecStr        // Tracked local variable names
+    sensitive_vars: VecStr        // Variables marked sensitive (need zeroing at return)
+    structs:        VecStr        // Declared struct names
+    functions:      VecStr        // Declared function names
+    externs:        VecStr        // External function declarations
+    struct_fields:  VecStr        // Struct field tracking (alternating name:type per struct)
+    deferred_stmts: VecStmt        // STMT_DEFER collected blocks (flushed before return)
+    namespace_prefix: string       // Current namespace prefix for name mangling
+    debug_info:     bool          // Enable debug info generation
+}
+
+/// Create a new LLVM code generator
+task llvm_codegen_new(prog: Program) -> LLVMCodegen {
+    return LLVMCodegen {
+        program:         prog,
+        output:          sb_new(),
+        indent:          0,
+        temp_count:      0,
+        label_count:     0,
+        in_function:     false,
+        locals:          vecstr_new(),
+        sensitive_vars:  vecstr_new(),
+        structs:         vecstr_new(),
+        functions:       vecstr_new(),
+        externs:         vecstr_new(),
+        struct_fields:   vecstr_new(),
+        deferred_stmts:  vecstmt_new(),
+        namespace_prefix: "",
+        debug_info:      false
+    }
+}
+
+// ============================================================================
+// EMIT FUNCTIONS - Build IR strings
+// ============================================================================
+
+/// Emit a raw string to output
+task llvm_emit(cg: LLVMCodegen, s: string) -> LLVMCodegen {
+    cg.output = sb_append(cg.output, s)
+    return cg
+}
+
+/// Emit with indentation
+task llvm_emit_indent(cg: LLVMCodegen) -> LLVMCodegen {
+    loop i from 0 to cg.indent - 1 {
+        cg.output = sb_append(cg.output, "  ")
+    }
+    return cg
+}
+
+/// Emit a line with indentation
+task llvm_emit_line(cg: LLVMCodegen, s: string) -> LLVMCodegen {
+    cg = llvm_emit_indent(cg)
+    cg.output = sb_append(cg.output, s)
+    cg.output = sb_append(cg.output, "\n")
+    return cg
+}
+
+/// Emit a newline
+task llvm_emit_newline(cg: LLVMCodegen) -> LLVMCodegen {
+    cg.output = sb_append(cg.output, "\n")
+    return cg
+}
+
+/// Generate a unique temporary SSA register name (%N)
+task llvm_temp(cg: LLVMCodegen) -> string {
+    set result = sb_new()
+    result = sb_append_char(result, 37)  // '%' = ASCII 37
+    result = sb_append_int(result, cg.temp_count)
+    cg.temp_count = cg.temp_count + 1
+    return sb_to_string(result)
+}
+
+/// Generate a unique label name
+task llvm_label(cg: LLVMCodegen, prefix: string) -> string {
+    set result = sb_new()
+    result = sb_append(result, prefix)
+    result = sb_append_int(result, cg.label_count)
+    cg.label_count = cg.label_count + 1
+    return sb_to_string(result)
+}
+
+/// Add a sensitive variable name to tracking list
+task llvm_add_sensitive(cg: LLVMCodegen, name: string) -> LLVMCodegen {
+    cg.sensitive_vars = vecstr_push(cg.sensitive_vars, name)
+    return cg
+}
+
+/// Check if a variable is sensitive
+task llvm_is_sensitive(cg: LLVMCodegen, name: string) -> bool {
+    set n = vecstr_len(cg.sensitive_vars)
+    loop i from 0 to n - 1 {
+        check str_eq(vecstr_get(cg.sensitive_vars, i), name) {
+            return true
+        }
+    }
+    return false
+}
+
+// ============================================================================
+// TYPE CODE GENERATION - Sovereign types to LLVM types
+// ============================================================================
+
+/// Convert Sovereign type to LLVM IR type string
+task type_to_llvm(t: ptr) -> string {
+    check t == null { return "void" }
+
+    set kind = 0
+    set name = ""
+    override {
+        kind = ptr_get_int(t, 0)
+        name = ptr_get_int(t, 1)
+    }
+
+    check kind == TYPE_INT    { return "i64" }
+    check kind == TYPE_INT8   { return "i8" }
+    check kind == TYPE_INT16  { return "i16" }
+    check kind == TYPE_INT64  { return "i64" }
+    check kind == TYPE_UINT8  { return "i8" }
+    check kind == TYPE_UINT16 { return "i16" }
+    check kind == TYPE_UINT32 { return "i32" }
+    check kind == TYPE_UINT64 { return "i64" }
+    check kind == TYPE_FLOAT  { return "double" }
+    check kind == TYPE_BOOL   { return "i1" }
+    check kind == TYPE_STRING { return "i8*" }
+    check kind == TYPE_VOID   { return "void" }
+    check kind == TYPE_PTR    { return "i8*" }
+
+    check kind == TYPE_STRUCT {
+        set result = sb_new()
+        result = sb_append(result, "%struct.")
+        result = sb_append(result, name)
+        return sb_to_string(result)
+    }
+
+    // Enum types: discriminant is i32 (tagged union layout)
+    check kind == TYPE_ENUM {
+        return "i32"
+    }
+
+    return "i64"
+}
+
+/// Get LLVM pointer type for an alloca (the type with * suffix)
+task ptr_type_to_llvm(t: ptr) -> string {
+    check t == null { return "i64*" }
+
+    set base = type_to_llvm(t)
+    set result = sb_new()
+    result = sb_append(result, base)
+    result = sb_append_char(result, 42)  // '*' = ASCII 42
+    return sb_to_string(result)
+}
+
+// ============================================================================
+// NAME MANGLING
+// ============================================================================
+
+/// Mangle a Sovereign name to valid LLVM identifier
+task llvm_mangle_name(cg: LLVMCodegen, name: string) -> string {
+    set result = sb_new()
+    result = sb_append(result, "sov_")
+
+    // Prepend namespace prefix if set
+    check str_len(cg.namespace_prefix) > 0 {
+        result = sb_append(result, cg.namespace_prefix)
+        result = sb_append_char(result, 95)  // '_'
+    }
+
+    set len = str_len(name)
+    loop i from 0 to len - 1 {
+        set c = str_char_at(name, i)
+        check char_is_alnum(c) or c == 95 {
+            result = sb_append_char(result, c)
+        } else {
+            result = sb_append_char(result, 95)  // '_' = ASCII 95
+        }
+    }
+
+    return sb_to_string(result)
+}
+
+/// Get the alloca name for a local variable
+task llvm_local_addr(name: string) -> string {
+    set result = sb_new()
+    result = sb_append(result, "%")
+    result = sb_append(result, name)
+    result = sb_append(result, "_addr")
+    return sb_to_string(result)
+}
+
+/// Escape a string for LLVM IR
+task llvm_escape_string(s: string) -> string {
+    set result = sb_new()
+    set len = str_len(s)
+
+    loop i from 0 to len - 1 {
+        set c = str_char_at(s, i)
+        check c == 10 { result = sb_append(result, "\\0A"); continue }
+        check c == 13 { result = sb_append(result, "\\0D"); continue }
+        check c == 9  { result = sb_append(result, "\\09"); continue }
+        check c == 0  { result = sb_append(result, "\\00"); continue }
+        check c == 34 { result = sb_append(result, "\\22"); continue }
+        check c == 92 { result = sb_append(result, "\\5C"); continue }
+        result = sb_append_char(result, c)
+    }
+
+    return sb_to_string(result)
+}
+
+// ============================================================================
+// EXPRESSION CODE GENERATION
+// ============================================================================
+
+/// Generate LLVM IR for an expression.
+/// Returns the SSA register name (e.g. "%3") holding the result.
+/// The generated IR instructions are emitted into cg.output.
+/// For simple constants, the value is emitted inline via the temp register.
+task llvm_expr_codegen(cg: LLVMCodegen, e: ptr) -> string {
+    check e == null {
+        set tmp = llvm_temp(cg)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, tmp)
+        cg = llvm_emit_line(cg, " = add i64 0, 0  ; null expr")
+        return tmp
+    }
+
+    set kind = expr_kind(e)
+
+    // ── Integer literal ──────────────────────────────────────────────
+    check kind == EXPR_INT {
+        set val = expr_get_int(e)
+        set tmp = llvm_temp(cg)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, tmp)
+        cg = llvm_emit(cg, " = add i64 0, ")
+        set val_str = int_to_str(val)
+        cg = llvm_emit_line(cg, val_str)
+        free val_str
+        return tmp
+    }
+
+    // ── Float literal ───────────────────────────────────────────────
+    check kind == EXPR_FLOAT {
+        set tmp = llvm_temp(cg)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, tmp)
+        cg = llvm_emit_line(cg, " = fadd double 0.0, 0.0  ; float literal")
+        return tmp
+    }
+
+    // ── Boolean literal ─────────────────────────────────────────────
+    check kind == EXPR_BOOL {
+        set val = 0
+        override { val = ptr_get_int(e, 3) }
+        set tmp = llvm_temp(cg)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, tmp)
+        check val != 0 {
+            cg = llvm_emit_line(cg, " = add i1 true, false  ; bool true")
+        } else {
+            cg = llvm_emit_line(cg, " = add i1 false, false  ; bool false")
+        }
+        return tmp
+    }
+
+    // ── String literal ──────────────────────────────────────────────
+    check kind == EXPR_STRING {
+        set val = expr_get_str(e)
+        set str_id = llvm_temp(cg)
+        set tmp = llvm_temp(cg)
+
+        set escaped = llvm_escape_string(val)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, str_id)
+        cg = llvm_emit(cg, " = private unnamed_addr constant [")
+        set slen = str_len(val)
+        set slen_str = int_to_str(slen + 1)
+        cg = llvm_emit(cg, slen_str)
+        cg = llvm_emit(cg, " x i8] c\"")
+        cg = llvm_emit(cg, escaped)
+        cg = llvm_emit_line(cg, "\\00\"")
+        free slen_str
+        free escaped
+
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, tmp)
+        cg = llvm_emit(cg, " = getelementptr [")
+        set slen_str2 = int_to_str(slen + 1)
+        cg = llvm_emit(cg, slen_str2)
+        cg = llvm_emit(cg, " x i8], [")
+        cg = llvm_emit(cg, slen_str2)
+        cg = llvm_emit(cg, " x i8]* ")
+        cg = llvm_emit(cg, str_id)
+        cg = llvm_emit_line(cg, ", i64 0, i64 0")
+        free slen_str2
+
+        free str_id
+        return tmp
+    }
+
+    // ── Null ────────────────────────────────────────────────────────
+    check kind == EXPR_NULL {
+        set tmp = llvm_temp(cg)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, tmp)
+        cg = llvm_emit_line(cg, " = inttoptr i64 0 to i8*")
+        return tmp
+    }
+
+    // ── Variable reference ──────────────────────────────────────────
+    check kind == EXPR_VAR {
+        set name = expr_get_str(e)
+        set addr_name = llvm_local_addr(name)
+        set tmp = llvm_temp(cg)
+
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, tmp)
+        cg = llvm_emit(cg, " = load i64, i64* ")
+        cg = llvm_emit_line(cg, addr_name)
+
+        free addr_name
+        return tmp
+    }
+
+    // ── Binary operation ────────────────────────────────────────────
+    check kind == EXPR_BINARY {
+        set op = expr_get_op(e)
+        set left = expr_get_left(e)
+        set right = expr_get_right(e)
+
+        set left_reg = llvm_expr_codegen(cg, left)
+        set right_reg = llvm_expr_codegen(cg, right)
+
+        set tmp = llvm_temp(cg)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, tmp)
+        cg = llvm_emit(cg, " = ")
+
+        // Integer arithmetic
+        check op == OP_ADD { cg = llvm_emit(cg, "add i64 ") }
+        check op == OP_SUB { cg = llvm_emit(cg, "sub i64 ") }
+        check op == OP_MUL { cg = llvm_emit(cg, "mul i64 ") }
+        check op == OP_DIV { cg = llvm_emit(cg, "sdiv i64 ") }
+        check op == OP_MOD { cg = llvm_emit(cg, "srem i64 ") }
+        check op == OP_BIT_AND { cg = llvm_emit(cg, "and i64 ") }
+        check op == OP_BIT_OR  { cg = llvm_emit(cg, "or i64 ") }
+        check op == OP_BIT_XOR { cg = llvm_emit(cg, "xor i64 ") }
+        check op == OP_LSHIFT  { cg = llvm_emit(cg, "shl i64 ") }
+        check op == OP_RSHIFT  { cg = llvm_emit(cg, "ashr i64 ") }
+
+        // Integer comparison (produces i1)
+        check op == OP_EQ { cg = llvm_emit(cg, "icmp eq i64 ") }
+        check op == OP_NE { cg = llvm_emit(cg, "icmp ne i64 ") }
+        check op == OP_LT { cg = llvm_emit(cg, "icmp slt i64 ") }
+        check op == OP_LE { cg = llvm_emit(cg, "icmp sle i64 ") }
+        check op == OP_GT { cg = llvm_emit(cg, "icmp sgt i64 ") }
+        check op == OP_GE { cg = llvm_emit(cg, "icmp sge i64 ") }
+
+        // Logical requires converting i1 → i1 via comparison against 0
+        check op == OP_AND {
+            // a && b: branch on a, then b, then phi
+            set then_label = llvm_label(cg, "and_then_")
+            set else_label = llvm_label(cg, "and_else_")
+            set merge_label = llvm_label(cg, "and_merge_")
+
+            cg = llvm_emit_indent(cg)
+            cg = llvm_emit(cg, "br i1 ")
+            cg = llvm_emit(cg, left_reg)
+            cg = llvm_emit(cg, ", label %")
+            cg = llvm_emit(cg, then_label)
+            cg = llvm_emit(cg, ", label %")
+            cg = llvm_emit_line(cg, else_label)
+
+            cg = llvm_emit_line(cg, then_label + ":")
+            cg = llvm_emit_indent(cg)
+            cg = llvm_emit(cg, "br label %")
+            cg = llvm_emit_line(cg, merge_label)
+
+            cg = llvm_emit_line(cg, else_label + ":")
+            cg = llvm_emit_indent(cg)
+            cg = llvm_emit(cg, "br label %")
+            cg = llvm_emit_line(cg, merge_label)
+
+            cg = llvm_emit_line(cg, merge_label + ":")
+            // Short-circuit: just phi over the results
+            // Actually for simple and/or, we evaluate right side inline
+            // Revert to simpler approach for now
+            cg = llvm_emit_indent(cg)
+            cg = llvm_emit(cg, tmp)
+            cg = llvm_emit(cg, " = and i1 ")
+            cg = llvm_emit(cg, left_reg)
+            cg = llvm_emit(cg, ", ")
+            cg = llvm_emit_line(cg, right_reg)
+
+            free left_reg
+            free right_reg
+            free then_label
+            free else_label
+            free merge_label
+            return tmp
+        }
+
+        check op == OP_OR {
+            cg = llvm_emit_indent(cg)
+            cg = llvm_emit(cg, tmp)
+            cg = llvm_emit(cg, " = or i1 ")
+            cg = llvm_emit(cg, left_reg)
+            cg = llvm_emit(cg, ", ")
+            cg = llvm_emit_line(cg, right_reg)
+
+            free left_reg
+            free right_reg
+            return tmp
+        }
+
+        cg = llvm_emit(cg, left_reg)
+        cg = llvm_emit(cg, ", ")
+        cg = llvm_emit_line(cg, right_reg)
+
+        free left_reg
+        free right_reg
+        return tmp
+    }
+
+    // ── Unary operation ─────────────────────────────────────────────
+    check kind == EXPR_UNARY {
+        set op = expr_get_op(e)
+        set operand = expr_get_left(e)
+        set operand_reg = llvm_expr_codegen(cg, operand)
+
+        set tmp = llvm_temp(cg)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, tmp)
+        cg = llvm_emit(cg, " = ")
+
+        check op == UNOP_NEG {
+            cg = llvm_emit(cg, "sub i64 0, ")
+            cg = llvm_emit_line(cg, operand_reg)
+        }
+        check op == UNOP_NOT {
+            cg = llvm_emit(cg, "xor i1 ")
+            cg = llvm_emit(cg, operand_reg)
+            cg = llvm_emit_line(cg, ", true")
+        }
+        check op == UNOP_BITNOT {
+            cg = llvm_emit(cg, "xor i64 ")
+            cg = llvm_emit(cg, operand_reg)
+            cg = llvm_emit_line(cg, ", -1")
+        }
+
+        free operand_reg
+        return tmp
+    }
+
+    // ── Function call ───────────────────────────────────────────────
+    check kind == EXPR_CALL {
+        set callee = expr_get_callee(e)
+        set args = expr_get_args(e)
+
+        // Generate argument code and collect registers
+        set arg_regs = vecstr_new()
+        check args != null {
+            set nargs = vecexpr_len(args)
+            loop i from 0 to nargs - 1 {
+                set arg = vecexpr_get(args, i)
+                set arg_reg = llvm_expr_codegen(cg, arg)
+                arg_regs = vecstr_push(arg_regs, arg_reg)
+            }
+        }
+
+        set tmp = llvm_temp(cg)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, tmp)
+        cg = llvm_emit(cg, " = call i64 @")
+
+        // Map common Sovereign runtime functions
+        set m_callee = callee
+        check str_eq(callee, "alloc") or str_eq(callee, "sov_alloc") {
+            m_callee = "sov_alloc"
+        }
+        check str_eq(callee, "free") or str_eq(callee, "sov_free") {
+            m_callee = "sov_free"
+        }
+        check str_eq(callee, "print") or str_eq(callee, "println") {
+            m_callee = "printf"
+        }
+
+        // Channel operations
+        check str_eq(callee, "make_chan") {
+            m_callee = "sov_channel_new"
+        }
+        check str_eq(callee, "chan_send") {
+            m_callee = "sov_channel_send"
+        }
+        check str_eq(callee, "chan_recv") {
+            m_callee = "sov_channel_recv"
+        }
+        check str_eq(callee, "chan_close") {
+            m_callee = "sov_channel_close"
+        }
+
+        // Cryptographic operations
+        check str_eq(callee, "sha256") {
+            m_callee = "sov_sha256"
+        }
+        check str_eq(callee, "sha512") {
+            m_callee = "sov_sha512"
+        }
+        check str_eq(callee, "blake3") {
+            m_callee = "sov_blake3"
+        }
+        check str_eq(callee, "hmac_sha256") {
+            m_callee = "sov_hmac_sha256"
+        }
+        check str_eq(callee, "hkdf_sha256") {
+            m_callee = "sov_hkdf_sha256"
+        }
+        check str_eq(callee, "pbkdf2_sha256") {
+            m_callee = "sov_pbkdf2_sha256"
+        }
+        check str_eq(callee, "aes_gcm_encrypt") {
+            m_callee = "sov_aes256_gcm_encrypt"
+        }
+        check str_eq(callee, "aes_gcm_decrypt") {
+            m_callee = "sov_aes256_gcm_decrypt"
+        }
+        check str_eq(callee, "chacha_encrypt") {
+            m_callee = "sov_chacha20_poly1305_encrypt"
+        }
+        check str_eq(callee, "chacha_decrypt") {
+            m_callee = "sov_chacha20_poly1305_decrypt"
+        }
+        check str_eq(callee, "secure_compare") {
+            m_callee = "sov_secure_compare"
+        }
+        check str_eq(callee, "random_key") {
+            m_callee = "sov_random_key"
+        }
+        check str_eq(callee, "random_bytes") {
+            m_callee = "sov_random_bytes"
+        }
+        check str_eq(callee, "random_u64") {
+            m_callee = "sov_random_u64"
+        }
+        check str_eq(callee, "time_ns") {
+            m_callee = "sov_time_ns"
+        }
+        cg = llvm_emit(cg, m_callee)
+        cg = llvm_emit(cg, "(")
+
+        set n = vecstr_len(arg_regs)
+        loop i from 0 to n - 1 {
+            check i > 0 { cg = llvm_emit(cg, ", ") }
+            cg = llvm_emit(cg, "i64 ")
+            cg = llvm_emit(cg, vecstr_get(arg_regs, i))
+        }
+        cg = llvm_emit_line(cg, ")")
+
+        // Cleanup
+        loop i from 0 to n - 1 {
+            free vecstr_get(arg_regs, i)
+        }
+        vecstr_free(arg_regs)
+
+        return tmp
+    }
+
+    // ── Field access (expr.field) ───────────────────────────────────
+    check kind == EXPR_FIELD {
+        set obj = expr_get_left(e)
+        set field = expr_get_str(e)
+
+        // For now simplified: treat as opaque, emit as comment
+        set obj_reg = llvm_expr_codegen(cg, obj)
+
+        set tmp = llvm_temp(cg)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, tmp)
+        cg = llvm_emit(cg, " = extractvalue i64 ")
+        cg = llvm_emit(cg, obj_reg)
+        cg = llvm_emit(cg, " ; field .")
+        cg = llvm_emit_line(cg, field)
+
+        free obj_reg
+        return tmp
+    }
+
+    // ── Index access (expr[index]) ──────────────────────────────────
+    check kind == EXPR_INDEX {
+        set obj = expr_get_left(e)
+        set index = expr_get_right(e)
+
+        set obj_reg = llvm_expr_codegen(cg, obj)
+        set idx_reg = llvm_expr_codegen(cg, index)
+
+        set tmp = llvm_temp(cg)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, tmp)
+        cg = llvm_emit(cg, " = getelementptr i64, i64* ")
+        cg = llvm_emit(cg, obj_reg)
+        cg = llvm_emit(cg, ", i64 ")
+        cg = llvm_emit_line(cg, idx_reg)
+
+        free obj_reg
+        free idx_reg
+
+        // Now load from the computed pointer
+        set load_tmp = llvm_temp(cg)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, load_tmp)
+        cg = llvm_emit(cg, " = load i64, i64* ")
+        cg = llvm_emit_line(cg, tmp)
+
+        free tmp
+        return load_tmp
+    }
+
+    // ── Struct initializer ──────────────────────────────────────────
+    check kind == EXPR_STRUCT_INIT {
+        set tmp = llvm_temp(cg)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, tmp)
+        cg = llvm_emit_line(cg, " = add i64 0, 0  ; struct init placeholder")
+        return tmp
+    }
+
+    // ── Fallback ────────────────────────────────────────────────────
+    set tmp = llvm_temp(cg)
+    cg = llvm_emit_indent(cg)
+    cg = llvm_emit(cg, tmp)
+    cg = llvm_emit_line(cg, " = add i64 0, 0  ; unknown expr")
+    return tmp
+}
+
+// ============================================================================
+// STATEMENT CODE GENERATION
+// ============================================================================
+
+/// Generate LLVM IR for a statement.
+/// Modifies the codegen state and emits IR into cg.output.
+task llvm_stmt_codegen(cg: LLVMCodegen, s: ptr) -> LLVMCodegen {
+    check s == null { return cg }
+
+    set kind = stmt_kind(s)
+
+    // ── Variable declaration (set) ──────────────────────────────────
+    check kind == STMT_VAR_DECL {
+        set name = stmt_get_name(s)
+        set init = stmt_get_expr(s)
+        set type_info = null
+        set is_sensitive = false
+        override {
+            type_info = ptr_get_int(s, 7)
+            is_sensitive = ptr_get_int(s, 8) != 0
+        }
+
+        set addr_name = llvm_local_addr(name)
+        set llvm_type = type_to_llvm(type_info)
+        set ptr_type = ptr_type_to_llvm(type_info)
+
+        // Alloca for the variable
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, addr_name)
+        cg = llvm_emit(cg, " = alloca ")
+        cg = llvm_emit_line(cg, llvm_type)
+
+        // Track as local
+        cg.locals = vecstr_push(cg.locals, name)
+
+        // Track as sensitive if marked
+        check is_sensitive {
+            cg = llvm_add_sensitive(cg, name)
+        }
+
+        // Store initial value if provided
+        check init != null {
+            set init_reg = llvm_expr_codegen(cg, init)
+            cg = llvm_emit_indent(cg)
+            cg = llvm_emit(cg, "store ")
+            cg = llvm_emit(cg, llvm_type)
+            cg = llvm_emit(cg, " ")
+            cg = llvm_emit(cg, init_reg)
+            cg = llvm_emit(cg, ", ")
+            cg = llvm_emit(cg, llvm_type)
+            cg = llvm_emit(cg, "* ")
+            cg = llvm_emit_line(cg, addr_name)
+            free init_reg
+        }
+
+        free addr_name
+        free llvm_type
+        free ptr_type
+        return cg
+    }
+
+    // ── Constant declaration ────────────────────────────────────────
+    check kind == STMT_CONST_DECL {
+        set name = stmt_get_name(s)
+        set init = stmt_get_expr(s)
+
+        // Constants: emit as global constant
+        set const_val = llvm_expr_codegen(cg, init)
+
+        set cname = llvm_mangle_name(cg, name)
+        cg = llvm_emit(cg, "@")
+        cg = llvm_emit(cg, cname)
+        cg = llvm_emit(cg, " = constant i64 ")
+        cg = llvm_emit_line(cg, const_val)
+
+        free cname
+        free const_val
+        return cg
+    }
+
+    // ── Return statement ────────────────────────────────────────────
+    check kind == STMT_RETURN {
+        set expr = stmt_get_expr(s)
+
+        // Emit deferred statements and sensitive cleanup before return
+        cg = llvm_emit_full_cleanup(cg)
+
+        check expr != null {
+            set expr_reg = llvm_expr_codegen(cg, expr)
+            cg = llvm_emit_indent(cg)
+            cg = llvm_emit(cg, "ret i64 ")
+            cg = llvm_emit_line(cg, expr_reg)
+            free expr_reg
+            return cg
+        }
+
+        cg = llvm_emit_line(cg, "ret void")
+        return cg
+    }
+
+    // ── Expression statement ────────────────────────────────────────
+    check kind == STMT_EXPR {
+        set expr = stmt_get_expr(s)
+        set expr_reg = llvm_expr_codegen(cg, expr)
+        free expr_reg
+        return cg
+    }
+
+    // ── Assignment ──────────────────────────────────────────────────
+    check kind == STMT_ASSIGN {
+        set target = stmt_get_expr(s)
+        set value = stmt_get_expr2(s)
+
+        set value_reg = llvm_expr_codegen(cg, value)
+
+        // Determine target: if it's a variable reference, store to its alloca
+        set target_kind = expr_kind(target)
+        check target_kind == EXPR_VAR {
+            set target_name = expr_get_str(target)
+            set addr_name = llvm_local_addr(target_name)
+
+            cg = llvm_emit_indent(cg)
+            cg = llvm_emit(cg, "store i64 ")
+            cg = llvm_emit(cg, value_reg)
+            cg = llvm_emit(cg, ", i64* ")
+            cg = llvm_emit_line(cg, addr_name)
+            free addr_name
+            free value_reg
+            return cg
+        }
+
+        // For field access or index access, emit store via pointer
+        set target_reg = llvm_expr_codegen(cg, target)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, "store i64 ")
+        cg = llvm_emit(cg, value_reg)
+        cg = llvm_emit(cg, ", i64* ")
+        cg = llvm_emit_line(cg, target_reg)
+        free target_reg
+        free value_reg
+        return cg
+    }
+
+    // ── If statement (check/else) ───────────────────────────────────
+    check kind == STMT_IF {
+        set cond = stmt_get_expr(s)
+        set then_block = stmt_get_block(s)
+        set else_block = stmt_get_else_block(s)
+
+        set cond_reg = llvm_expr_codegen(cg, cond)
+
+        set then_label = llvm_label(cg, "if_then_")
+        set else_label = llvm_label(cg, "if_else_")
+        set merge_label = llvm_label(cg, "if_merge_")
+
+        check else_block != null {
+            cg = llvm_emit_indent(cg)
+            cg = llvm_emit(cg, "br i1 ")
+            cg = llvm_emit(cg, cond_reg)
+            cg = llvm_emit(cg, ", label %")
+            cg = llvm_emit(cg, then_label)
+            cg = llvm_emit(cg, ", label %")
+            cg = llvm_emit_line(cg, else_label)
+        } else {
+            cg = llvm_emit_indent(cg)
+            cg = llvm_emit(cg, "br i1 ")
+            cg = llvm_emit(cg, cond_reg)
+            cg = llvm_emit(cg, ", label %")
+            cg = llvm_emit(cg, then_label)
+            cg = llvm_emit(cg, ", label %")
+            cg = llvm_emit_line(cg, merge_label)
+        }
+
+        free cond_reg
+
+        // Then block
+        cg = llvm_emit_line(cg, then_label + ":")
+        cg = llvm_codegen_block(cg, then_block)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, "br label %")
+        cg = llvm_emit_line(cg, merge_label)
+
+        // Else block (if exists)
+        check else_block != null {
+            cg = llvm_emit_line(cg, else_label + ":")
+            cg = llvm_codegen_block(cg, else_block)
+            cg = llvm_emit_indent(cg)
+            cg = llvm_emit(cg, "br label %")
+            cg = llvm_emit_line(cg, merge_label)
+        }
+
+        // Merge block
+        cg = llvm_emit_line(cg, merge_label + ":")
+
+        free then_label
+        free else_label
+        free merge_label
+        return cg
+    }
+
+    // ── Loop times (loop N times { }) ───────────────────────────────
+    check kind == STMT_LOOP_TIMES {
+        set count = stmt_get_expr(s)
+        set body = stmt_get_block(s)
+
+        set count_reg = llvm_expr_codegen(cg, count)
+
+        set loop_hdr = llvm_label(cg, "loop_times_")
+        set loop_bdy = llvm_label(cg, "loop_times_body_")
+        set loop_ext = llvm_label(cg, "loop_times_exit_")
+
+        // Alloca for counter
+        set ctr_name = llvm_label(cg, "loop_ctr_")
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, ctr_name)
+        cg = llvm_emit_line(cg, " = alloca i64")
+
+        // Init counter to 0
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, "store i64 0, i64* ")
+        cg = llvm_emit_line(cg, ctr_name)
+
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, "br label %")
+        cg = llvm_emit_line(cg, loop_hdr)
+
+        // Loop header
+        cg = llvm_emit_line(cg, loop_hdr + ":")
+        set ctr_val = llvm_temp(cg)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, ctr_val)
+        cg = llvm_emit(cg, " = load i64, i64* ")
+        cg = llvm_emit_line(cg, ctr_name)
+
+        set cmp_reg = llvm_temp(cg)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, cmp_reg)
+        cg = llvm_emit(cg, " = icmp slt i64 ")
+        cg = llvm_emit(cg, ctr_val)
+        cg = llvm_emit(cg, ", ")
+        cg = llvm_emit_line(cg, count_reg)
+
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, "br i1 ")
+        cg = llvm_emit(cg, cmp_reg)
+        cg = llvm_emit(cg, ", label %")
+        cg = llvm_emit(cg, loop_bdy)
+        cg = llvm_emit(cg, ", label %")
+        cg = llvm_emit_line(cg, loop_ext)
+
+        // Loop body
+        cg = llvm_emit_line(cg, loop_bdy + ":")
+        cg = llvm_codegen_block(cg, body)
+
+        // Increment counter
+        set ctr_val2 = llvm_temp(cg)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, ctr_val2)
+        cg = llvm_emit(cg, " = load i64, i64* ")
+        cg = llvm_emit_line(cg, ctr_name)
+
+        set inc_reg = llvm_temp(cg)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, inc_reg)
+        cg = llvm_emit(cg, " = add i64 ")
+        cg = llvm_emit(cg, ctr_val2)
+        cg = llvm_emit_line(cg, ", 1")
+
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, "store i64 ")
+        cg = llvm_emit(cg, inc_reg)
+        cg = llvm_emit(cg, ", i64* ")
+        cg = llvm_emit_line(cg, ctr_name)
+
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, "br label %")
+        cg = llvm_emit_line(cg, loop_hdr)
+
+        // Loop exit
+        cg = llvm_emit_line(cg, loop_ext + ":")
+
+        free count_reg
+        free ctr_name
+        free ctr_val
+        free cmp_reg
+        free ctr_val2
+        free inc_reg
+        free loop_hdr
+        free loop_bdy
+        free loop_ext
+        return cg
+    }
+
+    // ── Loop range (loop i from A to B { }) ────────────────────────
+    check kind == STMT_LOOP_RANGE {
+        set var_name = stmt_get_name(s)
+        set start = stmt_get_expr(s)
+        set end_expr = stmt_get_expr2(s)
+        set body = stmt_get_block(s)
+
+        set start_reg = llvm_expr_codegen(cg, start)
+        set end_reg = llvm_expr_codegen(cg, end_expr)
+
+        set loop_hdr = llvm_label(cg, "loop_range_")
+        set loop_bdy = llvm_label(cg, "loop_range_body_")
+        set loop_ext = llvm_label(cg, "loop_range_exit_")
+
+        // Alloca for loop variable
+        set iv_addr = llvm_local_addr(var_name)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, iv_addr)
+        cg = llvm_emit_line(cg, " = alloca i64")
+
+        // Init
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, "store i64 ")
+        cg = llvm_emit(cg, start_reg)
+        cg = llvm_emit(cg, ", i64* ")
+        cg = llvm_emit_line(cg, iv_addr)
+
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, "br label %")
+        cg = llvm_emit_line(cg, loop_hdr)
+
+        // Loop header
+        cg = llvm_emit_line(cg, loop_hdr + ":")
+        set iv_val = llvm_temp(cg)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, iv_val)
+        cg = llvm_emit(cg, " = load i64, i64* ")
+        cg = llvm_emit_line(cg, iv_addr)
+
+        set cmp_reg = llvm_temp(cg)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, cmp_reg)
+        cg = llvm_emit(cg, " = icmp sle i64 ")
+        cg = llvm_emit(cg, iv_val)
+        cg = llvm_emit(cg, ", ")
+        cg = llvm_emit_line(cg, end_reg)
+
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, "br i1 ")
+        cg = llvm_emit(cg, cmp_reg)
+        cg = llvm_emit(cg, ", label %")
+        cg = llvm_emit(cg, loop_bdy)
+        cg = llvm_emit(cg, ", label %")
+        cg = llvm_emit_line(cg, loop_ext)
+
+        // Loop body
+        cg = llvm_emit_line(cg, loop_bdy + ":")
+        cg = llvm_codegen_block(cg, body)
+
+        // Increment
+        set iv_val2 = llvm_temp(cg)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, iv_val2)
+        cg = llvm_emit(cg, " = load i64, i64* ")
+        cg = llvm_emit_line(cg, iv_addr)
+
+        set inc_reg = llvm_temp(cg)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, inc_reg)
+        cg = llvm_emit(cg, " = add i64 ")
+        cg = llvm_emit(cg, iv_val2)
+        cg = llvm_emit_line(cg, ", 1")
+
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, "store i64 ")
+        cg = llvm_emit(cg, inc_reg)
+        cg = llvm_emit(cg, ", i64* ")
+        cg = llvm_emit_line(cg, iv_addr)
+
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, "br label %")
+        cg = llvm_emit_line(cg, loop_hdr)
+
+        // Exit
+        cg = llvm_emit_line(cg, loop_ext + ":")
+
+        free start_reg
+        free end_reg
+        free iv_addr
+        free iv_val
+        free cmp_reg
+        free iv_val2
+        free inc_reg
+        free loop_hdr
+        free loop_bdy
+        free loop_ext
+        return cg
+    }
+
+    // ── Loop condition (while cond { }) ─────────────────────────────
+    check kind == STMT_LOOP_COND {
+        set cond = stmt_get_expr(s)
+        set body = stmt_get_block(s)
+
+        set loop_hdr = llvm_label(cg, "loop_cond_")
+        set loop_bdy = llvm_label(cg, "loop_cond_body_")
+        set loop_ext = llvm_label(cg, "loop_cond_exit_")
+
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, "br label %")
+        cg = llvm_emit_line(cg, loop_hdr)
+
+        // Header
+        cg = llvm_emit_line(cg, loop_hdr + ":")
+        set cond_reg = llvm_expr_codegen(cg, cond)
+
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, "br i1 ")
+        cg = llvm_emit(cg, cond_reg)
+        cg = llvm_emit(cg, ", label %")
+        cg = llvm_emit(cg, loop_bdy)
+        cg = llvm_emit(cg, ", label %")
+        cg = llvm_emit_line(cg, loop_ext)
+
+        free cond_reg
+
+        // Body
+        cg = llvm_emit_line(cg, loop_bdy + ":")
+        cg = llvm_codegen_block(cg, body)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, "br label %")
+        cg = llvm_emit_line(cg, loop_hdr)
+
+        // Exit
+        cg = llvm_emit_line(cg, loop_ext + ":")
+
+        free loop_hdr
+        free loop_bdy
+        free loop_ext
+        return cg
+    }
+
+    // ── Break ───────────────────────────────────────────────────────
+    check kind == STMT_BREAK {
+        cg = llvm_emit_line(cg, "br label %loop_exit_break")
+        return cg
+    }
+
+    // ── Continue ────────────────────────────────────────────────────
+    check kind == STMT_CONTINUE {
+        cg = llvm_emit_line(cg, "br label %loop_continue")
+        return cg
+    }
+
+    // ── Free ────────────────────────────────────────────────────────
+    check kind == STMT_FREE {
+        set expr = stmt_get_expr(s)
+        set expr_reg = llvm_expr_codegen(cg, expr)
+
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, "call void @sov_free(i8* inttoptr (i64 ")
+        cg = llvm_emit(cg, expr_reg)
+        cg = llvm_emit_line(cg, " to i8*))")
+
+        free expr_reg
+        return cg
+    }
+
+    // ── Override block (unsafe) ─────────────────────────────────────
+    check kind == STMT_OVERRIDE {
+        set body = stmt_get_block(s)
+        cg = llvm_emit_line(cg, "; override block (unsafe)")
+        cg = llvm_codegen_block(cg, body)
+        cg = llvm_emit_line(cg, "; end override")
+        return cg
+    }
+
+    // ── Constant-time block ─────────────────────────────────────────
+    check kind == STMT_CONSTANT_TIME {
+        set body = stmt_get_block(s)
+        cg = llvm_emit_line(cg, "; constant_time block begin")
+        cg = llvm_emit_line(cg, "call void @llvm.invariant.start.p0i8(i64 -1, i8* null)")
+        cg = llvm_codegen_block(cg, body)
+        cg = llvm_emit_line(cg, "call void @llvm.invariant.end.p0i8(i8* null, i64 -1, i8* null)")
+        cg = llvm_emit_line(cg, "; constant_time block end")
+        return cg
+    }
+
+    // ── Block ───────────────────────────────────────────────────────
+    check kind == STMT_BLOCK {
+        set body = stmt_get_block(s)
+        cg = llvm_emit_line(cg, "; block begin")
+        cg = llvm_codegen_block(cg, body)
+        cg = llvm_emit_line(cg, "; block end")
+        return cg
+    }
+
+    // ── Assert ──────────────────────────────────────────────────────
+    check kind == STMT_ASSERT {
+        set expr = stmt_get_expr(s)
+        set expr_reg = llvm_expr_codegen(cg, expr)
+
+        set ok_label = llvm_label(cg, "assert_ok_")
+        set fail_label = llvm_label(cg, "assert_fail_")
+
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, "br i1 ")
+        cg = llvm_emit(cg, expr_reg)
+        cg = llvm_emit(cg, ", label %")
+        cg = llvm_emit(cg, ok_label)
+        cg = llvm_emit(cg, ", label %")
+        cg = llvm_emit_line(cg, fail_label)
+
+        cg = llvm_emit_line(cg, fail_label + ":")
+        cg = llvm_emit_line(cg, "  call void @llvm.trap()")
+        cg = llvm_emit_line(cg, "  unreachable")
+
+        cg = llvm_emit_line(cg, ok_label + ":")
+
+        free expr_reg
+        free ok_label
+        free fail_label
+        return cg
+    }
+
+    // ── Match / Switch statement ────────────────────────────────────
+    // Generates LLVM switch instruction with case labels and default.
+    check kind == STMT_MATCH {
+        set scrutinee = stmt_get_expr(s)
+        set match_body = stmt_get_block(s)
+        set default_block = stmt_get_else_block(s)
+
+        set scrut_reg = llvm_expr_codegen(cg, scrutinee)
+
+        set merge_label = llvm_label(cg, "match_merge_")
+        set default_label = llvm_label(cg, "match_default_")
+
+        // Collect case statements from the block and pre-generate labels
+        // Each case is a STMT_CASE with a pattern expression and body
+        set ncases = 0
+        check match_body != null {
+            ncases = vecstmt_len(match_body)
+        }
+
+        // First pass: generate case labels and collect pattern values
+        set case_labels = vecstr_new()
+        set case_values = vecstr_new()
+        loop i from 0 to ncases - 1 {
+            set case_stmt = vecstmt_get(match_body, i)
+            set ckind = stmt_kind(case_stmt)
+            check ckind == STMT_CASE or ckind == STMT_DEFAULT_CASE {
+                set case_label = llvm_label(cg, "match_case_")
+                case_labels = vecstr_push(case_labels, case_label)
+
+                check ckind == STMT_CASE {
+                    set pattern = stmt_get_expr(case_stmt)
+                    set pat_val = llvm_expr_codegen(cg, pattern)
+                    case_values = vecstr_push(case_values, pat_val)
+                } else {
+                    // default case: push empty placeholder
+                    case_values = vecstr_push(case_values, "")
+                    default_label = case_label
+                }
+            }
+        }
+
+        // Emit switch instruction
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, "switch i64 ")
+        cg = llvm_emit(cg, scrut_reg)
+        cg = llvm_emit(cg, ", label %")
+        cg = llvm_emit(cg, default_label)
+        cg = llvm_emit_line(cg, " [")
+
+        set nc = vecstr_len(case_labels)
+        loop i from 0 to nc - 1 {
+            set case_stmt = vecstmt_get(match_body, i)
+            set ckind = stmt_kind(case_stmt)
+            check ckind == STMT_CASE {
+                set pat_val = vecstr_get(case_values, i)
+                set case_label = vecstr_get(case_labels, i)
+                cg = llvm_emit_indent(cg)
+                cg = llvm_emit(cg, "  i64 ")
+                cg = llvm_emit(cg, pat_val)
+                cg = llvm_emit(cg, ", label %")
+                cg = llvm_emit_line(cg, case_label)
+            }
+        }
+
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit_line(cg, "]")
+
+        // Emit case bodies
+        loop i from 0 to nc - 1 {
+            set case_stmt = vecstmt_get(match_body, i)
+            set case_label = vecstr_get(case_labels, i)
+            set case_body = stmt_get_block(case_stmt)
+
+            cg = llvm_emit_line(cg, case_label + ":")
+            check case_body != null {
+                cg = llvm_codegen_block(cg, case_body)
+            }
+            cg = llvm_emit_indent(cg)
+            cg = llvm_emit(cg, "br label %")
+            cg = llvm_emit_line(cg, merge_label)
+        }
+
+        // Default label (already placed; if no explicit default, use the generated one)
+        // Only emit default block if we didn't already emit it as a case
+        set has_explicit_default = false
+        loop i from 0 to ncases - 1 {
+            set case_stmt = vecstmt_get(match_body, i)
+            check stmt_kind(case_stmt) == STMT_DEFAULT_CASE {
+                has_explicit_default = true
+            }
+        }
+        check not has_explicit_default {
+            cg = llvm_emit_line(cg, default_label + ":")
+            check default_block != null {
+                cg = llvm_codegen_block(cg, default_block)
+            }
+            cg = llvm_emit_indent(cg)
+            cg = llvm_emit(cg, "br label %")
+            cg = llvm_emit_line(cg, merge_label)
+        } else {
+            // Also emit else_block as fallthrough if no explicit default case matched
+            check default_block != null {
+                cg = llvm_emit_line(cg, default_label + ":")
+                cg = llvm_codegen_block(cg, default_block)
+                cg = llvm_emit_indent(cg)
+                cg = llvm_emit(cg, "br label %")
+                cg = llvm_emit_line(cg, merge_label)
+            }
+        }
+
+        // Merge
+        cg = llvm_emit_line(cg, merge_label + ":")
+
+        free scrut_reg
+        free merge_label
+        free default_label
+
+        loop i from 0 to vecstr_len(case_labels) - 1 {
+            free vecstr_get(case_labels, i)
+            free vecstr_get(case_values, i)
+        }
+        vecstr_free(case_labels)
+        vecstr_free(case_values)
+
+        return cg
+    }
+
+    // ── Async block ─────────────────────────────────────────────────
+    // Simplified: emits a comment and inlines the body.
+    // Full coroutine lowering would require a state machine.
+    check kind == STMT_ASYNC {
+        set body = stmt_get_block(s)
+        cg = llvm_emit_line(cg, "; async block begin (inlined)")
+        cg = llvm_codegen_block(cg, body)
+        cg = llvm_emit_line(cg, "; async block end")
+        return cg
+    }
+
+    // ── Await expression ────────────────────────────────────────────
+    // Simplified: resolves to the awaited value directly.
+    check kind == STMT_AWAIT {
+        set expr = stmt_get_expr(s)
+        set expr_reg = llvm_expr_codegen(cg, expr)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, "; await resolved: ")
+        cg = llvm_emit_line(cg, expr_reg)
+        free expr_reg
+        return cg
+    }
+
+    // ── Spawn ───────────────────────────────────────────────────────
+    // Generates a call to @sov_spawn(fn_ptr, args_struct_ptr)
+    check kind == STMT_SPAWN {
+        set fn_expr = stmt_get_expr(s)
+        set spawn_args = stmt_get_expr2(s)
+
+        // Get the function pointer
+        set fn_name = expr_get_str(fn_expr)
+        set mfn_name = llvm_mangle_name(cg, fn_name)
+
+        // Pack arguments into a struct alloca
+        set args_struct_name = llvm_label(cg, "spawn_args_")
+
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, args_struct_name)
+        cg = llvm_emit_line(cg, " = alloca i64")
+
+        check spawn_args != null {
+            set args_reg = llvm_expr_codegen(cg, spawn_args)
+            cg = llvm_emit_indent(cg)
+            cg = llvm_emit(cg, "store i64 ")
+            cg = llvm_emit(cg, args_reg)
+            cg = llvm_emit(cg, ", i64* ")
+            cg = llvm_emit_line(cg, args_struct_name)
+            free args_reg
+        } else {
+            cg = llvm_emit_indent(cg)
+            cg = llvm_emit(cg, "store i64 0, i64* ")
+            cg = llvm_emit_line(cg, args_struct_name)
+        }
+
+        // Bitcast function to void(i8*)* signature
+        set fn_ptr = llvm_temp(cg)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, fn_ptr)
+        cg = llvm_emit(cg, " = bitcast void (")
+        // Build the function type signature from known params
+        cg = llvm_emit(cg, ")* @")
+        cg = llvm_emit(cg, mfn_name)
+        cg = llvm_emit_line(cg, " to void (i8*)*")
+
+        // Call sov_spawn (void return)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, "call void @sov_spawn(void (i8*)* ")
+        cg = llvm_emit(cg, fn_ptr)
+        cg = llvm_emit(cg, ", i8* bitcast (i64* ")
+        cg = llvm_emit(cg, args_struct_name)
+        cg = llvm_emit_line(cg, " to i8*))")
+
+        free fn_name
+        free mfn_name
+        free args_struct_name
+        free fn_ptr
+        return cg
+    }
+
+    // ── Import / Module ─────────────────────────────────────────────
+    // Skipped: imports are resolved at the Sovereign level.
+    check kind == STMT_IMPORT {
+        set module_name = stmt_get_name(s)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, "; import ")
+        cg = llvm_emit_line(cg, module_name)
+        return cg
+    }
+
+    // ── Purge ───────────────────────────────────────────────────────
+    // Generate @llvm.memset to zero the variable (sensitive cleanup)
+    check kind == STMT_PURGE {
+        set expr = stmt_get_expr(s)
+        set ekind = expr_kind(expr)
+        check ekind == EXPR_VAR {
+            set vname = expr_get_str(expr)
+            set addr_name = llvm_local_addr(vname)
+
+            cg = llvm_emit_indent(cg)
+            cg = llvm_emit(cg, "call void @llvm.memset.p0i8.i64(i8* align 8 bitcast (i64* ")
+            cg = llvm_emit(cg, addr_name)
+            cg = llvm_emit_line(cg, " to i8*), i8 0, i64 8, i1 false)")
+            cg = llvm_emit_indent(cg)
+            cg = llvm_emit(cg, "; purge ")
+            cg = llvm_emit_line(cg, vname)
+
+            free addr_name
+        } else {
+            cg = llvm_emit_line(cg, "; purge (non-variable target)")
+        }
+        return cg
+    }
+
+    // ── Defer ───────────────────────────────────────────────────────
+    // Collected and emitted before returns / function end.
+    check kind == STMT_DEFER {
+        set deferred_body = stmt_get_block(s)
+        // Push the deferred statement onto the stack
+        cg.deferred_stmts = vecstmt_push(cg.deferred_stmts, s)
+        cg = llvm_emit_line(cg, "; defer registered")
+        return cg
+    }
+
+    // ── Comptime ────────────────────────────────────────────────────
+    // Skipped: comptime blocks are evaluated at compile time.
+    check kind == STMT_COMPTIME {
+        cg = llvm_emit_line(cg, "; comptime block (evaluated at compile time, not emitted)")
+        return cg
+    }
+
+    // ── Namespace ───────────────────────────────────────────────────
+    // Sets a prefix for subsequent function/variable names.
+    check kind == STMT_NAMESPACE {
+        set ns_name = stmt_get_name(s)
+        set ns_body = stmt_get_block(s)
+
+        set saved_prefix = cg.namespace_prefix
+
+        set new_prefix = sb_new()
+        check str_len(saved_prefix) > 0 {
+            new_prefix = sb_append(new_prefix, saved_prefix)
+            new_prefix = sb_append_char(new_prefix, 95)  // '_'
+        }
+        new_prefix = sb_append(new_prefix, ns_name)
+        cg.namespace_prefix = sb_to_string(new_prefix)
+        free new_prefix
+
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, "; namespace ")
+        cg = llvm_emit_line(cg, ns_name)
+
+        check ns_body != null {
+            cg = llvm_codegen_block(cg, ns_body)
+        }
+
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, "; end namespace ")
+        cg = llvm_emit_line(cg, ns_name)
+
+        cg.namespace_prefix = saved_prefix
+        return cg
+    }
+
+    // ── Type Alias ──────────────────────────────────────────────────
+    // No-op: resolves to underlying type at AST level.
+    check kind == STMT_TYPE_ALIAS {
+        set alias_name = stmt_get_name(s)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, "; type alias ")
+        cg = llvm_emit_line(cg, alias_name)
+        return cg
+    }
+
+    // ── Enum declaration ────────────────────────────────────────────
+    // Emits LLVM struct types for data-carrying enum variants.
+    // The discriminant is i32; each variant with data gets a %struct.Enum_Variant type.
+    check kind == STMT_ENUM_DECL {
+        set enum_name = stmt_get_name(s)
+        set variants = stmt_get_block(s)
+
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, "; enum ")
+        cg = llvm_emit_line(cg, enum_name)
+
+        check variants != null {
+            set nvariants = vecstmt_len(variants)
+            loop i from 0 to nvariants - 1 {
+                set variant = vecstmt_get(variants, i)
+                set vname = stmt_get_name(variant)
+                set vdata = stmt_get_expr(variant)
+
+                cg = llvm_emit_indent(cg)
+                cg = llvm_emit(cg, ";   variant ")
+                cg = llvm_emit(cg, vname)
+
+                check vdata != null {
+                    cg = llvm_emit(cg, " (has payload)")
+                }
+                cg = llvm_emit_newline(cg)
+
+                // If variant has data fields, emit a struct type
+                check vdata != null {
+                    set vt_name = sb_new()
+                    vt_name = sb_append(vt_name, "%struct.")
+                    vt_name = sb_append(vt_name, enum_name)
+                    vt_name = sb_append_char(vt_name, 95)  // '_'
+                    vt_name = sb_append(vt_name, vname)
+
+                    cg = llvm_emit_indent(cg)
+                    cg = llvm_emit(cg, sb_to_string(vt_name))
+                    cg = llvm_emit_line(cg, " = type { i32, i64 }  ; enum variant payload")
+
+                    cg.structs = vecstr_push(cg.structs, sb_to_string(vt_name))
+                    free vt_name
+                }
+            }
+        }
+        return cg
+    }
+
+    cg = llvm_emit_line(cg, "; unknown statement kind")
+    return cg
+}
+
+/// Emit sensitive variable cleanup (zeroing) before function return
+task llvm_emit_sensitive_cleanup(cg: LLVMCodegen) -> LLVMCodegen {
+    set n = vecstr_len(cg.sensitive_vars)
+    check n == 0 { return cg }
+
+    cg = llvm_emit_line(cg, "; sensitive variable cleanup")
+    loop i from 0 to n - 1 {
+        set vname = vecstr_get(cg.sensitive_vars, i)
+        set addr_name = llvm_local_addr(vname)
+        cg = llvm_emit_indent(cg)
+        cg = llvm_emit(cg, "call void @llvm.memset.p0i8.i64(i8* align 8 bitcast (i64* ")
+        cg = llvm_emit(cg, addr_name)
+        cg = llvm_emit_line(cg, " to i8*), i8 0, i64 8, i1 false)")
+        free addr_name
+    }
+    return cg
+}
+
+/// Emit deferred statements before return / function end
+/// Deferred statements are collected via STMT_DEFER and flushed LIFO.
+task llvm_emit_deferred_cleanup(cg: LLVMCodegen) -> LLVMCodegen {
+    set n = vecstmt_len(cg.deferred_stmts)
+    check n == 0 { return cg }
+
+    cg = llvm_emit_line(cg, "; deferred statement cleanup")
+    // Emit in reverse order (last deferred = first to run, LIFO)
+    loop i from 0 to n - 1 {
+        set rev_idx = n - 1 - i
+        set deferred_stmt = vecstmt_get(cg.deferred_stmts, rev_idx)
+        set deferred_body = stmt_get_block(deferred_stmt)
+        check deferred_body != null {
+            cg = llvm_codegen_block(cg, deferred_body)
+        }
+    }
+    return cg
+}
+
+/// Combined cleanup: deferred first, then sensitive zeroing
+task llvm_emit_full_cleanup(cg: LLVMCodegen) -> LLVMCodegen {
+    cg = llvm_emit_deferred_cleanup(cg)
+    cg = llvm_emit_sensitive_cleanup(cg)
+    return cg
+}
+
+/// Generate LLVM IR for a block of statements
+task llvm_codegen_block(cg: LLVMCodegen, block: ptr) -> LLVMCodegen {
+    check block == null { return cg }
+
+    set nstmts = vecstmt_len(block)
+    loop i from 0 to nstmts - 1 {
+        set stmt = vecstmt_get(block, i)
+        cg = llvm_stmt_codegen(cg, stmt)
+    }
+
+    return cg
+}
+
+// ============================================================================
+// STRUCT CODE GENERATION
+// ============================================================================
+
+/// Generate LLVM IR for a struct declaration
+task llvm_codegen_struct(cg: LLVMCodegen, s: ptr) -> LLVMCodegen {
+    set name = stmt_get_name(s)
+    set fields = null
+    override { fields = ptr_get_int(s, 6) }
+
+    set result = sb_new()
+    result = sb_append(result, "%struct.")
+    result = sb_append(result, name)
+    result = sb_append(result, " = type { ")
+
+    check fields != null {
+        set nfields = vecparam_len(fields)
+        loop i from 0 to nfields - 1 {
+            check i > 0 { result = sb_append(result, ", ") }
+            set ftype = vecparam_get_type(fields, i)
+            set lltype = type_to_llvm(ftype)
+            result = sb_append(result, lltype)
+            free lltype
+        }
+    } else {
+        result = sb_append(result, "i64")
+    }
+
+    result = sb_append(result, " }")
+    cg = llvm_emit_line(cg, sb_to_string(result))
+    free result
+
+    cg.structs = vecstr_push(cg.structs, name)
+    return cg
+}
+
+// ============================================================================
+// FUNCTION / TASK CODE GENERATION
+// ============================================================================
+
+/// Generate LLVM IR for a task (function) declaration
+task llvm_codegen_task(cg: LLVMCodegen, s: ptr) -> LLVMCodegen {
+    set name = stmt_get_name(s)
+    set body = stmt_get_block(s)
+    set params = null
+    set return_type = null
+    set is_extern = false
+
+    override {
+        params = ptr_get_int(s, 6)
+        return_type = ptr_get_int(s, 7)
+        is_extern = ptr_get_int(s, 11) != 0
+    }
+
+    // ── Extern declaration ─────────────────────────────────────────
+    check is_extern {
+        cg = llvm_emit(cg, "declare ")
+        cg = llvm_emit(cg, type_to_llvm(return_type))
+        cg = llvm_emit(cg, " @")
+        cg = llvm_emit(cg, name)
+
+        cg = llvm_emit(cg, "(")
+        check params != null {
+            set nparams = vecparam_len(params)
+            loop i from 0 to nparams - 1 {
+                check i > 0 { cg = llvm_emit(cg, ", ") }
+                set ptype = vecparam_get_type(params, i)
+                cg = llvm_emit(cg, type_to_llvm(ptype))
+            }
+        }
+
+        cg = llvm_emit_line(cg, ")")
+        cg.externs = vecstr_push(cg.externs, name)
+        return cg
+    }
+
+    // ── Regular function definition ────────────────────────────────
+    set mname = llvm_mangle_name(cg, name)
+    set is_inline = false
+    override { is_inline = ptr_get_int(s, 12) != 0 }
+
+    cg = llvm_emit(cg, "define ")
+    check is_inline {
+        cg = llvm_emit(cg, "#1 ")
+    }
+    cg = llvm_emit(cg, type_to_llvm(return_type))
+    cg = llvm_emit(cg, " @")
+    cg = llvm_emit(cg, mname)
+    cg = llvm_emit(cg, "(")
+
+    check params != null {
+        set nparams = vecparam_len(params)
+        loop i from 0 to nparams - 1 {
+            check i > 0 { cg = llvm_emit(cg, ", ") }
+            set ptype = vecparam_get_type(params, i)
+            set pname = vecparam_get_name(params, i)
+            cg = llvm_emit(cg, type_to_llvm(ptype))
+            cg = llvm_emit(cg, " %")
+            cg = llvm_emit(cg, pname)
+        }
+    }
+
+    cg = llvm_emit_line(cg, ") {")
+
+    // Function entry block
+    cg = llvm_emit_line(cg, "entry:")
+
+    // Alloca parameters and store them
+    check params != null {
+        set nparams = vecparam_len(params)
+        loop i from 0 to nparams - 1 {
+            set ptype = vecparam_get_type(params, i)
+            set pname = vecparam_get_name(params, i)
+            set addr_name = llvm_local_addr(pname)
+            set lltype = type_to_llvm(ptype)
+
+            cg = llvm_emit(cg, "  ")
+            cg = llvm_emit(cg, addr_name)
+            cg = llvm_emit(cg, " = alloca ")
+            cg = llvm_emit_line(cg, lltype)
+
+            cg = llvm_emit(cg, "  store ")
+            cg = llvm_emit(cg, lltype)
+            cg = llvm_emit(cg, " %")
+            cg = llvm_emit(cg, pname)
+            cg = llvm_emit(cg, ", ")
+            cg = llvm_emit(cg, lltype)
+            cg = llvm_emit(cg, "* ")
+            cg = llvm_emit_line(cg, addr_name)
+
+            cg.locals = vecstr_push(cg.locals, pname)
+
+            free addr_name
+            free lltype
+        }
+    }
+
+    // Set state for function body
+    cg.in_function = true
+
+    // Codegen the function body
+    cg = llvm_codegen_block(cg, body)
+
+    // Implicit return if no explicit return at end
+    cg = llvm_emit_full_cleanup(cg)
+
+    check str_eq(type_to_llvm(return_type), "void") {
+        cg = llvm_emit_line(cg, "  ret void")
+    } else {
+        cg = llvm_emit_line(cg, "  ret i64 0")
+    }
+
+    cg = llvm_emit_line(cg, "}")
+    cg = llvm_emit_newline(cg)
+
+    cg.in_function = false
+    cg.functions = vecstr_push(cg.functions, name)
+
+    free mname
+    return cg
+}
+
+// ============================================================================
+// HEADER / PREAMBLE GENERATION
+// ============================================================================
+
+/// Generate the LLVM IR header with target info and runtime declarations
+task llvm_codegen_header(cg: LLVMCodegen) -> LLVMCodegen {
+    cg = llvm_emit_line(cg, "; ModuleID = 'sovereign_output'")
+    cg = llvm_emit_newline(cg)
+
+    // Target triple and data layout (Linux x86_64 default)
+    cg = llvm_emit_line(cg, "target triple = \"x86_64-pc-linux-gnu\"")
+    cg = llvm_emit_line(cg, "target datalayout = \"e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128\"")
+    cg = llvm_emit_newline(cg)
+
+    // ── Runtime function declarations ────────────────────────────
+    cg = llvm_emit_line(cg, "; Sovereign Runtime Library Declarations")
+
+    // printf
+    cg = llvm_emit_line(cg, "declare i32 @printf(i8* noundef, ...)")
+    cg = llvm_emit_newline(cg)
+
+    // Memory management
+    cg = llvm_emit_line(cg, "declare noalias i8* @sov_alloc(i64 noundef, i64 noundef)")
+    cg = llvm_emit_line(cg, "declare void @sov_free(i8* noundef)")
+    cg = llvm_emit_line(cg, "declare noalias i8* @sov_alloc_secure(i64 noundef, i64 noundef)")
+    cg = llvm_emit_line(cg, "declare void @sov_free_secure(i8* noundef, i64 noundef)")
+    cg = llvm_emit_line(cg, "declare void @sov_secure_zero(i8* noundef, i64 noundef)")
+    cg = llvm_emit_newline(cg)
+
+    // Memory pool allocator
+    cg = llvm_emit_line(cg, "declare noalias i8* @sov_pool_alloc(i64 noundef)")
+    cg = llvm_emit_line(cg, "declare void @sov_pool_free(i8* noundef, i64 noundef)")
+    cg = llvm_emit_newline(cg)
+
+    // Bounds and null checking
+    cg = llvm_emit_line(cg, "declare void @sov_bounds_check(i64 noundef, i64 noundef, i8* noundef)")
+    cg = llvm_emit_line(cg, "declare void @sov_null_check(i8* noundef, i8* noundef)")
+    cg = llvm_emit_newline(cg)
+
+    // Cryptographic hash
+    cg = llvm_emit_line(cg, "; Cryptographic")
+    cg = llvm_emit_line(cg, "declare void @sov_sha256(i8* noundef, i64 noundef, i8* noundef)")
+    cg = llvm_emit_line(cg, "declare void @sov_sha512(i8* noundef, i64 noundef, i8* noundef)")
+    cg = llvm_emit_line(cg, "declare void @sov_blake3(i8* noundef, i64 noundef, i8* noundef)")
+    cg = llvm_emit_line(cg, "declare void @sov_hmac_sha256(i8* noundef, i64 noundef, i8* noundef, i64 noundef, i8* noundef)")
+    cg = llvm_emit_line(cg, "declare void @sov_hkdf_sha256(i8* noundef, i64 noundef, i8* noundef, i64 noundef, i8* noundef, i64 noundef, i8* noundef, i64 noundef)")
+    cg = llvm_emit_line(cg, "declare void @sov_pbkdf2_sha256(i8* noundef, i64 noundef, i8* noundef, i64 noundef, i64 noundef, i8* noundef, i64 noundef)")
+    cg = llvm_emit_newline(cg)
+
+    // AEAD ciphers
+    cg = llvm_emit_line(cg, "; AEAD Ciphers")
+    cg = llvm_emit_line(cg, "declare i64 @sov_aes256_gcm_encrypt(i8* noundef, i8* noundef, i64 noundef, i8* noundef, i64 noundef, i8* noundef, i64 noundef, i8* noundef, i8* noundef)")
+    cg = llvm_emit_line(cg, "declare i64 @sov_aes256_gcm_decrypt(i8* noundef, i8* noundef, i64 noundef, i8* noundef, i64 noundef, i8* noundef, i64 noundef, i8* noundef, i8* noundef)")
+    cg = llvm_emit_line(cg, "declare i64 @sov_chacha20_poly1305_encrypt(i8* noundef, i8* noundef, i8* noundef, i64 noundef, i8* noundef, i64 noundef, i8* noundef, i8* noundef)")
+    cg = llvm_emit_line(cg, "declare i64 @sov_chacha20_poly1305_decrypt(i8* noundef, i8* noundef, i8* noundef, i64 noundef, i8* noundef, i64 noundef, i8* noundef, i8* noundef)")
+    cg = llvm_emit_newline(cg)
+
+    // Constant-time operations
+    cg = llvm_emit_line(cg, "; Constant-Time Operations")
+    cg = llvm_emit_line(cg, "declare i64 @sov_secure_compare(i8* noundef, i8* noundef, i64 noundef)")
+    cg = llvm_emit_line(cg, "declare void @sov_ct_memmove(i8* noundef, i8* noundef, i64 noundef, i1 noundef)")
+    cg = llvm_emit_line(cg, "declare i8 @sov_ct_select_byte(i1 noundef, i8 noundef, i8 noundef)")
+    cg = llvm_emit_line(cg, "declare i1 @sov_ct_is_zero(i64 noundef)")
+    cg = llvm_emit_line(cg, "declare i1 @sov_ct_eq(i64 noundef, i64 noundef)")
+    cg = llvm_emit_newline(cg)
+
+    // Concurrency / channels
+    cg = llvm_emit_line(cg, "; Concurrency Primitives")
+    cg = llvm_emit_line(cg, "declare noalias i8* @sov_channel_new(i64 noundef)")
+    cg = llvm_emit_line(cg, "declare i64 @sov_channel_send(i8* noundef, i64 noundef)")
+    cg = llvm_emit_line(cg, "declare i64 @sov_channel_recv(i8* noundef)")
+    cg = llvm_emit_line(cg, "declare void @sov_channel_close(i8* noundef)")
+    cg = llvm_emit_line(cg, "declare void @sov_channel_free(i8* noundef)")
+    cg = llvm_emit_newline(cg)
+
+    // Threading
+    cg = llvm_emit_line(cg, "; Threading")
+    cg = llvm_emit_line(cg, "declare i64 @sov_spawn(i64 (i8*)* noundef, i8* noundef)")
+    cg = llvm_emit_newline(cg)
+
+    // Secure random
+    cg = llvm_emit_line(cg, "; Secure Random")
+    cg = llvm_emit_line(cg, "declare i64 @sov_random_u64()")
+    cg = llvm_emit_line(cg, "declare i64 @sov_random_range(i64 noundef, i64 noundef)")
+    cg = llvm_emit_line(cg, "declare void @sov_random_key(i8* noundef)")
+    cg = llvm_emit_line(cg, "declare void @sov_random_bytes(i8* noundef, i64 noundef)")
+    cg = llvm_emit_newline(cg)
+
+    // Time
+    cg = llvm_emit_line(cg, "; Time")
+    cg = llvm_emit_line(cg, "declare i64 @sov_time_ns()")
+    cg = llvm_emit_newline(cg)
+
+    // LLVM intrinsics
+    cg = llvm_emit_line(cg, "; LLVM Intrinsics")
+    cg = llvm_emit_line(cg, "declare void @llvm.memset.p0i8.i64(i8* nocapture writeonly, i8, i64, i1 immarg) #0")
+    cg = llvm_emit_line(cg, "declare void @llvm.trap() cold noreturn nounwind")
+    cg = llvm_emit_line(cg, "declare void @llvm.invariant.start.p0i8(i64, i8* nocapture) nounwind")
+    cg = llvm_emit_line(cg, "declare {}* @llvm.invariant.end.p0i8(i8* nocapture, i64, i8* nocapture) nounwind")
+    cg = llvm_emit_newline(cg)
+
+    // Function attributes
+    cg = llvm_emit_line(cg, "attributes #0 = { argmemonly nofree nosync nounwind willreturn }")
+    cg = llvm_emit_line(cg, "attributes #1 = { alwaysinline }")
+    cg = llvm_emit_newline(cg)
+
+    return cg
+}
+
+// ============================================================================
+// MAIN GENERATION FUNCTION
+// ============================================================================
+
+/// Generate the complete LLVM IR for the program
+/// Performs multiple passes over the AST:
+///   1. Header and runtime declarations
+///   2. Struct type definitions
+///   3. Function declarations (forward)
+///   4. Global constants
+///   5. Function definitions
+///   6. Main wrapper (if needed)
+task llvm_codegen_generate(cg: LLVMCodegen) -> string {
+    // Pass 0: Emit header
+    cg = llvm_codegen_header(cg)
+
+    set n = program_stmt_count(cg.program)
+
+    // Pass 1: Struct and Enum type definitions
+    cg = llvm_emit_line(cg, "; Struct Type Definitions")
+    loop i from 0 to n - 1 {
+        set stmt = program_get_stmt(cg.program, i)
+        set kind = stmt_kind(stmt)
+        check kind == STMT_STRUCT_DECL {
+            cg = llvm_codegen_struct(cg, stmt)
+        }
+        check kind == STMT_ENUM_DECL {
+            cg = llvm_stmt_codegen(cg, stmt)
+        }
+    }
+    cg = llvm_emit_newline(cg)
+
+    // Pass 2: Function declarations (forward declarations for non-extern)
+    cg = llvm_emit_line(cg, "; Function Declarations")
+    loop i from 0 to n - 1 {
+        set stmt = program_get_stmt(cg.program, i)
+        set kind = stmt_kind(stmt)
+        check kind == STMT_TASK_DECL {
+            set name = stmt_get_name(stmt)
+            set params = null
+            set return_type = null
+            set is_extern = false
+            override {
+                params = ptr_get_int(stmt, 6)
+                return_type = ptr_get_int(stmt, 7)
+                is_extern = ptr_get_int(stmt, 11) != 0
+            }
+
+            check not is_extern {
+                set mname = llvm_mangle_name(cg, name)
+                cg = llvm_emit(cg, "declare ")
+                cg = llvm_emit(cg, type_to_llvm(return_type))
+                cg = llvm_emit(cg, " @")
+                cg = llvm_emit(cg, mname)
+                cg = llvm_emit(cg, "(")
+
+                check params != null {
+                    set nparams = vecparam_len(params)
+                    loop j from 0 to nparams - 1 {
+                        check j > 0 { cg = llvm_emit(cg, ", ") }
+                        set ptype = vecparam_get_type(params, j)
+                        cg = llvm_emit(cg, type_to_llvm(ptype))
+                    }
+                }
+                cg = llvm_emit_line(cg, ")")
+                free mname
+            }
+        }
+    }
+    cg = llvm_emit_newline(cg)
+
+    // Pass 3: Global constants
+    set has_constants = false
+    loop i from 0 to n - 1 {
+        set stmt = program_get_stmt(cg.program, i)
+        set kind = stmt_kind(stmt)
+        check kind == STMT_CONST_DECL {
+            check not has_constants {
+                cg = llvm_emit_line(cg, "; Global Constants")
+                has_constants = true
+            }
+            cg = llvm_stmt_codegen(cg, stmt)
+        }
+    }
+    check has_constants { cg = llvm_emit_newline(cg) }
+
+    // Pass 4: External function declarations
+    set has_externs = false
+    loop i from 0 to n - 1 {
+        set stmt = program_get_stmt(cg.program, i)
+        set kind = stmt_kind(stmt)
+        check kind == STMT_TASK_DECL {
+            set is_extern = false
+            override { is_extern = ptr_get_int(stmt, 11) != 0 }
+            check is_extern {
+                check not has_externs {
+                    cg = llvm_emit_line(cg, "; External Function Declarations")
+                    has_externs = true
+                }
+                cg = llvm_codegen_task(cg, stmt)
+            }
+        }
+    }
+    check has_externs { cg = llvm_emit_newline(cg) }
+
+    // Pass 5: Function definitions
+    cg = llvm_emit_line(cg, "; Function Definitions")
+    loop i from 0 to n - 1 {
+        set stmt = program_get_stmt(cg.program, i)
+        set kind = stmt_kind(stmt)
+        check kind == STMT_TASK_DECL {
+            set is_extern = false
+            override { is_extern = ptr_get_int(stmt, 11) != 0 }
+            check not is_extern {
+                cg = llvm_codegen_task(cg, stmt)
+            }
+        }
+    }
+
+    // Pass 6: main function wrapper if not present
+    set has_main = false
+    loop i from 0 to vecstr_len(cg.functions) - 1 {
+        check str_eq(vecstr_get(cg.functions, i), "main") {
+            has_main = true
+            break
+        }
+    }
+
+    check not has_main {
+        cg = llvm_emit_newline(cg)
+        cg = llvm_emit_line(cg, "; Auto-generated main entry point")
+        cg = llvm_emit_line(cg, "define i32 @main(i32 noundef %argc, i8** noundef %argv) {")
+        cg = llvm_emit_line(cg, "entry:")
+        cg = llvm_emit_line(cg, "  ret i32 0")
+        cg = llvm_emit_line(cg, "}")
+    }
+
+    // Emit DWARF debug info if enabled
+    cg = llvm_codegen_debug_info(cg)
+
+    return sb_to_string(cg.output)
+}
+
+// ============================================================================
+// DWARF DEBUG INFO GENERATION
+// ============================================================================
+
+/// Emit LLVM DWARF debug metadata for the program
+/// Generates DICompileUnit, DIFile, DISubprogram, DILexicalBlock, DILocation.
+task llvm_codegen_debug_info(cg: LLVMCodegen) -> LLVMCodegen {
+    check not cg.debug_info { return cg }
+
+    cg = llvm_emit_line(cg, "; Debug Info Metadata (DWARF)")
+    cg = llvm_emit_newline(cg)
+
+    // Debug file
+    set file_id = "!llvm.dbg.cu"
+    cg = llvm_emit_line(cg, "!llvm.module.flags = !{!0, !1, !2, !3}")
+    cg = llvm_emit_line(cg, "!llvm.dbg.cu = !{!4}")
+    cg = llvm_emit_newline(cg)
+
+    // Module flags
+    cg = llvm_emit_line(cg, "!0 = !{i32 7, !\"Dwarf Version\", i32 4}")
+    cg = llvm_emit_line(cg, "!1 = !{i32 2, !\"Debug Info Version\", i32 3}")
+    cg = llvm_emit_line(cg, "!2 = !{i32 1, !\"wchar_size\", i32 4}")
+    cg = llvm_emit_line(cg, "!3 = !{i32 7, !\"PIC Level\", i32 2}")
+    cg = llvm_emit_newline(cg)
+
+    // DIFile
+    set file_name = "./output.sov"
+    cg = llvm_emit_line(cg, "!4 = distinct !DICompileUnit(language: DW_LANG_C99, file: !5, producer: \"Sovereign LLVM Backend\", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug, enums: !6, splitDebugInlining: false, nameTableKind: None)")
+    cg = llvm_emit_line(cg, "!5 = !DIFile(filename: \"output.sov\", directory: \".\")")
+    cg = llvm_emit_line(cg, "!6 = !{}")
+    cg = llvm_emit_newline(cg)
+
+    // Basic types
+    cg = llvm_emit_line(cg, "; Basic DWARF types")
+    cg = llvm_emit_line(cg, "!7 = !DIBasicType(name: \"i64\", size: 64, encoding: DW_ATE_signed)")
+    cg = llvm_emit_line(cg, "!8 = !DIBasicType(name: \"i32\", size: 32, encoding: DW_ATE_signed)")
+    cg = llvm_emit_line(cg, "!9 = !DIBasicType(name: \"i8\", size: 8, encoding: DW_ATE_signed_char)")
+    cg = llvm_emit_line(cg, "!10 = !DIBasicType(name: \"i1\", size: 1, encoding: DW_ATE_boolean)")
+    cg = llvm_emit_line(cg, "!11 = !DIBasicType(name: \"double\", size: 64, encoding: DW_ATE_float)")
+    cg = llvm_emit_line(cg, "!12 = !DIBasicType(name: \"void\", size: 0, encoding: DW_ATE_address)")
+    cg = llvm_emit_newline(cg)
+
+    // DISubprogram for each function
+    cg = llvm_emit_line(cg, "; DISubprogram entries")
+    set nfuncs = vecstr_len(cg.functions)
+    set debug_subprog_id = 13  // Start at 13 after basic types
+
+    loop i from 0 to nfuncs - 1 {
+        set fname = vecstr_get(cg.functions, i)
+        set mname = llvm_mangle_name(cg, fname)
+
+        set sid_str = int_to_str(debug_subprog_id)
+        set line_str = int_to_str(i + 1)
+
+        cg = llvm_emit(cg, "!")
+        cg = llvm_emit(cg, sid_str)
+        cg = llvm_emit(cg, " = distinct !DISubprogram(name: \"")
+        cg = llvm_emit(cg, fname)
+        cg = llvm_emit(cg, "\", linkageName: \"")
+        cg = llvm_emit(cg, mname)
+        cg = llvm_emit(cg, "\", scope: !5, file: !5, line: ")
+        cg = llvm_emit(cg, line_str)
+        cg = llvm_emit_line(cg, ", type: !12, scopeLine: 1, spFlags: DISPFlagDefinition, unit: !4)")
+
+        free sid_str
+        free line_str
+        free mname
+
+        debug_subprog_id = debug_subprog_id + 1
+    }
+
+    cg = llvm_emit_newline(cg)
+
+    // DILocation note: In a full implementation, each IR instruction
+    // would carry a !dbg !N attachment. This header establishes the metadata
+    // nodes. Actual instruction-level locations are emitted during codegen.
+    cg = llvm_emit_line(cg, "; DILocation entries (per-instruction, emitted inline during codegen)")
+    cg = llvm_emit_newline(cg)
+
+    return cg
+}
+
+// ============================================================================
+// PUBLIC API
+// ============================================================================
+
+/// Compile a Sovereign file to LLVM IR (.ll)
+task compile_to_llvm(input_path: string, output_path: string) -> bool {
+    println("Parsing...")
+    set prog = parse_file(input_path)
+
+    check program_stmt_count(prog) == 0 {
+        eprintln("Error: failed to parse file or file is empty")
+        return false
+    }
+
+    println("Generating LLVM IR code...")
+    set llgen = llvm_codegen_new(prog)
+    set ll_code = llvm_codegen_generate(llgen)
+
+    println("Writing output...")
+    set success = file_write_all(output_path, ll_code)
+
+    check success {
+        print_str("Successfully compiled LLVM IR to: ")
+        println(output_path)
+    } else {
+        eprintln("Error: failed to write output file")
+    }
+
+    free ll_code
+    return success
+}
+
+/// LLVM IR backend entry point
+/// Usage: sovereign llvm <input.sov> [output.ll]
+task llvm_backend_main(args: VecStr) -> int {
+    check vecstr_len(args) < 2 {
+        println("Sovereign LLVM IR Backend")
+        println("Usage: sovereign llvm <input.sov> [output.ll]")
+        return 1
+    }
+
+    set input = vecstr_get(args, 1)
+    set output = "output.ll"
+
+    check vecstr_len(args) >= 3 {
+        output = vecstr_get(args, 2)
+    }
+
+    check compile_to_llvm(input, output) {
+        return 0
+    }
+
+    return 1
+}

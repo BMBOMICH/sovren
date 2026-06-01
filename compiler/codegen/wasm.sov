@@ -1,0 +1,389 @@
+/// Sovereign Self-Hosted Code Generator (WASM Backend)
+/// Converts AST to WebAssembly Text Format (.wat) for browser/edge deployment.
+///
+/// Usage:
+///   sovereign build file.sov --target wasm -o output.wat
+///   wat2wasm output.wat -o output.wasm
+
+import "../stdlib/native.sov"
+import "../stdlib/ast.sov"
+
+// ============================================================================
+// WASM CODE GENERATOR STATE
+// ============================================================================
+
+struct WASMCodegen {
+    program:    Program
+    output:     StringBuilder
+    temp_count: int
+    locals:     VecStr
+    functions:  VecStr
+    imports:    VecStr
+    exports:    VecStr
+    data_segments: VecStr
+    data_offset: int
+}
+
+task wasm_codegen_new(prog: Program) -> WASMCodegen {
+    return WASMCodegen {
+        program:    prog,
+        output:     sb_new(),
+        temp_count: 0,
+        locals:     vecstr_new(),
+        functions:  vecstr_new(),
+        imports:    vecstr_new(),
+        exports:    vecstr_new(),
+        data_segments: vecstr_new(),
+        data_offset: 1024
+    }
+}
+
+// ── Emit helpers ──────────────────────────────────────────────────────────
+task wasm_emit(cg: WASMCodegen, s: string) -> WASMCodegen {
+    cg.output = sb_append(cg.output, s)
+    return cg
+}
+
+task wasm_emit_line(cg: WASMCodegen, s: string) -> WASMCodegen {
+    cg.output = sb_append(cg.output, s)
+    cg.output = sb_append(cg.output, "\n")
+    return cg
+}
+
+// ── Type mapping ──────────────────────────────────────────────────────────
+task wasm_type(t: ptr) -> string {
+    set kind = 0
+    override { kind = ptr_get_int(t, 0) }
+    check kind == TYPE_INT or kind == TYPE_INT64 or kind == TYPE_UINT64 { return "i64" }
+    check kind == TYPE_INT8 or kind == TYPE_UINT8 { return "i32" }
+    check kind == TYPE_FLOAT { return "f64" }
+    check kind == TYPE_BOOL { return "i32" }
+    check kind == TYPE_PTR { return "i32" }
+    return "i32"
+}
+
+// ── Generate WASM header ──────────────────────────────────────────────────
+task wasm_generate_header(cg: WASMCodegen) -> WASMCodegen {
+    cg = wasm_emit_line(cg, "(module")
+    cg = wasm_emit_line(cg, "  ;; Sovereign WASM Output v2.0")
+    cg = wasm_emit_line(cg, "  ;; Target: WebAssembly MVP")
+
+    // Memory: 1 page = 64KB initial, max 256 pages = 16MB
+    cg = wasm_emit_line(cg, "  (memory (export \"memory\") 1 256)")
+    cg = wasm_emit_newline(cg)
+
+    // Import printf from host environment
+    cg = wasm_emit_line(cg, "  ;; Host imports")
+    cg = wasm_emit_line(cg, "  (import \"env\" \"print\" (func $env_print (param i32 i32)))")
+    cg = wasm_emit_line(cg, "  (import \"env\" \"println\" (func $env_println (param i32 i32)))")
+    cg = wasm_emit_newline(cg)
+
+    // Export memory operations
+    cg = wasm_emit_line(cg, "  ;; Memory allocator — simple bump allocator")
+    cg = wasm_emit_line(cg, "  (global $heap_ptr (mut i32) (i32.const 1024))")
+    cg = wasm_emit_newline(cg)
+
+    // Alloc function
+    cg = wasm_emit_line(cg, "  (func $alloc (param $size i32) (result i32)")
+    cg = wasm_emit_line(cg, "    (local $ptr i32)")
+    cg = wasm_emit_line(cg, "    global.get $heap_ptr")
+    cg = wasm_emit_line(cg, "    local.set $ptr")
+    cg = wasm_emit_line(cg, "    local.get $ptr")
+    cg = wasm_emit_line(cg, "    local.get $size")
+    cg = wasm_emit_line(cg, "    i32.add")
+    cg = wasm_emit_line(cg, "    global.set $heap_ptr")
+    cg = wasm_emit_line(cg, "    local.get $ptr")
+    cg = wasm_emit_line(cg, "  )")
+    cg = wasm_emit_newline(cg)
+
+    return cg
+}
+
+// ── Generate data segments ────────────────────────────────────────────────
+task wasm_generate_data(cg: WASMCodegen) -> WASMCodegen {
+    set n = program_stmt_count(cg.program)
+    loop i from 0 to n - 1 {
+        set stmt = program_get_stmt(cg.program, i)
+        set kind = stmt_kind(stmt)
+        check kind == STMT_CONST_DECL {
+            set name = stmt_get_name(stmt)
+            set value = stmt_get_value(stmt)
+            // Store string constants in data segment
+            check stmt_type_is_string(stmt) {
+                set str_val = stmt_get_string_value(stmt)
+                cg = wasm_emit(cg, "  (data (i32.const ")
+                cg = wasm_emit_int(cg, cg.data_offset)
+                cg = wasm_emit(cg, ") \"")
+                cg = wasm_emit(cg, str_val)
+                cg = wasm_emit_line(cg, "\")")
+                // Store offset for this constant
+                cg.data_offset = cg.data_offset + str_len(str_val) + 1
+            }
+        }
+    }
+    return cg
+}
+
+// ── Generate function ─────────────────────────────────────────────────────
+task wasm_generate_function(cg: WASMCodegen, stmt: ptr) -> WASMCodegen {
+    set name = stmt_get_name(stmt)
+    set is_export = str_eq(name, "main")
+
+    // Function declaration
+    cg = wasm_emit(cg, "  (func $")
+    cg = wasm_emit(cg, name)
+
+    // Parameters
+    set params = stmt_get_params(stmt)
+    check params != null {
+        set nparams = vecparam_len(params)
+        loop j from 0 to nparams - 1 {
+            set ptype = vecparam_get_type(params, j)
+            cg = wasm_emit(cg, " (param ")
+            cg = wasm_emit(cg, wasm_type(ptype))
+            cg = wasm_emit(cg, ")")
+        }
+    }
+
+    // Result type
+    set ret_type = stmt_get_return_type(stmt)
+    check ret_type != null and not str_eq(ret_type, "void") {
+        cg = wasm_emit(cg, " (result ")
+        cg = wasm_emit(cg, wasm_type(ret_type))
+        cg = wasm_emit(cg, ")")
+    }
+
+    cg = wasm_emit_line(cg, "")
+
+    // Function body
+    set body = stmt_get_block(stmt)
+    check body != null {
+        cg = wasm_codegen_block(cg, body)
+    }
+
+    cg = wasm_emit_line(cg, "  )")
+    cg = wasm_emit_newline(cg)
+
+    // Export main function
+    check is_export {
+        cg = wasm_emit(cg, "  (export \"")
+        cg = wasm_emit(cg, name)
+        cg = wasm_emit_line(cg, "\" (func $main))")
+        cg = wasm_emit_newline(cg)
+    }
+
+    return cg
+}
+
+// ── Generate block ────────────────────────────────────────────────────────
+task wasm_codegen_block(cg: WASMCodegen, block: ptr) -> WASMCodegen {
+    set n = block_stmt_count(block)
+    loop i from 0 to n - 1 {
+        set stmt = block_get_stmt(block, i)
+        set kind = stmt_kind(stmt)
+        cg = wasm_codegen_stmt(cg, stmt)
+    }
+    return cg
+}
+
+// ── Generate statement ────────────────────────────────────────────────────
+task wasm_codegen_stmt(cg: WASMCodegen, s: ptr) -> WASMCodegen {
+    set kind = stmt_kind(s)
+
+    // Variable declaration
+    check kind == STMT_VAR_DECL {
+        set name = stmt_get_name(s)
+        set init = stmt_get_expr(s)
+        check init != null {
+            cg = wasm_codegen_expr(cg, init)
+            // Store to local
+            cg = wasm_emit_line(cg, "    local.set $" + name)
+        }
+        return cg
+    }
+
+    // Return
+    check kind == STMT_RETURN {
+        set expr = stmt_get_expr(s)
+        check expr != null {
+            cg = wasm_codegen_expr(cg, expr)
+        }
+        cg = wasm_emit_line(cg, "    return")
+        return cg
+    }
+
+    // Expression statement
+    check kind == STMT_EXPR {
+        set expr = stmt_get_expr(s)
+        check expr != null {
+            cg = wasm_codegen_expr(cg, expr)
+            cg = wasm_emit_line(cg, "    drop")
+        }
+        return cg
+    }
+
+    // Check/else
+    check kind == STMT_IF {
+        set cond = stmt_get_condition(s)
+        set then_block = stmt_get_then_block(s)
+
+        cg = wasm_codegen_expr(cg, cond)
+        cg = wasm_emit_line(cg, "    if")
+        cg = wasm_codegen_block(cg, then_block)
+
+        set else_block = stmt_get_else_block(s)
+        check else_block != null {
+            cg = wasm_emit_line(cg, "    else")
+            cg = wasm_codegen_block(cg, else_block)
+        }
+        cg = wasm_emit_line(cg, "    end")
+        return cg
+    }
+
+    // Loop
+    check kind == STMT_LOOP_RANGE {
+        set var_name = stmt_get_loop_var(s)
+        set start_expr = stmt_get_start_expr(s)
+        set end_expr = stmt_get_end_expr(s)
+        set body = stmt_get_block(s)
+
+        cg = wasm_codegen_expr(cg, start_expr)
+        cg = wasm_emit_line(cg, "    local.set $" + var_name)
+        cg = wasm_emit_line(cg, "    block $loop_exit")
+        cg = wasm_emit_line(cg, "    loop $loop_continue")
+        cg = wasm_emit(cg, "    local.get $")
+        cg = wasm_emit_line(cg, var_name)
+        cg = wasm_codegen_expr(cg, end_expr)
+        cg = wasm_emit_line(cg, "    i32.ge_s")
+        cg = wasm_emit_line(cg, "    br_if $loop_exit")
+        cg = wasm_codegen_block(cg, body)
+        cg = wasm_emit(cg, "    local.get $")
+        cg = wasm_emit(cg, var_name)
+        cg = wasm_emit_line(cg, "    i32.const 1")
+        cg = wasm_emit_line(cg, "    i32.add")
+        cg = wasm_emit(cg, "    local.set $")
+        cg = wasm_emit_line(cg, var_name)
+        cg = wasm_emit_line(cg, "    br $loop_continue")
+        cg = wasm_emit_line(cg, "    end")
+        cg = wasm_emit_line(cg, "    end")
+        return cg
+    }
+
+    // Print (call env_println with string length)
+    check kind == STMT_PRINT {
+        set expr = stmt_get_expr(s)
+        cg = wasm_codegen_expr(cg, expr)
+        // Simplified: just call imported print
+        cg = wasm_emit_line(cg, "    ;; print placeholder")
+        cg = wasm_emit_line(cg, "    drop")
+        return cg
+    }
+
+    return cg
+}
+
+// ── Generate expression ───────────────────────────────────────────────────
+task wasm_codegen_expr(cg: WASMCodegen, e: ptr) -> WASMCodegen {
+    check e == null { return cg }
+
+    set kind = expr_kind(e)
+
+    // Integer literal
+    check kind == EXPR_INT {
+        set val = expr_get_int(e)
+        cg = wasm_emit(cg, "    i64.const ")
+        cg = wasm_emit_int(cg, val)
+        cg = wasm_emit_line(cg, "")
+        return cg
+    }
+
+    // Variable reference
+    check kind == EXPR_VAR {
+        set name = expr_get_str(e)
+        cg = wasm_emit(cg, "    local.get $")
+        cg = wasm_emit_line(cg, name)
+        return cg
+    }
+
+    // Binary operation
+    check kind == EXPR_BINARY {
+        set op = expr_get_op(e)
+        set left = expr_get_left(e)
+        set right = expr_get_right(e)
+
+        cg = wasm_codegen_expr(cg, left)
+        cg = wasm_codegen_expr(cg, right)
+
+        check op == OP_ADD { cg = wasm_emit_line(cg, "    i64.add") }
+        check op == OP_SUB { cg = wasm_emit_line(cg, "    i64.sub") }
+        check op == OP_MUL { cg = wasm_emit_line(cg, "    i64.mul") }
+        check op == OP_DIV { cg = wasm_emit_line(cg, "    i64.div_s") }
+        check op == OP_EQ  { cg = wasm_emit_line(cg, "    i64.eq") }
+        check op == OP_NE  { cg = wasm_emit_line(cg, "    i64.ne") }
+        check op == OP_LT  { cg = wasm_emit_line(cg, "    i64.lt_s") }
+        check op == OP_GT  { cg = wasm_emit_line(cg, "    i64.gt_s") }
+
+        return cg
+    }
+
+    // Function call
+    check kind == EXPR_CALL {
+        set callee = expr_get_callee(e)
+        set args = expr_get_args(e)
+
+        // Generate arguments
+        check args != null {
+            set nargs = vecexpr_len(args)
+            loop j from 0 to nargs - 1 {
+                set arg = vecexpr_get(args, j)
+                cg = wasm_codegen_expr(cg, arg)
+            }
+        }
+
+        cg = wasm_emit(cg, "    call $")
+        cg = wasm_emit_line(cg, callee)
+        return cg
+    }
+
+    return cg
+}
+
+// ── Generate footer ───────────────────────────────────────────────────────
+task wasm_generate_footer(cg: WASMCodegen) -> WASMCodegen {
+    cg = wasm_emit_line(cg, ")")
+    return cg
+}
+
+// ── Helper: emit integer ──────────────────────────────────────────────────
+task wasm_emit_int(cg: WASMCodegen, n: int) -> WASMCodegen {
+    set s = int_to_str(n)
+    cg.output = sb_append(cg.output, s)
+    return cg
+}
+
+// ── Main generation ───────────────────────────────────────────────────────
+task wasm_generate(cg: WASMCodegen) -> string {
+    cg = wasm_generate_header(cg)
+    cg = wasm_generate_data(cg)
+
+    cg = wasm_emit_line(cg, "  ;; Function definitions")
+    cg = wasm_emit_newline(cg)
+
+    set n = program_stmt_count(cg.program)
+    loop i from 0 to n - 1 {
+        set stmt = program_get_stmt(cg.program, i)
+        set kind = stmt_kind(stmt)
+        check kind == STMT_TASK_DECL {
+            cg = wasm_generate_function(cg, stmt)
+        }
+    }
+
+    cg = wasm_generate_footer(cg)
+    return sb_to_string(cg.output)
+}
+
+// ── Public API ────────────────────────────────────────────────────────────
+task compile_to_wasm(prog: Program) -> string {
+    set cg = wasm_codegen_new(prog)
+    return wasm_generate(cg)
+}

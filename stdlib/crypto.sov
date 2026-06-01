@@ -1,0 +1,227 @@
+/// Sovereign Standard Library — Cryptography Wrappers
+/// High-level wrappers around the runtime cryptographic primitives.
+/// All underlying implementations are real (FIPS/RFC compliant).
+
+import "native.sov"
+
+// ============================================================================
+// HASHING
+// ============================================================================
+
+/// Compute SHA-256 hash, returns 64-char hex string
+task sha256_hex(data: string) -> string {
+    set out = alloc(32, 1)
+    sha256(data, str_len(data), out)
+    set hex = bytes_to_hex(out, 32)
+    free out
+    return hex
+}
+
+/// Compute SHA-256 hash, returns 32 raw bytes
+task sha256_raw(data: string, out: ptr) {
+    sha256(data, str_len(data), out)
+}
+
+/// Compute SHA-512 hash, returns 128-char hex string
+task sha512_hex(data: string) -> string {
+    set out = alloc(64, 1)
+    sha512(data, str_len(data), out)
+    set hex = bytes_to_hex(out, 64)
+    free out
+    return hex
+}
+
+/// Compute BLAKE3 hash, returns 64-char hex string
+task blake3_hex(data: string) -> string {
+    set out = alloc(32, 1)
+    blake3(data, str_len(data), out)
+    set hex = bytes_to_hex(out, 32)
+    free out
+    return hex
+}
+
+// ============================================================================
+// HMAC
+// ============================================================================
+
+/// Compute HMAC-SHA256, returns 64-char hex string
+task hmac_sha256_hex(key: string, data: string) -> string {
+    set out = alloc(32, 1)
+    hmac_sha256(key, str_len(key), data, str_len(data), out)
+    set hex = bytes_to_hex(out, 32)
+    free out
+    return hex
+}
+
+/// Compute HKDF-SHA256, returns hex string
+task hkdf_sha256_hex(salt: string, ikm: string, info: string, out_len: int) -> string {
+    set out = alloc(out_len, 1)
+    hkdf_sha256(salt, str_len(salt), ikm, str_len(ikm), info, str_len(info), out, out_len)
+    set hex = bytes_to_hex(out, out_len)
+    free out
+    return hex
+}
+
+/// Compute PBKDF2-SHA256, returns hex string
+task pbkdf2_sha256_hex(password: string, salt: string, iterations: int, out_len: int) -> string {
+    set out = alloc(out_len, 1)
+    pbkdf2_sha256(password, str_len(password), salt, str_len(salt), iterations, out, out_len)
+    set hex = bytes_to_hex(out, out_len)
+    free out
+    return hex
+}
+
+// ============================================================================
+// ENCRYPTION
+// ============================================================================
+
+/// AES-256-GCM encrypt. key and iv are strings (binary), returns {ciphertext, tag}
+struct AesGcmResult {
+    ciphertext: string
+    tag:        string  // 16 bytes
+}
+
+task aes256_gcm_encrypt(key: string, iv: string, plaintext: string, aad: string) -> AesGcmResult {
+    set ct_len = str_len(plaintext)
+    set ct = alloc(ct_len, 1)
+    set tag = alloc(16, 1)
+
+    set result = aes256_gcm_encrypt_raw(key, str_len(key), iv, str_len(iv),
+                                         plaintext, ct_len, aad, str_len(aad), ct, tag)
+    check not result.is_ok {
+        free ct; free tag
+        return AesGcmResult { ciphertext: "", tag: "" }
+    }
+
+    return AesGcmResult {
+        ciphertext: ptr_to_str(ct, ct_len),
+        tag:        ptr_to_str(tag, 16)
+    }
+}
+
+/// AES-256-GCM decrypt. Returns decrypted string or empty on auth failure
+task aes256_gcm_decrypt(key: string, iv: string, ciphertext: string, aad: string, tag: string) -> string {
+    set pt_len = str_len(ciphertext)
+    set pt = alloc(pt_len, 1)
+
+    set result = aes256_gcm_decrypt_raw(key, str_len(key), iv, str_len(iv),
+                                         ciphertext, pt_len, aad, str_len(aad), tag, pt)
+    check not result.is_ok {
+        free pt
+        return ""
+    }
+
+    set decrypted = ptr_to_str(pt, pt_len)
+    free pt
+    return decrypted
+}
+
+/// ChaCha20-Poly1305 encrypt
+task chacha20_poly1305_encrypt(key: string, nonce: string, plaintext: string, aad: string) -> AesGcmResult {
+    set ct_len = str_len(plaintext)
+    set ct = alloc(ct_len, 1)
+    set tag = alloc(16, 1)
+
+    set result = chacha20_poly1305_encrypt_raw(key, str_len(key), nonce, str_len(nonce),
+                                                plaintext, ct_len, aad, str_len(aad), ct, tag)
+    check not result.is_ok {
+        free ct; free tag
+        return AesGcmResult { ciphertext: "", tag: "" }
+    }
+
+    return AesGcmResult {
+        ciphertext: ptr_to_str(ct, ct_len),
+        tag:        ptr_to_str(tag, 16)
+    }
+}
+
+/// ChaCha20-Poly1305 decrypt
+task chacha20_poly1305_decrypt(key: string, nonce: string, ciphertext: string, aad: string, tag: string) -> string {
+    set pt_len = str_len(ciphertext)
+    set pt = alloc(pt_len, 1)
+
+    set result = chacha20_poly1305_decrypt_raw(key, str_len(key), nonce, str_len(nonce),
+                                                ciphertext, pt_len, aad, str_len(aad), tag, pt)
+    check not result.is_ok {
+        free pt
+        return ""
+    }
+
+    set decrypted = ptr_to_str(pt, pt_len)
+    free pt
+    return decrypted
+}
+
+// ============================================================================
+// RANDOM
+// ============================================================================
+
+/// Generate random bytes as a string
+task random_bytes_str(len: int) -> string {
+    set buf = alloc(len, 1)
+    random_bytes(buf, len)
+    set result = ptr_to_str(buf, len)
+    free buf
+    return result
+}
+
+/// Generate a random hex string
+task random_hex(len: int) -> string {
+    set buf = alloc(len, 1)
+    random_bytes(buf, len)
+    set hex = bytes_to_hex(buf, len)
+    free buf
+    return hex
+}
+
+// ============================================================================
+// UTILITY
+// ============================================================================
+
+/// Convert bytes to hex string
+task bytes_to_hex(data: ptr, len: int) -> string {
+    set sb = sb_new()
+    set hex_chars = "0123456789abcdef"
+
+    loop i from 0 to len - 1 {
+        set byte = data[i]
+        sb = sb_append_char(sb, hex_chars[(byte >> 4) & 0xF])
+        sb = sb_append_char(sb, hex_chars[byte & 0xF])
+    }
+
+    return sb_to_string(sb)
+}
+
+/// Convert hex string to bytes
+task hex_to_bytes(hex: string) -> string {
+    set hex_len = str_len(hex)
+    check hex_len % 2 != 0 { return "" }
+
+    set result_len = hex_len / 2
+    set result = alloc(result_len, 1)
+
+    loop i from 0 to result_len - 1 {
+        set hi = hex_char_to_nibble(str_char_at(hex, i * 2))
+        set lo = hex_char_to_nibble(str_char_at(hex, i * 2 + 1))
+        result[i] = (hi << 4) | lo
+    }
+
+    return ptr_to_str(result, result_len)
+}
+
+task hex_char_to_nibble(c: int) -> int {
+    check c >= 48 and c <= 57  { return c - 48 }        // 0-9
+    check c >= 65 and c <= 70  { return c - 65 + 10 }   // A-F
+    check c >= 97 and c <= 102 { return c - 97 + 10 }   // a-f
+    return 0
+}
+
+/// Convert ptr+len to string
+task ptr_to_str(ptr: ptr, len: int) -> string {
+    set result = alloc(len + 1, 1)
+    loop i from 0 to len - 1 {
+        result[i] = ptr[i]
+    }
+    result[len] = 0
+    return result
+}

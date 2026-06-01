@@ -1,0 +1,385 @@
+// ============================================================================
+// Sovereign Performance Benchmark Suite
+// ============================================================================
+// Run: sovereign build tests/bench_performance.sov --target llvm --optimize
+// Then: llc -O3 output.ll && clang -O2 output.s runtime/runtime.c -o bench && ./bench
+
+import "stdlib_native.sov"
+
+// ── Fibonacci (recursive) ─────────────────────────────────────────────────
+// Classic CPU-bound benchmark testing function call overhead
+
+task fib(n: int) -> int {
+    check n <= 1 { return n }
+    return fib(n - 1) + fib(n - 2)
+}
+
+test task bench_fib_30() {
+    set result = fib(30)
+    assert(result == 832040, "fib(30) = 832040")
+}
+
+test task bench_fib_35() {
+    set result = fib(35)
+    assert(result == 9227465, "fib(35) = 9227465")
+}
+
+test task bench_fib_40() {
+    set result = fib(40)
+    assert(result == 102334155, "fib(40) = 102334155")
+}
+
+// ── Matrix Multiplication ─────────────────────────────────────────────────
+// Tests loop optimization, bounds checking, memory access patterns
+
+const MATRIX_SIZE = 200
+
+task matrix_multiply(a: ptr, b: ptr, c: ptr, n: int) {
+    loop i from 0 to n - 1 {
+        loop j from 0 to n - 1 {
+            set sum = 0
+            loop k from 0 to n - 1 {
+                sum = sum + a[i * n + k] * b[k * n + j]
+            }
+            c[i * n + j] = sum
+        }
+    }
+}
+
+test task bench_matrix_200() {
+    set n = MATRIX_SIZE
+    set size = n * n
+    
+    set a = alloc(size, 8)  // int = 8 bytes
+    set b = alloc(size, 8)
+    set c = alloc(size, 8)
+    
+    // Initialize with identity-like values
+    loop i from 0 to size - 1 {
+        a[i] = i % 100
+        b[i] = (i + 50) % 100
+    }
+    
+    matrix_multiply(a, b, c, n)
+    
+    // Verify a few values
+    assert(c[0] != 0, "Matrix multiplication produced result")
+    assert(c[size - 1] != 0, "Matrix multiplication produced result")
+    
+    free a
+    free b
+    free c
+}
+
+// ── SHA-256 Throughput ────────────────────────────────────────────────────
+// Tests cryptographic performance with real hashing
+
+test task bench_sha256_1mb() {
+    set data = alloc(1048576, 1)  // 1MB
+    // Fill with pseudo-random pattern
+    loop i from 0 to 1048575 {
+        data[i] = (i * 1103515245 + 12345) & 0xFF
+    }
+    
+    set hash = alloc(32, 1)
+    sha256(data, 1048576, hash)
+    
+    // Verify not all zeros
+    set nonzero = false
+    loop i from 0 to 31 {
+        check hash[i] != 0 {
+            nonzero = true
+            break
+        }
+    }
+    assert(nonzero, "SHA-256 produced non-zero hash")
+    
+    free data
+    free hash
+}
+
+test task bench_sha256_10mb() {
+    set size = 10485760  // 10MB
+    set data = alloc(size, 1)
+    loop i from 0 to size - 1 {
+        data[i] = (i * 1103515245 + 12345) & 0xFF
+    }
+    
+    set hash = alloc(32, 1)
+    sha256(data, size, hash)
+    free data
+    free hash
+    assert(true, "SHA-256 10MB completed")
+}
+
+// ── String Operations ─────────────────────────────────────────────────────
+
+test task bench_string_concat() {
+    set result = ""
+    loop i from 0 to 999 {
+        result = str_concat(result, "a")
+    }
+    assert(str_len(result) == 1000, "String concat 1000 chars")
+}
+
+test task bench_string_find() {
+    set haystack = str_repeat("abcdefghij", 10000)  // 100K chars
+    set pos = str_find(haystack, "ghij")
+    assert(pos > 0, "String find in 100K")
+}
+
+test task bench_string_replace() {
+    set text = str_repeat("hello world ", 1000)
+    set replaced = str_replace(text, "world", "Sovereign")
+    assert(str_contains(replaced, "Sovereign"), "String replace 1000 times")
+}
+
+// ── Vector Operations ────────────────────────────────────────────────────
+
+test task bench_vec_push_pop() {
+    set v = vec_new()
+    // Push 100,000 integers
+    loop i from 0 to 99999 {
+        v = vec_push(v, i)
+    }
+    assert(vec_len(v) == 100000, "Vec push 100K elements")
+    
+    // Pop them all
+    loop i from 0 to 99999 {
+        vec_pop(v)
+    }
+    assert(vec_len(v) == 0, "Vec pop all elements")
+}
+
+test task bench_vec_random_access() {
+    set v = vec_new()
+    loop i from 0 to 9999 {
+        v = vec_push(v, i * 2)
+    }
+    
+    set sum = 0
+    loop i from 0 to 9999 {
+        sum = sum + vec_get(v, i)
+    }
+    assert(sum == 99990000, "Vec random access sum")
+}
+
+// ── HashMap Operations ───────────────────────────────────────────────────
+
+test task bench_hashmap_insert_lookup() {
+    set hm = hashmap_new()
+    
+    // Insert 10,000 entries
+    loop i from 0 to 9999 {
+        set key = str_concat("key_", int_to_str(i))
+        hashmap_insert(hm, key, i)
+    }
+    
+    assert(hashmap_count(hm) == 10000, "HashMap insert 10K")
+    
+    // Lookup all entries
+    set found = 0
+    loop i from 0 to 9999 {
+        set key = str_concat("key_", int_to_str(i))
+        check hashmap_contains(hm, key) {
+            found = found + 1
+        }
+    }
+    assert(found == 10000, "HashMap lookup 10K")
+}
+
+// ── AES-256-GCM Throughput ───────────────────────────────────────────────
+
+test task bench_aes256_gcm_encrypt_1mb() {
+    set key = alloc(32, 1)
+    set iv = alloc(12, 1)
+    set pt = alloc(1048576, 1)
+    set ct = alloc(1048576, 1)
+    set tag = alloc(16, 1)
+    
+    random_key(key)
+    random_bytes(iv, 12)
+    loop i from 0 to 1048575 { pt[i] = i & 0xFF }
+    
+    set result = aes256_gcm_encrypt(key, iv, 12, pt, 1048576, null, 0, ct, tag)
+    assert(result.is_ok, "AES-256-GCM encrypt 1MB")
+    
+    free key; free iv; free pt; free ct; free tag
+}
+
+test task bench_aes256_gcm_decrypt_1mb() {
+    set key = alloc(32, 1)
+    set iv = alloc(12, 1)
+    set pt = alloc(1048576, 1)
+    set ct = alloc(1048576, 1)
+    set tag = alloc(16, 1)
+    set dec = alloc(1048576, 1)
+    
+    random_key(key)
+    random_bytes(iv, 12)
+    loop i from 0 to 1048575 { pt[i] = i & 0xFF }
+    
+    set enc_result = aes256_gcm_encrypt(key, iv, 12, pt, 1048576, null, 0, ct, tag)
+    assert(enc_result.is_ok, "AES encrypt for decrypt test")
+    
+    set dec_result = aes256_gcm_decrypt(key, iv, 12, ct, 1048576, null, 0, tag, dec)
+    assert(dec_result.is_ok, "AES-256-GCM decrypt 1MB")
+    
+    free key; free iv; free pt; free ct; free tag; free dec
+}
+
+// ── ChaCha20-Poly1305 Throughput ─────────────────────────────────────────
+
+test task bench_chacha20_encrypt_1mb() {
+    set key = alloc(32, 1)
+    set nonce = alloc(12, 1)
+    set pt = alloc(1048576, 1)
+    set ct = alloc(1048576, 1)
+    set tag = alloc(16, 1)
+    
+    random_bytes(key, 32)
+    random_bytes(nonce, 12)
+    loop i from 0 to 1048575 { pt[i] = i & 0xFF }
+    
+    set result = chacha20_poly1305_encrypt(key, nonce, pt, 1048576, null, 0, ct, tag)
+    assert(result.is_ok, "ChaCha20-Poly1305 encrypt 1MB")
+    
+    free key; free nonce; free pt; free ct; free tag
+}
+
+// ── Random Number Generation Throughput ──────────────────────────────────
+
+test task bench_random_bytes_1mb() {
+    set buf = alloc(1048576, 1)
+    random_bytes(buf, 1048576)
+    
+    // Verify randomness (basic statistical check — count 1 bits)
+    set ones = 0
+    loop i from 0 to 1048575 {
+        set byte = buf[i]
+        loop bit from 0 to 7 {
+            check byte & (1 << bit) != 0 {
+                ones = ones + 1
+            }
+        }
+    }
+    // Should be roughly 50% ones (within 5% tolerance for 8 million bits)
+    set ratio = (ones * 100) / 8388608  // 8 million bits
+    assert(ratio > 45 and ratio < 55, "Random bit distribution")
+    
+    free buf
+}
+
+// ── Memory Pool Performance ──────────────────────────────────────────────
+
+test task bench_pool_small_allocs() {
+    loop i from 0 to 99999 {
+        set ptr = pool_alloc(16)
+        pool_free(ptr, 16)
+    }
+    assert(true, "100K pool alloc/free cycles")
+}
+
+test task bench_pool_medium_allocs() {
+    loop i from 0 to 9999 {
+        set ptr = pool_alloc(128)
+        pool_free(ptr, 128)
+    }
+    assert(true, "10K medium pool alloc/free cycles")
+}
+
+// ── Prime Number Sieve ───────────────────────────────────────────────────
+
+test task bench_sieve_100000() {
+    const N = 100000
+    set is_prime = alloc(N + 1, 1)
+    
+    // Initialize
+    loop i from 2 to N { is_prime[i] = 1 }
+    
+    // Sieve
+    loop i from 2 to N {
+        check is_prime[i] == 1 {
+            set j = i * 2
+            loop j <= N {
+                is_prime[j] = 0
+                j = j + i
+            }
+        }
+    }
+    
+    // Count primes
+    set count = 0
+    loop i from 2 to N {
+        check is_prime[i] == 1 { count = count + 1 }
+    }
+    
+    assert(count == 9592, "Number of primes under 100,000")
+    free is_prime
+}
+
+// ── Run all benchmarks ───────────────────────────────────────────────────
+
+task main() {
+    println("╔══════════════════════════════════════════╗")
+    println("║  Sovereign Performance Benchmark Suite   ║")
+    println("╚══════════════════════════════════════════╝")
+    println("")
+    
+    println("── Fibonacci ──────────────────────────")
+    bench_fib_30()
+    bench_fib_35()
+    bench_fib_40()
+    println("  ✅ Fibonacci benchmarks passed")
+    
+    println("── Matrix Multiplication ──────────────")
+    bench_matrix_200()
+    println("  ✅ Matrix multiplication passed")
+    
+    println("── SHA-256 Throughput ────────────────")
+    bench_sha256_1mb()
+    bench_sha256_10mb()
+    println("  ✅ SHA-256 throughput passed")
+    
+    println("── String Operations ──────────────────")
+    bench_string_concat()
+    bench_string_find()
+    bench_string_replace()
+    println("  ✅ String operations passed")
+    
+    println("── Vector Operations ──────────────────")
+    bench_vec_push_pop()
+    bench_vec_random_access()
+    println("  ✅ Vector operations passed")
+    
+    println("── HashMap Operations ─────────────────")
+    bench_hashmap_insert_lookup()
+    println("  ✅ HashMap operations passed")
+    
+    println("── AES-256-GCM Throughput ─────────────")
+    bench_aes256_gcm_encrypt_1mb()
+    bench_aes256_gcm_decrypt_1mb()
+    println("  ✅ AES-256-GCM passed")
+    
+    println("── ChaCha20 Throughput ────────────────")
+    bench_chacha20_encrypt_1mb()
+    println("  ✅ ChaCha20-Poly1305 passed")
+    
+    println("── Random Number Generation ───────────")
+    bench_random_bytes_1mb()
+    println("  ✅ RNG passed")
+    
+    println("── Memory Pool ────────────────────────")
+    bench_pool_small_allocs()
+    bench_pool_medium_allocs()
+    println("  ✅ Memory pool passed")
+    
+    println("── Prime Sieve ────────────────────────")
+    bench_sieve_100000()
+    println("  ✅ Prime sieve passed")
+    
+    println("")
+    println("╔══════════════════════════════════════════╗")
+    println("║  ✅ All benchmarks passed successfully   ║")
+    println("╚══════════════════════════════════════════╝")
+}

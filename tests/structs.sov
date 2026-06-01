@@ -1,0 +1,34 @@
+// Test 2: Structs and methods
+// Expected output:
+// 5
+// 12
+// 13
+// true
+
+struct Rectangle {
+    width:  int
+    height: int
+}
+
+task area(r: Rectangle) -> int {
+    return r.width * r.height
+}
+
+task perimeter(r: Rectangle) -> int {
+    return 2 * (r.width + r.height)
+}
+
+task is_square(r: Rectangle) -> bool {
+    return r.width == r.height
+}
+
+set r = Rectangle { width: 3, height: 4 }
+
+println(r.width + r.height)
+println(area(r))
+println(perimeter(r))
+println(is_square(Rectangle { width: 5, height: 5 }))
+
+assert(area(r) == 12, "area works")
+assert(perimeter(r) == 14, "perimeter works")
+assert(is_square(Rectangle { width: 5, height: 5 }), "square detection works")

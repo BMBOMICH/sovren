@@ -1,0 +1,222 @@
+name: Sovereign CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  # ── Build & test on Linux ──────────────────────────────────────
+  linux:
+    name: Linux (gcc + clang)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get install -y clang llvm-dev
+
+      - name: Build runtime (gcc/clang)
+        run: ${{ matrix.cc }} -c runtime/runtime.c -o runtime/runtime.o -O2 -Wall -Wextra -std=c11 -DSOV_RUNTIME_STANDALONE
+
+      - name: Build bootstrap compiler
+        run: ${{ matrix.cc }} -O2 bootstrap/sovereign.c -o build/sovereign -lm
+
+      - name: Stage 1 — Compile .sov sources to C
+        run: ./build/sovereign build src/main.sov -o build/stage1.c
+
+      - name: Stage 2 — Build compiler from Stage 1
+        run: ${{ matrix.cc }} -O2 build/stage1.c runtime/runtime.c -o build/sovereign2 -lm
+
+      - name: Stage 3 — Self-compile with Stage 2
+        run: |
+          ./build/sovereign2 build src/main.sov -o build/stage2.c
+          ${{ matrix.cc }} -O2 build/stage2.c runtime/runtime.c -o build/sovereign3 -lm
+
+      - name: Verify convergence
+        run: |
+          diff build/stage1.c build/stage2.c
+          echo "✅ Self-hosting verified — stage1.c == stage2.c"
+
+      - name: Build with LLVM target
+        run: ./build/sovereign3 build src/main.sov --target llvm -o build/output.ll
+
+      - name: Verify LLVM IR
+        run: |
+          llc --version
+          llc build/output.ll -o build/output.s
+          ${{ matrix.cc }} -O2 build/output.s runtime/runtime.c -o build/sovereign-llvm -lm
+          echo "✅ LLVM backend generates valid IR"
+
+      - name: Run crypto tests
+        run: |
+          cat > build/test_crypto.c << 'EOF'
+          #include "../runtime/runtime.h"
+          #include <stdio.h>
+          #include <string.h>
+          int main() {
+              // SHA-256 test: empty string
+              uint8_t sha_out[32];
+              sov_sha256("", 0, sha_out);
+              uint8_t expected[32] = {
+                  0xe3,0xb0,0xc4,0x42,0x98,0xfc,0x1c,0x14,0x9a,0xfb,0xf4,0xc8,0x99,0x6f,0xb9,0x24,
+                  0x27,0xae,0x41,0xe4,0x64,0x9b,0x93,0x4c,0xa4,0x95,0x99,0x1b,0x78,0x52,0xb8,0x55
+              };
+              if (memcmp(sha_out, expected, 32) != 0) {
+                  printf("FAIL: SHA-256 empty string\n"); return 1;
+              }
+              printf("PASS: SHA-256\n");
+
+              // HMAC test vector (RFC 4231 Test Case 1)
+              uint8_t hmac_out[32];
+              uint8_t key[] = {0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,0x0b,0x0b};
+              uint8_t data[] = {0x48,0x69,0x20,0x54,0x68,0x65,0x72,0x65};
+              sov_hmac_sha256(key, 20, data, 8, hmac_out);
+              uint8_t hmac_expected[32] = {
+                  0xb0,0x34,0x4c,0x61,0xd8,0xdb,0x38,0x53,0x5c,0xa8,0xaf,0xce,0xaf,0x0b,0xf1,0x2b,
+                  0x88,0x1d,0xc2,0x00,0xc9,0x83,0x3d,0xa7,0x26,0xe9,0x37,0x6c,0x2e,0x32,0xcf,0xf7
+              };
+              if (memcmp(hmac_out, hmac_expected, 32) != 0) {
+                  printf("FAIL: HMAC-SHA256\n"); return 1;
+              }
+              printf("PASS: HMAC-SHA256\n");
+
+              // AES-256-GCM test
+              uint8_t aes_key[32] = {0};
+              uint8_t aes_iv[12] = {0};
+              uint8_t aes_pt[] = "Hello, World!";
+              uint8_t aes_ct[32], aes_tag[16], aes_dec[32];
+              sov_result r = sov_aes256_gcm_encrypt(aes_key, aes_iv, 12, aes_pt, 13, NULL, 0, aes_ct, aes_tag);
+              if (!r.is_ok) { printf("FAIL: AES-GCM encrypt\n"); return 1; }
+              r = sov_aes256_gcm_decrypt(aes_key, aes_iv, 12, aes_ct, 13, NULL, 0, aes_tag, aes_dec);
+              if (!r.is_ok || memcmp(aes_dec, aes_pt, 13) != 0) {
+                  printf("FAIL: AES-GCM decrypt\n"); return 1;
+              }
+              printf("PASS: AES-256-GCM\n");
+
+              // ChaCha20-Poly1305 test
+              uint8_t chacha_key[32] = {0};
+              uint8_t chacha_nonce[12] = {0};
+              uint8_t chacha_ct[32], chacha_tag[16], chacha_dec[32];
+              r = sov_chacha20_poly1305_encrypt(chacha_key, chacha_nonce, aes_pt, 13, NULL, 0, chacha_ct, chacha_tag);
+              if (!r.is_ok) { printf("FAIL: ChaCha20-Poly1305 encrypt\n"); return 1; }
+              r = sov_chacha20_poly1305_decrypt(chacha_key, chacha_nonce, chacha_ct, 13, NULL, 0, chacha_tag, chacha_dec);
+              if (!r.is_ok || memcmp(chacha_dec, aes_pt, 13) != 0) {
+                  printf("FAIL: ChaCha20-Poly1305 decrypt\n"); return 1;
+              }
+              printf("PASS: ChaCha20-Poly1305\n");
+
+              // Secure random
+              uint8_t rnd[64];
+              sov_random_bytes(rnd, 64);
+              int nonzero = 0;
+              for (int i = 0; i < 64; i++) nonzero |= rnd[i];
+              if (!nonzero) { printf("FAIL: Random bytes all zero\n"); return 1; }
+              printf("PASS: Random bytes\n");
+
+              // Constant-time comparison
+              uint8_t a[] = {1,2,3,4}, b[] = {1,2,3,4}, c[] = {1,2,3,5};
+              if (!sov_secure_compare(a, b, 4)) { printf("FAIL: secure_compare equal\n"); return 1; }
+              if (sov_secure_compare(a, c, 4)) { printf("FAIL: secure_compare unequal\n"); return 1; }
+              printf("PASS: Constant-time compare\n");
+
+              printf("\n✅ All cryptographic tests passed!\n");
+              return 0;
+          }
+          EOF
+          ${{ matrix.cc }} -O2 build/test_crypto.c runtime/runtime.c -o build/test_crypto -lm
+          ./build/test_crypto
+
+  # ── Build & test on macOS ────────────────────────────────────────
+  macos:
+    name: macOS (clang)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build runtime
+        run: clang -c runtime/runtime.c -o runtime/runtime.o -O2 -Wall -Wextra -std=c11
+
+      - name: Build bootstrap compiler
+        run: clang -O2 bootstrap/sovereign.c -o build/sovereign -lm
+
+      - name: Self-hosting cycle
+        run: |
+          ./build/sovereign build src/main.sov -o build/stage1.c
+          clang -O2 build/stage1.c runtime/runtime.c -o build/sovereign2 -lm
+          ./build/sovereign2 build src/main.sov -o build/stage2.c
+          diff build/stage1.c build/stage2.c && echo "✅ Self-hosting verified"
+
+  # ── Build & test on Windows ──────────────────────────────────────
+  windows:
+    name: Windows (MSVC + MinGW)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build runtime (MSVC)
+        run: cl /c /O2 /std:c11 runtime/runtime.c /Fo:runtime/runtime.obj
+
+      - name: Build runtime (MinGW)
+        run: gcc -c runtime/runtime.c -o runtime/runtime.o -O2 -Wall -std=c11
+
+      - name: Build bootstrap (MSVC)
+        run: cl /O2 bootstrap/sovereign.c /Fe:build/sovereign.exe /link
+
+      - name: Self-hosting cycle (MSVC)
+        run: |
+          .\build\sovereign.exe build src/main.sov -o build/stage1.c
+          cl /O2 build/stage1.c runtime/runtime.c /Fe:build/sovereign2.exe /link
+          .\build\sovereign2.exe build src/main.sov -o build/stage2.c
+          fc build/stage1.c build/stage2.c
+          echo "✅ Self-hosting verified"
+
+  # ── Crypto verification ─────────────────────────────────────────
+  crypto-vectors:
+    name: Crypto Test Vectors
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and run crypto test vectors
+        run: |
+          gcc -O2 -o build/crypto_test runtime/runtime.c -DSOV_RUNTIME_STANDALONE -lm
+          
+          cat > build/crypto_verify.c << 'CEOF'
+          #include "../runtime/runtime.h"
+          #include <stdio.h>
+          #include <string.h>
+          #include <assert.h>
+
+          void test_sha256_vectors() {
+              // FIPS 180-4 test vectors
+              struct { char* input; uint8_t expected[32]; } tests[] = {
+                  {"abc", {0xba,0x78,0x16,0xbf,0x8f,0x01,0xcf,0xea,0x41,0x41,0x40,0xde,0x5d,0xae,0x22,0x23,
+                           0xb0,0x03,0x61,0xa3,0x96,0x17,0x7a,0x9c,0xb4,0x10,0xff,0x61,0xf2,0x00,0x15,0xad}},
+                  {"", {0xe3,0xb0,0xc4,0x42,0x98,0xfc,0x1c,0x14,0x9a,0xfb,0xf4,0xc8,0x99,0x6f,0xb9,0x24,
+                         0x27,0xae,0x41,0xe4,0x64,0x9b,0x93,0x4c,0xa4,0x95,0x99,0x1b,0x78,0x52,0xb8,0x55}},
+                  {"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq",
+                   {0x24,0x8d,0x6a,0x61,0xd2,0x06,0x38,0xb8,0xe5,0xc0,0x26,0x93,0x0c,0x3e,0x60,0x39,
+                    0xa3,0x3c,0xe4,0x59,0x64,0xff,0x21,0x67,0xf6,0xec,0xed,0xd4,0x19,0xdb,0x06,0xc1}},
+              };
+              int n = sizeof(tests)/sizeof(tests[0]);
+              for (int i = 0; i < n; i++) {
+                  uint8_t out[32];
+                  sov_sha256(tests[i].input, strlen(tests[i].input), out);
+                  assert(memcmp(out, tests[i].expected, 32) == 0);
+              }
+              printf("✅ SHA-256: %d FIPS 180-4 vectors passed\n", n);
+          }
+
+          int main() {
+              test_sha256_vectors();
+              printf("\n✅ All cryptographic test vectors passed!\n");
+              return 0;
+          }
+          CEOF
+          gcc -O2 build/crypto_verify.c runtime/runtime.c -o build/crypto_verify -lm
+          ./build/crypto_verify

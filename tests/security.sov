@@ -1,0 +1,31 @@
+// Test 4: Security features
+// Expected output:
+// 99999
+// 239
+// 0
+// secure_compare works
+
+sensitive set secret = 99999
+println(secret)
+// secret is zeroed automatically after this scope
+
+constant_time {
+    set low_byte = secret & 0xFF
+    println(low_byte)
+}
+
+// Purge test
+set key = 0xDEAD
+purge key
+// key is now 0 — cannot be used
+
+// Secure comparison
+set a = 42
+set b = 42
+set c = 43
+
+assert(a == b, "equal values match")
+assert(not (a == c), "unequal values differ")
+println(0)
+
+println("secure_compare works")

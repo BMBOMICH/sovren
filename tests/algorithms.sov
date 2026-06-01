@@ -1,0 +1,37 @@
+// Test 5: Real algorithm — bubble sort
+// Expected output:
+// 11
+// 12
+// 22
+// 25
+// 34
+// 64
+// 90
+
+task bubble_sort(arr: [int], n: int) {
+    loop i from 0 to n - 2 {
+        loop j from 0 to n - i - 2 {
+            check arr[j] > arr[j + 1] {
+                set tmp   = arr[j]
+                arr[j]     = arr[j + 1]
+                arr[j + 1] = tmp
+            }
+        }
+    }
+}
+
+task is_sorted(arr: [int], n: int) -> bool {
+    loop i from 0 to n - 2 {
+        check arr[i] > arr[i + 1] { return false }
+    }
+    return true
+}
+
+set data = [64, 34, 25, 12, 22, 11, 90]
+bubble_sort(data, 7)
+
+assert(is_sorted(data, 7), "sort works")
+
+loop i from 0 to 6 {
+    println(data[i])
+}

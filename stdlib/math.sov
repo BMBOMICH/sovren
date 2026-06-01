@@ -1,0 +1,125 @@
+/// Sovereign Standard Library — Math
+/// Mathematical functions and constants.
+
+import "native.sov"
+
+const PI = 3.141592653589793
+const E  = 2.718281828459045
+const TAU = 6.283185307179586
+
+/// Absolute value
+task abs(x: int) -> int {
+    check x < 0 { return -x }
+    return x
+}
+
+task abs_float(x: float) -> float {
+    check x < 0.0 { return -x }
+    return x
+}
+
+/// Minimum / Maximum
+task min(a: int, b: int) -> int {
+    check a < b { return a }
+    return b
+}
+
+task max(a: int, b: int) -> int {
+    check a > b { return a }
+    return b
+}
+
+task min_float(a: float, b: float) -> float {
+    check a < b { return a }
+    return b
+}
+
+task max_float(a: float, b: float) -> float {
+    check a > b { return a }
+    return b
+}
+
+/// Clamp value between min and max
+task clamp(val: int, lo: int, hi: int) -> int {
+    return min(max(val, lo), hi)
+}
+
+/// Power (integer exponent, iterative)
+task pow_int(base: int, exp: int) -> int {
+    check exp < 0 { return 0 }
+    check exp == 0 { return 1 }
+    set result = 1
+    loop i from 0 to exp - 1 {
+        result = result * base
+    }
+    return result
+}
+
+/// Integer square root (floor)
+task isqrt(n: int) -> int {
+    check n < 0 { return 0 }
+    check n < 2 { return n }
+    set x = n / 2
+    loop {
+        set y = (x + n / x) / 2
+        check y >= x { break }
+        x = y
+    }
+    return x
+}
+
+/// Greatest Common Divisor
+task gcd(a: int, b: int) -> int {
+    loop b != 0 {
+        set t = b
+        b = a % b
+        a = t
+    }
+    return a
+}
+
+/// Least Common Multiple
+task lcm(a: int, b: int) -> int {
+    return (a / gcd(a, b)) * b
+}
+
+/// Factorial
+task factorial(n: int) -> int {
+    check n < 0 { return 0 }
+    set result = 1
+    loop i from 2 to n {
+        result = result * i
+    }
+    return result
+}
+
+/// Check if number is prime
+task is_prime(n: int) -> bool {
+    check n < 2 { return false }
+    check n == 2 { return true }
+    check n % 2 == 0 { return false }
+    set limit = isqrt(n)
+    set i = 3
+    loop i <= limit {
+        check n % i == 0 { return false }
+        i = i + 2
+    }
+    return true
+}
+
+/// Floor / Ceil / Round for float
+task floor_float(x: float) -> int {
+    set i = x as int
+    check x < 0.0 and x != i as float { return i - 1 }
+    return i
+}
+
+task ceil_float(x: float) -> int {
+    set i = x as int
+    check x > 0.0 and x != i as float { return i + 1 }
+    return i
+}
+
+task round_float(x: float) -> int {
+    return floor_float(x + 0.5)
+}

@@ -1,0 +1,30 @@
+// Test 3: Generic tasks
+// Expected output:
+// 7
+// 3
+// 2.500000
+// 1.500000
+// hello
+
+task max_val[T](a: T, b: T) -> T {
+    check a > b { return a }
+    return b
+}
+
+task min_val[T](a: T, b: T) -> T {
+    check a < b { return a }
+    return b
+}
+
+task identity[T](x: T) -> T {
+    return x
+}
+
+println(max_val(3, 7))
+println(min_val(3, 7))
+println(max_val(1.5, 2.5))
+println(min_val(1.5, 2.5))
+println(identity("hello"))
+
+assert(max_val(3, 7) == 7, "max_val int")
+assert(min_val(3, 7) == 3, "min_val int")

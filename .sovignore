@@ -1,3 +1,6 @@
+# Sovereign .sovignore
+# Files and directories ignored by the Sovereign package manager and tools
+
 # Build output
 build/
 *.o
@@ -8,9 +11,8 @@ build/
 *.dylib
 *.dll
 *.wasm
-*.wat
 
-# Generated C code
+# Generated C code from compiler
 *.gen.c
 *.gen.h
 stage*.c
@@ -41,5 +43,6 @@ stage*.c
 Thumbs.db
 
 # Temporary
+/tmp/
 *.tmp
 *.log

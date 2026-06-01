@@ -1,0 +1,339 @@
+/// Sovereign Standard Library — JSON
+/// Built-in, zero-dependency JSON parsing and serialization.
+///
+/// Usage:
+///   set data = json_parse("{\"name\":\"Alice\",\"age\":30}")
+///   set name = json_get(data, "name")     // "Alice"
+///   set output = json_stringify(data)
+
+import "native.sov"
+
+// ============================================================================
+// JSON VALUE TYPE
+// ============================================================================
+
+const JSON_NULL   = 0
+const JSON_BOOL   = 1
+const JSON_NUMBER = 2
+const JSON_STRING = 3
+const JSON_ARRAY  = 4
+const JSON_OBJECT = 5
+
+struct JsonValue {
+    kind:       int
+    bool_val:   bool
+    num_val:    float
+    str_val:    string
+    array_vals: Vec     // Vec<JsonValue>
+    object_keys: VecStr
+    object_vals: Vec    // Vec<JsonValue>
+}
+
+// ============================================================================
+// JSON PARSER
+// ============================================================================
+
+struct JsonParser {
+    source:     string
+    pos:        int
+    length:     int
+}
+
+task json_parser_new(s: string) -> JsonParser {
+    return JsonParser {
+        source: s,
+        pos:    0,
+        length: str_len(s)
+    }
+}
+
+task json_parser_peek(p: JsonParser) -> int {
+    check p.pos >= p.length { return 0 }
+    return str_char_at(p.source, p.pos)
+}
+
+task json_parser_advance(p: JsonParser) -> JsonParser {
+    check p.pos < p.length {
+        p.pos = p.pos + 1
+    }
+    return p
+}
+
+task json_parser_skip_whitespace(p: JsonParser) -> JsonParser {
+    loop p.pos < p.length {
+        set c = json_parser_peek(p)
+        check c == 32 or c == 10 or c == 13 or c == 9 {
+            p = json_parser_advance(p)
+        } else {
+            break
+        }
+    }
+    return p
+}
+
+task json_parse_value(p: JsonParser) -> JsonValue {
+    p = json_parser_skip_whitespace(p)
+    set c = json_parser_peek(p)
+
+    // String
+    check c == 34 {  // '"'
+        return json_parse_string(p)
+    }
+
+    // Number
+    check (c >= 48 and c <= 57) or c == 45 {  // digit or '-'
+        return json_parse_number(p)
+    }
+
+    // Object
+    check c == 123 {  // '{'
+        return json_parse_object(p)
+    }
+
+    // Array
+    check c == 91 {  // '['
+        return json_parse_array(p)
+    }
+
+    // true
+    check c == 116 {  // 't'
+        return json_parse_true(p)
+    }
+
+    // false
+    check c == 102 {  // 'f'
+        return json_parse_false(p)
+    }
+
+    // null
+    check c == 110 {  // 'n'
+        return json_parse_null(p)
+    }
+
+    return JsonValue { kind: JSON_NULL, str_val: "", num_val: 0.0, bool_val: false }
+}
+
+task json_parse_string(p: JsonParser) -> JsonValue {
+    p = json_parser_advance(p)  // skip opening '"'
+
+    set sb = sb_new()
+    loop p.pos < p.length {
+        set c = json_parser_peek(p)
+        check c == 34 {  // closing '"'
+            p = json_parser_advance(p)
+            break
+        }
+        check c == 92 {  // backslash - escape
+            p = json_parser_advance(p)
+            set esc = json_parser_peek(p)
+            check esc == 110 { sb = sb_append_char(sb, 10) }      // \n
+            check esc == 116 { sb = sb_append_char(sb, 9) }       // \t
+            check esc == 114 { sb = sb_append_char(sb, 13) }      // \r
+            check esc == 34 { sb = sb_append_char(sb, 34) }       // \"
+            check esc == 92 { sb = sb_append_char(sb, 92) }       // \\
+            p = json_parser_advance(p)
+        } else {
+            sb = sb_append_char(sb, c)
+            p = json_parser_advance(p)
+        }
+    }
+
+    set s = sb_to_string(sb)
+    return JsonValue { kind: JSON_STRING, str_val: s, num_val: 0.0, bool_val: false }
+}
+
+task json_parse_number(p: JsonParser) -> JsonValue {
+    set sb = sb_new()
+    set is_float = false
+
+    loop p.pos < p.length {
+        set c = json_parser_peek(p)
+        check (c >= 48 and c <= 57) or c == 45 or c == 46 or c == 101 or c == 69 or c == 43 {
+            check c == 46 or c == 101 or c == 69 { is_float = true }
+            sb = sb_append_char(sb, c)
+            p = json_parser_advance(p)
+        } else {
+            break
+        }
+    }
+
+    set s = sb_to_string(sb)
+    set num = str_to_float(s)
+    return JsonValue { kind: JSON_NUMBER, num_val: num, str_val: "", bool_val: false }
+}
+
+task json_parse_object(p: JsonParser) -> JsonValue {
+    p = json_parser_advance(p)  // skip '{'
+
+    set val = JsonValue {
+        kind: JSON_OBJECT,
+        object_keys: vecstr_new(),
+        object_vals: vec_new(),
+        str_val: "", num_val: 0.0, bool_val: false
+    }
+
+    loop {
+        p = json_parser_skip_whitespace(p)
+        set c = json_parser_peek(p)
+        check c == 125 { p = json_parser_advance(p); break }  // '}'
+
+        // Parse key
+        set key_val = json_parse_string(p)
+        val.object_keys = vecstr_push(val.object_keys, key_val.str_val)
+
+        // Skip ':'
+        p = json_parser_skip_whitespace(p)
+        check json_parser_peek(p) == 58 { p = json_parser_advance(p) }  // ':'
+
+        // Parse value
+        set v = json_parse_value(p)
+        val.object_vals = vec_push(val.object_vals, v)
+
+        // Check for ',' or '}'
+        p = json_parser_skip_whitespace(p)
+        check json_parser_peek(p) == 44 { p = json_parser_advance(p) }  // ','
+    }
+
+    return val
+}
+
+task json_parse_array(p: JsonParser) -> JsonValue {
+    p = json_parser_advance(p)  // skip '['
+
+    set val = JsonValue {
+        kind: JSON_ARRAY,
+        array_vals: vec_new(),
+        str_val: "", num_val: 0.0, bool_val: false
+    }
+
+    loop {
+        p = json_parser_skip_whitespace(p)
+        check json_parser_peek(p) == 93 { p = json_parser_advance(p); break }  // ']'
+
+        set v = json_parse_value(p)
+        val.array_vals = vec_push(val.array_vals, v)
+
+        p = json_parser_skip_whitespace(p)
+        check json_parser_peek(p) == 44 { p = json_parser_advance(p) }  // ','
+    }
+
+    return val
+}
+
+task json_parse_true(p: JsonParser) -> JsonValue {
+    // Skip "true"
+    loop i from 0 to 3 { p = json_parser_advance(p) }
+    return JsonValue { kind: JSON_BOOL, bool_val: true, str_val: "", num_val: 0.0 }
+}
+
+task json_parse_false(p: JsonParser) -> JsonValue {
+    // Skip "false"
+    loop i from 0 to 4 { p = json_parser_advance(p) }
+    return JsonValue { kind: JSON_BOOL, bool_val: false, str_val: "", num_val: 0.0 }
+}
+
+task json_parse_null(p: JsonParser) -> JsonValue {
+    // Skip "null"
+    loop i from 0 to 3 { p = json_parser_advance(p) }
+    return JsonValue { kind: JSON_NULL, str_val: "", num_val: 0.0, bool_val: false }
+}
+
+// ============================================================================
+// PUBLIC API
+// ============================================================================
+
+/// Parse a JSON string into a JsonValue
+task json_parse(input: string) -> JsonValue {
+    set parser = json_parser_new(input)
+    return json_parse_value(parser)
+}
+
+/// Get a field from a JSON object by key
+task json_get(val: JsonValue, key: string) -> JsonValue {
+    check val.kind != JSON_OBJECT { return JsonValue { kind: JSON_NULL } }
+
+    set n = vecstr_len(val.object_keys)
+    loop i from 0 to n - 1 {
+        check str_eq(vecstr_get(val.object_keys, i), key) {
+            return vec_get(val.object_vals, i)
+        }
+    }
+    return JsonValue { kind: JSON_NULL }
+}
+
+/// Get an element from a JSON array by index
+task json_get_index(val: JsonValue, index: int) -> JsonValue {
+    check val.kind != JSON_ARRAY { return JsonValue { kind: JSON_NULL } }
+    check index < 0 or index >= vec_len(val.array_vals) {
+        return JsonValue { kind: JSON_NULL }
+    }
+    return vec_get(val.array_vals, index)
+}
+
+/// Convert a JsonValue to a pretty-printed JSON string
+task json_stringify(val: JsonValue) -> string {
+    return json_to_string_indent(val, 0)
+}
+
+task json_to_string_indent(val: JsonValue, indent: int) -> string {
+    set sb = sb_new()
+
+    check val.kind == JSON_NULL {
+        return "null"
+    }
+    check val.kind == JSON_BOOL {
+        check val.bool_val { return "true" }
+        return "false"
+    }
+    check val.kind == JSON_NUMBER {
+        return float_to_str(val.num_val)
+    }
+    check val.kind == JSON_STRING {
+        sb = sb_append(sb, "\"")
+        sb = sb_append(sb, json_escape_string(val.str_val))
+        sb = sb_append(sb, "\"")
+        return sb_to_string(sb)
+    }
+    check val.kind == JSON_ARRAY {
+        sb = sb_append(sb, "[")
+        set n = vec_len(val.array_vals)
+        loop i from 0 to n - 1 {
+            check i > 0 { sb = sb_append(sb, ", ") }
+            set elem = vec_get(val.array_vals, i)
+            sb = sb_append(sb, json_to_string_indent(elem, indent))
+        }
+        sb = sb_append(sb, "]")
+        return sb_to_string(sb)
+    }
+    check val.kind == JSON_OBJECT {
+        sb = sb_append(sb, "{")
+        set n = vecstr_len(val.object_keys)
+        loop i from 0 to n - 1 {
+            check i > 0 { sb = sb_append(sb, ", ") }
+            sb = sb_append(sb, "\"")
+            sb = sb_append(sb, vecstr_get(val.object_keys, i))
+            sb = sb_append(sb, "\":")
+            set v = vec_get(val.object_vals, i)
+            sb = sb_append(sb, json_to_string_indent(v, indent))
+        }
+        sb = sb_append(sb, "}")
+        return sb_to_string(sb)
+    }
+
+    return "null"
+}
+
+task json_escape_string(s: string) -> string {
+    set sb = sb_new()
+    set n = str_len(s)
+    loop i from 0 to n - 1 {
+        set c = str_char_at(s, i)
+        check c == 34  { sb = sb_append(sb, "\\\"") }
+        check c == 92  { sb = sb_append(sb, "\\\\") }
+        check c == 10  { sb = sb_append(sb, "\\n") }
+        check c == 13  { sb = sb_append(sb, "\\r") }
+        check c == 9   { sb = sb_append(sb, "\\t") }
+        else { sb = sb_append_char(sb, c) }
+    }
+    return sb_to_string(sb)
+}

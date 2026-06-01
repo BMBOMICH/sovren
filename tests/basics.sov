@@ -1,0 +1,34 @@
+// Test 1: Basic language features
+// Expected output:
+// 30
+// 7
+// Hello Alice
+// 1
+// 2
+// 3
+// 4
+// 5
+// done
+
+task add(a: int, b: int) -> int {
+    return a + b
+}
+
+task greet(name: string) {
+    println(str_concat("Hello ", name))
+}
+
+set result = add(10, 20)
+assert(result == 30, "add works")
+println(result)
+
+println(max(3, 7))
+
+greet("Alice")
+
+set nums = [1, 2, 3, 4, 5]
+loop i from 0 to 4 {
+    println(nums[i])
+}
+
+println("done")

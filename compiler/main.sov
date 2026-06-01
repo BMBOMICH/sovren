@@ -1,0 +1,481 @@
+import "../stdlib/native.sov"
+import "../stdlib/ast.sov"
+import "lexer.sov"
+import "parser.sov"
+import "semantic.sov"
+import "optimizer.sov"
+import "codegen/c.sov"
+import "codegen/llvm.sov"
+import "codegen/wasm.sov"
+
+const VERSION = "0.1.0"
+const PROGRAM_NAME = "sovereign"
+
+struct CliArgs {
+    command: string,
+    input_file: string,
+    output_file: string,
+    target: string,
+    optimize: bool,
+    debug_mode: bool,
+    show_help: bool,
+    show_version: bool,
+    format_mode: bool,
+    check_only: bool,
+    run_tests: bool,
+    repl_mode: bool
+}
+
+task print_usage() {
+    println("Sovereign v0.1.0")
+    println("")
+    println("Usage: sovereign <command> [options] [file.sov]")
+    println("")
+    println("Commands:")
+    println("  build <file.sov>      Compile to native binary")
+    println("  run <file.sov>        Interpret/run directly")
+    println("  check <file.sov>      Type-check only")
+    println("  fmt <file.sov>        Format source code")
+    println("  test <file.sov>       Run tests in file")
+    println("  repl                  Interactive REPL")
+    println("")
+    println("Build Options:")
+    println("  -o <file>             Output file name")
+    println("  --target <target>     c, llvm, wasm")
+    println("  --optimize            Enable optimizations")
+    println("  --debug               Include debug symbols")
+    println("")
+    println("Other Options:")
+    println("  --help, -h            Show this help")
+    println("  --version, -v         Show version")
+    println("")
+    println("Examples:")
+    println("  sovereign build hello.sov")
+    println("  sovereign build app.sov -o myapp --optimize")
+    println("  sovereign build lib.sov --target wasm")
+    println("  sovereign build lib.sov --target llvm")
+    println("  sovereign check myfile.sov")
+}
+
+task print_version() {
+    print_fmt("Sovereign %s", VERSION)
+    println("")
+    println("The privacy-first systems programming language")
+}
+
+task parse_args(argc: int, argv: ptr) -> CliArgs {
+    set args = CliArgs {
+        command: "",
+        input_file: "",
+        output_file: "",
+        target: "c",
+        optimize: false,
+        debug_mode: false,
+        show_help: false,
+        show_version: false,
+        format_mode: false,
+        check_only: false,
+        run_tests: false,
+        repl_mode: false
+    }
+    
+    check argc < 2 {
+        args.show_help = true
+        return args
+    }
+    
+    set i = 1
+    loop i < argc {
+        set arg = argv_get_string(argv, i)
+        
+        check str_eq(arg, "--help") or str_eq(arg, "-h") {
+            args.show_help = true
+            return args
+        }
+        
+        check str_eq(arg, "--version") or str_eq(arg, "-v") {
+            args.show_version = true
+            return args
+        }
+        
+        check str_eq(arg, "build") {
+            args.command = "build"
+            i = i + 1
+            continue
+        }
+        
+        check str_eq(arg, "run") {
+            args.command = "run"
+            i = i + 1
+            continue
+        }
+        
+        check str_eq(arg, "check") {
+            args.command = "check"
+            args.check_only = true
+            i = i + 1
+            continue
+        }
+        
+        check str_eq(arg, "fmt") {
+            args.command = "fmt"
+            args.format_mode = true
+            i = i + 1
+            continue
+        }
+        
+        check str_eq(arg, "test") {
+            args.command = "test"
+            args.run_tests = true
+            i = i + 1
+            continue
+        }
+        
+        check str_eq(arg, "repl") {
+            args.command = "repl"
+            args.repl_mode = true
+            i = i + 1
+            continue
+        }
+        
+        check str_eq(arg, "-o") {
+            i = i + 1
+            check i < argc {
+                args.output_file = argv_get_string(argv, i)
+            }
+            i = i + 1
+            continue
+        }
+        
+        check str_eq(arg, "--target") {
+            i = i + 1
+            check i < argc {
+                args.target = argv_get_string(argv, i)
+            }
+            i = i + 1
+            continue
+        }
+        
+        check str_eq(arg, "--optimize") {
+            args.optimize = true
+            i = i + 1
+            continue
+        }
+        
+        check str_eq(arg, "--debug") {
+            args.debug_mode = true
+            i = i + 1
+            continue
+        }
+        
+        check str_starts_with(arg, "-") == false {
+            check args.input_file == "" {
+                args.input_file = arg
+            }
+        }
+        
+        i = i + 1
+    }
+    
+    return args
+}
+
+task read_source_file(path: string) -> string {
+    set file = file_open(path, "r")
+    check file == null {
+        print_fmt("Error: Cannot open file '%s'", path)
+        return ""
+    }
+    
+    set content = file_read_all(file)
+    file_close(file)
+    return content
+}
+
+task write_output_file(path: string, content: string) -> bool {
+    set file = file_open(path, "w")
+    check file == null {
+        print_fmt("Error: Cannot create file '%s'", path)
+        return false
+    }
+    
+    file_write_string(file, content)
+    file_close(file)
+    return true
+}
+
+task compile_source(source: string, filename: string, target: string, optimize: bool) -> string {
+    set lexer = lexer_new(source, filename)
+    set tokens = lexer_tokenize(lexer)
+    
+    check tokens.len == 0 {
+        println("Error: Lexer produced no tokens")
+        return ""
+    }
+    
+    set parser = parser_new(tokens, filename)
+    set program = parser_parse(parser)
+    
+    check program.statements.len == 0 and parser.errors.len > 0 {
+        println("Parse errors:")
+        set i = 0
+        loop i < parser.errors.len {
+            print_fmt("  %s", vec_get_string(parser.errors, i))
+            i = i + 1
+        }
+        return ""
+    }
+    
+    set analyzer = analyzer_new()
+    set sem_result = analyzer_check(analyzer, program)
+    
+    check sem_result.has_errors {
+        println("Semantic errors:")
+        set i = 0
+        loop i < sem_result.errors.len {
+            print_fmt("  %s", vec_get_string(sem_result.errors, i))
+            i = i + 1
+        }
+        return ""
+    }
+    
+    check str_eq(target, "llvm") {
+        set output = compile_to_llvm(program, optimize)
+    } else check str_eq(target, "wasm") {
+        set output = compile_to_wasm(program)
+    } else {
+        set codegen = codegen_new(target, optimize)
+        set output = codegen_generate(codegen, program)
+    }
+    
+    return output
+}
+
+task format_source(source: string) -> string {
+    set result = string_builder_new()
+    set lines = str_split(source, "\n")
+    set indent = 0
+    set prev_blank = false
+    
+    set i = 0
+    loop i < lines.len {
+        set line = vec_get_string(lines, i)
+        set trimmed = str_trim(line)
+        
+        check str_len(trimmed) == 0 {
+            check prev_blank == false {
+                string_builder_append(result, "\n")
+            }
+            prev_blank = true
+            i = i + 1
+            continue
+        }
+        prev_blank = false
+        
+        check str_starts_with(trimmed, "}") {
+            check indent > 0 {
+                indent = indent - 1
+            }
+        }
+        
+        set j = 0
+        loop j < indent {
+            string_builder_append(result, "    ")
+            j = j + 1
+        }
+        
+        string_builder_append(result, trimmed)
+        string_builder_append(result, "\n")
+        
+        check str_ends_with(trimmed, "{") {
+            indent = indent + 1
+        }
+        
+        i = i + 1
+    }
+    
+    return string_builder_to_string(result)
+}
+
+task run_repl() {
+    println("Sovereign v0.1.0 REPL - type 'exit' to quit")
+    
+    loop {
+        print_raw(">>> ")
+        set line = read_line()
+        
+        check line == null or str_eq(str_trim(line), "exit") {
+            break
+        }
+        
+        set trimmed = str_trim(line)
+        check str_len(trimmed) == 0 {
+            continue
+        }
+        
+        check str_eq(trimmed, "help") {
+            println("Commands: exit, help, set x = 42, print x, x + y")
+            continue
+        }
+        
+        set result = compile_source(trimmed, "<repl>", "eval", false)
+        check str_len(result) > 0 {
+            println(result)
+        }
+    }
+    
+    println("Goodbye.")
+}
+
+task run_tests(source: string, filename: string) -> int {
+    print_fmt("Running tests in %s...", filename)
+    println("")
+    
+    set lexer = lexer_new(source, filename)
+    set tokens = lexer_tokenize(lexer)
+    set parser = parser_new(tokens, filename)
+    set program = parser_parse(parser)
+    
+    set passed = 0
+    set failed = 0
+    set total = 0
+    
+    set i = 0
+    loop i < program.statements.len {
+        set stmt = vec_get_ptr(program.statements, i)
+        set stmt_kind = stmt_get_kind(stmt)
+        
+        check stmt_kind == STMT_TASK {
+            set name = stmt_get_task_name(stmt)
+            check str_starts_with(name, "test_") {
+                total = total + 1
+                print_fmt("  Running %s...", name)
+                
+                set test_result = compile_source(source, filename, "eval", false)
+                check str_contains(test_result, "FAIL") {
+                    print_fmt("    FAILED")
+                    failed = failed + 1
+                } else {
+                    print_fmt("    PASSED")
+                    passed = passed + 1
+                }
+            }
+        }
+        
+        i = i + 1
+    }
+    
+    println("")
+    print_fmt("Results: %d passed, %d failed, %d total", passed, failed, total)
+    
+    check failed > 0 {
+        return 1
+    }
+    return 0
+}
+
+task main(argc: int, argv: ptr) -> int {
+    set args = parse_args(argc, argv)
+    
+    check args.show_help {
+        print_usage()
+        return 0
+    }
+    
+    check args.show_version {
+        print_version()
+        return 0
+    }
+    
+    check args.repl_mode {
+        run_repl()
+        return 0
+    }
+    
+    check args.input_file == "" {
+        println("Error: No input file specified")
+        println("Use 'sovereign --help' for usage information")
+        return 1
+    }
+    
+    set source = read_source_file(args.input_file)
+    check str_len(source) == 0 {
+        return 1
+    }
+    
+    check args.format_mode {
+        set formatted = format_source(source)
+        check args.output_file != "" {
+            write_output_file(args.output_file, formatted)
+            print_fmt("Formatted: %s -> %s", args.input_file, args.output_file)
+        } else {
+            write_output_file(args.input_file, formatted)
+            print_fmt("Formatted: %s", args.input_file)
+        }
+        return 0
+    }
+    
+    check args.run_tests {
+        return run_tests(source, args.input_file)
+    }
+    
+    check args.check_only {
+        set lexer = lexer_new(source, args.input_file)
+        set tokens = lexer_tokenize(lexer)
+        set parser = parser_new(tokens, args.input_file)
+        set program = parser_parse(parser)
+        
+        check parser.errors.len > 0 {
+            println("Parse errors:")
+            set i = 0
+            loop i < parser.errors.len {
+                print_fmt("  %s", vec_get_string(parser.errors, i))
+                i = i + 1
+            }
+            return 1
+        }
+        
+        set analyzer = analyzer_new()
+        set sem_result = analyzer_check(analyzer, program)
+        
+        check sem_result.has_errors {
+            println("Type errors:")
+            set i = 0
+            loop i < sem_result.errors.len {
+                print_fmt("  %s", vec_get_string(sem_result.errors, i))
+                i = i + 1
+            }
+            return 1
+        }
+        
+        print_fmt("OK: %s type-checks successfully", args.input_file)
+        return 0
+    }
+    
+    set output = compile_source(source, args.input_file, args.target, args.optimize)
+    check str_len(output) == 0 {
+        return 1
+    }
+    
+    set out_file = args.output_file
+    check out_file == "" {
+        out_file = str_replace(args.input_file, ".sov", "")
+        check str_eq(args.target, "c") {
+            out_file = str_concat(out_file, ".c")
+        } else check str_eq(args.target, "wasm") {
+            out_file = str_concat(out_file, ".wasm")
+        }
+    }
+    
+    check write_output_file(out_file, output) {
+        print_fmt("Compiled: %s -> %s", args.input_file, out_file)
+        check str_eq(args.target, "c") {
+            println("")
+            println("To create executable:")
+            print_fmt("  gcc -O2 %s runtime/runtime.c -o %s", out_file, str_replace(out_file, ".c", ""))
+        }
+        return 0
+    }
+    
+    return 1
+}

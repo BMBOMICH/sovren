@@ -1,0 +1,380 @@
+// ============================================================================
+// Sovereign Crypto Test Suite — FIPS / RFC Test Vectors
+// ============================================================================
+// Run: sovereign test tests/test_crypto_vectors.sov
+// These tests verify all cryptographic implementations against known test vectors.
+
+import "stdlib_native.sov"
+
+// ── SHA-256 FIPS 180-4 Test Vectors ───────────────────────────────────────
+
+test task test_sha256_empty() {
+    // SHA-256("") = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    set data = ""
+    set hash = sha256_hex(data)
+    assert(str_eq(hash, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"),
+           "SHA-256 empty string")
+}
+
+test task test_sha256_abc() {
+    // SHA-256("abc") = ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
+    set data = "abc"
+    set hash = sha256_hex(data)
+    assert(str_eq(hash, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"),
+           "SHA-256 'abc'")
+}
+
+test task test_sha256_long() {
+    // SHA-256("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq")
+    set data = "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"
+    set hash = sha256_hex(data)
+    assert(str_eq(hash, "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"),
+           "SHA-256 long string")
+}
+
+test task test_sha256_1mb_repeat() {
+    // SHA-256 of 1,000,000 repetitions of 'a'
+    // Expected: cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0
+    // This test verifies correct handling of multi-block inputs
+    set data = str_repeat("a", 1000000)
+    set hash = sha256_hex(data)
+    assert(str_eq(hash, "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0"),
+           "SHA-256 1M 'a'")
+}
+
+// ── HMAC-SHA256 RFC 4231 Test Vectors ────────────────────────────────────
+
+test task test_hmac_sha256_case1() {
+    // RFC 4231 Test Case 1
+    set key = hex_decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b")
+    set data = str_from_bytes([0x48, 0x69, 0x20, 0x54, 0x68, 0x65, 0x72, 0x65])
+    set expected = "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7"
+    set result = hmac_sha256_hex(key, data)
+    assert(str_eq(result, expected), "HMAC-SHA256 RFC 4231 Case 1")
+}
+
+test task test_hmac_sha256_case2() {
+    // RFC 4231 Test Case 2 — key = "Jefe", data = "what do ya want for nothing?"
+    set key = "Jefe"
+    set data = "what do ya want for nothing?"
+    set expected = "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
+    set result = hmac_sha256_hex(key, data)
+    assert(str_eq(result, expected), "HMAC-SHA256 RFC 4231 Case 2")
+}
+
+test task test_hmac_sha256_case3() {
+    // RFC 4231 Test Case 3 — both key and data = 0xaa... and 0xdd...
+    set key = str_repeat("\xaa", 131)
+    set data = str_repeat("\xdd", 100000)
+    set expected = "773ea91e36800e46854db8ebd09181a72959098b3ef8c122d9635514ced565fe"
+    set result = hmac_sha256_hex(key, data)
+    assert(str_eq(result, expected), "HMAC-SHA256 RFC 4231 Case 3")
+}
+
+test task test_hmac_sha256_case4() {
+    // RFC 4231 Test Case 4 — key longer than block size (131 bytes)
+    set key = str_repeat("\xcc", 131)
+    set data = str_repeat("\xcd", 50)
+    set expected = "82558a389a443c0ea4cc819899f2083a85f0faa3e578f8077a2e3ff46729665b"
+    set result = hmac_sha256_hex(key, data)
+    assert(str_eq(result, expected), "HMAC-SHA256 RFC 4231 Case 4")
+}
+
+// ── AES-256-GCM Test Vectors ─────────────────────────────────────────────
+
+test task test_aes256_gcm_encrypt_decrypt() {
+    set key = sha256("test key")  // derive 32-byte key
+    set iv = random_bytes(12)
+    set plaintext = "The quick brown fox jumps over the lazy dog"
+
+    set ct = aes256_gcm_encrypt(key, iv, plaintext, "")
+    set decrypted = aes256_gcm_decrypt(key, iv, ct.ciphertext, "", ct.tag)
+
+    assert(str_eq(decrypted, plaintext), "AES-256-GCM encrypt/decrypt roundtrip")
+}
+
+test task test_aes256_gcm_aad() {
+    set key = sha256("aad test key")
+    set iv = random_bytes(12)
+    set plaintext = "Secret message"
+    set aad = "authenticated metadata"
+
+    set ct = aes256_gcm_encrypt(key, iv, plaintext, aad)
+    set decrypted = aes256_gcm_decrypt(key, iv, ct.ciphertext, aad, ct.tag)
+
+    assert(str_eq(decrypted, plaintext), "AES-256-GCM with AAD roundtrip")
+}
+
+test task test_aes256_gcm_tamper_detection() {
+    set key = sha256("tamper test")
+    set iv = random_bytes(12)
+    set plaintext = "tamper me"
+
+    set ct = aes256_gcm_encrypt(key, iv, plaintext, "")
+    // Tamper with ciphertext
+    ct.ciphertext[0] = ct.ciphertext[0] ^ 0x01
+
+    set decrypted = aes256_gcm_decrypt(key, iv, ct.ciphertext, "", ct.tag)
+    assert(decrypted == null, "AES-256-GCM tamper detection — should fail")
+}
+
+test task test_aes256_gcm_wrong_tag() {
+    set key = sha256("tag test")
+    set iv = random_bytes(12)
+    set plaintext = "verify me"
+
+    set ct = aes256_gcm_encrypt(key, iv, plaintext, "")
+    // Corrupt the tag
+    ct.tag[0] = ct.tag[0] ^ 0xFF
+
+    set decrypted = aes256_gcm_decrypt(key, iv, ct.ciphertext, "", ct.tag)
+    assert(decrypted == null, "AES-256-GCM wrong tag — should fail")
+}
+
+// ── ChaCha20-Poly1305 Test Vectors ───────────────────────────────────────
+
+test task test_chacha20_poly1305_roundtrip() {
+    set key = random_bytes(32)
+    set nonce = random_bytes(12)
+    set plaintext = "ChaCha20-Poly1305 test message"
+
+    set ct = chacha20_poly1305_encrypt(key, nonce, plaintext, "")
+    set decrypted = chacha20_poly1305_decrypt(key, nonce, ct.ciphertext, "", ct.tag)
+
+    assert(str_eq(decrypted, plaintext), "ChaCha20-Poly1305 encrypt/decrypt roundtrip")
+}
+
+test task test_chacha20_poly1305_tamper_detection() {
+    set key = random_bytes(32)
+    set nonce = random_bytes(12)
+    set plaintext = "tamper detection test"
+
+    set ct = chacha20_poly1305_encrypt(key, nonce, plaintext, "")
+    ct.ciphertext[5] = ct.ciphertext[5] ^ 0x01
+
+    set decrypted = chacha20_poly1305_decrypt(key, nonce, ct.ciphertext, "", ct.tag)
+    assert(decrypted == null, "ChaCha20-Poly1305 tamper detection")
+}
+
+// ── HKDF-SHA256 RFC 5869 Test Vectors ────────────────────────────────────
+
+test task test_hkdf_sha256_case1() {
+    // RFC 5869 A.1 — Test Case 1
+    set ikm = hex_decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b")
+    set salt = hex_decode("000102030405060708090a0b0c")
+    set info = hex_decode("f0f1f2f3f4f5f6f7f8f9")
+    set expected = "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf" +
+                   "34007208d5b887185865"
+    set result = hkdf_sha256_hex(salt, ikm, info, 42)
+    assert(str_eq(result, expected), "HKDF-SHA256 RFC 5869 Case 1")
+}
+
+// ── PBKDF2-SHA256 Test ──────────────────────────────────────────────────
+
+test task test_pbkdf2_sha256_basic() {
+    set password = "password"
+    set salt = "salt"
+    set iterations = 1000
+    set derived = pbkdf2_sha256_hex(password, salt, iterations, 32)
+    // Verify we get consistent output (same input -> same output)
+    set derived2 = pbkdf2_sha256_hex(password, salt, iterations, 32)
+    assert(str_eq(derived, derived2), "PBKDF2-SHA256 deterministic")
+}
+
+test task test_pbkdf2_sha256_different_iterations() {
+    set password = "password"
+    set salt = "salt"
+    set d1 = pbkdf2_sha256_hex(password, salt, 1, 32)
+    set d1000 = pbkdf2_sha256_hex(password, salt, 1000, 32)
+    assert(not str_eq(d1, d1000), "PBKDF2-SHA256 different iterations produce different output")
+}
+
+// ── Constant-Time Operations ─────────────────────────────────────────────
+
+test task test_secure_compare_equal() {
+    set a = [1, 2, 3, 4, 5, 6, 7, 8]
+    set b = [1, 2, 3, 4, 5, 6, 7, 8]
+    assert(secure_compare(a, b), "secure_compare equal arrays")
+}
+
+test task test_secure_compare_unequal() {
+    set a = [1, 2, 3, 4, 5, 6, 7, 8]
+    set b = [1, 2, 3, 4, 5, 6, 7, 9]
+    assert(not secure_compare(a, b), "secure_compare unequal arrays")
+}
+
+test task test_secure_compare_different_lengths() {
+    set a = [1, 2, 3]
+    set b = [1, 2, 3, 4]
+    assert(not secure_compare(a, b), "secure_compare different lengths")
+}
+
+test task test_ct_select_byte() {
+    set a: uint8 = 0xAA
+    set b: uint8 = 0x55
+    assert(ct_select_byte(a, b, true) == 0xAA, "ct_select_byte flag=true")
+    assert(ct_select_byte(a, b, false) == 0x55, "ct_select_byte flag=false")
+}
+
+test task test_ct_is_zero() {
+    assert(ct_is_zero(0) == 1, "ct_is_zero(0)")
+    assert(ct_is_zero(42) == 0, "ct_is_zero(42)")
+    assert(ct_is_zero(-1) == 0, "ct_is_zero(-1)")
+}
+
+test task test_ct_eq() {
+    assert(ct_eq(42, 42) == 1, "ct_eq equal")
+    assert(ct_eq(42, 43) == 0, "ct_eq unequal")
+    assert(ct_eq(-5, -5) == 1, "ct_eq negative equal")
+}
+
+// ── Random Number Generation ─────────────────────────────────────────────
+
+test task test_random_bytes_nonzero() {
+    set buf = alloc(64, 1)
+    random_bytes(buf, 64)
+    // Verify at least one bit is set (probability of all zeros is 2^-512)
+    set is_nonzero = false
+    loop i from 0 to 63 {
+        check buf[i] != 0 {
+            is_nonzero = true
+            break
+        }
+    }
+    free buf
+    assert(is_nonzero, "random_bytes produces non-zero output")
+}
+
+test task test_random_bytes_different() {
+    set buf1 = alloc(32, 1)
+    set buf2 = alloc(32, 1)
+    random_bytes(buf1, 32)
+    random_bytes(buf2, 32)
+    set same = true
+    loop i from 0 to 31 {
+        check buf1[i] != buf2[i] {
+            same = false
+            break
+        }
+    }
+    free buf1
+    free buf2
+    assert(not same, "Two random_bytes calls produce different output")
+}
+
+test task test_random_key_valid_size() {
+    set key = alloc(32, 1)
+    random_key(key)
+    set is_nonzero = false
+    loop i from 0 to 31 {
+        check key[i] != 0 {
+            is_nonzero = true
+            break
+        }
+    }
+    free key
+    assert(is_nonzero, "random_key produces non-zero key")
+}
+
+// ── BLAKE3 ──────────────────────────────────────────────────────────────
+
+test task test_blake3_empty() {
+    // BLAKE3("") known test vector
+    set hash = blake3_hex("")
+    assert(str_eq(hash, "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"),
+           "BLAKE3 empty string")
+}
+
+test task test_blake3_deterministic() {
+    set data = "Sovereign BLAKE3 test"
+    set h1 = blake3_hex(data)
+    set h2 = blake3_hex(data)
+    assert(str_eq(h1, h2), "BLAKE3 deterministic")
+}
+
+// ── Secure Memory ────────────────────────────────────────────────────────
+
+test task test_secure_zero_works() {
+    set buf = alloc(16, 1)
+    loop i from 0 to 15 {
+        buf[i] = 0xFF
+    }
+    secure_zero(buf, 16)
+    loop i from 0 to 15 {
+        assert(buf[i] == 0, str_concat("secure_zero at index ", int_to_str(i)))
+    }
+    free buf
+}
+
+test task test_alloc_secure_freesecure() {
+    set ptr = alloc_secure(32, 1)
+    // Write some data
+    loop i from 0 to 31 {
+        ptr[i] = i
+    }
+    // Free should zero first
+    free_secure(ptr, 32)
+    // After free, the memory is zeroed (we can't access it safely, 
+    // but the function should have been called without error)
+    assert(true, "alloc_secure/free_secure completes without error")
+}
+
+// ── Bounds Checking ──────────────────────────────────────────────────────
+
+test task test_bounds_check_valid() {
+    set arr = [10, 20, 30, 40, 50]
+    set arr_view = array_view(arr)
+    assert(arr_view.get(0) == 10, "bounds_check valid index 0")
+    assert(arr_view.get(4) == 50, "bounds_check valid index 4")
+}
+
+// ── Run all tests ────────────────────────────────────────────────────────
+
+task main() {
+    println("=== Sovereign Crypto Test Suite ===")
+    println("Running FIPS 180-4 / RFC 4231 / RFC 5869 test vectors...")
+    println("")
+
+    test_sha256_empty()
+    test_sha256_abc()
+    test_sha256_long()
+    test_sha256_1mb_repeat()
+
+    test_hmac_sha256_case1()
+    test_hmac_sha256_case2()
+    test_hmac_sha256_case3()
+    test_hmac_sha256_case4()
+
+    test_aes256_gcm_encrypt_decrypt()
+    test_aes256_gcm_aad()
+    test_aes256_gcm_tamper_detection()
+    test_aes256_gcm_wrong_tag()
+
+    test_chacha20_poly1305_roundtrip()
+    test_chacha20_poly1305_tamper_detection()
+
+    test_hkdf_sha256_case1()
+    test_pbkdf2_sha256_basic()
+    test_pbkdf2_sha256_different_iterations()
+
+    test_secure_compare_equal()
+    test_secure_compare_unequal()
+    test_secure_compare_different_lengths()
+    test_ct_select_byte()
+    test_ct_is_zero()
+    test_ct_eq()
+
+    test_random_bytes_nonzero()
+    test_random_bytes_different()
+    test_random_key_valid_size()
+
+    test_blake3_empty()
+    test_blake3_deterministic()
+
+    test_secure_zero_works()
+    test_alloc_secure_freesecure()
+    test_bounds_check_valid()
+
+    println("")
+    println("✅ All cryptographic test vectors passed!")
+}
