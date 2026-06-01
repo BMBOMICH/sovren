@@ -8,7 +8,7 @@ extern sov_int parser_parse(sov_int);
 extern sov_int codegen_new(void);
 extern sov_int codegen_generate(sov_int, sov_int);
 int main(int argc, char** argv) {
-    if (argc < 3) { printf("Usage: sovereign build <in.sov> -o <out.c>\n"); return 1; }
+    if (argc < 3) { printf("Sovereign v0.1.0 - Usage: sovereign build <in.sov> -o <out.c>\n"); return 1; }
     sov_string in = NULL, out = NULL;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-o") == 0 && i+1 < argc) out = argv[++i];
