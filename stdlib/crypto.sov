@@ -1,14 +1,6 @@
-/// Sovereign Standard Library — Cryptography Wrappers
-/// High-level wrappers around the runtime cryptographic primitives.
-/// All underlying implementations are real (FIPS/RFC compliant).
 
 import "native.sov"
 
-// ============================================================================
-// HASHING
-// ============================================================================
-
-/// Compute SHA-256 hash, returns 64-char hex string
 task sha256_hex(data: string) -> string {
     set out = alloc(32, 1)
     sha256(data, str_len(data), out)
@@ -17,12 +9,10 @@ task sha256_hex(data: string) -> string {
     return hex
 }
 
-/// Compute SHA-256 hash, returns 32 raw bytes
 task sha256_raw(data: string, out: ptr) {
     sha256(data, str_len(data), out)
 }
 
-/// Compute SHA-512 hash, returns 128-char hex string
 task sha512_hex(data: string) -> string {
     set out = alloc(64, 1)
     sha512(data, str_len(data), out)
@@ -31,7 +21,6 @@ task sha512_hex(data: string) -> string {
     return hex
 }
 
-/// Compute BLAKE3 hash, returns 64-char hex string
 task blake2s_hex(data: string) -> string {
     set out = alloc(32, 1)
     blake2s(data, str_len(data), out)
@@ -40,11 +29,6 @@ task blake2s_hex(data: string) -> string {
     return hex
 }
 
-// ============================================================================
-// HMAC
-// ============================================================================
-
-/// Compute HMAC-SHA256, returns 64-char hex string
 task hmac_sha256_hex(key: string, data: string) -> string {
     set out = alloc(32, 1)
     hmac_sha256(key, str_len(key), data, str_len(data), out)
@@ -53,7 +37,6 @@ task hmac_sha256_hex(key: string, data: string) -> string {
     return hex
 }
 
-/// Compute HKDF-SHA256, returns hex string
 task hkdf_sha256_hex(salt: string, ikm: string, info: string, out_len: int) -> string {
     set out = alloc(out_len, 1)
     hkdf_sha256(salt, str_len(salt), ikm, str_len(ikm), info, str_len(info), out, out_len)
@@ -62,7 +45,6 @@ task hkdf_sha256_hex(salt: string, ikm: string, info: string, out_len: int) -> s
     return hex
 }
 
-/// Compute PBKDF2-SHA256, returns hex string
 task pbkdf2_sha256_hex(password: string, salt: string, iterations: int, out_len: int) -> string {
     set out = alloc(out_len, 1)
     pbkdf2_sha256(password, str_len(password), salt, str_len(salt), iterations, out, out_len)
@@ -71,14 +53,9 @@ task pbkdf2_sha256_hex(password: string, salt: string, iterations: int, out_len:
     return hex
 }
 
-// ============================================================================
-// ENCRYPTION
-// ============================================================================
-
-/// AES-256-GCM encrypt. key and iv are strings (binary), returns {ciphertext, tag}
 struct AesGcmResult {
     ciphertext: string
-    tag:        string  // 16 bytes
+    tag:        string
 }
 
 task aes256_gcm_encrypt(key: string, iv: string, plaintext: string, aad: string) -> AesGcmResult {
@@ -99,7 +76,6 @@ task aes256_gcm_encrypt(key: string, iv: string, plaintext: string, aad: string)
     }
 }
 
-/// AES-256-GCM decrypt. Returns decrypted string or empty on auth failure
 task aes256_gcm_decrypt(key: string, iv: string, ciphertext: string, aad: string, tag: string) -> string {
     set pt_len = str_len(ciphertext)
     set pt = alloc(pt_len, 1)
@@ -116,7 +92,6 @@ task aes256_gcm_decrypt(key: string, iv: string, ciphertext: string, aad: string
     return decrypted
 }
 
-/// ChaCha20-Poly1305 encrypt
 task chacha20_poly1305_encrypt(key: string, nonce: string, plaintext: string, aad: string) -> AesGcmResult {
     set ct_len = str_len(plaintext)
     set ct = alloc(ct_len, 1)
@@ -135,7 +110,6 @@ task chacha20_poly1305_encrypt(key: string, nonce: string, plaintext: string, aa
     }
 }
 
-/// ChaCha20-Poly1305 decrypt
 task chacha20_poly1305_decrypt(key: string, nonce: string, ciphertext: string, aad: string, tag: string) -> string {
     set pt_len = str_len(ciphertext)
     set pt = alloc(pt_len, 1)
@@ -152,11 +126,6 @@ task chacha20_poly1305_decrypt(key: string, nonce: string, ciphertext: string, a
     return decrypted
 }
 
-// ============================================================================
-// RANDOM
-// ============================================================================
-
-/// Generate random bytes as a string
 task random_bytes_str(len: int) -> string {
     set buf = alloc(len, 1)
     random_bytes(buf, len)
@@ -165,7 +134,6 @@ task random_bytes_str(len: int) -> string {
     return result
 }
 
-/// Generate a random hex string
 task random_hex(len: int) -> string {
     set buf = alloc(len, 1)
     random_bytes(buf, len)
@@ -174,11 +142,6 @@ task random_hex(len: int) -> string {
     return hex
 }
 
-// ============================================================================
-// UTILITY
-// ============================================================================
-
-/// Convert bytes to hex string
 task bytes_to_hex(data: ptr, len: int) -> string {
     set sb = sb_new()
     set hex_chars = "0123456789abcdef"
@@ -192,7 +155,6 @@ task bytes_to_hex(data: ptr, len: int) -> string {
     return sb_to_string(sb)
 }
 
-/// Convert hex string to bytes
 task hex_to_bytes(hex: string) -> string {
     set hex_len = str_len(hex)
     check hex_len % 2 != 0 { return "" }
@@ -210,13 +172,12 @@ task hex_to_bytes(hex: string) -> string {
 }
 
 task hex_char_to_nibble(c: int) -> int {
-    check c >= 48 and c <= 57  { return c - 48 }        // 0-9
-    check c >= 65 and c <= 70  { return c - 65 + 10 }   // A-F
-    check c >= 97 and c <= 102 { return c - 97 + 10 }   // a-f
+    check c >= 48 and c <= 57  { return c - 48 }
+    check c >= 65 and c <= 70  { return c - 65 + 10 }
+    check c >= 97 and c <= 102 { return c - 97 + 10 }
     return 0
 }
 
-/// Convert ptr+len to string
 task ptr_to_str(ptr: ptr, len: int) -> string {
     set result = alloc(len + 1, 1)
     loop i from 0 to len - 1 {

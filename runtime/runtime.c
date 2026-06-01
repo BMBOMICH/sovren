@@ -1187,10 +1187,9 @@ void sov_blake2s(sov_ptr data, sov_int len, sov_ptr out) {
         blake2s_compress(h, buf, counter, false);
         input += 64;
         remaining -= 64;
-        counter++;
+        counter += 64;
     }
     
-    /* Last block */
     memset(buf, 0, 64);
     memcpy(buf, input, remaining);
     blake2s_compress(h, buf, counter, true);

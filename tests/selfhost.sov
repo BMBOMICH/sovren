@@ -1,14 +1,8 @@
-// Test suite for the self-hosted Sovereign compiler
-// Run with: sovereign run tests/test_self_hosting.sov
 
-// ============================================================================
-// TEST: Lexer
-// ============================================================================
 
 task test_lexer() {
     println("Testing lexer...")
     
-    // Test basic tokenization
     set source = "set x = 42"
     set lex = lexer_new(source, "test")
     set tokens = lexer_tokenize(lex)
@@ -32,7 +26,6 @@ task test_lexer() {
     vectok_free(tokens)
     println("  Basic tokenization: PASS")
     
-    // Test string literals
     set source2 = "\"hello world\""
     set lex2 = lexer_new(source2, "test")
     set tokens2 = lexer_tokenize(lex2)
@@ -44,7 +37,6 @@ task test_lexer() {
     vectok_free(tokens2)
     println("  String literals: PASS")
     
-    // Test operators
     set source3 = "+ - * / == != <= >= -> =>"
     set lex3 = lexer_new(source3, "test")
     set tokens3 = lexer_tokenize(lex3)
@@ -63,7 +55,6 @@ task test_lexer() {
     vectok_free(tokens3)
     println("  Operators: PASS")
     
-    // Test hex/binary/octal numbers
     set source4 = "0xFF 0b1010 0o17"
     set lex4 = lexer_new(source4, "test")
     set tokens4 = lexer_tokenize(lex4)
@@ -78,14 +69,9 @@ task test_lexer() {
     println("Lexer tests: ALL PASSED")
 }
 
-// ============================================================================
-// TEST: Parser
-// ============================================================================
-
 task test_parser() {
     println("Testing parser...")
     
-    // Test variable declaration
     set source1 = "set x = 42"
     set tokens1 = lexer_tokenize(lexer_new(source1, "test"))
     set parser1 = parser_new(tokens1, "test")
@@ -99,7 +85,6 @@ task test_parser() {
     program_free(prog1)
     println("  Variable declaration: PASS")
     
-    // Test function declaration
     set source2 = "task add(a: int, b: int) -> int { return a + b }"
     set tokens2 = lexer_tokenize(lexer_new(source2, "test"))
     set parser2 = parser_new(tokens2, "test")
@@ -113,7 +98,6 @@ task test_parser() {
     program_free(prog2)
     println("  Function declaration: PASS")
     
-    // Test if statement
     set source3 = "check x > 0 { print x }"
     set tokens3 = lexer_tokenize(lexer_new(source3, "test"))
     set parser3 = parser_new(tokens3, "test")
@@ -126,7 +110,6 @@ task test_parser() {
     program_free(prog3)
     println("  If statement: PASS")
     
-    // Test loop
     set source4 = "loop i from 0 to 10 { print i }"
     set tokens4 = lexer_tokenize(lexer_new(source4, "test"))
     set parser4 = parser_new(tokens4, "test")
@@ -142,14 +125,9 @@ task test_parser() {
     println("Parser tests: ALL PASSED")
 }
 
-// ============================================================================
-// TEST: Code Generator
-// ============================================================================
-
 task test_codegen() {
     println("Testing code generator...")
     
-    // Test simple program
     set source = "task main() -> int { set x = 42\n return x }"
     set tokens = lexer_tokenize(lexer_new(source, "test"))
     set parser = parser_new(tokens, "test")
@@ -158,7 +136,6 @@ task test_codegen() {
     set cgen = codegen_new(prog)
     set c_code = codegen_generate(cgen)
     
-    // Check output contains expected elements
     assert(str_contains(c_code, "#include <stdio.h>"), "should include stdio.h")
     assert(str_contains(c_code, "int64_t"), "should use int64_t")
     assert(str_contains(c_code, "sov_main"), "should have mangled main")
@@ -168,7 +145,6 @@ task test_codegen() {
     program_free(prog)
     println("  Simple program: PASS")
     
-    // Test struct generation
     set source2 = "struct Point { x: int\n y: int }"
     set tokens2 = lexer_tokenize(lexer_new(source2, "test"))
     set parser2 = parser_new(tokens2, "test")
@@ -187,14 +163,9 @@ task test_codegen() {
     println("Codegen tests: ALL PASSED")
 }
 
-// ============================================================================
-// TEST: Standard Library
-// ============================================================================
-
 task test_stdlib() {
     println("Testing standard library...")
     
-    // Test Vec
     set v = vec_new()
     v = vec_push(v, 10)
     v = vec_push(v, 20)
@@ -208,7 +179,6 @@ task test_stdlib() {
     vec_free(v)
     println("  Vec: PASS")
     
-    // Test HashMap
     set hm = hashmap_new()
     hm = hashmap_insert(hm, "key1", 100)
     hm = hashmap_insert(hm, "key2", 200)
@@ -222,7 +192,6 @@ task test_stdlib() {
     hashmap_free(hm)
     println("  HashMap: PASS")
     
-    // Test String operations
     assert(str_len("hello") == 5, "str_len")
     assert(str_eq("abc", "abc"), "str_eq true")
     assert(not str_eq("abc", "def"), "str_eq false")
@@ -244,7 +213,6 @@ task test_stdlib() {
     
     println("  String operations: PASS")
     
-    // Test StringBuilder
     set sb = sb_new()
     sb = sb_append(sb, "Hello")
     sb = sb_append(sb, " ")
@@ -259,14 +227,9 @@ task test_stdlib() {
     println("Stdlib tests: ALL PASSED")
 }
 
-// ============================================================================
-// TEST: Integration
-// ============================================================================
-
 task test_integration() {
     println("Testing integration...")
     
-    // Compile a complete program
     set source = "
 const MAGIC = 42
 
@@ -298,7 +261,6 @@ task main() -> int {
     set cgen = codegen_new(prog)
     set c_code = codegen_generate(cgen)
     
-    // Verify the generated C code has all components
     assert(str_contains(c_code, "MAGIC"), "should have MAGIC constant")
     assert(str_contains(c_code, "sov_Point"), "should have Point struct")
     assert(str_contains(c_code, "sov_add"), "should have add function")
@@ -311,10 +273,6 @@ task main() -> int {
     println("  Full program compilation: PASS")
     println("Integration tests: ALL PASSED")
 }
-
-// ============================================================================
-// MAIN TEST RUNNER
-// ============================================================================
 
 task main() -> int {
     println("========================================")

@@ -1,13 +1,5 @@
-// ============================================================================
-// Sovereign Performance Benchmark Suite
-// ============================================================================
-// Run: sovereign build tests/bench_performance.sov --target llvm --optimize
-// Then: llc -O3 output.ll && clang -O2 output.s runtime/runtime.c -o bench && ./bench
 
 import "stdlib_native.sov"
-
-// ── Fibonacci (recursive) ─────────────────────────────────────────────────
-// Classic CPU-bound benchmark testing function call overhead
 
 task fib(n: int) -> int {
     check n <= 1 { return n }
@@ -29,9 +21,6 @@ test task bench_fib_40() {
     assert(result == 102334155, "fib(40) = 102334155")
 }
 
-// ── Matrix Multiplication ─────────────────────────────────────────────────
-// Tests loop optimization, bounds checking, memory access patterns
-
 const MATRIX_SIZE = 200
 
 task matrix_multiply(a: ptr, b: ptr, c: ptr, n: int) {
@@ -50,11 +39,10 @@ test task bench_matrix_200() {
     set n = MATRIX_SIZE
     set size = n * n
     
-    set a = alloc(size, 8)  // int = 8 bytes
+    set a = alloc(size, 8)
     set b = alloc(size, 8)
     set c = alloc(size, 8)
     
-    // Initialize with identity-like values
     loop i from 0 to size - 1 {
         a[i] = i % 100
         b[i] = (i + 50) % 100
@@ -62,7 +50,6 @@ test task bench_matrix_200() {
     
     matrix_multiply(a, b, c, n)
     
-    // Verify a few values
     assert(c[0] != 0, "Matrix multiplication produced result")
     assert(c[size - 1] != 0, "Matrix multiplication produced result")
     
@@ -71,12 +58,8 @@ test task bench_matrix_200() {
     free c
 }
 
-// ── SHA-256 Throughput ────────────────────────────────────────────────────
-// Tests cryptographic performance with real hashing
-
 test task bench_sha256_1mb() {
-    set data = alloc(1048576, 1)  // 1MB
-    // Fill with pseudo-random pattern
+    set data = alloc(1048576, 1)
     loop i from 0 to 1048575 {
         data[i] = (i * 1103515245 + 12345) & 0xFF
     }
@@ -84,7 +67,6 @@ test task bench_sha256_1mb() {
     set hash = alloc(32, 1)
     sha256(data, 1048576, hash)
     
-    // Verify not all zeros
     set nonzero = false
     loop i from 0 to 31 {
         check hash[i] != 0 {
@@ -99,7 +81,7 @@ test task bench_sha256_1mb() {
 }
 
 test task bench_sha256_10mb() {
-    set size = 10485760  // 10MB
+    set size = 10485760
     set data = alloc(size, 1)
     loop i from 0 to size - 1 {
         data[i] = (i * 1103515245 + 12345) & 0xFF
@@ -112,8 +94,6 @@ test task bench_sha256_10mb() {
     assert(true, "SHA-256 10MB completed")
 }
 
-// ── String Operations ─────────────────────────────────────────────────────
-
 test task bench_string_concat() {
     set result = ""
     loop i from 0 to 999 {
@@ -123,7 +103,7 @@ test task bench_string_concat() {
 }
 
 test task bench_string_find() {
-    set haystack = str_repeat("abcdefghij", 10000)  // 100K chars
+    set haystack = str_repeat("abcdefghij", 10000)
     set pos = str_find(haystack, "ghij")
     assert(pos > 0, "String find in 100K")
 }
@@ -134,17 +114,13 @@ test task bench_string_replace() {
     assert(str_contains(replaced, "Sovereign"), "String replace 1000 times")
 }
 
-// ── Vector Operations ────────────────────────────────────────────────────
-
 test task bench_vec_push_pop() {
     set v = vec_new()
-    // Push 100,000 integers
     loop i from 0 to 99999 {
         v = vec_push(v, i)
     }
     assert(vec_len(v) == 100000, "Vec push 100K elements")
     
-    // Pop them all
     loop i from 0 to 99999 {
         vec_pop(v)
     }
@@ -164,12 +140,9 @@ test task bench_vec_random_access() {
     assert(sum == 99990000, "Vec random access sum")
 }
 
-// ── HashMap Operations ───────────────────────────────────────────────────
-
 test task bench_hashmap_insert_lookup() {
     set hm = hashmap_new()
     
-    // Insert 10,000 entries
     loop i from 0 to 9999 {
         set key = str_concat("key_", int_to_str(i))
         hashmap_insert(hm, key, i)
@@ -177,7 +150,6 @@ test task bench_hashmap_insert_lookup() {
     
     assert(hashmap_count(hm) == 10000, "HashMap insert 10K")
     
-    // Lookup all entries
     set found = 0
     loop i from 0 to 9999 {
         set key = str_concat("key_", int_to_str(i))
@@ -187,8 +159,6 @@ test task bench_hashmap_insert_lookup() {
     }
     assert(found == 10000, "HashMap lookup 10K")
 }
-
-// ── AES-256-GCM Throughput ───────────────────────────────────────────────
 
 test task bench_aes256_gcm_encrypt_1mb() {
     set key = alloc(32, 1)
@@ -228,8 +198,6 @@ test task bench_aes256_gcm_decrypt_1mb() {
     free key; free iv; free pt; free ct; free tag; free dec
 }
 
-// ── ChaCha20-Poly1305 Throughput ─────────────────────────────────────────
-
 test task bench_chacha20_encrypt_1mb() {
     set key = alloc(32, 1)
     set nonce = alloc(12, 1)
@@ -247,13 +215,10 @@ test task bench_chacha20_encrypt_1mb() {
     free key; free nonce; free pt; free ct; free tag
 }
 
-// ── Random Number Generation Throughput ──────────────────────────────────
-
 test task bench_random_bytes_1mb() {
     set buf = alloc(1048576, 1)
     random_bytes(buf, 1048576)
     
-    // Verify randomness (basic statistical check — count 1 bits)
     set ones = 0
     loop i from 0 to 1048575 {
         set byte = buf[i]
@@ -263,14 +228,11 @@ test task bench_random_bytes_1mb() {
             }
         }
     }
-    // Should be roughly 50% ones (within 5% tolerance for 8 million bits)
-    set ratio = (ones * 100) / 8388608  // 8 million bits
+    set ratio = (ones * 100) / 8388608
     assert(ratio > 45 and ratio < 55, "Random bit distribution")
     
     free buf
 }
-
-// ── Memory Pool Performance ──────────────────────────────────────────────
 
 test task bench_pool_small_allocs() {
     loop i from 0 to 99999 {
@@ -288,16 +250,12 @@ test task bench_pool_medium_allocs() {
     assert(true, "10K medium pool alloc/free cycles")
 }
 
-// ── Prime Number Sieve ───────────────────────────────────────────────────
-
 test task bench_sieve_100000() {
     const N = 100000
     set is_prime = alloc(N + 1, 1)
     
-    // Initialize
     loop i from 2 to N { is_prime[i] = 1 }
     
-    // Sieve
     loop i from 2 to N {
         check is_prime[i] == 1 {
             set j = i * 2
@@ -308,7 +266,6 @@ test task bench_sieve_100000() {
         }
     }
     
-    // Count primes
     set count = 0
     loop i from 2 to N {
         check is_prime[i] == 1 { count = count + 1 }
@@ -317,8 +274,6 @@ test task bench_sieve_100000() {
     assert(count == 9592, "Number of primes under 100,000")
     free is_prime
 }
-
-// ── Run all benchmarks ───────────────────────────────────────────────────
 
 task main() {
     println("╔══════════════════════════════════════════╗")

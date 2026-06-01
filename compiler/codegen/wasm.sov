@@ -1,16 +1,6 @@
-/// Sovereign Self-Hosted Code Generator (WASM Backend)
-/// Converts AST to WebAssembly Text Format (.wat) for browser/edge deployment.
-///
-/// Usage:
-///   sovereign build file.sov --target wasm -o output.wat
-///   wat2wasm output.wat -o output.wasm
 
 import "../stdlib/native.sov"
 import "../stdlib/ast.sov"
-
-// ============================================================================
-// WASM CODE GENERATOR STATE
-// ============================================================================
 
 struct WASMCodegen {
     program:    Program
@@ -38,7 +28,6 @@ task wasm_codegen_new(prog: Program) -> WASMCodegen {
     }
 }
 
-// ── Emit helpers ──────────────────────────────────────────────────────────
 task wasm_emit(cg: WASMCodegen, s: string) -> WASMCodegen {
     cg.output = sb_append(cg.output, s)
     return cg
@@ -50,7 +39,6 @@ task wasm_emit_line(cg: WASMCodegen, s: string) -> WASMCodegen {
     return cg
 }
 
-// ── Type mapping ──────────────────────────────────────────────────────────
 task wasm_type(t: ptr) -> string {
     set kind = 0
     override { kind = ptr_get_int(t, 0) }
@@ -62,28 +50,23 @@ task wasm_type(t: ptr) -> string {
     return "i32"
 }
 
-// ── Generate WASM header ──────────────────────────────────────────────────
 task wasm_generate_header(cg: WASMCodegen) -> WASMCodegen {
     cg = wasm_emit_line(cg, "(module")
     cg = wasm_emit_line(cg, "  ;; Sovereign WASM Output v2.0")
     cg = wasm_emit_line(cg, "  ;; Target: WebAssembly MVP")
 
-    // Memory: 1 page = 64KB initial, max 256 pages = 16MB
     cg = wasm_emit_line(cg, "  (memory (export \"memory\") 1 256)")
     cg = wasm_emit_newline(cg)
 
-    // Import printf from host environment
     cg = wasm_emit_line(cg, "  ;; Host imports")
     cg = wasm_emit_line(cg, "  (import \"env\" \"print\" (func $env_print (param i32 i32)))")
     cg = wasm_emit_line(cg, "  (import \"env\" \"println\" (func $env_println (param i32 i32)))")
     cg = wasm_emit_newline(cg)
 
-    // Export memory operations
     cg = wasm_emit_line(cg, "  ;; Memory allocator — simple bump allocator")
     cg = wasm_emit_line(cg, "  (global $heap_ptr (mut i32) (i32.const 1024))")
     cg = wasm_emit_newline(cg)
 
-    // Alloc function
     cg = wasm_emit_line(cg, "  (func $alloc (param $size i32) (result i32)")
     cg = wasm_emit_line(cg, "    (local $ptr i32)")
     cg = wasm_emit_line(cg, "    global.get $heap_ptr")
@@ -99,7 +82,6 @@ task wasm_generate_header(cg: WASMCodegen) -> WASMCodegen {
     return cg
 }
 
-// ── Generate data segments ────────────────────────────────────────────────
 task wasm_generate_data(cg: WASMCodegen) -> WASMCodegen {
     set n = program_stmt_count(cg.program)
     loop i from 0 to n - 1 {
@@ -108,7 +90,6 @@ task wasm_generate_data(cg: WASMCodegen) -> WASMCodegen {
         check kind == STMT_CONST_DECL {
             set name = stmt_get_name(stmt)
             set value = stmt_get_value(stmt)
-            // Store string constants in data segment
             check stmt_type_is_string(stmt) {
                 set str_val = stmt_get_string_value(stmt)
                 cg = wasm_emit(cg, "  (data (i32.const ")
@@ -116,7 +97,6 @@ task wasm_generate_data(cg: WASMCodegen) -> WASMCodegen {
                 cg = wasm_emit(cg, ") \"")
                 cg = wasm_emit(cg, str_val)
                 cg = wasm_emit_line(cg, "\")")
-                // Store offset for this constant
                 cg.data_offset = cg.data_offset + str_len(str_val) + 1
             }
         }
@@ -124,16 +104,13 @@ task wasm_generate_data(cg: WASMCodegen) -> WASMCodegen {
     return cg
 }
 
-// ── Generate function ─────────────────────────────────────────────────────
 task wasm_generate_function(cg: WASMCodegen, stmt: ptr) -> WASMCodegen {
     set name = stmt_get_name(stmt)
     set is_export = str_eq(name, "main")
 
-    // Function declaration
     cg = wasm_emit(cg, "  (func $")
     cg = wasm_emit(cg, name)
 
-    // Parameters
     set params = stmt_get_params(stmt)
     check params != null {
         set nparams = vecparam_len(params)
@@ -145,7 +122,6 @@ task wasm_generate_function(cg: WASMCodegen, stmt: ptr) -> WASMCodegen {
         }
     }
 
-    // Result type
     set ret_type = stmt_get_return_type(stmt)
     check ret_type != null and not str_eq(ret_type, "void") {
         cg = wasm_emit(cg, " (result ")
@@ -155,7 +131,6 @@ task wasm_generate_function(cg: WASMCodegen, stmt: ptr) -> WASMCodegen {
 
     cg = wasm_emit_line(cg, "")
 
-    // Function body
     set body = stmt_get_block(stmt)
     check body != null {
         cg = wasm_codegen_block(cg, body)
@@ -164,7 +139,6 @@ task wasm_generate_function(cg: WASMCodegen, stmt: ptr) -> WASMCodegen {
     cg = wasm_emit_line(cg, "  )")
     cg = wasm_emit_newline(cg)
 
-    // Export main function
     check is_export {
         cg = wasm_emit(cg, "  (export \"")
         cg = wasm_emit(cg, name)
@@ -175,7 +149,6 @@ task wasm_generate_function(cg: WASMCodegen, stmt: ptr) -> WASMCodegen {
     return cg
 }
 
-// ── Generate block ────────────────────────────────────────────────────────
 task wasm_codegen_block(cg: WASMCodegen, block: ptr) -> WASMCodegen {
     set n = block_stmt_count(block)
     loop i from 0 to n - 1 {
@@ -186,23 +159,19 @@ task wasm_codegen_block(cg: WASMCodegen, block: ptr) -> WASMCodegen {
     return cg
 }
 
-// ── Generate statement ────────────────────────────────────────────────────
 task wasm_codegen_stmt(cg: WASMCodegen, s: ptr) -> WASMCodegen {
     set kind = stmt_kind(s)
 
-    // Variable declaration
     check kind == STMT_VAR_DECL {
         set name = stmt_get_name(s)
         set init = stmt_get_expr(s)
         check init != null {
             cg = wasm_codegen_expr(cg, init)
-            // Store to local
             cg = wasm_emit_line(cg, "    local.set $" + name)
         }
         return cg
     }
 
-    // Return
     check kind == STMT_RETURN {
         set expr = stmt_get_expr(s)
         check expr != null {
@@ -212,7 +181,6 @@ task wasm_codegen_stmt(cg: WASMCodegen, s: ptr) -> WASMCodegen {
         return cg
     }
 
-    // Expression statement
     check kind == STMT_EXPR {
         set expr = stmt_get_expr(s)
         check expr != null {
@@ -222,7 +190,6 @@ task wasm_codegen_stmt(cg: WASMCodegen, s: ptr) -> WASMCodegen {
         return cg
     }
 
-    // Check/else
     check kind == STMT_IF {
         set cond = stmt_get_condition(s)
         set then_block = stmt_get_then_block(s)
@@ -240,7 +207,6 @@ task wasm_codegen_stmt(cg: WASMCodegen, s: ptr) -> WASMCodegen {
         return cg
     }
 
-    // Loop
     check kind == STMT_LOOP_RANGE {
         set var_name = stmt_get_loop_var(s)
         set start_expr = stmt_get_start_expr(s)
@@ -269,11 +235,9 @@ task wasm_codegen_stmt(cg: WASMCodegen, s: ptr) -> WASMCodegen {
         return cg
     }
 
-    // Print (call env_println with string length)
     check kind == STMT_PRINT {
         set expr = stmt_get_expr(s)
         cg = wasm_codegen_expr(cg, expr)
-        // Simplified: just call imported print
         cg = wasm_emit_line(cg, "    ;; print placeholder")
         cg = wasm_emit_line(cg, "    drop")
         return cg
@@ -282,13 +246,11 @@ task wasm_codegen_stmt(cg: WASMCodegen, s: ptr) -> WASMCodegen {
     return cg
 }
 
-// ── Generate expression ───────────────────────────────────────────────────
 task wasm_codegen_expr(cg: WASMCodegen, e: ptr) -> WASMCodegen {
     check e == null { return cg }
 
     set kind = expr_kind(e)
 
-    // Integer literal
     check kind == EXPR_INT {
         set val = expr_get_int(e)
         cg = wasm_emit(cg, "    i64.const ")
@@ -297,7 +259,6 @@ task wasm_codegen_expr(cg: WASMCodegen, e: ptr) -> WASMCodegen {
         return cg
     }
 
-    // Variable reference
     check kind == EXPR_VAR {
         set name = expr_get_str(e)
         cg = wasm_emit(cg, "    local.get $")
@@ -305,7 +266,6 @@ task wasm_codegen_expr(cg: WASMCodegen, e: ptr) -> WASMCodegen {
         return cg
     }
 
-    // Binary operation
     check kind == EXPR_BINARY {
         set op = expr_get_op(e)
         set left = expr_get_left(e)
@@ -326,12 +286,10 @@ task wasm_codegen_expr(cg: WASMCodegen, e: ptr) -> WASMCodegen {
         return cg
     }
 
-    // Function call
     check kind == EXPR_CALL {
         set callee = expr_get_callee(e)
         set args = expr_get_args(e)
 
-        // Generate arguments
         check args != null {
             set nargs = vecexpr_len(args)
             loop j from 0 to nargs - 1 {
@@ -348,20 +306,17 @@ task wasm_codegen_expr(cg: WASMCodegen, e: ptr) -> WASMCodegen {
     return cg
 }
 
-// ── Generate footer ───────────────────────────────────────────────────────
 task wasm_generate_footer(cg: WASMCodegen) -> WASMCodegen {
     cg = wasm_emit_line(cg, ")")
     return cg
 }
 
-// ── Helper: emit integer ──────────────────────────────────────────────────
 task wasm_emit_int(cg: WASMCodegen, n: int) -> WASMCodegen {
     set s = int_to_str(n)
     cg.output = sb_append(cg.output, s)
     return cg
 }
 
-// ── Main generation ───────────────────────────────────────────────────────
 task wasm_generate(cg: WASMCodegen) -> string {
     cg = wasm_generate_header(cg)
     cg = wasm_generate_data(cg)
@@ -382,7 +337,6 @@ task wasm_generate(cg: WASMCodegen) -> string {
     return sb_to_string(cg.output)
 }
 
-// ── Public API ────────────────────────────────────────────────────────────
 task compile_to_wasm(prog: Program) -> string {
     set cg = wasm_codegen_new(prog)
     return wasm_generate(cg)

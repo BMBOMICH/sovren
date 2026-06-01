@@ -1,16 +1,9 @@
-// ============================================================================
-// Sovereign Borrow Checker Test Suite
-// ============================================================================
-// These tests verify ownership, move semantics, and borrow checking.
-// Some tests are designed to FAIL compilation (marked with @reject).
-// Run: sovereign check tests/test_borrow_checker.sov
 
-// ── Copy Types — Should all work fine ─────────────────────────────────────
 
 test task test_copy_int() {
     set x = 42
-    set y = x      // Copy type — x is still valid
-    set z = x + y  // Both x and y valid
+    set y = x
+    set z = x + y
     assert(z == 84, "Copy types can be used after assignment")
 }
 
@@ -34,19 +27,16 @@ test task test_copy_multiple_use() {
     assert(a + b + c == 30, "Copy types can be used multiple times")
 }
 
-// ── Move Types — Ownership transfer ───────────────────────────────────────
-
 test task test_string_move() {
     set s1 = "hello"
-    set s2 = s1      // Move — s1 is now invalid
-    // s1 cannot be used after this point
+    set s2 = s1
     assert(str_eq(s2, "hello"), "String move transfers ownership")
 }
 
 test task test_struct_move() {
     struct Data { value: int }
     set d1 = Data { value: 42 }
-    set d2 = d1      // Move — d1 is invalid
+    set d2 = d1
     assert(d2.value == 42, "Struct move transfers ownership")
 }
 
@@ -58,16 +48,13 @@ test task test_move_to_function() {
     }
     
     set tok = Token { kind: 1, text: "hello" }
-    consume_token(tok)  // tok is moved into function
-    // tok cannot be used after this
+    consume_token(tok)
 }
-
-// ── Borrowing — Immutable ─────────────────────────────────────────────────
 
 test task test_immutable_borrow() {
     set data = [1, 2, 3, 4, 5]
     set ref1 = &data
-    set ref2 = &data    // Multiple immutable borrows OK
+    set ref2 = &data
     assert(ref1[0] == 1, "Immutable borrow access")
     assert(ref2[4] == 5, "Multiple immutable borrows")
 }
@@ -75,22 +62,17 @@ test task test_immutable_borrow() {
 test task test_borrow_in_expression() {
     set x = 10
     set y = 20
-    // &x and &y are temporary immutable borrows
     assert(x + y == 30, "Expression with borrows")
 }
-
-// ── Sensitive Data ────────────────────────────────────────────────────────
 
 test task test_sensitive_auto_zero() {
     sensitive set secret = 42
     assert(secret == 42, "Sensitive variable readable")
-    // secret will be auto-zeroed at scope exit
 }
 
 test task test_sensitive_string() {
     sensitive set password = "super_secret_123"
     assert(str_len(password) > 0, "Sensitive string readable")
-    // password will be auto-zeroed at scope exit
 }
 
 test task test_sensitive_struct() {
@@ -103,16 +85,12 @@ test task test_sensitive_struct() {
     assert(str_eq(creds.username, "admin"), "Sensitive struct readable")
 }
 
-// ── Purge — Explicit memory wiping ────────────────────────────────────────
-
 test task test_purge_variable() {
     set key = 0xDEADBEEF
     assert(key == 0xDEADBEEF, "Key before purge")
     purge key
     assert(key == 0, "Key after purge is zero")
 }
-
-// ── Constant-Time Blocks ─────────────────────────────────────────────────
 
 test task test_constant_time_block() {
     set a = 42
@@ -124,17 +102,13 @@ test task test_constant_time_block() {
     }
 }
 
-// ── Scope-based Lifetime ──────────────────────────────────────────────────
-
 test task test_scope_lifetime() {
     set outer = "outer_value"
     
     check true {
         set inner = "inner_value"
         assert(str_eq(inner, "inner_value"), "Inner scope variable")
-        // inner is dropped here
     }
-    // inner is no longer accessible
     
     assert(str_eq(outer, "outer_value"), "Outer variable still valid")
 }
@@ -144,16 +118,12 @@ test task test_borrow_across_scopes() {
     set result = 0
     
     check true {
-        set borrow = &owner    // Immutable borrow
+        set borrow = &owner
         result = borrow[0] + borrow[1]
-        // borrow lifetime ends here
     }
-    // owner is usable again after borrow ends
     
     assert(result == 3, "Borrow across scope boundary")
 }
-
-// ── Loop Variable Ownership ───────────────────────────────────────────────
 
 test task test_loop_copy_accumulation() {
     set sum = 0
@@ -167,12 +137,10 @@ test task test_loop_with_borrow() {
     set data = [10, 20, 30]
     set total = 0
     loop i from 0 to 3 {
-        total = total + data[i]    // Repeated immutable access
+        total = total + data[i]
     }
     assert(total == 60, "Loop with array access")
 }
-
-// ── Function Return Ownership ─────────────────────────────────────────────
 
 test task test_return_copy_type() {
     task make_int() -> int {
@@ -196,8 +164,6 @@ test task test_return_struct() {
     assert(v.y == 4, "Struct return value field access")
 }
 
-// ── Nested Ownership ──────────────────────────────────────────────────────
-
 test task test_struct_containing_string() {
     struct Person { name: string, age: int }
     
@@ -205,11 +171,9 @@ test task test_struct_containing_string() {
     assert(str_eq(p1.name, "Alice"), "Struct with string field")
     assert(p1.age == 30, "Struct with int field")
     
-    set p2 = p1  // Move — p1 is invalid
+    set p2 = p1
     assert(str_eq(p2.name, "Alice"), "Moved struct field intact")
 }
-
-// ── Run all tests ─────────────────────────────────────────────────────────
 
 task main() {
     println("=== Sovereign Borrow Checker Test Suite ===")

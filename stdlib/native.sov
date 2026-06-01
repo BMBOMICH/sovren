@@ -1,10 +1,4 @@
-/// Sovereign Standard Library - Native Implementation
-/// Everything here is pure Sovereign, no C FFI required for basic use.
-/// This library provides the foundation for self-hosting the compiler.
 
-// ============================================================================
-// SECTION 1: DYNAMIC ARRAY (Vec)
-// ============================================================================
 
 struct Vec {
     data:     ptr
@@ -12,18 +6,15 @@ struct Vec {
     capacity: int
 }
 
-/// Create a new empty vector with initial capacity of 4
 task vec_new() -> Vec {
     return Vec { data: alloc(4, 8), length: 0, capacity: 4 }
 }
 
-/// Create a new vector with specified initial capacity
 task vec_with_capacity(cap: int) -> Vec {
     check cap < 1 { cap = 4 }
     return Vec { data: alloc(cap, 8), length: 0, capacity: cap }
 }
 
-/// Push an integer onto the vector (returns modified vec for chaining)
 task vec_push(v: Vec, item: int) -> Vec {
     check v.length >= v.capacity {
         set new_cap  = v.capacity * 2
@@ -42,7 +33,6 @@ task vec_push(v: Vec, item: int) -> Vec {
     return v
 }
 
-/// Pop the last element from the vector (returns 0 if empty)
 task vec_pop(v: Vec) -> int {
     check v.length == 0 { return 0 }
     v.length = v.length - 1
@@ -52,7 +42,6 @@ task vec_pop(v: Vec) -> int {
     return 0
 }
 
-/// Get element at index (panics if out of bounds)
 task vec_get(v: Vec, index: int) -> int {
     assert(index >= 0 and index < v.length, "Vec index out of bounds")
     override {
@@ -61,7 +50,6 @@ task vec_get(v: Vec, index: int) -> int {
     return 0
 }
 
-/// Set element at index (panics if out of bounds)
 task vec_set(v: Vec, index: int, value: int) {
     assert(index >= 0 and index < v.length, "Vec index out of bounds")
     override {
@@ -69,17 +57,14 @@ task vec_set(v: Vec, index: int, value: int) {
     }
 }
 
-/// Get the length of the vector
 task vec_len(v: Vec) -> int {
     return v.length
 }
 
-/// Check if vector is empty
 task vec_is_empty(v: Vec) -> bool {
     return v.length == 0
 }
 
-/// Get the last element without removing it
 task vec_last(v: Vec) -> int {
     check v.length == 0 { return 0 }
     override {
@@ -88,7 +73,6 @@ task vec_last(v: Vec) -> int {
     return 0
 }
 
-/// Get the first element
 task vec_first(v: Vec) -> int {
     check v.length == 0 { return 0 }
     override {
@@ -97,17 +81,14 @@ task vec_first(v: Vec) -> int {
     return 0
 }
 
-/// Clear all elements (keeps capacity)
 task vec_clear(v: Vec) {
     v.length = 0
 }
 
-/// Free the vector's memory
 task vec_free(v: Vec) {
     free v.data
 }
 
-/// Clone a vector (deep copy)
 task vec_clone(v: Vec) -> Vec {
     set new_v = vec_with_capacity(v.capacity)
     override {
@@ -117,7 +98,6 @@ task vec_clone(v: Vec) -> Vec {
     return new_v
 }
 
-/// Reverse the vector in place
 task vec_reverse(v: Vec) {
     set i = 0
     set j = v.length - 1
@@ -130,7 +110,6 @@ task vec_reverse(v: Vec) {
     }
 }
 
-/// Check if vector contains a value
 task vec_contains(v: Vec, value: int) -> bool {
     loop i from 0 to v.length - 1 {
         check vec_get(v, i) == value { return true }
@@ -138,7 +117,6 @@ task vec_contains(v: Vec, value: int) -> bool {
     return false
 }
 
-/// Find index of value (-1 if not found)
 task vec_index_of(v: Vec, value: int) -> int {
     loop i from 0 to v.length - 1 {
         check vec_get(v, i) == value { return i }
@@ -146,28 +124,21 @@ task vec_index_of(v: Vec, value: int) -> int {
     return -1
 }
 
-// ============================================================================
-// SECTION 2: STRING VECTOR (VecStr) - For string collections
-// ============================================================================
-
 struct VecStr {
     data:     ptr
     length:   int
     capacity: int
 }
 
-/// Create a new empty string vector
 task vecstr_new() -> VecStr {
     return VecStr { data: alloc(4, 8), length: 0, capacity: 4 }
 }
 
-/// Create a new string vector with specified initial capacity
 task vecstr_with_capacity(cap: int) -> VecStr {
     check cap < 1 { cap = 4 }
     return VecStr { data: alloc(cap, 8), length: 0, capacity: cap }
 }
 
-/// Push a string onto the vector
 task vecstr_push(v: VecStr, item: string) -> VecStr {
     check v.length >= v.capacity {
         set new_cap  = v.capacity * 2
@@ -186,7 +157,6 @@ task vecstr_push(v: VecStr, item: string) -> VecStr {
     return v
 }
 
-/// Pop the last string from the vector
 task vecstr_pop(v: VecStr) -> string {
     check v.length == 0 { return "" }
     v.length = v.length - 1
@@ -196,7 +166,6 @@ task vecstr_pop(v: VecStr) -> string {
     return ""
 }
 
-/// Get string at index
 task vecstr_get(v: VecStr, index: int) -> string {
     assert(index >= 0 and index < v.length, "VecStr index out of bounds")
     override {
@@ -205,7 +174,6 @@ task vecstr_get(v: VecStr, index: int) -> string {
     return ""
 }
 
-/// Set string at index
 task vecstr_set(v: VecStr, index: int, value: string) {
     assert(index >= 0 and index < v.length, "VecStr index out of bounds")
     override {
@@ -213,24 +181,17 @@ task vecstr_set(v: VecStr, index: int, value: string) {
     }
 }
 
-/// Get the length
 task vecstr_len(v: VecStr) -> int {
     return v.length
 }
 
-/// Check if empty
 task vecstr_is_empty(v: VecStr) -> bool {
     return v.length == 0
 }
 
-/// Free the vector (does not free individual strings)
 task vecstr_free(v: VecStr) {
     free v.data
 }
-
-// ============================================================================
-// SECTION 3: HASH MAP (String keys, integer/pointer values)
-// ============================================================================
 
 struct HashEntry {
     key:   string
@@ -248,7 +209,6 @@ struct HashMap {
 const HASHMAP_INITIAL_CAP = 16
 const HASHMAP_LOAD_FACTOR = 75
 
-/// FNV-1a hash function for strings
 task hash_string(s: string) -> int {
     set h = 2166136261
     set n = str_len(s)
@@ -261,7 +221,6 @@ task hash_string(s: string) -> int {
     return h & 0x7FFFFFFF
 }
 
-/// Create a new hash map
 task hashmap_new() -> HashMap {
     set entries = alloc(HASHMAP_INITIAL_CAP, 32)
     override { memset(entries, 0, HASHMAP_INITIAL_CAP * 32) }
@@ -272,9 +231,7 @@ task hashmap_new() -> HashMap {
     }
 }
 
-/// Insert or update a key-value pair
 task hashmap_insert(hm: HashMap, key: string, value: int) -> HashMap {
-    // Check load factor and resize if needed
     check (hm.count * 100) / hm.capacity > HASHMAP_LOAD_FACTOR {
         hm = hashmap_resize(hm, hm.capacity * 2)
     }
@@ -282,14 +239,12 @@ task hashmap_insert(hm: HashMap, key: string, value: int) -> HashMap {
     set h = hash_string(key)
     set idx = h % hm.capacity
     
-    // Linear probing
     loop {
         set entry_ptr = ptr_offset(hm.entries, idx * 32)
         set used = false
         override { used = ptr_get_int(entry_ptr, 3) != 0 }
         
         check not used {
-            // Empty slot - insert here
             override {
                 ptr_set_int(entry_ptr, 0, key)
                 ptr_set_int(entry_ptr, 1, value)
@@ -300,7 +255,6 @@ task hashmap_insert(hm: HashMap, key: string, value: int) -> HashMap {
             return hm
         }
         
-        // Check if same key (update)
         set existing_key = ""
         override { existing_key = ptr_get_int(entry_ptr, 0) }
         check str_eq(existing_key, key) {
@@ -314,7 +268,6 @@ task hashmap_insert(hm: HashMap, key: string, value: int) -> HashMap {
     return hm
 }
 
-/// Get a value by key (returns 0 if not found)
 task hashmap_get(hm: HashMap, key: string) -> int {
     set h = hash_string(key)
     set idx = h % hm.capacity
@@ -340,7 +293,6 @@ task hashmap_get(hm: HashMap, key: string) -> int {
     return 0
 }
 
-/// Check if key exists
 task hashmap_contains(hm: HashMap, key: string) -> bool {
     set h = hash_string(key)
     set idx = h % hm.capacity
@@ -364,7 +316,6 @@ task hashmap_contains(hm: HashMap, key: string) -> bool {
     return false
 }
 
-/// Resize the hash map
 task hashmap_resize(hm: HashMap, new_cap: int) -> HashMap {
     set old_entries = hm.entries
     set old_cap = hm.capacity
@@ -374,7 +325,6 @@ task hashmap_resize(hm: HashMap, new_cap: int) -> HashMap {
     hm.capacity = new_cap
     hm.count = 0
     
-    // Rehash all entries
     loop i from 0 to old_cap - 1 {
         set entry_ptr = ptr_offset(old_entries, i * 32)
         set used = false
@@ -394,17 +344,14 @@ task hashmap_resize(hm: HashMap, new_cap: int) -> HashMap {
     return hm
 }
 
-/// Get number of entries
 task hashmap_len(hm: HashMap) -> int {
     return hm.count
 }
 
-/// Free the hash map
 task hashmap_free(hm: HashMap) {
     free hm.entries
 }
 
-/// Get all keys as a Vec (returns Vec of string pointers)
 task hashmap_keys(hm: HashMap) -> Vec {
     set result = vec_new()
     loop i from 0 to hm.capacity - 1 {
@@ -420,21 +367,14 @@ task hashmap_keys(hm: HashMap) -> Vec {
     return result
 }
 
-// ============================================================================
-// SECTION 4: COMPREHENSIVE STRING LIBRARY
-// ============================================================================
-
-/// Get string length
 task str_len(s: string) -> int {
     return strlen(s)
 }
 
-/// Compare strings for equality
 task str_eq(a: string, b: string) -> bool {
     return strcmp(a, b) == 0
 }
 
-/// Check if string starts with prefix
 task str_starts_with(s: string, prefix: string) -> bool {
     set plen = str_len(prefix)
     set slen = str_len(s)
@@ -442,7 +382,6 @@ task str_starts_with(s: string, prefix: string) -> bool {
     return strncmp(s, prefix, plen) == 0
 }
 
-/// Check if string ends with suffix
 task str_ends_with(s: string, suffix: string) -> bool {
     set suflen = str_len(suffix)
     set slen   = str_len(s)
@@ -453,12 +392,10 @@ task str_ends_with(s: string, suffix: string) -> bool {
     return false
 }
 
-/// Check if string contains substring
 task str_contains(s: string, needle: string) -> bool {
     return strstr(s, needle) != null
 }
 
-/// Concatenate two strings (allocates new string)
 task str_concat(a: string, b: string) -> string {
     set alen = str_len(a)
     set blen = str_len(b)
@@ -471,7 +408,6 @@ task str_concat(a: string, b: string) -> string {
     return buf
 }
 
-/// Repeat a string n times
 task str_repeat(s: string, n: int) -> string {
     set slen = str_len(s)
     set buf  = alloc(slen * n + 1, 1)
@@ -484,7 +420,6 @@ task str_repeat(s: string, n: int) -> string {
     return buf
 }
 
-/// Get character at index as integer (ASCII value)
 task str_char_at(s: string, index: int) -> int {
     set len = str_len(s)
     check index < 0 or index >= len { return 0 }
@@ -494,7 +429,6 @@ task str_char_at(s: string, index: int) -> int {
     return 0
 }
 
-/// Get substring from start index with given length
 task str_substring(s: string, start: int, length: int) -> string {
     set slen = str_len(s)
     check start < 0 { start = 0 }
@@ -510,7 +444,6 @@ task str_substring(s: string, start: int, length: int) -> string {
     return buf
 }
 
-/// Find index of substring (-1 if not found)
 task str_find(s: string, needle: string) -> int {
     set result = strstr(s, needle)
     check result == null { return -1 }
@@ -520,7 +453,6 @@ task str_find(s: string, needle: string) -> int {
     return -1
 }
 
-/// Find last index of substring (-1 if not found)
 task str_rfind(s: string, needle: string) -> int {
     set slen = str_len(s)
     set nlen = str_len(needle)
@@ -534,7 +466,6 @@ task str_rfind(s: string, needle: string) -> int {
     return -1
 }
 
-/// Trim whitespace from both ends
 task str_trim(s: string) -> string {
     set len = str_len(s)
     check len == 0 { return "" }
@@ -542,14 +473,12 @@ task str_trim(s: string) -> string {
     set start = 0
     set end_pos = len - 1
     
-    // Find first non-whitespace
     loop start < len {
         set c = str_char_at(s, start)
         check c != 32 and c != 9 and c != 10 and c != 13 { break }
         start = start + 1
     }
     
-    // Find last non-whitespace
     loop end_pos >= start {
         set c = str_char_at(s, end_pos)
         check c != 32 and c != 9 and c != 10 and c != 13 { break }
@@ -560,7 +489,6 @@ task str_trim(s: string) -> string {
     return str_substring(s, start, end_pos - start + 1)
 }
 
-/// Trim whitespace from left
 task str_trim_left(s: string) -> string {
     set len = str_len(s)
     set start = 0
@@ -574,7 +502,6 @@ task str_trim_left(s: string) -> string {
     return str_substring(s, start, len - start)
 }
 
-/// Trim whitespace from right
 task str_trim_right(s: string) -> string {
     set len = str_len(s)
     check len == 0 { return "" }
@@ -590,7 +517,6 @@ task str_trim_right(s: string) -> string {
     return str_substring(s, 0, end_pos + 1)
 }
 
-/// Convert string to uppercase
 task str_to_upper(s: string) -> string {
     set len = str_len(s)
     set buf = alloc(len + 1, 1)
@@ -604,7 +530,6 @@ task str_to_upper(s: string) -> string {
     return buf
 }
 
-/// Convert string to lowercase
 task str_to_lower(s: string) -> string {
     set len = str_len(s)
     set buf = alloc(len + 1, 1)
@@ -618,7 +543,6 @@ task str_to_lower(s: string) -> string {
     return buf
 }
 
-/// Replace first occurrence of old with new
 task str_replace_first(s: string, old: string, new_str: string) -> string {
     set idx = str_find(s, old)
     check idx == -1 { return str_clone(s) }
@@ -637,7 +561,6 @@ task str_replace_first(s: string, old: string, new_str: string) -> string {
     return final
 }
 
-/// Replace all occurrences of old with new
 task str_replace(s: string, old: string, new_str: string) -> string {
     set result = str_clone(s)
     set old_len = str_len(old)
@@ -664,7 +587,6 @@ task str_replace(s: string, old: string, new_str: string) -> string {
     return result
 }
 
-/// Clone a string
 task str_clone(s: string) -> string {
     set len = str_len(s)
     set buf = alloc(len + 1, 1)
@@ -675,7 +597,6 @@ task str_clone(s: string) -> string {
     return buf
 }
 
-/// Split string by delimiter into VecStr
 task str_split(s: string, delim: string) -> VecStr {
     set result = vecstr_new()
     set slen = str_len(s)
@@ -683,7 +604,6 @@ task str_split(s: string, delim: string) -> VecStr {
     set start = 0
     
     check dlen == 0 {
-        // Split into characters
         loop i from 0 to slen - 1 {
             result = vecstr_push(result, str_substring(s, i, 1))
         }
@@ -693,7 +613,6 @@ task str_split(s: string, delim: string) -> VecStr {
     loop {
         set idx = str_find(str_substring(s, start, slen - start), delim)
         check idx == -1 {
-            // No more delimiters - add rest of string
             result = vecstr_push(result, str_substring(s, start, slen - start))
             break
         }
@@ -705,7 +624,6 @@ task str_split(s: string, delim: string) -> VecStr {
     return result
 }
 
-/// Join strings with separator
 task str_join(parts: VecStr, sep: string) -> string {
     check vecstr_len(parts) == 0 { return "" }
     check vecstr_len(parts) == 1 { return str_clone(vecstr_get(parts, 0)) }
@@ -722,58 +640,45 @@ task str_join(parts: VecStr, sep: string) -> string {
     return result
 }
 
-/// Check if character is alphabetic (a-z, A-Z)
 task char_is_alpha(c: int) -> bool {
     return (c >= 65 and c <= 90) or (c >= 97 and c <= 122)
 }
 
-/// Check if character is digit (0-9)
 task char_is_digit(c: int) -> bool {
     return c >= 48 and c <= 57
 }
 
-/// Check if character is alphanumeric
 task char_is_alnum(c: int) -> bool {
     return char_is_alpha(c) or char_is_digit(c)
 }
 
-/// Check if character is whitespace
 task char_is_space(c: int) -> bool {
     return c == 32 or c == 9 or c == 10 or c == 13
 }
 
-/// Check if character is identifier character (letter, digit, underscore)
 task char_is_ident(c: int) -> bool {
     return char_is_alnum(c) or c == 95
 }
 
-/// Convert integer to string
 task int_to_str(n: int) -> string {
     set buf = alloc(32, 1)
     override { sprintf(buf, "%d", n) }
     return buf
 }
 
-/// Convert float to string
 task float_to_str(f: float) -> string {
     set buf = alloc(64, 1)
     override { sprintf(buf, "%g", f) }
     return buf
 }
 
-/// Parse integer from string
 task str_to_int(s: string) -> int {
     return atoi(s)
 }
 
-/// Parse float from string
 task str_to_float(s: string) -> float {
     return atof(s)
 }
-
-// ============================================================================
-// SECTION 5: FILE I/O
-// ============================================================================
 
 struct File {
     handle: ptr
@@ -781,18 +686,15 @@ struct File {
     mode:   string
 }
 
-/// Open a file (mode: "r", "w", "a", "rb", "wb", etc.)
 task file_open(path: string, mode: string) -> File {
     set handle = fopen(path, mode)
     return File { handle: handle, path: path, mode: mode }
 }
 
-/// Check if file was opened successfully
 task file_is_open(f: File) -> bool {
     return f.handle != null
 }
 
-/// Close a file
 task file_close(f: File) {
     check f.handle != null {
         fclose(f.handle)
@@ -800,7 +702,6 @@ task file_close(f: File) {
     }
 }
 
-/// Read entire file into string
 task file_read_all(path: string) -> string {
     set f = fopen(path, "r")
     check f == null { return "" }
@@ -818,7 +719,6 @@ task file_read_all(path: string) -> string {
     return ""
 }
 
-/// Write string to file (overwrites)
 task file_write_all(path: string, content: string) -> bool {
     set f = fopen(path, "w")
     check f == null { return false }
@@ -827,7 +727,6 @@ task file_write_all(path: string, content: string) -> bool {
     return true
 }
 
-/// Append string to file
 task file_append(path: string, content: string) -> bool {
     set f = fopen(path, "a")
     check f == null { return false }
@@ -836,7 +735,6 @@ task file_append(path: string, content: string) -> bool {
     return true
 }
 
-/// Check if file exists
 task file_exists(path: string) -> bool {
     set f = fopen(path, "r")
     check f == null { return false }
@@ -844,7 +742,6 @@ task file_exists(path: string) -> bool {
     return true
 }
 
-/// Read a single line from file handle (includes newline)
 task file_read_line(f: File) -> string {
     check f.handle == null { return "" }
     set buf = alloc(4096, 1)
@@ -856,13 +753,11 @@ task file_read_line(f: File) -> string {
     return buf
 }
 
-/// Check if at end of file
 task file_eof(f: File) -> bool {
     check f.handle == null { return true }
     return feof(f.handle) != 0
 }
 
-/// Read file into lines (VecStr)
 task file_read_lines(path: string) -> VecStr {
     set content = file_read_all(path)
     check str_len(content) == 0 { return vecstr_new() }
@@ -871,29 +766,21 @@ task file_read_lines(path: string) -> VecStr {
     return lines
 }
 
-// ============================================================================
-// SECTION 6: CONSOLE I/O
-// ============================================================================
-
-/// Read a line from stdin
 task read_line() -> string {
     set buf = alloc(4096, 1)
     override { fgets(buf, 4096, stdin_ptr()) }
     return buf
 }
 
-/// Print string to stdout (no newline)
 task print_str(s: string) {
     printf(s)
     override { fflush(stdout_ptr()) }
 }
 
-/// Print string to stdout with newline
 task println(s: string) {
     puts(s)
 }
 
-/// Print formatted string
 task print_fmt(fmt: string, arg: string) {
     set buf = alloc(4096, 1)
     override { snprintf(buf, 4096, fmt, arg) }
@@ -901,22 +788,16 @@ task print_fmt(fmt: string, arg: string) {
     free buf
 }
 
-/// Print to stderr
 task eprint(s: string) {
     override { fprintf(stderr_ptr(), s) }
 }
 
-/// Print to stderr with newline
 task eprintln(s: string) {
     override {
         fprintf(stderr_ptr(), s)
         fprintf(stderr_ptr(), "\n")
     }
 }
-
-// ============================================================================
-// SECTION 7: MATH UTILITIES
-// ============================================================================
 
 inline task min(a: int, b: int) -> int {
     check a < b { return a }
@@ -968,23 +849,16 @@ inline task absf(f: float) -> float {
     return f
 }
 
-// ============================================================================
-// SECTION 8: TIME AND RANDOM
-// ============================================================================
-
-/// Get current Unix timestamp
 task now() -> int {
     return time(null)
 }
 
-/// Sleep for milliseconds (platform-dependent)
 task sleep_ms(ms: int) {
     override {
         platform_sleep(ms)
     }
 }
 
-/// Get cryptographically secure random bytes
 task rand_bytes(n: int) -> ptr {
     set buf = alloc(n, 1)
     override {
@@ -993,7 +867,6 @@ task rand_bytes(n: int) -> ptr {
     return buf
 }
 
-/// Get random integer in range [min, max]
 task rand_int(min_val: int, max_val: int) -> int {
     set range = max_val - min_val + 1
     set bytes = rand_bytes(4)
@@ -1006,11 +879,6 @@ task rand_int(min_val: int, max_val: int) -> int {
     return min_val + (n % range)
 }
 
-// ============================================================================
-// SECTION 9: CRYPTOGRAPHIC PRIMITIVES (Constant-time)
-// ============================================================================
-
-/// SHA-256 hash (returns 32 bytes)
 task sha256(data: ptr, len: int) -> ptr {
     set hash = alloc(32, 1)
     constant_time {
@@ -1019,7 +887,6 @@ task sha256(data: ptr, len: int) -> ptr {
     return hash
 }
 
-/// SHA-256 hash as hex string
 task sha256_hex(data: ptr, len: int) -> string {
     set hash = sha256(data, len)
     set hex  = alloc(65, 1)
@@ -1030,7 +897,6 @@ task sha256_hex(data: ptr, len: int) -> string {
     return hex
 }
 
-/// HMAC-SHA256
 task hmac_sha256(key: ptr, key_len: int, data: ptr, data_len: int) -> ptr {
     set result = alloc(32, 1)
     constant_time {
@@ -1039,7 +905,6 @@ task hmac_sha256(key: ptr, key_len: int, data: ptr, data_len: int) -> ptr {
     return result
 }
 
-/// Constant-time memory comparison (prevents timing attacks)
 task secure_compare(a: ptr, b: ptr, len: int) -> bool {
     set diff = 0
     constant_time {
@@ -1052,27 +917,20 @@ task secure_compare(a: ptr, b: ptr, len: int) -> bool {
     return diff == 0
 }
 
-// ============================================================================
-// SECTION 10: RESULT TYPE (Ok/Err pattern)
-// ============================================================================
-
 struct Result {
     is_ok:   bool
     value:   int
     err_msg: string
 }
 
-/// Create an Ok result
 task ok(value: int) -> Result {
     return Result { is_ok: true, value: value, err_msg: "" }
 }
 
-/// Create an Err result
 task err(msg: string) -> Result {
     return Result { is_ok: false, value: 0, err_msg: msg }
 }
 
-/// Unwrap result or panic
 task result_unwrap(r: Result) -> int {
     check not r.is_ok {
         eprintln("panic: unwrap on err result")
@@ -1082,32 +940,24 @@ task result_unwrap(r: Result) -> int {
     return r.value
 }
 
-/// Unwrap result or return default
 task result_unwrap_or(r: Result, default: int) -> int {
     check r.is_ok { return r.value }
     return default
 }
-
-// ============================================================================
-// SECTION 11: OPTION TYPE (Some/None pattern)
-// ============================================================================
 
 struct Option {
     is_some: bool
     value:   int
 }
 
-/// Create a Some option
 task some(value: int) -> Option {
     return Option { is_some: true, value: value }
 }
 
-/// Create a None option
 task none() -> Option {
     return Option { is_some: false, value: 0 }
 }
 
-/// Unwrap option or panic
 task option_unwrap(o: Option) -> int {
     check not o.is_some {
         eprintln("panic: unwrap on none option")
@@ -1116,15 +966,10 @@ task option_unwrap(o: Option) -> int {
     return o.value
 }
 
-/// Unwrap option or return default
 task option_unwrap_or(o: Option, default: int) -> int {
     check o.is_some { return o.value }
     return default
 }
-
-// ============================================================================
-// SECTION 12: STRING BUILDER (Efficient string concatenation)
-// ============================================================================
 
 struct StringBuilder {
     data:     ptr
@@ -1132,7 +977,6 @@ struct StringBuilder {
     capacity: int
 }
 
-/// Create a new string builder
 task sb_new() -> StringBuilder {
     set cap = 256
     return StringBuilder {
@@ -1142,7 +986,6 @@ task sb_new() -> StringBuilder {
     }
 }
 
-/// Create a string builder with initial capacity
 task sb_with_capacity(cap: int) -> StringBuilder {
     check cap < 16 { cap = 16 }
     return StringBuilder {
@@ -1152,11 +995,9 @@ task sb_with_capacity(cap: int) -> StringBuilder {
     }
 }
 
-/// Append a string to the builder
 task sb_append(sb: StringBuilder, s: string) -> StringBuilder {
     set slen = str_len(s)
     
-    // Grow if needed
     loop sb.length + slen >= sb.capacity {
         set new_cap = sb.capacity * 2
         set new_data = alloc(new_cap, 1)
@@ -1173,7 +1014,6 @@ task sb_append(sb: StringBuilder, s: string) -> StringBuilder {
     return sb
 }
 
-/// Append a single character
 task sb_append_char(sb: StringBuilder, c: int) -> StringBuilder {
     check sb.length + 1 >= sb.capacity {
         set new_cap = sb.capacity * 2
@@ -1189,7 +1029,6 @@ task sb_append_char(sb: StringBuilder, c: int) -> StringBuilder {
     return sb
 }
 
-/// Append an integer as string
 task sb_append_int(sb: StringBuilder, n: int) -> StringBuilder {
     set s = int_to_str(n)
     sb = sb_append(sb, s)
@@ -1197,23 +1036,19 @@ task sb_append_int(sb: StringBuilder, n: int) -> StringBuilder {
     return sb
 }
 
-/// Get the built string (transfers ownership)
 task sb_to_string(sb: StringBuilder) -> string {
     override { ptr_set_byte(sb.data, sb.length, 0) }
     return sb.data
 }
 
-/// Get current length
 task sb_len(sb: StringBuilder) -> int {
     return sb.length
 }
 
-/// Clear the builder (keeps capacity)
 task sb_clear(sb: StringBuilder) {
     sb.length = 0
 }
 
-/// Free the builder
 task sb_free(sb: StringBuilder) {
     free sb.data
 }

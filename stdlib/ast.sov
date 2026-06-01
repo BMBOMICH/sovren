@@ -1,25 +1,15 @@
-/// Sovereign AST Types - For Self-Hosted Compiler
-/// These types mirror the Rust AST definitions to enable writing a compiler in Sovereign.
-/// Used by: lexer_self.sov, parser_self.sov, codegen_self.sov
 
-// ============================================================================
-// SECTION 1: TOKEN TYPES
-// ============================================================================
 
-/// Token type enumeration - represents all possible tokens
-/// We use integers as enum discriminants for simplicity
 const TOK_EOF           = 0
 const TOK_NEWLINE       = 1
 const TOK_INDENT        = 2
 const TOK_DEDENT        = 3
 
-// Literals
 const TOK_INTEGER       = 10
 const TOK_FLOAT         = 11
 const TOK_STRING        = 12
 const TOK_IDENTIFIER    = 13
 
-// Keywords
 const TOK_SET           = 20
 const TOK_TASK          = 21
 const TOK_CHECK         = 22
@@ -71,7 +61,6 @@ const TOK_ERR           = 67
 const TOK_AS            = 68
 const TOK_ASM           = 69
 
-// Type keywords
 const TOK_INT8          = 80
 const TOK_INT16         = 81
 const TOK_INT64         = 82
@@ -80,7 +69,6 @@ const TOK_UINT16        = 84
 const TOK_UINT32        = 85
 const TOK_UINT64        = 86
 
-// Operators
 const TOK_PLUS          = 100
 const TOK_MINUS         = 101
 const TOK_STAR          = 102
@@ -93,7 +81,6 @@ const TOK_TILDE         = 108
 const TOK_LSHIFT        = 109
 const TOK_RSHIFT        = 110
 
-// Comparison
 const TOK_EQUAL         = 120
 const TOK_NOT_EQUAL     = 121
 const TOK_LESS          = 122
@@ -101,14 +88,12 @@ const TOK_LESS_EQUAL    = 123
 const TOK_GREATER       = 124
 const TOK_GREATER_EQUAL = 125
 
-// Assignment
 const TOK_ASSIGN        = 130
 const TOK_PLUS_ASSIGN   = 131
 const TOK_MINUS_ASSIGN  = 132
 const TOK_STAR_ASSIGN   = 133
 const TOK_SLASH_ASSIGN  = 134
 
-// Punctuation
 const TOK_LPAREN        = 140
 const TOK_RPAREN        = 141
 const TOK_LBRACE        = 142
@@ -126,17 +111,15 @@ const TOK_QUESTION      = 153
 const TOK_AT            = 154
 const TOK_HASH          = 155
 
-/// Token structure - represents a single token from source
 struct Token {
-    kind:     int       // One of TOK_* constants
-    str_val:  string    // String value (for identifiers, strings)
-    int_val:  int       // Integer value (for numbers)
-    float_val: float    // Float value (for floats)
-    line:     int       // Source line number
-    col:      int       // Source column number
+    kind:     int
+    str_val:  string
+    int_val:  int
+    float_val: float
+    line:     int
+    col:      int
 }
 
-/// Create a simple token (no value)
 task token_new(kind: int, line: int, col: int) -> Token {
     return Token {
         kind:     kind,
@@ -148,7 +131,6 @@ task token_new(kind: int, line: int, col: int) -> Token {
     }
 }
 
-/// Create a token with string value
 task token_with_str(kind: int, str_val: string, line: int, col: int) -> Token {
     return Token {
         kind:     kind,
@@ -160,7 +142,6 @@ task token_with_str(kind: int, str_val: string, line: int, col: int) -> Token {
     }
 }
 
-/// Create a token with integer value
 task token_with_int(kind: int, int_val: int, line: int, col: int) -> Token {
     return Token {
         kind:     kind,
@@ -172,7 +153,6 @@ task token_with_int(kind: int, int_val: int, line: int, col: int) -> Token {
     }
 }
 
-/// Create a token with float value
 task token_with_float(kind: int, float_val: float, line: int, col: int) -> Token {
     return Token {
         kind:     kind,
@@ -184,7 +164,6 @@ task token_with_float(kind: int, float_val: float, line: int, col: int) -> Token
     }
 }
 
-/// Get token kind name for debugging
 task token_kind_name(kind: int) -> string {
     check kind == TOK_EOF { return "EOF" }
     check kind == TOK_NEWLINE { return "NEWLINE" }
@@ -217,20 +196,14 @@ task token_kind_name(kind: int) -> string {
     return "UNKNOWN"
 }
 
-// ============================================================================
-// SECTION 2: TOKEN VECTOR (VecToken)
-// ============================================================================
-
 struct VecToken {
     data:     ptr
     length:   int
     capacity: int
 }
 
-/// Size of Token struct in bytes (approximation for alloc)
 const TOKEN_SIZE = 48
 
-/// Create a new token vector
 task vectok_new() -> VecToken {
     return VecToken {
         data:     alloc(4, TOKEN_SIZE),
@@ -239,7 +212,6 @@ task vectok_new() -> VecToken {
     }
 }
 
-/// Push a token onto the vector
 task vectok_push(v: VecToken, tok: Token) -> VecToken {
     check v.length >= v.capacity {
         set new_cap = v.capacity * 2
@@ -252,13 +224,11 @@ task vectok_push(v: VecToken, tok: Token) -> VecToken {
         v.capacity = new_cap
     }
     
-    // Store token fields
     set base = ptr_offset(v.data, v.length * TOKEN_SIZE)
     override {
         ptr_set_int(base, 0, tok.kind)
         ptr_set_int(base, 1, tok.str_val)
         ptr_set_int(base, 2, tok.int_val)
-        // float_val stored as bits
         ptr_set_int(base, 4, tok.line)
         ptr_set_int(base, 5, tok.col)
     }
@@ -266,7 +236,6 @@ task vectok_push(v: VecToken, tok: Token) -> VecToken {
     return v
 }
 
-/// Get token at index
 task vectok_get(v: VecToken, index: int) -> Token {
     assert(index >= 0 and index < v.length, "VecToken index out of bounds")
     set base = ptr_offset(v.data, index * TOKEN_SIZE)
@@ -288,21 +257,14 @@ task vectok_get(v: VecToken, index: int) -> Token {
     return tok
 }
 
-/// Get length of token vector
 task vectok_len(v: VecToken) -> int {
     return v.length
 }
 
-/// Free token vector
 task vectok_free(v: VecToken) {
     free v.data
 }
 
-// ============================================================================
-// SECTION 3: TYPE REPRESENTATION
-// ============================================================================
-
-/// Type kinds
 const TYPE_INT      = 1
 const TYPE_FLOAT    = 2
 const TYPE_BOOL     = 3
@@ -323,13 +285,12 @@ const TYPE_UINT32   = 17
 const TYPE_UINT64   = 18
 
 struct TypeInfo {
-    kind:      int      // One of TYPE_* constants
-    name:      string   // For struct/enum/generic names
-    inner:     ptr      // For ptr/array: points to inner TypeInfo
-    size:      int      // Array size (-1 for dynamic)
+    kind:      int
+    name:      string
+    inner:     ptr
+    size:      int
 }
 
-/// Create a basic type
 task type_new(kind: int) -> TypeInfo {
     return TypeInfo {
         kind:  kind,
@@ -339,7 +300,6 @@ task type_new(kind: int) -> TypeInfo {
     }
 }
 
-/// Create a named type (struct, enum, generic)
 task type_named(kind: int, name: string) -> TypeInfo {
     return TypeInfo {
         kind:  kind,
@@ -349,7 +309,6 @@ task type_named(kind: int, name: string) -> TypeInfo {
     }
 }
 
-/// Create a pointer type
 task type_ptr(inner: ptr) -> TypeInfo {
     return TypeInfo {
         kind:  TYPE_PTR,
@@ -359,7 +318,6 @@ task type_ptr(inner: ptr) -> TypeInfo {
     }
 }
 
-/// Create an array type
 task type_array(inner: ptr, size: int) -> TypeInfo {
     return TypeInfo {
         kind:  TYPE_ARRAY,
@@ -369,7 +327,6 @@ task type_array(inner: ptr, size: int) -> TypeInfo {
     }
 }
 
-/// Get type name for debugging/codegen
 task type_to_string(t: TypeInfo) -> string {
     check t.kind == TYPE_INT { return "int" }
     check t.kind == TYPE_FLOAT { return "float" }
@@ -390,11 +347,6 @@ task type_to_string(t: TypeInfo) -> string {
     return "unknown"
 }
 
-// ============================================================================
-// SECTION 4: EXPRESSION AST
-// ============================================================================
-
-/// Expression kinds
 const EXPR_INT          = 1
 const EXPR_FLOAT        = 2
 const EXPR_BOOL         = 3
@@ -420,7 +372,6 @@ const EXPR_RANGE        = 22
 const EXPR_CHAN_RECV    = 23
 const EXPR_AWAIT        = 24
 
-/// Binary operators
 const OP_ADD      = 1
 const OP_SUB      = 2
 const OP_MUL      = 3
@@ -440,29 +391,26 @@ const OP_LE       = 16
 const OP_GT       = 17
 const OP_GE       = 18
 
-/// Unary operators
 const UNOP_NEG    = 1
 const UNOP_NOT    = 2
 const UNOP_BITNOT = 3
 
-/// Expression node - union-like struct
 struct Expr {
-    kind:       int         // One of EXPR_* constants
-    int_val:    int         // For EXPR_INT
-    float_val:  float       // For EXPR_FLOAT
-    bool_val:   bool        // For EXPR_BOOL
-    str_val:    string      // For EXPR_STRING, EXPR_VAR, EXPR_FIELD
-    op:         int         // For EXPR_BINARY (OP_*), EXPR_UNARY (UNOP_*)
-    left:       ptr         // For binary: left operand (Expr*)
-    right:      ptr         // For binary: right operand (Expr*)
-    callee:     string      // For EXPR_CALL: function name
-    args:       ptr         // For EXPR_CALL: arguments (VecExpr*)
-    type_info:  ptr         // For EXPR_CAST, EXPR_ALLOC: target type (TypeInfo*)
-    line:       int         // Source location
+    kind:       int
+    int_val:    int
+    float_val:  float
+    bool_val:   bool
+    str_val:    string
+    op:         int
+    left:       ptr
+    right:      ptr
+    callee:     string
+    args:       ptr
+    type_info:  ptr
+    line:       int
     col:        int
 }
 
-/// Create integer literal expression
 task expr_int(val: int, line: int, col: int) -> ptr {
     set e = alloc(1, 128)
     override {
@@ -474,19 +422,16 @@ task expr_int(val: int, line: int, col: int) -> ptr {
     return e
 }
 
-/// Create float literal expression
 task expr_float(val: float, line: int, col: int) -> ptr {
     set e = alloc(1, 128)
     override {
         ptr_set_int(e, 0, EXPR_FLOAT)
-        // Store float bits - simplified
         ptr_set_int(e, 10, line)
         ptr_set_int(e, 11, col)
     }
     return e
 }
 
-/// Create boolean literal expression
 task expr_bool(val: bool, line: int, col: int) -> ptr {
     set e = alloc(1, 128)
     set v = 0
@@ -500,7 +445,6 @@ task expr_bool(val: bool, line: int, col: int) -> ptr {
     return e
 }
 
-/// Create string literal expression
 task expr_string(val: string, line: int, col: int) -> ptr {
     set e = alloc(1, 128)
     override {
@@ -512,7 +456,6 @@ task expr_string(val: string, line: int, col: int) -> ptr {
     return e
 }
 
-/// Create variable reference expression
 task expr_var(name: string, line: int, col: int) -> ptr {
     set e = alloc(1, 128)
     override {
@@ -524,7 +467,6 @@ task expr_var(name: string, line: int, col: int) -> ptr {
     return e
 }
 
-/// Create binary operation expression
 task expr_binary(op: int, left: ptr, right: ptr, line: int, col: int) -> ptr {
     set e = alloc(1, 128)
     override {
@@ -538,7 +480,6 @@ task expr_binary(op: int, left: ptr, right: ptr, line: int, col: int) -> ptr {
     return e
 }
 
-/// Create unary operation expression
 task expr_unary(op: int, operand: ptr, line: int, col: int) -> ptr {
     set e = alloc(1, 128)
     override {
@@ -551,7 +492,6 @@ task expr_unary(op: int, operand: ptr, line: int, col: int) -> ptr {
     return e
 }
 
-/// Create function call expression
 task expr_call(callee: string, args: ptr, line: int, col: int) -> ptr {
     set e = alloc(1, 128)
     override {
@@ -564,7 +504,6 @@ task expr_call(callee: string, args: ptr, line: int, col: int) -> ptr {
     return e
 }
 
-/// Create null expression
 task expr_null(line: int, col: int) -> ptr {
     set e = alloc(1, 128)
     override {
@@ -575,7 +514,6 @@ task expr_null(line: int, col: int) -> ptr {
     return e
 }
 
-/// Create field access expression (expr.field)
 task expr_field(obj: ptr, field: string, line: int, col: int) -> ptr {
     set e = alloc(1, 128)
     override {
@@ -588,7 +526,6 @@ task expr_field(obj: ptr, field: string, line: int, col: int) -> ptr {
     return e
 }
 
-/// Create index expression (expr[index])
 task expr_index(obj: ptr, index: ptr, line: int, col: int) -> ptr {
     set e = alloc(1, 128)
     override {
@@ -601,7 +538,6 @@ task expr_index(obj: ptr, index: ptr, line: int, col: int) -> ptr {
     return e
 }
 
-/// Get expression kind
 task expr_kind(e: ptr) -> int {
     check e == null { return 0 }
     override {
@@ -610,7 +546,6 @@ task expr_kind(e: ptr) -> int {
     return 0
 }
 
-/// Get expression int value
 task expr_get_int(e: ptr) -> int {
     override {
         return ptr_get_int(e, 1)
@@ -618,7 +553,6 @@ task expr_get_int(e: ptr) -> int {
     return 0
 }
 
-/// Get expression string value
 task expr_get_str(e: ptr) -> string {
     override {
         return ptr_get_int(e, 4)
@@ -626,7 +560,6 @@ task expr_get_str(e: ptr) -> string {
     return ""
 }
 
-/// Get expression operator
 task expr_get_op(e: ptr) -> int {
     override {
         return ptr_get_int(e, 5)
@@ -634,7 +567,6 @@ task expr_get_op(e: ptr) -> int {
     return 0
 }
 
-/// Get expression left operand
 task expr_get_left(e: ptr) -> ptr {
     override {
         return ptr_get_int(e, 6)
@@ -642,7 +574,6 @@ task expr_get_left(e: ptr) -> ptr {
     return null
 }
 
-/// Get expression right operand
 task expr_get_right(e: ptr) -> ptr {
     override {
         return ptr_get_int(e, 7)
@@ -650,7 +581,6 @@ task expr_get_right(e: ptr) -> ptr {
     return null
 }
 
-/// Get function call callee
 task expr_get_callee(e: ptr) -> string {
     override {
         return ptr_get_int(e, 8)
@@ -658,7 +588,6 @@ task expr_get_callee(e: ptr) -> string {
     return ""
 }
 
-/// Get function call args
 task expr_get_args(e: ptr) -> ptr {
     override {
         return ptr_get_int(e, 9)
@@ -666,7 +595,6 @@ task expr_get_args(e: ptr) -> ptr {
     return null
 }
 
-/// Get expression source line
 task expr_get_line(e: ptr) -> int {
     override {
         return ptr_get_int(e, 10)
@@ -674,7 +602,6 @@ task expr_get_line(e: ptr) -> int {
     return 0
 }
 
-/// Get expression source column
 task expr_get_col(e: ptr) -> int {
     override {
         return ptr_get_int(e, 11)
@@ -682,73 +609,44 @@ task expr_get_col(e: ptr) -> int {
     return 0
 }
 
-// ============================================================================
-// EXPRESSION ACCESSOR ALIASES (convenience wrappers)
-// ============================================================================
-
-/// Get expression name (for EXPR_VAR: variable name, EXPR_CALL: function name)
-/// Alias for expr_get_str
 task expr_get_name(e: ptr) -> string {
     return expr_get_str(e)
 }
 
-/// Get expression operand (for EXPR_UNARY: the operand expression)
-/// Alias for expr_get_left
 task expr_get_operand(e: ptr) -> ptr {
     return expr_get_left(e)
 }
 
-/// Get expression object (for EXPR_FIELD: the object being accessed)
-/// Alias for expr_get_left
 task expr_get_object(e: ptr) -> ptr {
     return expr_get_left(e)
 }
 
-/// Get expression field name (for EXPR_FIELD: the field name string)
-/// Alias for expr_get_str
 task expr_get_field(e: ptr) -> string {
     return expr_get_str(e)
 }
 
-/// Get expression array (for EXPR_INDEX: the array expression)
-/// Alias for expr_get_left
 task expr_get_array(e: ptr) -> ptr {
     return expr_get_left(e)
 }
 
-/// Get expression index (for EXPR_INDEX: the index expression)
-/// Alias for expr_get_right
 task expr_get_index(e: ptr) -> ptr {
     return expr_get_right(e)
 }
 
-/// Get expression type name (for EXPR_STRUCT_INIT, etc.)
-/// Alias for expr_get_str
 task expr_get_type_name(e: ptr) -> string {
     return expr_get_str(e)
 }
 
-/// Get expression cast target type (for EXPR_CAST: type info pointer)
-/// The type_info is stored at position 10 (before line/col were added)
-/// Actually type_info is stored differently; use a separate field
-/// For now, alias to callee position
 task expr_get_cast_type(e: ptr) -> string {
     return expr_get_callee(e)
 }
 
-// ============================================================================
-// CONVENIENCE ACCESSORS FOR PARAM/ARGS VECTORS
-// ============================================================================
-
-/// Get number of parameters in a VecParam
 task params_count(p: ptr) -> int {
     check p == null { return 0 }
-    // VecParam stores data at offset 0
     override { return ptr_get_int(p, 4) }
     return 0
 }
 
-/// Get parameter at index
 task params_get(p: ptr, index: int) -> ptr {
     check p == null { return null }
     set data = 0
@@ -758,22 +656,18 @@ task params_get(p: ptr, index: int) -> ptr {
         length = ptr_get_int(p, 4)
     }
     check index >= 0 and index < length { return null }
-    // Each param is 16 bytes: name(string) at offset 0, type_info(ptr) at offset 8
     set base = ptr_offset(data, index * 16)
     return base
 }
 
-/// Get parameter name
 task param_get_name(param: ptr) -> string {
     override { return ptr_get_int(param, 0) }
     return ""
 }
 
-/// Get parameter type
 task param_get_type(param: ptr) -> string {
     set ti = 0
     override { ti = ptr_get_int(param, 8) }
-    // TypeInfo: kind at offset 0, name at offset 8
     check ti != 0 {
         set kind = 0
         override { kind = ptr_get_int(ti, 0) }
@@ -795,16 +689,13 @@ task param_get_type(param: ptr) -> string {
     return ""
 }
 
-/// Get number of args in a VecExpr (args is a pointer to VecExpr)
 task args_count(args: ptr) -> int {
     check args == null { return 0 }
-    // VecExpr layout: data at offset 0, length at offset 8, capacity at offset 16
     set len = 0
     override { len = ptr_get_int(args, 1) }
     return len
 }
 
-/// Get argument at index (args is a pointer to VecExpr)
 task args_get(args: ptr, index: int) -> ptr {
     check args == null { return null }
     set len = 0
@@ -819,16 +710,13 @@ task args_get(args: ptr, index: int) -> ptr {
     return result
 }
 
-/// Get number of statements in a block (uses raw ptr access since block is ptr to VecStmt)
 task block_stmt_count(block: ptr) -> int {
     check block == null { return 0 }
-    // VecStmt layout: data at offset 0, length at offset 8, capacity at offset 16
     set len = 0
     override { len = ptr_get_int(block, 1) }
     return len
 }
 
-/// Get statement at index from a block
 task block_get_stmt(block: ptr, index: int) -> ptr {
     check block == null { return null }
     set len = 0
@@ -843,17 +731,12 @@ task block_get_stmt(block: ptr, index: int) -> ptr {
     return result
 }
 
-// ============================================================================
-// SECTION 5: EXPRESSION VECTOR (VecExpr)
-// ============================================================================
-
 struct VecExpr {
     data:     ptr
     length:   int
     capacity: int
 }
 
-/// Create a new expression vector
 task vecexpr_new() -> VecExpr {
     return VecExpr {
         data:     alloc(4, 8),
@@ -862,7 +745,6 @@ task vecexpr_new() -> VecExpr {
     }
 }
 
-/// Push an expression pointer onto the vector
 task vecexpr_push(v: VecExpr, e: ptr) -> VecExpr {
     check v.length >= v.capacity {
         set new_cap = v.capacity * 2
@@ -881,7 +763,6 @@ task vecexpr_push(v: VecExpr, e: ptr) -> VecExpr {
     return v
 }
 
-/// Get expression at index
 task vecexpr_get(v: VecExpr, index: int) -> ptr {
     assert(index >= 0 and index < v.length, "VecExpr index out of bounds")
     override {
@@ -890,21 +771,14 @@ task vecexpr_get(v: VecExpr, index: int) -> ptr {
     return null
 }
 
-/// Get length
 task vecexpr_len(v: VecExpr) -> int {
     return v.length
 }
 
-/// Free vector (does not free expressions)
 task vecexpr_free(v: VecExpr) {
     free v.data
 }
 
-// ============================================================================
-// SECTION 6: STATEMENT AST
-// ============================================================================
-
-/// Statement kinds
 const STMT_VAR_DECL     = 1
 const STMT_CONST_DECL   = 2
 const STMT_TASK_DECL    = 3
@@ -945,17 +819,16 @@ const STMT_TEST         = 37
 const STMT_EXTERN_DECL  = 38
 const STMT_ASM          = 39
 
-/// Statement node
 struct Stmt {
-    kind:        int        // One of STMT_* constants
-    name:        string     // For declarations
-    expr:        ptr        // For STMT_EXPR, STMT_RETURN, etc. (Expr*)
-    expr2:       ptr        // For STMT_ASSIGN (rhs), STMT_LOOP_RANGE (end)
-    block:       ptr        // For control flow (VecStmt*)
-    else_block:  ptr        // For STMT_IF (VecStmt*)
-    params:      ptr        // For STMT_TASK_DECL (VecParam*)
-    return_type: ptr        // For STMT_TASK_DECL (TypeInfo*)
-    type_info:   ptr        // For STMT_VAR_DECL (TypeInfo*)
+    kind:        int
+    name:        string
+    expr:        ptr
+    expr2:       ptr
+    block:       ptr
+    else_block:  ptr
+    params:      ptr
+    return_type: ptr
+    type_info:   ptr
     is_sensitive: bool
     is_inline:   bool
     is_async:    bool
@@ -964,7 +837,6 @@ struct Stmt {
     col:         int
 }
 
-/// Create a variable declaration statement
 task stmt_var_decl(name: string, type_info: ptr, init: ptr, is_sensitive: bool, line: int, col: int) -> ptr {
     set s = alloc(1, 160)
     override {
@@ -979,7 +851,6 @@ task stmt_var_decl(name: string, type_info: ptr, init: ptr, is_sensitive: bool, 
     return s
 }
 
-/// Create a constant declaration statement
 task stmt_const_decl(name: string, init: ptr, line: int, col: int) -> ptr {
     set s = alloc(1, 160)
     override {
@@ -992,7 +863,6 @@ task stmt_const_decl(name: string, init: ptr, line: int, col: int) -> ptr {
     return s
 }
 
-/// Create a return statement
 task stmt_return(expr: ptr, line: int, col: int) -> ptr {
     set s = alloc(1, 160)
     override {
@@ -1004,7 +874,6 @@ task stmt_return(expr: ptr, line: int, col: int) -> ptr {
     return s
 }
 
-/// Create an expression statement
 task stmt_expr(expr: ptr, line: int, col: int) -> ptr {
     set s = alloc(1, 160)
     override {
@@ -1016,7 +885,6 @@ task stmt_expr(expr: ptr, line: int, col: int) -> ptr {
     return s
 }
 
-/// Create an assignment statement
 task stmt_assign(target: ptr, value: ptr, line: int, col: int) -> ptr {
     set s = alloc(1, 160)
     override {
@@ -1029,7 +897,6 @@ task stmt_assign(target: ptr, value: ptr, line: int, col: int) -> ptr {
     return s
 }
 
-/// Create an if statement
 task stmt_if(condition: ptr, then_block: ptr, else_block: ptr, line: int, col: int) -> ptr {
     set s = alloc(1, 160)
     override {
@@ -1043,7 +910,6 @@ task stmt_if(condition: ptr, then_block: ptr, else_block: ptr, line: int, col: i
     return s
 }
 
-/// Create a loop-times statement (loop N times { })
 task stmt_loop_times(count: ptr, body: ptr, line: int, col: int) -> ptr {
     set s = alloc(1, 160)
     override {
@@ -1056,7 +922,6 @@ task stmt_loop_times(count: ptr, body: ptr, line: int, col: int) -> ptr {
     return s
 }
 
-/// Create a loop-range statement (loop i from a to b { })
 task stmt_loop_range(var_name: string, start: ptr, end_expr: ptr, body: ptr, line: int, col: int) -> ptr {
     set s = alloc(1, 160)
     override {
@@ -1071,7 +936,6 @@ task stmt_loop_range(var_name: string, start: ptr, end_expr: ptr, body: ptr, lin
     return s
 }
 
-/// Create a conditional loop (loop condition { })
 task stmt_loop_cond(condition: ptr, body: ptr, line: int, col: int) -> ptr {
     set s = alloc(1, 160)
     override {
@@ -1084,7 +948,6 @@ task stmt_loop_cond(condition: ptr, body: ptr, line: int, col: int) -> ptr {
     return s
 }
 
-/// Create a break statement
 task stmt_break(line: int, col: int) -> ptr {
     set s = alloc(1, 160)
     override {
@@ -1095,7 +958,6 @@ task stmt_break(line: int, col: int) -> ptr {
     return s
 }
 
-/// Create a continue statement
 task stmt_continue(line: int, col: int) -> ptr {
     set s = alloc(1, 160)
     override {
@@ -1106,7 +968,6 @@ task stmt_continue(line: int, col: int) -> ptr {
     return s
 }
 
-/// Create a block statement
 task stmt_block(stmts: ptr, line: int, col: int) -> ptr {
     set s = alloc(1, 160)
     override {
@@ -1118,7 +979,6 @@ task stmt_block(stmts: ptr, line: int, col: int) -> ptr {
     return s
 }
 
-/// Get statement kind
 task stmt_kind(s: ptr) -> int {
     check s == null { return 0 }
     override {
@@ -1127,7 +987,6 @@ task stmt_kind(s: ptr) -> int {
     return 0
 }
 
-/// Get statement name
 task stmt_get_name(s: ptr) -> string {
     override {
         return ptr_get_int(s, 1)
@@ -1135,7 +994,6 @@ task stmt_get_name(s: ptr) -> string {
     return ""
 }
 
-/// Get statement expression
 task stmt_get_expr(s: ptr) -> ptr {
     override {
         return ptr_get_int(s, 2)
@@ -1143,7 +1001,6 @@ task stmt_get_expr(s: ptr) -> ptr {
     return null
 }
 
-/// Get statement second expression
 task stmt_get_expr2(s: ptr) -> ptr {
     override {
         return ptr_get_int(s, 3)
@@ -1151,7 +1008,6 @@ task stmt_get_expr2(s: ptr) -> ptr {
     return null
 }
 
-/// Get statement block
 task stmt_get_block(s: ptr) -> ptr {
     override {
         return ptr_get_int(s, 4)
@@ -1159,7 +1015,6 @@ task stmt_get_block(s: ptr) -> ptr {
     return null
 }
 
-/// Get statement else block
 task stmt_get_else_block(s: ptr) -> ptr {
     override {
         return ptr_get_int(s, 5)
@@ -1167,7 +1022,6 @@ task stmt_get_else_block(s: ptr) -> ptr {
     return null
 }
 
-/// Get statement params (for task/fn declarations)
 task stmt_get_params(s: ptr) -> ptr {
     override {
         return ptr_get_int(s, 6)
@@ -1175,8 +1029,6 @@ task stmt_get_params(s: ptr) -> ptr {
     return null
 }
 
-/// Get statement return type (for task/fn declarations)
-/// Returns type name string - the type_info pointer is stored at slot 7
 task stmt_get_return_type(s: ptr) -> string {
     set ti = 0
     override { ti = ptr_get_int(s, 7) }
@@ -1200,51 +1052,35 @@ task stmt_get_return_type(s: ptr) -> string {
     return ""
 }
 
-/// Get statement type (for var declarations) - stored at slot 7
 task stmt_get_type(s: ptr) -> string {
     return stmt_get_return_type(s)
 }
 
-/// Get statement condition expression (for if, loop)
-/// Stored at slot 2 (expr field)
 task stmt_get_condition(s: ptr) -> ptr {
     return stmt_get_expr(s)
 }
 
-/// Get statement then block (for if)
-/// Stored at slot 4 (block field)
 task stmt_get_then_block(s: ptr) -> ptr {
     return stmt_get_block(s)
 }
 
-/// Get loop variable name (for loop i from...)
-/// Stored at slot 1 (name field)
 task stmt_get_loop_var(s: ptr) -> string {
     return stmt_get_name(s)
 }
 
-/// Get loop start expression (for loop i from start to end)
-/// Stored at slot 2 (expr field)
 task stmt_get_start_expr(s: ptr) -> ptr {
     return stmt_get_expr(s)
 }
 
-/// Get loop end expression (for loop i from start to end)
-/// Stored at slot 3 (expr2 field)
 task stmt_get_end_expr(s: ptr) -> ptr {
     return stmt_get_expr2(s)
 }
 
-/// Check if statement is marked sensitive
 task stmt_is_sensitive(s: ptr) -> bool {
     set val = 0
     override { val = ptr_get_int(s, 8) }
     return val != 0
 }
-
-// ============================================================================
-// SECTION 7: STATEMENT VECTOR (VecStmt)
-// ============================================================================
 
 struct VecStmt {
     data:     ptr
@@ -1252,7 +1088,6 @@ struct VecStmt {
     capacity: int
 }
 
-/// Create a new statement vector
 task vecstmt_new() -> VecStmt {
     return VecStmt {
         data:     alloc(8, 8),
@@ -1261,7 +1096,6 @@ task vecstmt_new() -> VecStmt {
     }
 }
 
-/// Push a statement pointer onto the vector
 task vecstmt_push(v: VecStmt, s: ptr) -> VecStmt {
     check v.length >= v.capacity {
         set new_cap = v.capacity * 2
@@ -1280,7 +1114,6 @@ task vecstmt_push(v: VecStmt, s: ptr) -> VecStmt {
     return v
 }
 
-/// Get statement at index
 task vecstmt_get(v: VecStmt, index: int) -> ptr {
     assert(index >= 0 and index < v.length, "VecStmt index out of bounds")
     override {
@@ -1289,23 +1122,17 @@ task vecstmt_get(v: VecStmt, index: int) -> ptr {
     return null
 }
 
-/// Get length
 task vecstmt_len(v: VecStmt) -> int {
     return v.length
 }
 
-/// Free vector (does not free statements)
 task vecstmt_free(v: VecStmt) {
     free v.data
 }
 
-// ============================================================================
-// SECTION 8: PROGRAM AND PARAMETER TYPES
-// ============================================================================
-
 struct Param {
     name:      string
-    type_info: ptr      // TypeInfo*
+    type_info: ptr
 }
 
 struct VecParam {
@@ -1314,7 +1141,6 @@ struct VecParam {
     capacity: int
 }
 
-/// Create a new parameter vector
 task vecparam_new() -> VecParam {
     return VecParam {
         data:     alloc(4, 16),
@@ -1323,7 +1149,6 @@ task vecparam_new() -> VecParam {
     }
 }
 
-/// Push a parameter
 task vecparam_push(v: VecParam, name: string, type_info: ptr) -> VecParam {
     check v.length >= v.capacity {
         set new_cap = v.capacity * 2
@@ -1343,7 +1168,6 @@ task vecparam_push(v: VecParam, name: string, type_info: ptr) -> VecParam {
     return v
 }
 
-/// Get parameter name at index
 task vecparam_get_name(v: VecParam, index: int) -> string {
     assert(index >= 0 and index < v.length, "VecParam index out of bounds")
     override {
@@ -1352,7 +1176,6 @@ task vecparam_get_name(v: VecParam, index: int) -> string {
     return ""
 }
 
-/// Get parameter type at index
 task vecparam_get_type(v: VecParam, index: int) -> ptr {
     assert(index >= 0 and index < v.length, "VecParam index out of bounds")
     override {
@@ -1361,23 +1184,19 @@ task vecparam_get_type(v: VecParam, index: int) -> ptr {
     return null
 }
 
-/// Get length
 task vecparam_len(v: VecParam) -> int {
     return v.length
 }
 
-/// Free vector
 task vecparam_free(v: VecParam) {
     free v.data
 }
 
-/// Program - the root AST node
 struct Program {
     statements: VecStmt
     filename:   string
 }
 
-/// Create a new program
 task program_new(filename: string) -> Program {
     return Program {
         statements: vecstmt_new(),
@@ -1385,23 +1204,19 @@ task program_new(filename: string) -> Program {
     }
 }
 
-/// Add a statement to the program
 task program_add_stmt(p: Program, s: ptr) -> Program {
     p.statements = vecstmt_push(p.statements, s)
     return p
 }
 
-/// Get number of statements
 task program_stmt_count(p: Program) -> int {
     return vecstmt_len(p.statements)
 }
 
-/// Get statement at index
 task program_get_stmt(p: Program, index: int) -> ptr {
     return vecstmt_get(p.statements, index)
 }
 
-/// Free program
 task program_free(p: Program) {
     vecstmt_free(p.statements)
 }

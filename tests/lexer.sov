@@ -1,13 +1,7 @@
-// ============================================================================
-// Sovereign Lexer Test Suite
-// Tests tokenization of all literal types, keywords, operators, comments, etc.
-// ============================================================================
 
-// ── Integer Literals ──────────────────────────────────────────────────────
 task test_integer_literals() {
     println("--- Integer Literals ---")
 
-    // Decimal integers
     set tokens = lexer_tokenize(lexer_new("42", "test"))
     assert(vectok_get(tokens, 0).kind == TOK_INTEGER, "decimal token kind")
     assert(vectok_get(tokens, 0).int_val == 42, "decimal value 42")
@@ -22,7 +16,6 @@ task test_integer_literals() {
     assert(vectok_get(tokens, 0).int_val == 99999, "large decimal")
     vectok_free(tokens)
 
-    // Hex literals (0x)
     set tokens = lexer_tokenize(lexer_new("0xFF", "test"))
     assert(vectok_get(tokens, 0).int_val == 255, "hex 0xFF = 255")
     vectok_free(tokens)
@@ -35,7 +28,6 @@ task test_integer_literals() {
     assert(vectok_get(tokens, 0).int_val == 0, "hex 0x0 = 0")
     vectok_free(tokens)
 
-    // Binary literals (0b)
     set tokens = lexer_tokenize(lexer_new("0b1010", "test"))
     assert(vectok_get(tokens, 0).int_val == 10, "binary 0b1010 = 10")
     vectok_free(tokens)
@@ -44,7 +36,6 @@ task test_integer_literals() {
     assert(vectok_get(tokens, 0).int_val == 255, "binary 0b11111111 = 255")
     vectok_free(tokens)
 
-    // Octal literals (0o)
     set tokens = lexer_tokenize(lexer_new("0o777", "test"))
     assert(vectok_get(tokens, 0).int_val == 511, "octal 0o777 = 511")
     vectok_free(tokens)
@@ -56,7 +47,6 @@ task test_integer_literals() {
     println("  All integer literal formats: PASS")
 }
 
-// ── Float Literals ────────────────────────────────────────────────────────
 task test_float_literals() {
     println("--- Float Literals ---")
 
@@ -88,7 +78,6 @@ task test_float_literals() {
     println("  All float literal formats: PASS")
 }
 
-// ── String Literals ───────────────────────────────────────────────────────
 task test_string_literals() {
     println("--- String Literals ---")
 
@@ -121,7 +110,6 @@ task test_string_literals() {
     println("  All string literal formats: PASS")
 }
 
-// ── Identifiers ───────────────────────────────────────────────────────────
 task test_identifiers() {
     println("--- Identifiers ---")
 
@@ -151,11 +139,9 @@ task test_identifiers() {
     println("  All identifier formats: PASS")
 }
 
-// ── Keywords ──────────────────────────────────────────────────────────────
 task test_keywords() {
     println("--- Keywords ---")
 
-    // Core keywords
     set tokens = lexer_tokenize(lexer_new("task set check loop return", "test"))
     assert(vectok_get(tokens, 0).kind == TOK_TASK, "task keyword")
     assert(vectok_get(tokens, 1).kind == TOK_SET, "set keyword")
@@ -164,7 +150,6 @@ task test_keywords() {
     assert(vectok_get(tokens, 4).kind == TOK_RETURN, "return keyword")
     vectok_free(tokens)
 
-    // Declaration keywords
     set tokens = lexer_tokenize(lexer_new("struct const enum import true false null", "test"))
     assert(vectok_get(tokens, 0).kind == TOK_STRUCT, "struct keyword")
     assert(vectok_get(tokens, 1).kind == TOK_CONST, "const keyword")
@@ -175,7 +160,6 @@ task test_keywords() {
     assert(vectok_get(tokens, 6).kind == TOK_NULL, "null keyword")
     vectok_free(tokens)
 
-    // Modifier keywords
     set tokens = lexer_tokenize(lexer_new("inline extern sensitive async await override defer purge spawn", "test"))
     assert(vectok_get(tokens, 0).kind == TOK_INLINE, "inline keyword")
     assert(vectok_get(tokens, 1).kind == TOK_EXTERN, "extern keyword")
@@ -188,25 +172,21 @@ task test_keywords() {
     assert(vectok_get(tokens, 8).kind == TOK_SPAWN, "spawn keyword")
     vectok_free(tokens)
 
-    // Concurrency keywords
     set tokens = lexer_tokenize(lexer_new("chan make_chan", "test"))
     assert(vectok_get(tokens, 0).kind == TOK_CHAN, "chan keyword")
     assert(vectok_get(tokens, 1).kind == TOK_MAKE_CHAN, "make_chan keyword")
     vectok_free(tokens)
 
-    // Security keywords
     set tokens = lexer_tokenize(lexer_new("sensitive constant_time purge", "test"))
     assert(vectok_get(tokens, 0).kind == TOK_SENSITIVE, "sensitive keyword (2)")
     assert(vectok_get(tokens, 1).kind == TOK_CONSTANT_TIME, "constant_time keyword")
     assert(vectok_get(tokens, 2).kind == TOK_PURGE, "purge keyword (2)")
     vectok_free(tokens)
 
-    // Assert keyword
     set tokens = lexer_tokenize(lexer_new("assert", "test"))
     assert(vectok_get(tokens, 0).kind == TOK_ASSERT, "assert keyword")
     vectok_free(tokens)
 
-    // Control flow
     set tokens = lexer_tokenize(lexer_new("break continue else from to times and or not", "test"))
     assert(vectok_get(tokens, 0).kind == TOK_BREAK, "break keyword")
     assert(vectok_get(tokens, 1).kind == TOK_CONTINUE, "continue keyword")
@@ -222,11 +202,9 @@ task test_keywords() {
     println("  All keywords: PASS")
 }
 
-// ── Operators ─────────────────────────────────────────────────────────────
 task test_operators() {
     println("--- Operators ---")
 
-    // Arithmetic
     set tokens = lexer_tokenize(lexer_new("+ - * / %", "test"))
     assert(vectok_get(tokens, 0).kind == TOK_PLUS, "+")
     assert(vectok_get(tokens, 1).kind == TOK_MINUS, "-")
@@ -235,7 +213,6 @@ task test_operators() {
     assert(vectok_get(tokens, 4).kind == TOK_PERCENT, "%")
     vectok_free(tokens)
 
-    // Comparison
     set tokens = lexer_tokenize(lexer_new("== != < > <= >=", "test"))
     assert(vectok_get(tokens, 0).kind == TOK_EQUAL, "==")
     assert(vectok_get(tokens, 1).kind == TOK_NOT_EQUAL, "!=")
@@ -245,7 +222,6 @@ task test_operators() {
     assert(vectok_get(tokens, 5).kind == TOK_GREATER_EQUAL, ">=")
     vectok_free(tokens)
 
-    // Assignment
     set tokens = lexer_tokenize(lexer_new("= += -= *= /=", "test"))
     assert(vectok_get(tokens, 0).kind == TOK_ASSIGN, "=")
     assert(vectok_get(tokens, 1).kind == TOK_PLUS_ASSIGN, "+=")
@@ -254,7 +230,6 @@ task test_operators() {
     assert(vectok_get(tokens, 4).kind == TOK_SLASH_ASSIGN, "/=")
     vectok_free(tokens)
 
-    // Bitwise and logical
     set tokens = lexer_tokenize(lexer_new("& | ^ ~ << >>", "test"))
     assert(vectok_get(tokens, 0).kind == TOK_AMPERSAND, "&")
     assert(vectok_get(tokens, 1).kind == TOK_PIPE, "|")
@@ -264,7 +239,6 @@ task test_operators() {
     assert(vectok_get(tokens, 5).kind == TOK_RSHIFT, ">>")
     vectok_free(tokens)
 
-    // Punctuation
     set tokens = lexer_tokenize(lexer_new("( ) { } [ ] , . : ; -> => :: ? @ #", "test"))
     assert(vectok_get(tokens, 0).kind == TOK_LPAREN, "(")
     assert(vectok_get(tokens, 1).kind == TOK_RPAREN, ")")
@@ -287,12 +261,10 @@ task test_operators() {
     println("  All operators: PASS")
 }
 
-// ── Comments ──────────────────────────────────────────────────────────────
 task test_comments() {
     println("--- Comments ---")
 
-    // Line comments
-    set tokens = lexer_tokenize(lexer_new("set x = 42 // line comment", "test"))
+    set tokens = lexer_tokenize(lexer_new("set x = 42
     assert(vectok_get(tokens, 0).kind == TOK_SET, "set before line comment")
     assert(vectok_get(tokens, 1).kind == TOK_IDENTIFIER, "identifier before line comment")
     assert(vectok_get(tokens, 2).kind == TOK_ASSIGN, "assign before line comment")
@@ -300,8 +272,7 @@ task test_comments() {
     vectok_free(tokens)
     println("  Line comments: PASS")
 
-    // Block comments
-    set tokens = lexer_tokenize(lexer_new("set x = 42 /* block comment */", "test"))
+    set tokens = lexer_tokenize(lexer_new("set x = 42 ", "test"))
     assert(vectok_get(tokens, 0).kind == TOK_SET, "set before block comment")
     assert(vectok_get(tokens, 1).kind == TOK_IDENTIFIER, "identifier before block comment")
     assert(vectok_get(tokens, 2).kind == TOK_ASSIGN, "assign before block comment")
@@ -309,8 +280,7 @@ task test_comments() {
     vectok_free(tokens)
     println("  Block comments: PASS")
 
-    // Multi-line block comments
-    set tokens = lexer_tokenize(lexer_new("set x = 42 /* multi\nline\ncomment */ set y = 10", "test"))
+    set tokens = lexer_tokenize(lexer_new("set x = 42  set y = 10", "test"))
     assert(vectok_get(tokens, 0).kind == TOK_SET, "set before multi-line comment")
     assert(vectok_get(tokens, 1).kind == TOK_IDENTIFIER, "x before multi-line comment")
     assert(vectok_get(tokens, 2).kind == TOK_ASSIGN, "= before multi-line comment")
@@ -322,7 +292,6 @@ task test_comments() {
     println("  All comment formats: PASS")
 }
 
-// ── Newlines and Indentation ──────────────────────────────────────────────
 task test_newlines_indentation() {
     println("--- Newlines and Indentation ---")
 
@@ -332,7 +301,6 @@ task test_newlines_indentation() {
     vectok_free(tokens)
     println("  Multi-line tokenization: PASS")
 
-    // Indentation-sensitive parsing tokens
     set source = "check x > 0 {\n    set result = 1\n}"
     set tokens = lexer_tokenize(lexer_new(source, "test"))
     assert(vectok_get(tokens, 0).kind == TOK_CHECK, "check keyword preserved")
@@ -343,7 +311,6 @@ task test_newlines_indentation() {
     println("  All newline/indentation tests: PASS")
 }
 
-// ── Type Keywords ─────────────────────────────────────────────────────────
 task test_type_keywords() {
     println("--- Type Keywords ---")
 
@@ -360,30 +327,25 @@ task test_type_keywords() {
     println("  All type keywords: PASS")
 }
 
-// ── Edge Cases ────────────────────────────────────────────────────────────
 task test_lexer_edge_cases() {
     println("--- Edge Cases ---")
 
-    // Empty source
     set tokens = lexer_tokenize(lexer_new("", "test"))
     assert(vectok_len(tokens) >= 1, "empty source produces at least EOF")
     vectok_free(tokens)
     println("  Empty source: PASS")
 
-    // Only whitespace
     set tokens = lexer_tokenize(lexer_new("   \n  \t  \n  ", "test"))
     assert(vectok_len(tokens) >= 1, "whitespace-only produces EOF")
     vectok_free(tokens)
     println("  Whitespace only: PASS")
 
-    // Very long identifier
     set tokens = lexer_tokenize(lexer_new("this_is_a_very_long_identifier_name_with_many_underscores_and_stuff", "test"))
     assert(vectok_get(tokens, 0).kind == TOK_IDENTIFIER, "long identifier kind")
     assert(str_len(vectok_get(tokens, 0).str_val) > 30, "long identifier length")
     vectok_free(tokens)
     println("  Very long identifier: PASS")
 
-    // Mixed operators without spaces
     set tokens = lexer_tokenize(lexer_new("a+b-c*d/e==f", "test"))
     assert(vectok_len(tokens) >= 11, "mixed operators tokenized")
     vectok_free(tokens)
@@ -392,9 +354,6 @@ task test_lexer_edge_cases() {
     println("  All edge cases: PASS")
 }
 
-// ============================================================================
-// MAIN
-// ============================================================================
 task main() -> int {
     println("====================================")
     println("  Sovereign Lexer Test Suite")

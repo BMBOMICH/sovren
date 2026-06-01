@@ -1,25 +1,14 @@
-/*
- * Privacy Feature Tests
- * 
- * These tests verify that Sovereign's privacy features work correctly:
- * - Memory zeroing for sensitive data
- * - No data leakage between program runs
- * - Compile-time privacy guarantees
- */
+
 
 import "stdlib_native.sov"
 
 task test_sensitive_zeroed() {
     println("Testing sensitive data is zeroed...")
     
-    // Create sensitive data
     set password = "SuperSecret123"
     
-    // Use sensitive keyword to auto-zero
     sensitive set secret = password
     
-    // In real program, verify memory is zeroed
-    // This is compile-time verification - runtime checks in test_security_features.sov
     
     println("✓ Sensitive variable created with auto-zero protection")
 }
@@ -31,7 +20,6 @@ task test_constant_time_comparison() {
     set token2 = "abc123xyz"
     set token3 = "abc123wrong"
     
-    // These should use constant-time comparison internally
     constant_time {
         check token1 == token2 {
             println("✓ Valid token comparison succeeded")
@@ -54,7 +42,6 @@ task test_data_isolation() {
         sensitive set local_secret = "only_in_scope"
     }
     
-    // local_secret should not be accessible here
     println("✓ Data isolation verified - scoped secrets inaccessible")
 }
 
@@ -63,7 +50,6 @@ task test_purge_directive() {
     
     set temp_api_key = "sk-1234567890abcdef"
     
-    // purge keyword should remove data from memory securely
     purge temp_api_key
     
     println("✓ Purged data is securely erased")
@@ -72,8 +58,6 @@ task test_purge_directive() {
 task test_no_telemetry() {
     println("Testing no telemetry is sent...")
     
-    // Verify that compilation and execution don't send data anywhere
-    // This is a compile-time guarantee documented in README
     
     println("✓ No telemetry infrastructure detected in compiler")
     println("✓ No network calls in runtime")
@@ -83,8 +67,6 @@ task test_no_telemetry() {
 task test_reproducible_builds() {
     println("Testing reproducible build support...")
     
-    // Same source + same compiler = same binary
-    // This enables privacy audit trail verification
     
     println("✓ Reproducible builds supported (deterministic codegen)")
 }
