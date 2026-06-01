@@ -32,9 +32,9 @@ task sha512_hex(data: string) -> string {
 }
 
 /// Compute BLAKE3 hash, returns 64-char hex string
-task blake3_hex(data: string) -> string {
+task blake2s_hex(data: string) -> string {
     set out = alloc(32, 1)
-    blake3(data, str_len(data), out)
+    blake2s(data, str_len(data), out)
     set hex = bytes_to_hex(out, 32)
     free out
     return hex

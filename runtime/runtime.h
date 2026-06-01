@@ -188,7 +188,7 @@ sov_string sov_read_line(void);
 #define SOV_SHA256_SIZE      32
 #define SOV_SHA256_HEX_SIZE  65
 #define SOV_SHA512_SIZE      64
-#define SOV_BLAKE3_SIZE      32
+#define SOV_BLAKE2S_SIZE      32
 #define SOV_HMAC_SIZE        32
 
 void sov_sha256(sov_ptr data, sov_int len, sov_ptr out);
@@ -197,8 +197,8 @@ sov_string sov_sha256_hex(sov_ptr data, sov_int len);
 void sov_sha512(sov_ptr data, sov_int len, sov_ptr out);
 sov_string sov_sha512_hex(sov_ptr data, sov_int len);
 
-void sov_blake3(sov_ptr data, sov_int len, sov_ptr out);
-sov_string sov_blake3_hex(sov_ptr data, sov_int len);
+void sov_blake2s(sov_ptr data, sov_int len, sov_ptr out);
+sov_string sov_blake2s_hex(sov_ptr data, sov_int len);
 
 void sov_hmac_sha256(sov_ptr key, sov_int key_len, sov_ptr data, sov_int data_len, sov_ptr out);
 sov_string sov_hmac_sha256_hex(sov_ptr key, sov_int key_len, sov_ptr data, sov_int data_len);

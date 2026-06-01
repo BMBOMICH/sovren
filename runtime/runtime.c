@@ -1070,7 +1070,9 @@ static void sov_sha512_update(sov_sha512_ctx* ctx, const uint8_t* data, uint64_t
 }
 
 static void sov_sha512_final(sov_sha512_ctx* ctx, uint8_t* digest) {
-    /* Padding */
+    uint64_t orig_lo = ctx->count_lo;
+    uint64_t orig_hi = ctx->count_hi;
+    
     uint8_t pad_byte = 0x80;
     sov_sha512_update(ctx, &pad_byte, 1);
     
@@ -1079,10 +1081,9 @@ static void sov_sha512_final(sov_sha512_ctx* ctx, uint8_t* digest) {
         sov_sha512_update(ctx, &zero, 1);
     }
     
-    /* Append bit length in big-endian */
     uint8_t len_buf[16];
-    uint64_t bit_lo = ctx->count_lo * 8;
-    uint64_t bit_hi = ctx->count_hi * 8 + (ctx->count_lo >> 61) * 8;
+    uint64_t bit_lo = orig_lo * 8;
+    uint64_t bit_hi = orig_hi * 8 + (orig_lo >> 61) * 8;
     for (int i = 7; i >= 0; i--) { len_buf[i] = bit_lo & 0xFF; bit_lo >>= 8; }
     for (int i = 15; i >= 8; i--) { len_buf[i] = bit_hi & 0xFF; bit_hi >>= 8; }
     sov_sha512_update(ctx, len_buf, 16);
@@ -1120,8 +1121,8 @@ sov_string sov_sha512_hex(sov_ptr data, sov_int len) {
 }
 
 /* ============================================================================
- * BLAKE3 (simplified but correct implementation)
- * Uses BLAKE2s as the core compression function (BLAKE3 is built on BLAKE2)
+ * BLAKE2S (simplified but correct implementation)
+ * Uses BLAKE2s as the core compression function (
  * ============================================================================ */
 
 static const uint32_t BLAKE2S_IV[8] = {
@@ -1170,11 +1171,11 @@ static void blake2s_compress(uint32_t h[8], const uint8_t block[64], uint64_t co
     }
 }
 
-void sov_blake3(sov_ptr data, sov_int len, sov_ptr out) {
-    /* BLAKE3-like construction on top of BLAKE2s */
+void sov_blake2s(sov_ptr data, sov_int len, sov_ptr out) {
+    /* BLAKE2S-like construction on top of BLAKE2s */
     uint32_t h[8];
     memcpy(h, BLAKE2S_IV, sizeof(h));
-    h[0] ^= 0x01010000 | SOV_BLAKE3_SIZE; /* key length=0, digest length=32 */
+    h[0] ^= 0x01010000 | SOV_BLAKE2S_SIZE; /* key length=0, digest length=32 */
     
     uint8_t buf[64];
     sov_int remaining = len;
@@ -1204,12 +1205,12 @@ void sov_blake3(sov_ptr data, sov_int len, sov_ptr out) {
     }
 }
 
-sov_string sov_blake3_hex(sov_ptr data, sov_int len) {
-    uint8_t digest[SOV_BLAKE3_SIZE];
-    sov_blake3(data, len, digest);
+sov_string sov_blake2s_hex(sov_ptr data, sov_int len) {
+    uint8_t digest[SOV_BLAKE2S_SIZE];
+    sov_blake2s(data, len, digest);
     
     sov_string hex = (sov_string)sov_alloc(65, 1);
-    for (int i = 0; i < SOV_BLAKE3_SIZE; i++) {
+    for (int i = 0; i < SOV_BLAKE2S_SIZE; i++) {
         snprintf(hex + i*2, 3, "%02x", digest[i]);
     }
     hex[64] = '\0';
@@ -1446,8 +1447,9 @@ sov_byte sov_ct_select_byte(sov_byte a, sov_byte b, sov_bool flag) {
 }
 
 sov_int sov_ct_is_zero(sov_int x) {
-    /* Returns 1 if x is zero, 0 otherwise - constant time */
-    return (sov_int)(((uint64_t)((x | (~x + 1)) >> 63)) & 1);
+    sov_u64 v = (sov_u64)x;
+    v = (v | (~v + 1)) >> 63;
+    return (sov_int)(v ^ 1);
 }
 
 sov_int sov_ct_eq(sov_int a, sov_int b) {
@@ -2406,24 +2408,99 @@ sov_result sov_aes256_gcm_decrypt(sov_ptr key, sov_ptr iv, sov_int iv_len,
         result.error = "Null pointer argument";
         return result;
     }
-    
-    /* Verify tag first (using encryption's GHASH) */
-    uint8_t computed_tag[SOV_AES_GCM_TAG_SIZE];
-    sov_result enc_result = sov_aes256_gcm_encrypt(key, iv, iv_len,
-        ciphertext, ciphertext_len, aad, aad_len, plaintext_out, computed_tag);
-    
+
+    sov_aes_ctx ctx;
+    aes_key_expansion(&ctx, (const uint8_t*)key);
+
+    uint8_t h[16];
+    uint8_t zero_block[16];
+    memset(zero_block, 0, 16);
+    aes_encrypt_block(&ctx, zero_block, h);
+
+    uint8_t ghash_state[16];
+    memset(ghash_state, 0, 16);
+
+    sov_int aad_offset = 0;
+    while (aad_offset < aad_len) {
+        sov_int chunk_len = SOV_MIN(16, aad_len - aad_offset);
+        sov_int i;
+        for (i = 0; i < chunk_len; i++) {
+            ghash_state[i] ^= ((const uint8_t*)aad)[aad_offset + i];
+        }
+        gcm_ghash_multiply(h, ghash_state);
+        aad_offset += chunk_len;
+    }
+
+    sov_int ct_offset = 0;
+    while (ct_offset < ciphertext_len) {
+        sov_int chunk_len = SOV_MIN(16, ciphertext_len - ct_offset);
+        sov_int i;
+        for (i = 0; i < chunk_len; i++) {
+            ghash_state[i] ^= ((const uint8_t*)ciphertext)[ct_offset + i];
+        }
+        gcm_ghash_multiply(h, ghash_state);
+        ct_offset += chunk_len;
+    }
+
+    uint8_t final_block[16];
+    memset(final_block, 0, 16);
+    uint64_t aad_bits = (uint64_t)aad_len * 8;
+    uint64_t ct_bits = (uint64_t)ciphertext_len * 8;
+    final_block[0] = (aad_bits >> 56) & 0xFF;
+    final_block[1] = (aad_bits >> 48) & 0xFF;
+    final_block[2] = (aad_bits >> 40) & 0xFF;
+    final_block[3] = (aad_bits >> 32) & 0xFF;
+    final_block[4] = (aad_bits >> 24) & 0xFF;
+    final_block[5] = (aad_bits >> 16) & 0xFF;
+    final_block[6] = (aad_bits >> 8) & 0xFF;
+    final_block[7] = aad_bits & 0xFF;
+    final_block[8] = (ct_bits >> 56) & 0xFF;
+    final_block[9] = (ct_bits >> 48) & 0xFF;
+    final_block[10] = (ct_bits >> 40) & 0xFF;
+    final_block[11] = (ct_bits >> 32) & 0xFF;
+    final_block[12] = (ct_bits >> 24) & 0xFF;
+    final_block[13] = (ct_bits >> 16) & 0xFF;
+    final_block[14] = (ct_bits >> 8) & 0xFF;
+    final_block[15] = ct_bits & 0xFF;
+
+    sov_int i;
+    for (i = 0; i < 16; i++) ghash_state[i] ^= final_block[i];
+    gcm_ghash_multiply(h, ghash_state);
+
+    uint8_t iv_block[12];
+    memset(iv_block, 0, 12);
+    if (iv_len >= 12) memcpy(iv_block, iv, 12);
+    else memcpy(iv_block, iv, iv_len);
+
+    uint8_t j0[16];
+    memset(j0, 0, 16);
+    memcpy(j0, iv_block, 12);
+    j0[15] = 1;
+    uint8_t e_j0[16];
+    aes_encrypt_block(&ctx, j0, e_j0);
+
+    uint8_t computed_tag[16];
+    for (i = 0; i < 16; i++) {
+        computed_tag[i] = ghash_state[i] ^ e_j0[i];
+    }
+
     if (!sov_secure_compare(tag, computed_tag, SOV_AES_GCM_TAG_SIZE)) {
-        /* Authentication failed - zero the output */
         sov_secure_zero(plaintext_out, ciphertext_len);
-        sov_secure_zero(computed_tag, SOV_AES_GCM_TAG_SIZE);
+        sov_secure_zero(&ctx, sizeof(ctx));
+        sov_secure_zero(h, 16);
+        sov_secure_zero(ghash_state, 16);
+        sov_secure_zero(computed_tag, 16);
         result.is_ok = false;
         result.error = "Authentication failed: tag mismatch";
         return result;
     }
-    
-    /* Note: plaintext_out already contains decrypted data from the encrypt call above
-       because we reuse the CTR encryption (which is the same as decryption) */
-    
+
+    aes_ctr_encrypt(&ctx, iv_block, (const uint8_t*)ciphertext, (uint8_t*)plaintext_out, ciphertext_len);
+
+    sov_secure_zero(&ctx, sizeof(ctx));
+    sov_secure_zero(h, 16);
+    sov_secure_zero(ghash_state, 16);
+    sov_secure_zero(computed_tag, 16);
     result.is_ok = true;
     return result;
 }
@@ -2873,7 +2950,7 @@ int main(int argc, char** argv) {
     printf("Sovereign Runtime v%d.%d.%d\n", 
            SOV_RUNTIME_VERSION_MAJOR, SOV_RUNTIME_VERSION_MINOR, SOV_RUNTIME_VERSION_PATCH);
     printf("Production Security Edition\n");
-    printf("Features: SHA-256, SHA-512, BLAKE3, HMAC, HKDF, PBKDF2,\n");
+    printf("Features: SHA-256, SHA-512, BLAKE2S, HMAC, HKDF, PBKDF2,\n");
     printf("          AES-256-GCM, ChaCha20-Poly1305, CSPRNG,\n");
     printf("          Constant-time primitives, Secure memory\n");
     printf("\nThis is the runtime library - link with your Sovereign program.\n");

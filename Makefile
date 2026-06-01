@@ -86,10 +86,8 @@ bench-compare: $(SOVEREIGN)
 	$(CC) -O2 bench/compare_c.c -o $(BUILD_DIR)/bench_c $(LDFLAGS)
 	$(BUILD_DIR)/bench_c
 	@echo ""
-	@echo "=== Sovereign (C backend) ==="
-	$(SOVEREIGN) build $(TEST_DIR)/bench.sov -o $(BUILD_DIR)/bench_sov.c
-	$(CC) -O2 $(BUILD_DIR)/bench_sov.c $(RUNTIME_C) -o $(BUILD_DIR)/bench_sov $(LDFLAGS)
-	$(BUILD_DIR)/bench_sov
+	@echo "=== Sovereign (requires regenerated bootstrap) ==="
+	@echo "Run after bootstrap regeneration: sovereign build tests/bench.sov --target llvm --optimize"
 
 .PHONY: check
 check: $(SOVEREIGN)
