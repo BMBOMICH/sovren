@@ -90,12 +90,10 @@ static char* str_repeat(const char* s, int n) {
 /* ── Main ───────────────────────────────────────────────────────────────── */
 
 int main(void) {
-    printf("╔══════════════════════════════════════════╗\n");
-    printf("║     C Performance Baseline               ║\n");
-    printf("╚══════════════════════════════════════════╝\n\n");
+    printf("=== C Performance Baseline ===\n\n");
     
     /* Fibonacci */
-    printf("── Fibonacci ──────────────────────────\n");
+    printf("--- Fibonacci ---\n");
     {
         int64_t r;
         BENCH("fib(30)", r = fib(30));
@@ -113,7 +111,7 @@ int main(void) {
     }
     
     /* Matrix Multiplication */
-    printf("\n── Matrix Multiplication ──────────────\n");
+    printf("\n--- Matrix Multiplication ---\n");
     {
         const int n = 200;
         int64_t* a = (int64_t*)calloc(n * n, sizeof(int64_t));
@@ -128,7 +126,7 @@ int main(void) {
     }
     
     /* Prime Sieve */
-    printf("\n── Prime Sieve ────────────────────────\n");
+    printf("\n--- Prime Sieve ---\n");
     {
         int count;
         BENCH("sieve(100000)", count = sieve_count(100000));
@@ -136,7 +134,7 @@ int main(void) {
     }
     
     /* String Operations */
-    printf("\n── String Operations ──────────────────\n");
+    printf("\n--- String Operations ---\n");
     {
         char* haystack;
         BENCH("repeat 100K", haystack = str_repeat("abcdefghij", 10000));
@@ -145,7 +143,7 @@ int main(void) {
     }
     
     /* Memory Allocation */
-    printf("\n── Memory Allocation ──────────────────\n");
+    printf("\n--- Memory Allocation ---\n");
     BENCH("malloc/free 100K", {
         for (int i = 0; i < 100000; i++) {
             void* p = malloc(64);
@@ -153,9 +151,7 @@ int main(void) {
         }
     });
     
-    printf("\n╔══════════════════════════════════════════╗\n");
-    printf("║  C baseline complete                     ║\n");
-    printf("╚══════════════════════════════════════════╝\n");
+    printf("\n=== C baseline complete ===\n");
     
     return 0;
 }

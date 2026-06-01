@@ -125,7 +125,7 @@ static sov_int sov_str_len(const char* s) {
     return s ? (sov_int)strlen(s) : 0;
 }
 
-static sov_bool sov_str_eq(const char* a, const char* b) {
+static sov_bool sov_streq(const char* a, const char* b) {
     if (!a && !b) return true;
     if (!a || !b) return false;
     return strcmp(a, b) == 0;
@@ -702,7 +702,7 @@ struct Lexer {
     const char* filename;
 };
 
-static Lexer* lexer_new(const char* source, const char* filename) {
+Lexer* lexer_new(const char* source, const char* filename) {
     Lexer* l = (Lexer*)sov_alloc(sizeof(Lexer));
     if (l) {
         l->source = source;
@@ -1083,7 +1083,7 @@ static Token* lexer_next_token(Lexer* l) {
     }
 }
 
-static Vec* lexer_tokenize(Lexer* l) {
+Vec* lexer_tokenize(Lexer* l) {
     Vec* tokens = vec_new();
     while (true) {
         Token* t = lexer_next_token(l);
@@ -1314,7 +1314,7 @@ struct Parser {
     Vec* errors;
 };
 
-static Parser* parser_new(Vec* tokens, const char* filename) {
+Parser* parser_new(Vec* tokens, const char* filename) {
     Parser* p = (Parser*)sov_alloc(sizeof(Parser));
     if (p) {
         p->tokens = tokens;
@@ -1913,7 +1913,7 @@ static Stmt* parse_stmt(Parser* p) {
     }
 }
 
-static Program* parser_parse(Parser* p) {
+Program* parser_parse(Parser* p) {
     Program* prog = program_new(p->filename);
     
     while (!parser_check(p, TOK_EOF)) {
@@ -1940,7 +1940,7 @@ struct Codegen {
     sov_bool optimize;
 };
 
-static Codegen* codegen_new(sov_bool optimize) {
+Codegen* codegen_new(sov_bool optimize) {
     Codegen* cg = (Codegen*)sov_alloc(sizeof(Codegen));
     if (cg) {
         cg->output = sb_new();
@@ -1983,6 +1983,43 @@ static sov_string cg_fresh_label(Codegen* cg) {
     return sov_str_dup(buf);
 }
 
+
+static sov_bool is_string_func(const char* name) {
+    return strcmp(name, "argv_get_string") == 0 || strcmp(name, "sov_file_read_all") == 0 ||
+           strcmp(name, "sov_strcat") == 0 || strcmp(name, "sov_strreplace") == 0 ||
+           strcmp(name, "sov_str_dup") == 0 || strcmp(name, "sov_strcpy") == 0 ||
+           strcmp(name, "sov_substr") == 0 || strcmp(name, "sov_strtrim") == 0 ||
+           strcmp(name, "sov_strupper") == 0 || strcmp(name, "sov_strlower") == 0 ||
+           strcmp(name, "sov_int_to_string") == 0 || strcmp(name, "sov_float_to_string") == 0 ||
+           strcmp(name, "sov_sha256_hex") == 0 || strcmp(name, "sov_blake3_hex") == 0;
+}
+
+static const char* cg_var_type(Codegen* cg, const char* name) {
+    if (!name) return "sov_int";
+    const char* t = (const char*)hashmap_get(cg->symbols, name);
+    return t ? t : "sov_int";
+}
+
+static void cg_set_var_type(Codegen* cg, const char* name, const char* type) {
+    hashmap_set(cg->symbols, name, (void*)type);
+}
+
+static const char* cg_expr_type(Codegen* cg, Expr* e) {
+    if (!e) return "sov_int";
+    switch (e->kind) {
+        case EXPR_STRING: return "sov_string";
+        case EXPR_INT: case EXPR_FLOAT: case EXPR_BOOL: return "sov_int";
+        case EXPR_IDENT: return cg_var_type(cg, e->name);
+        case EXPR_CALL:
+            if (e->callee && e->callee->kind == EXPR_IDENT) {
+                if (is_string_func(e->callee->name)) return "sov_string";
+            }
+            return "sov_int";
+        case EXPR_BINARY: case EXPR_UNARY: return "sov_int";
+        default: return "sov_int";
+    }
+}
+
 /* Forward declarations */
 static sov_string cg_emit_expr(Codegen* cg, Expr* e);
 static void cg_emit_stmt(Codegen* cg, Stmt* s);
@@ -2022,21 +2059,24 @@ static sov_string cg_emit_expr(Codegen* cg, Expr* e) {
             return temp;
         }
         case EXPR_BOOL:
-            return sov_str_dup(e->bool_val ? "true" : "false");
+            return sov_str_dup(e->bool_val ? "1" : "0");
         case EXPR_NULL:
             return sov_str_dup("NULL");
-        case EXPR_IDENT:
+        case EXPR_IDENT: {
+            const char* vt = cg_var_type(cg, e->name);
+            cg_set_var_type(cg, e->name, vt);
             return sov_str_dup(e->name);
+        }
         case EXPR_BINARY: {
             sov_string left = cg_emit_expr(cg, e->left);
             sov_string right = cg_emit_expr(cg, e->right);
             sov_string temp = cg_fresh_temp(cg);
             
             const char* c_op = e->op;
-            if (sov_str_eq(e->op, "and")) c_op = "&&";
-            else if (sov_str_eq(e->op, "or")) c_op = "||";
-            else if (sov_str_eq(e->op, "==")) c_op = "==";
-            else if (sov_str_eq(e->op, "!=")) c_op = "!=";
+            if (sov_streq(e->op, "and")) c_op = "&&";
+            else if (sov_streq(e->op, "or")) c_op = "||";
+            else if (sov_streq(e->op, "==")) c_op = "==";
+            else if (sov_streq(e->op, "!=")) c_op = "!=";
             
             cg_emit_indent(cg);
             cg_emit(cg, "sov_int ");
@@ -2051,6 +2091,7 @@ static sov_string cg_emit_expr(Codegen* cg, Expr* e) {
             
             sov_free(left);
             sov_free(right);
+            cg_set_var_type(cg, temp, "sov_int");
             return temp;
         }
         case EXPR_UNARY: {
@@ -2058,7 +2099,7 @@ static sov_string cg_emit_expr(Codegen* cg, Expr* e) {
             sov_string temp = cg_fresh_temp(cg);
             
             const char* c_op = e->op;
-            if (sov_str_eq(e->op, "not") || sov_str_eq(e->op, "!")) c_op = "!";
+            if (sov_streq(e->op, "not") || sov_streq(e->op, "!")) c_op = "!";
             
             cg_emit_indent(cg);
             cg_emit(cg, "sov_int ");
@@ -2082,12 +2123,22 @@ static sov_string cg_emit_expr(Codegen* cg, Expr* e) {
             
             sov_string temp = cg_fresh_temp(cg);
             sov_string callee = cg_emit_expr(cg, e->callee);
+            const char* ret_type = is_string_func(callee) ? "sov_string" : "sov_int";
             
             cg_emit_indent(cg);
-            cg_emit(cg, "sov_int ");
+            cg_emit(cg, ret_type);
+            cg_emit(cg, " ");
             cg_emit(cg, temp);
             cg_emit(cg, " = ");
-            cg_emit(cg, callee);
+            if (sov_streq(callee, "print_str")) cg_emit(cg, "sov_print");
+            else if (sov_streq(callee, "str_eq")) cg_emit(cg, "sov_streq");
+            else if (sov_streq(callee, "str_len")) cg_emit(cg, "sov_strlen");
+            else if (sov_streq(callee, "str_concat")) cg_emit(cg, "sov_strcat");
+            else if (sov_streq(callee, "str_replace")) cg_emit(cg, "sov_strreplace");
+            else if (sov_streq(callee, "str_starts_with")) cg_emit(cg, "sov_strstarts");
+            else if (sov_streq(callee, "file_read_all")) cg_emit(cg, "sov_file_read_all");
+            else if (sov_streq(callee, "file_write_all")) cg_emit(cg, "sov_file_write_all");
+            else cg_emit(cg, callee);
             cg_emit(cg, "(");
             
             for (size_t i = 0; i < vec_len(arg_temps); i++) {
@@ -2099,6 +2150,7 @@ static sov_string cg_emit_expr(Codegen* cg, Expr* e) {
             
             sov_free(callee);
             vec_free(arg_temps);
+            cg_set_var_type(cg, temp, ret_type);
             return temp;
         }
         case EXPR_FIELD: {
@@ -2150,18 +2202,21 @@ static void cg_emit_stmt(Codegen* cg, Stmt* s) {
             break;
         }
         case STMT_SET: {
-            cg_emit_indent(cg);
-            cg_emit(cg, "sov_int ");
-            cg_emit(cg, s->name);
             if (s->init_value) {
-                cg_emit(cg, " = ");
                 sov_string val = cg_emit_expr(cg, s->init_value);
+                cg_emit_indent(cg);
+                cg_emit(cg, "sov_int ");
+                cg_emit(cg, s->name);
+                cg_emit(cg, " = ");
                 cg_emit(cg, val);
+                cg_emit(cg, ";\n");
                 sov_free(val);
             } else {
-                cg_emit(cg, " = 0");
+                cg_emit_indent(cg);
+                cg_emit(cg, "sov_int ");
+                cg_emit(cg, s->name);
+                cg_emit(cg, " = 0;\n");
             }
-            cg_emit(cg, ";\n");
             break;
         }
         case STMT_ASSIGN: {
@@ -2345,7 +2400,7 @@ static void cg_emit_stmt(Codegen* cg, Stmt* s) {
     }
 }
 
-static sov_string codegen_generate(Codegen* cg, Program* prog) {
+sov_string codegen_generate(Codegen* cg, Program* prog) {
     /* Emit header */
     sb_append(cg->header, "/* Generated by Sovereign Compiler */\n");
     sb_append(cg->header, "#include <stdio.h>\n");

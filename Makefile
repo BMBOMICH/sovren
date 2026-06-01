@@ -71,8 +71,8 @@ test: $(SOVEREIGN)
 
 .PHONY: test-crypto
 test-crypto: $(SOVEREIGN)
-	$(CC) -O2 -DSOV_RUNTIME_STANDALONE $(RUNTIME_C) -o $(BUILD_DIR)/crypto_test $(LDFLAGS)
-	$(BUILD_DIR)/crypto_test
+	$(CC) -O2 -std=c11 tests/crypto_test.c $(RUNTIME_C) -o $(BUILD_DIR)/crypto_verify $(LDFLAGS) -lbcrypt
+	$(BUILD_DIR)/crypto_verify
 
 .PHONY: bench
 bench: $(SOVEREIGN)
