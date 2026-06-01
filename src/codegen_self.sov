@@ -1,0 +1,950 @@
+/// Sovereign Self-Hosted Code Generator (C Backend)
+/// Converts AST to C source code for compilation with gcc/clang.
+///
+/// Dependencies:
+///   - stdlib_native.sov (string operations, collections, StringBuilder)
+///   - stdlib_ast.sov (AST types)
+///   - parser_self.sov (Program, Stmt, Expr types)
+///
+/// Usage:
+///   set prog = parse_file("program.sov")
+///   set cgen = codegen_new(prog)
+///   set c_code = codegen_generate(cgen)
+///   file_write_all("output.c", c_code)
+
+// ============================================================================
+// CODE GENERATOR STATE
+// ============================================================================
+
+struct Codegen {
+    program:     Program      // The AST to compile
+    output:      StringBuilder // Generated C code
+    indent:      int          // Current indentation level
+    temp_count:  int          // Counter for temporary variables
+    in_function: bool         // Whether we're inside a function
+    structs:     VecStr       // Declared struct names
+    functions:   VecStr       // Declared function names
+    externs:     VecStr       // External function declarations
+}
+
+/// Create a new code generator
+task codegen_new(prog: Program) -> Codegen {
+    return Codegen {
+        program:     prog,
+        output:      sb_new(),
+        indent:      0,
+        temp_count:  0,
+        in_function: false,
+        structs:     vecstr_new(),
+        functions:   vecstr_new(),
+        externs:     vecstr_new()
+    }
+}
+
+/// Emit a string to output
+task emit(cg: Codegen, s: string) -> Codegen {
+    cg.output = sb_append(cg.output, s)
+    return cg
+}
+
+/// Emit with indentation
+task emit_indent(cg: Codegen) -> Codegen {
+    loop i from 0 to cg.indent - 1 {
+        cg.output = sb_append(cg.output, "    ")
+    }
+    return cg
+}
+
+/// Emit a line with indentation
+task emit_line(cg: Codegen, s: string) -> Codegen {
+    cg = emit_indent(cg)
+    cg.output = sb_append(cg.output, s)
+    cg.output = sb_append(cg.output, "\n")
+    return cg
+}
+
+/// Emit a newline
+task emit_newline(cg: Codegen) -> Codegen {
+    cg.output = sb_append(cg.output, "\n")
+    return cg
+}
+
+/// Generate a unique temporary variable name
+task codegen_temp(cg: Codegen) -> string {
+    set name = sb_new()
+    name = sb_append(name, "_sov_tmp")
+    name = sb_append_int(name, cg.temp_count)
+    cg.temp_count = cg.temp_count + 1
+    return sb_to_string(name)
+}
+
+// ============================================================================
+// TYPE CODE GENERATION
+// ============================================================================
+
+/// Convert Sovereign type to C type string
+task type_to_c(t: ptr) -> string {
+    check t == null { return "void" }
+    
+    set kind = 0
+    set name = ""
+    override {
+        kind = ptr_get_int(t, 0)
+        name = ptr_get_int(t, 1)
+    }
+    
+    check kind == TYPE_INT { return "int64_t" }
+    check kind == TYPE_FLOAT { return "double" }
+    check kind == TYPE_BOOL { return "int" }
+    check kind == TYPE_STRING { return "const char*" }
+    check kind == TYPE_VOID { return "void" }
+    check kind == TYPE_PTR { return "void*" }
+    check kind == TYPE_INT8 { return "int8_t" }
+    check kind == TYPE_INT16 { return "int16_t" }
+    check kind == TYPE_INT64 { return "int64_t" }
+    check kind == TYPE_UINT8 { return "uint8_t" }
+    check kind == TYPE_UINT16 { return "uint16_t" }
+    check kind == TYPE_UINT32 { return "uint32_t" }
+    check kind == TYPE_UINT64 { return "uint64_t" }
+    check kind == TYPE_STRUCT or kind == TYPE_ENUM {
+        set result = sb_new()
+        result = sb_append(result, "struct ")
+        result = sb_append(result, name)
+        return sb_to_string(result)
+    }
+    
+    return "int64_t"
+}
+
+// ============================================================================
+// EXPRESSION CODE GENERATION
+// ============================================================================
+
+/// Generate C code for an expression
+task codegen_expr(cg: Codegen, e: ptr) -> string {
+    check e == null { return "0" }
+    
+    set kind = expr_kind(e)
+    
+    // Integer literal
+    check kind == EXPR_INT {
+        set val = expr_get_int(e)
+        return int_to_str(val)
+    }
+    
+    // Float literal
+    check kind == EXPR_FLOAT {
+        // Simplified - would need to extract float properly
+        return "0.0"
+    }
+    
+    // Boolean literal
+    check kind == EXPR_BOOL {
+        set val = 0
+        override { val = ptr_get_int(e, 3) }
+        check val != 0 { return "1" }
+        return "0"
+    }
+    
+    // String literal
+    check kind == EXPR_STRING {
+        set val = expr_get_str(e)
+        set result = sb_new()
+        result = sb_append(result, "\"")
+        result = sb_append(result, escape_string(val))
+        result = sb_append(result, "\"")
+        return sb_to_string(result)
+    }
+    
+    // Null
+    check kind == EXPR_NULL {
+        return "NULL"
+    }
+    
+    // Variable reference
+    check kind == EXPR_VAR {
+        set name = expr_get_str(e)
+        return mangle_name(name)
+    }
+    
+    // Binary operation
+    check kind == EXPR_BINARY {
+        set op = expr_get_op(e)
+        set left = expr_get_left(e)
+        set right = expr_get_right(e)
+        
+        set left_code = codegen_expr(cg, left)
+        set right_code = codegen_expr(cg, right)
+        
+        set result = sb_new()
+        result = sb_append(result, "(")
+        result = sb_append(result, left_code)
+        result = sb_append(result, " ")
+        result = sb_append(result, binop_to_c(op))
+        result = sb_append(result, " ")
+        result = sb_append(result, right_code)
+        result = sb_append(result, ")")
+        
+        free left_code
+        free right_code
+        return sb_to_string(result)
+    }
+    
+    // Unary operation
+    check kind == EXPR_UNARY {
+        set op = expr_get_op(e)
+        set operand = expr_get_left(e)
+        set operand_code = codegen_expr(cg, operand)
+        
+        set result = sb_new()
+        result = sb_append(result, "(")
+        result = sb_append(result, unop_to_c(op))
+        result = sb_append(result, operand_code)
+        result = sb_append(result, ")")
+        
+        free operand_code
+        return sb_to_string(result)
+    }
+    
+    // Function call
+    check kind == EXPR_CALL {
+        set callee = expr_get_callee(e)
+        set args = expr_get_args(e)
+        
+        set result = sb_new()
+        result = sb_append(result, mangle_name(callee))
+        result = sb_append(result, "(")
+        
+        check args != null {
+            set nargs = vecexpr_len(args)
+            loop i from 0 to nargs - 1 {
+                check i > 0 { result = sb_append(result, ", ") }
+                set arg = vecexpr_get(args, i)
+                set arg_code = codegen_expr(cg, arg)
+                result = sb_append(result, arg_code)
+                free arg_code
+            }
+        }
+        
+        result = sb_append(result, ")")
+        return sb_to_string(result)
+    }
+    
+    // Field access
+    check kind == EXPR_FIELD {
+        set obj = expr_get_left(e)
+        set field = expr_get_str(e)
+        set obj_code = codegen_expr(cg, obj)
+        
+        set result = sb_new()
+        result = sb_append(result, obj_code)
+        result = sb_append(result, ".")
+        result = sb_append(result, field)
+        
+        free obj_code
+        return sb_to_string(result)
+    }
+    
+    // Index access
+    check kind == EXPR_INDEX {
+        set obj = expr_get_left(e)
+        set index = expr_get_right(e)
+        set obj_code = codegen_expr(cg, obj)
+        set index_code = codegen_expr(cg, index)
+        
+        set result = sb_new()
+        result = sb_append(result, obj_code)
+        result = sb_append(result, "[")
+        result = sb_append(result, index_code)
+        result = sb_append(result, "]")
+        
+        free obj_code
+        free index_code
+        return sb_to_string(result)
+    }
+    
+    return "0 /* unknown expr */"
+}
+
+/// Convert binary operator to C
+task binop_to_c(op: int) -> string {
+    check op == OP_ADD { return "+" }
+    check op == OP_SUB { return "-" }
+    check op == OP_MUL { return "*" }
+    check op == OP_DIV { return "/" }
+    check op == OP_MOD { return "%" }
+    check op == OP_AND { return "&&" }
+    check op == OP_OR { return "||" }
+    check op == OP_BIT_AND { return "&" }
+    check op == OP_BIT_OR { return "|" }
+    check op == OP_BIT_XOR { return "^" }
+    check op == OP_LSHIFT { return "<<" }
+    check op == OP_RSHIFT { return ">>" }
+    check op == OP_EQ { return "==" }
+    check op == OP_NE { return "!=" }
+    check op == OP_LT { return "<" }
+    check op == OP_LE { return "<=" }
+    check op == OP_GT { return ">" }
+    check op == OP_GE { return ">=" }
+    return "?"
+}
+
+/// Convert unary operator to C
+task unop_to_c(op: int) -> string {
+    check op == UNOP_NEG { return "-" }
+    check op == UNOP_NOT { return "!" }
+    check op == UNOP_BITNOT { return "~" }
+    return "?"
+}
+
+/// Escape a string for C
+task escape_string(s: string) -> string {
+    set result = sb_new()
+    set len = str_len(s)
+    
+    loop i from 0 to len - 1 {
+        set c = str_char_at(s, i)
+        check c == 10 { result = sb_append(result, "\\n"); continue }
+        check c == 13 { result = sb_append(result, "\\r"); continue }
+        check c == 9 { result = sb_append(result, "\\t"); continue }
+        check c == 0 { result = sb_append(result, "\\0"); continue }
+        check c == 92 { result = sb_append(result, "\\\\"); continue }
+        check c == 34 { result = sb_append(result, "\\\""); continue }
+        result = sb_append_char(result, c)
+    }
+    
+    return sb_to_string(result)
+}
+
+/// Mangle a Sovereign name to valid C identifier
+task mangle_name(name: string) -> string {
+    // Simple mangling: prefix with sov_ and replace invalid chars
+    set result = sb_new()
+    result = sb_append(result, "sov_")
+    
+    set len = str_len(name)
+    loop i from 0 to len - 1 {
+        set c = str_char_at(name, i)
+        check char_is_alnum(c) or c == 95 {
+            result = sb_append_char(result, c)
+        } else {
+            result = sb_append(result, "_")
+        }
+    }
+    
+    return sb_to_string(result)
+}
+
+// ============================================================================
+// STATEMENT CODE GENERATION
+// ============================================================================
+
+/// Generate C code for a statement
+task codegen_stmt(cg: Codegen, s: ptr) -> Codegen {
+    set kind = stmt_kind(s)
+    
+    // Variable declaration
+    check kind == STMT_VAR_DECL {
+        set name = stmt_get_name(s)
+        set init = stmt_get_expr(s)
+        set type_info = null
+        override { type_info = ptr_get_int(s, 7) }
+        
+        cg = emit_indent(cg)
+        cg = emit(cg, type_to_c(type_info))
+        cg = emit(cg, " ")
+        cg = emit(cg, mangle_name(name))
+        
+        check init != null {
+            cg = emit(cg, " = ")
+            set init_code = codegen_expr(cg, init)
+            cg = emit(cg, init_code)
+            free init_code
+        }
+        
+        cg = emit(cg, ";\n")
+        return cg
+    }
+    
+    // Constant declaration
+    check kind == STMT_CONST_DECL {
+        set name = stmt_get_name(s)
+        set init = stmt_get_expr(s)
+        
+        cg = emit_indent(cg)
+        cg = emit(cg, "const int64_t ")
+        cg = emit(cg, mangle_name(name))
+        cg = emit(cg, " = ")
+        set init_code = codegen_expr(cg, init)
+        cg = emit(cg, init_code)
+        cg = emit(cg, ";\n")
+        free init_code
+        return cg
+    }
+    
+    // Return statement
+    check kind == STMT_RETURN {
+        set expr = stmt_get_expr(s)
+        cg = emit_indent(cg)
+        check expr != null {
+            cg = emit(cg, "return ")
+            set expr_code = codegen_expr(cg, expr)
+            cg = emit(cg, expr_code)
+            cg = emit(cg, ";\n")
+            free expr_code
+        } else {
+            cg = emit(cg, "return;\n")
+        }
+        return cg
+    }
+    
+    // Expression statement
+    check kind == STMT_EXPR {
+        set expr = stmt_get_expr(s)
+        cg = emit_indent(cg)
+        set expr_code = codegen_expr(cg, expr)
+        cg = emit(cg, expr_code)
+        cg = emit(cg, ";\n")
+        free expr_code
+        return cg
+    }
+    
+    // Assignment
+    check kind == STMT_ASSIGN {
+        set target = stmt_get_expr(s)
+        set value = stmt_get_expr2(s)
+        
+        cg = emit_indent(cg)
+        set target_code = codegen_expr(cg, target)
+        set value_code = codegen_expr(cg, value)
+        cg = emit(cg, target_code)
+        cg = emit(cg, " = ")
+        cg = emit(cg, value_code)
+        cg = emit(cg, ";\n")
+        
+        free target_code
+        free value_code
+        return cg
+    }
+    
+    // If statement
+    check kind == STMT_IF {
+        set cond = stmt_get_expr(s)
+        set then_block = stmt_get_block(s)
+        set else_block = stmt_get_else_block(s)
+        
+        cg = emit_indent(cg)
+        cg = emit(cg, "if (")
+        set cond_code = codegen_expr(cg, cond)
+        cg = emit(cg, cond_code)
+        cg = emit(cg, ") {\n")
+        free cond_code
+        
+        cg.indent = cg.indent + 1
+        cg = codegen_block(cg, then_block)
+        cg.indent = cg.indent - 1
+        
+        check else_block != null {
+            cg = emit_indent(cg)
+            cg = emit(cg, "} else {\n")
+            cg.indent = cg.indent + 1
+            cg = codegen_block(cg, else_block)
+            cg.indent = cg.indent - 1
+        }
+        
+        cg = emit_indent(cg)
+        cg = emit(cg, "}\n")
+        return cg
+    }
+    
+    // Loop times
+    check kind == STMT_LOOP_TIMES {
+        set count = stmt_get_expr(s)
+        set body = stmt_get_block(s)
+        
+        set temp = codegen_temp(cg)
+        
+        cg = emit_indent(cg)
+        cg = emit(cg, "for (int64_t ")
+        cg = emit(cg, temp)
+        cg = emit(cg, " = 0; ")
+        cg = emit(cg, temp)
+        cg = emit(cg, " < ")
+        set count_code = codegen_expr(cg, count)
+        cg = emit(cg, count_code)
+        cg = emit(cg, "; ")
+        cg = emit(cg, temp)
+        cg = emit(cg, "++) {\n")
+        free count_code
+        
+        cg.indent = cg.indent + 1
+        cg = codegen_block(cg, body)
+        cg.indent = cg.indent - 1
+        
+        cg = emit_indent(cg)
+        cg = emit(cg, "}\n")
+        
+        free temp
+        return cg
+    }
+    
+    // Loop range (for i from A to B)
+    check kind == STMT_LOOP_RANGE {
+        set var_name = stmt_get_name(s)
+        set start = stmt_get_expr(s)
+        set end_expr = stmt_get_expr2(s)
+        set body = stmt_get_block(s)
+        
+        set var_c = mangle_name(var_name)
+        
+        cg = emit_indent(cg)
+        cg = emit(cg, "for (int64_t ")
+        cg = emit(cg, var_c)
+        cg = emit(cg, " = ")
+        set start_code = codegen_expr(cg, start)
+        cg = emit(cg, start_code)
+        cg = emit(cg, "; ")
+        cg = emit(cg, var_c)
+        cg = emit(cg, " <= ")
+        set end_code = codegen_expr(cg, end_expr)
+        cg = emit(cg, end_code)
+        cg = emit(cg, "; ")
+        cg = emit(cg, var_c)
+        cg = emit(cg, "++) {\n")
+        
+        free start_code
+        free end_code
+        
+        cg.indent = cg.indent + 1
+        cg = codegen_block(cg, body)
+        cg.indent = cg.indent - 1
+        
+        cg = emit_indent(cg)
+        cg = emit(cg, "}\n")
+        
+        free var_c
+        return cg
+    }
+    
+    // Loop condition (while)
+    check kind == STMT_LOOP_COND {
+        set cond = stmt_get_expr(s)
+        set body = stmt_get_block(s)
+        
+        cg = emit_indent(cg)
+        cg = emit(cg, "while (")
+        set cond_code = codegen_expr(cg, cond)
+        cg = emit(cg, cond_code)
+        cg = emit(cg, ") {\n")
+        free cond_code
+        
+        cg.indent = cg.indent + 1
+        cg = codegen_block(cg, body)
+        cg.indent = cg.indent - 1
+        
+        cg = emit_indent(cg)
+        cg = emit(cg, "}\n")
+        return cg
+    }
+    
+    // Break
+    check kind == STMT_BREAK {
+        cg = emit_line(cg, "break;")
+        return cg
+    }
+    
+    // Continue
+    check kind == STMT_CONTINUE {
+        cg = emit_line(cg, "continue;")
+        return cg
+    }
+    
+    // Free
+    check kind == STMT_FREE {
+        set expr = stmt_get_expr(s)
+        cg = emit_indent(cg)
+        cg = emit(cg, "free(")
+        set expr_code = codegen_expr(cg, expr)
+        cg = emit(cg, expr_code)
+        cg = emit(cg, ");\n")
+        free expr_code
+        return cg
+    }
+    
+    // Override block (unsafe) - just emit the contents
+    check kind == STMT_OVERRIDE {
+        set body = stmt_get_block(s)
+        cg = emit_indent(cg)
+        cg = emit(cg, "/* override */ {\n")
+        cg.indent = cg.indent + 1
+        cg = codegen_block(cg, body)
+        cg.indent = cg.indent - 1
+        cg = emit_indent(cg)
+        cg = emit(cg, "}\n")
+        return cg
+    }
+    
+    // Constant-time block
+    check kind == STMT_CONSTANT_TIME {
+        set body = stmt_get_block(s)
+        cg = emit_indent(cg)
+        cg = emit(cg, "/* constant_time - compiler barrier */ {\n")
+        cg.indent = cg.indent + 1
+        cg = emit_line(cg, "__asm__ __volatile__(\"\" ::: \"memory\");")
+        cg = codegen_block(cg, body)
+        cg = emit_line(cg, "__asm__ __volatile__(\"\" ::: \"memory\");")
+        cg.indent = cg.indent - 1
+        cg = emit_indent(cg)
+        cg = emit(cg, "}\n")
+        return cg
+    }
+    
+    // Block
+    check kind == STMT_BLOCK {
+        set body = stmt_get_block(s)
+        cg = emit_indent(cg)
+        cg = emit(cg, "{\n")
+        cg.indent = cg.indent + 1
+        cg = codegen_block(cg, body)
+        cg.indent = cg.indent - 1
+        cg = emit_indent(cg)
+        cg = emit(cg, "}\n")
+        return cg
+    }
+    
+    cg = emit_line(cg, "/* unknown statement */")
+    return cg
+}
+
+/// Generate C code for a block of statements
+task codegen_block(cg: Codegen, block: ptr) -> Codegen {
+    check block == null { return cg }
+    
+    set nstmts = vecstmt_len(block)
+    loop i from 0 to nstmts - 1 {
+        set stmt = vecstmt_get(block, i)
+        cg = codegen_stmt(cg, stmt)
+    }
+    
+    return cg
+}
+
+// ============================================================================
+// TOP-LEVEL DECLARATION GENERATION
+// ============================================================================
+
+/// Generate C code for a struct declaration
+task codegen_struct_decl(cg: Codegen, s: ptr) -> Codegen {
+    set name = stmt_get_name(s)
+    set fields = null
+    override { fields = ptr_get_int(s, 6) }
+    
+    cg = emit(cg, "typedef struct ")
+    cg = emit(cg, mangle_name(name))
+    cg = emit(cg, " {\n")
+    
+    check fields != null {
+        set nfields = vecparam_len(fields)
+        loop i from 0 to nfields - 1 {
+            set fname = vecparam_get_name(fields, i)
+            set ftype = vecparam_get_type(fields, i)
+            
+            cg = emit(cg, "    ")
+            cg = emit(cg, type_to_c(ftype))
+            cg = emit(cg, " ")
+            cg = emit(cg, fname)
+            cg = emit(cg, ";\n")
+        }
+    }
+    
+    cg = emit(cg, "} ")
+    cg = emit(cg, mangle_name(name))
+    cg = emit(cg, ";\n\n")
+    
+    cg.structs = vecstr_push(cg.structs, name)
+    return cg
+}
+
+/// Generate C code for a task (function) declaration
+task codegen_task_decl(cg: Codegen, s: ptr) -> Codegen {
+    set name = stmt_get_name(s)
+    set body = stmt_get_block(s)
+    set params = null
+    set return_type = null
+    set is_extern = false
+    
+    override {
+        params = ptr_get_int(s, 6)
+        return_type = ptr_get_int(s, 7)
+        is_extern = ptr_get_int(s, 11) != 0
+    }
+    
+    // Extern declaration - just emit prototype
+    check is_extern {
+        cg = emit(cg, "extern ")
+        cg = emit(cg, type_to_c(return_type))
+        cg = emit(cg, " ")
+        cg = emit(cg, name)  // Don't mangle extern names
+        cg = emit(cg, "(")
+        
+        check params != null {
+            set nparams = vecparam_len(params)
+            loop i from 0 to nparams - 1 {
+                check i > 0 { cg = emit(cg, ", ") }
+                set ptype = vecparam_get_type(params, i)
+                cg = emit(cg, type_to_c(ptype))
+            }
+            check nparams == 0 { cg = emit(cg, "void") }
+        } else {
+            cg = emit(cg, "void")
+        }
+        
+        cg = emit(cg, ");\n")
+        cg.externs = vecstr_push(cg.externs, name)
+        return cg
+    }
+    
+    // Regular function
+    cg = emit(cg, type_to_c(return_type))
+    cg = emit(cg, " ")
+    cg = emit(cg, mangle_name(name))
+    cg = emit(cg, "(")
+    
+    check params != null {
+        set nparams = vecparam_len(params)
+        loop i from 0 to nparams - 1 {
+            check i > 0 { cg = emit(cg, ", ") }
+            set pname = vecparam_get_name(params, i)
+            set ptype = vecparam_get_type(params, i)
+            cg = emit(cg, type_to_c(ptype))
+            cg = emit(cg, " ")
+            cg = emit(cg, mangle_name(pname))
+        }
+        check nparams == 0 { cg = emit(cg, "void") }
+    } else {
+        cg = emit(cg, "void")
+    }
+    
+    cg = emit(cg, ") {\n")
+    
+    cg.indent = 1
+    cg.in_function = true
+    cg = codegen_block(cg, body)
+    cg.in_function = false
+    cg.indent = 0
+    
+    cg = emit(cg, "}\n\n")
+    cg.functions = vecstr_push(cg.functions, name)
+    return cg
+}
+
+// ============================================================================
+// MAIN GENERATION FUNCTION
+// ============================================================================
+
+/// Generate the C header/preamble
+task codegen_header(cg: Codegen) -> Codegen {
+    cg = emit_line(cg, "/* Generated by Sovereign Compiler */")
+    cg = emit_line(cg, "/* Do not edit manually */")
+    cg = emit_newline(cg)
+    cg = emit_line(cg, "#include <stdio.h>")
+    cg = emit_line(cg, "#include <stdlib.h>")
+    cg = emit_line(cg, "#include <stdint.h>")
+    cg = emit_line(cg, "#include <string.h>")
+    cg = emit_line(cg, "#include <stdbool.h>")
+    cg = emit_newline(cg)
+    cg = emit_line(cg, "/* Sovereign Runtime Types */")
+    cg = emit_line(cg, "typedef int64_t sov_int;")
+    cg = emit_line(cg, "typedef double sov_float;")
+    cg = emit_line(cg, "typedef int sov_bool;")
+    cg = emit_line(cg, "typedef const char* sov_string;")
+    cg = emit_line(cg, "typedef void* sov_ptr;")
+    cg = emit_newline(cg)
+    cg = emit_line(cg, "/* Assertion macro */")
+    cg = emit_line(cg, "#define sov_assert(cond, msg) do { if (!(cond)) { fprintf(stderr, \"Assertion failed: %s\\n\", msg); exit(1); } } while(0)")
+    cg = emit_newline(cg)
+    return cg
+}
+
+/// Generate the entire program
+task codegen_generate(cg: Codegen) -> string {
+    // Emit header
+    cg = codegen_header(cg)
+    
+    // First pass: collect struct declarations
+    set n = program_stmt_count(cg.program)
+    
+    cg = emit_line(cg, "/* Forward Declarations */")
+    loop i from 0 to n - 1 {
+        set stmt = program_get_stmt(cg.program, i)
+        set kind = stmt_kind(stmt)
+        
+        check kind == STMT_STRUCT_DECL {
+            set name = stmt_get_name(stmt)
+            cg = emit(cg, "typedef struct ")
+            cg = emit(cg, mangle_name(name))
+            cg = emit(cg, " ")
+            cg = emit(cg, mangle_name(name))
+            cg = emit(cg, ";\n")
+        }
+    }
+    cg = emit_newline(cg)
+    
+    // Second pass: struct definitions
+    cg = emit_line(cg, "/* Struct Definitions */")
+    loop i from 0 to n - 1 {
+        set stmt = program_get_stmt(cg.program, i)
+        set kind = stmt_kind(stmt)
+        
+        check kind == STMT_STRUCT_DECL {
+            cg = codegen_struct_decl(cg, stmt)
+        }
+    }
+    
+    // Third pass: function declarations (forward declarations)
+    cg = emit_line(cg, "/* Function Declarations */")
+    loop i from 0 to n - 1 {
+        set stmt = program_get_stmt(cg.program, i)
+        set kind = stmt_kind(stmt)
+        
+        check kind == STMT_TASK_DECL {
+            // Emit forward declaration
+            set name = stmt_get_name(stmt)
+            set params = null
+            set return_type = null
+            set is_extern = false
+            override {
+                params = ptr_get_int(stmt, 6)
+                return_type = ptr_get_int(stmt, 7)
+                is_extern = ptr_get_int(stmt, 11) != 0
+            }
+            
+            check is_extern {
+                cg = emit(cg, "extern ")
+            }
+            cg = emit(cg, type_to_c(return_type))
+            cg = emit(cg, " ")
+            check is_extern {
+                cg = emit(cg, name)
+            } else {
+                cg = emit(cg, mangle_name(name))
+            }
+            cg = emit(cg, "(")
+            
+            check params != null {
+                set nparams = vecparam_len(params)
+                loop j from 0 to nparams - 1 {
+                    check j > 0 { cg = emit(cg, ", ") }
+                    set ptype = vecparam_get_type(params, j)
+                    cg = emit(cg, type_to_c(ptype))
+                }
+                check nparams == 0 { cg = emit(cg, "void") }
+            } else {
+                cg = emit(cg, "void")
+            }
+            
+            cg = emit(cg, ");\n")
+        }
+    }
+    cg = emit_newline(cg)
+    
+    // Fourth pass: global constants
+    cg = emit_line(cg, "/* Global Constants */")
+    loop i from 0 to n - 1 {
+        set stmt = program_get_stmt(cg.program, i)
+        set kind = stmt_kind(stmt)
+        
+        check kind == STMT_CONST_DECL {
+            cg = codegen_stmt(cg, stmt)
+        }
+    }
+    cg = emit_newline(cg)
+    
+    // Fifth pass: function definitions
+    cg = emit_line(cg, "/* Function Definitions */")
+    loop i from 0 to n - 1 {
+        set stmt = program_get_stmt(cg.program, i)
+        set kind = stmt_kind(stmt)
+        
+        check kind == STMT_TASK_DECL {
+            set is_extern = false
+            override { is_extern = ptr_get_int(stmt, 11) != 0 }
+            check not is_extern {
+                cg = codegen_task_decl(cg, stmt)
+            }
+        }
+    }
+    
+    // Check for main function
+    set has_main = false
+    loop i from 0 to vecstr_len(cg.functions) - 1 {
+        check str_eq(vecstr_get(cg.functions, i), "main") {
+            has_main = true
+            break
+        }
+    }
+    
+    // If no main, generate a simple one
+    check not has_main {
+        cg = emit_line(cg, "/* Generated main */")
+        cg = emit_line(cg, "int main(int argc, char** argv) {")
+        cg = emit_line(cg, "    return 0;")
+        cg = emit_line(cg, "}")
+    }
+    
+    return sb_to_string(cg.output)
+}
+
+// ============================================================================
+// PUBLIC API
+// ============================================================================
+
+/// Compile a Sovereign file to C
+task compile_to_c(input_path: string, output_path: string) -> bool {
+    println("Parsing...")
+    set prog = parse_file(input_path)
+    
+    check program_stmt_count(prog) == 0 {
+        eprintln("Error: failed to parse file or file is empty")
+        return false
+    }
+    
+    println("Generating C code...")
+    set cgen = codegen_new(prog)
+    set c_code = codegen_generate(cgen)
+    
+    println("Writing output...")
+    set success = file_write_all(output_path, c_code)
+    
+    check success {
+        print_str("Successfully compiled to: ")
+        println(output_path)
+    } else {
+        eprintln("Error: failed to write output file")
+    }
+    
+    free c_code
+    return success
+}
+
+/// Main entry point for the self-hosted compiler
+task compiler_main(args: VecStr) -> int {
+    check vecstr_len(args) < 2 {
+        println("Sovereign Self-Hosted Compiler")
+        println("Usage: sovereign <input.sov> [output.c]")
+        return 1
+    }
+    
+    set input = vecstr_get(args, 1)
+    set output = "output.c"
+    
+    check vecstr_len(args) >= 3 {
+        output = vecstr_get(args, 2)
+    }
+    
+    check compile_to_c(input, output) {
+        return 0
+    }
+    
+    return 1
+}

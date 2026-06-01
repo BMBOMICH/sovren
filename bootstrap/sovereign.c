@@ -2007,12 +2007,12 @@ static void cg_set_var_type(Codegen* cg, const char* name, const char* type) {
 static const char* cg_expr_type(Codegen* cg, Expr* e) {
     if (!e) return "sov_int";
     switch (e->kind) {
-        case EXPR_STRING: return "sov_string";
+        case EXPR_STRING: return "sov_int";
         case EXPR_INT: case EXPR_FLOAT: case EXPR_BOOL: return "sov_int";
         case EXPR_IDENT: return cg_var_type(cg, e->name);
         case EXPR_CALL:
             if (e->callee && e->callee->kind == EXPR_IDENT) {
-                if (is_string_func(e->callee->name)) return "sov_string";
+                if (is_string_func(e->callee->name)) return "sov_int";
             }
             return "sov_int";
         case EXPR_BINARY: case EXPR_UNARY: return "sov_int";
@@ -2041,7 +2041,7 @@ static sov_string cg_emit_expr(Codegen* cg, Expr* e) {
         case EXPR_STRING: {
             sov_string temp = cg_fresh_temp(cg);
             cg_emit_indent(cg);
-            cg_emit(cg, "sov_string ");
+            cg_emit(cg, "sov_int ");
             cg_emit(cg, temp);
             cg_emit(cg, " = sov_str_dup(\"");
             /* Escape the string */

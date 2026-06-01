@@ -1,0 +1,670 @@
+task is_copy_type(type_name: string) -> bool {
+    check str_eq(type_name, "int") { return true }
+    check str_eq(type_name, "int8") { return true }
+    check str_eq(type_name, "int16") { return true }
+    check str_eq(type_name, "int64") { return true }
+    check str_eq(type_name, "uint8") { return true }
+    check str_eq(type_name, "uint16") { return true }
+    check str_eq(type_name, "uint32") { return true }
+    check str_eq(type_name, "uint64") { return true }
+    check str_eq(type_name, "float") { return true }
+    check str_eq(type_name, "bool") { return true }
+    return false
+}
+
+task is_move_type(type_name: string) -> bool {
+    return not is_copy_type(type_name)
+}
+
+task is_consuming_call(callee: string) -> bool {
+    check str_eq(callee, "str_copy") { return false }
+    check str_eq(callee, "str_concat") { return false }
+    check str_eq(callee, "str_eq") { return false }
+    check str_eq(callee, "str_len") { return false }
+    check str_eq(callee, "strcmp") { return false }
+    check str_eq(callee, "strlen") { return false }
+    check str_eq(callee, "int_to_str") { return false }
+    check str_eq(callee, "print_str") { return false }
+    check str_eq(callee, "println") { return false }
+    check str_eq(callee, "print_int") { return false }
+    check str_eq(callee, "hashmap_get") { return false }
+    check str_eq(callee, "hashmap_contains") { return false }
+    check str_eq(callee, "hashmap_keys") { return false }
+    return true
+}
+
+struct Symbol {
+    name:       string
+    kind:       int
+    type_name:  string
+    is_const:   bool
+    is_mutable: bool
+    is_sensitive: bool
+    scope_depth: int
+    defined_at: int
+}
+
+const SYMBOL_VAR = 1
+const SYMBOL_FUNC = 2
+const SYMBOL_TYPE = 3
+const SYMBOL_STRUCT = 4
+const SYMBOL_ENUM = 5
+const SYMBOL_CONST = 6
+const SYMBOL_PARAM = 7
+const SYMBOL_FIELD = 8
+
+struct Scope {
+    symbols:    HashMap
+    parent:     ptr
+    depth:      int
+    is_loop:    bool
+    is_func:    bool
+}
+
+struct SymbolTable {
+    scopes:     Vec
+    current:    ptr
+    global:     ptr
+}
+
+task symtab_new() -> ptr {
+    set st = alloc(1, 64) as ptr(SymbolTable)
+    set global_scope = scope_new(null, 0)
+    st.scopes = vec_new()
+    st.global = global_scope
+    st.current = global_scope
+    vec_push(st.scopes, global_scope)
+    symtab_define_builtin(st, "int", SYMBOL_TYPE)
+    symtab_define_builtin(st, "int8", SYMBOL_TYPE)
+    symtab_define_builtin(st, "int16", SYMBOL_TYPE)
+    symtab_define_builtin(st, "int64", SYMBOL_TYPE)
+    symtab_define_builtin(st, "uint8", SYMBOL_TYPE)
+    symtab_define_builtin(st, "uint16", SYMBOL_TYPE)
+    symtab_define_builtin(st, "uint32", SYMBOL_TYPE)
+    symtab_define_builtin(st, "uint64", SYMBOL_TYPE)
+    symtab_define_builtin(st, "float", SYMBOL_TYPE)
+    symtab_define_builtin(st, "bool", SYMBOL_TYPE)
+    symtab_define_builtin(st, "string", SYMBOL_TYPE)
+    symtab_define_builtin(st, "ptr", SYMBOL_TYPE)
+    symtab_define_builtin(st, "void", SYMBOL_TYPE)
+    symtab_define_builtin_func(st, "print", "void")
+    symtab_define_builtin_func(st, "println", "void")
+    symtab_define_builtin_func(st, "alloc", "ptr")
+    symtab_define_builtin_func(st, "free", "void")
+    symtab_define_builtin_func(st, "sizeof", "int")
+    symtab_define_builtin_func(st, "strlen", "int")
+    symtab_define_builtin_func(st, "strcmp", "int")
+    return st
+}
+
+task scope_new(parent: ptr, depth: int) -> ptr {
+    set s = alloc(1, 48) as ptr(Scope)
+    s.symbols = hashmap_new()
+    s.parent = parent
+    s.depth = depth
+    s.is_loop = false
+    s.is_func = false
+    return s
+}
+
+task symtab_define_builtin(st: ptr(SymbolTable), name: string, kind: int) {
+    set sym = symbol_new(name, kind, name, false, false, false, 0, 0)
+    hashmap_insert(st.global as ptr(Scope).symbols, name, sym)
+}
+
+task symtab_define_builtin_func(st: ptr(SymbolTable), name: string, ret_type: string) {
+    set sym = symbol_new(name, SYMBOL_FUNC, ret_type, false, false, false, 0, 0)
+    hashmap_insert(st.global as ptr(Scope).symbols, name, sym)
+}
+
+task symbol_new(name: string, kind: int, type_name: string, is_const: bool,
+                is_mutable: bool, is_sensitive: bool, scope_depth: int,
+                defined_at: int) -> ptr {
+    set sym = alloc(1, 64) as ptr(Symbol)
+    sym.name = str_copy(name)
+    sym.kind = kind
+    sym.type_name = str_copy(type_name)
+    sym.is_const = is_const
+    sym.is_mutable = is_mutable
+    sym.is_sensitive = is_sensitive
+    sym.scope_depth = scope_depth
+    sym.defined_at = defined_at
+    return sym
+}
+
+task symtab_enter_scope(st: ptr(SymbolTable)) {
+    set depth = st.current as ptr(Scope).depth + 1
+    set new_scope = scope_new(st.current, depth)
+    vec_push(st.scopes, new_scope)
+    st.current = new_scope
+}
+
+task symtab_exit_scope(st: ptr(SymbolTable)) {
+    check st.current != st.global {
+        st.current = st.current as ptr(Scope).parent
+    }
+}
+
+task symtab_define(st: ptr(SymbolTable), sym: ptr(Symbol)) -> bool {
+    set scope = st.current as ptr(Scope)
+    check hashmap_contains(scope.symbols, sym.name) { return false }
+    sym.scope_depth = scope.depth
+    hashmap_insert(scope.symbols, sym.name, sym)
+    return true
+}
+
+task symtab_lookup(st: ptr(SymbolTable), name: string) -> ptr {
+    set scope = st.current as ptr(Scope)
+    loop scope != null {
+        set sym = hashmap_get(scope.symbols, name)
+        check sym != null { return sym }
+        scope = scope.parent as ptr(Scope)
+    }
+    return null
+}
+
+task symtab_lookup_current(st: ptr(SymbolTable), name: string) -> ptr {
+    set scope = st.current as ptr(Scope)
+    return hashmap_get(scope.symbols, name)
+}
+
+const BORROW_IMMUT = 0
+const BORROW_MUT = 1
+
+struct Borrow {
+    var_name:       string
+    is_mut:         bool
+    scope_depth:    int
+    created_at:     int
+}
+
+struct VarOwnership {
+    is_moved:       bool
+    moved_at:       int
+    immut_borrows:  int
+    has_mut_borrow: bool
+    mut_borrow_at:  int
+    borrows:        ptr
+}
+
+struct BorrowCtx {
+    states:         ptr
+    scope_depth:    int
+    errors:         ptr
+    warnings:       ptr
+    symtab:         ptr
+}
+
+task borrow_new(symtab: ptr) -> ptr {
+    set ctx = alloc(1, 64) as ptr(BorrowCtx)
+    ctx.states = hashmap_new()
+    ctx.scope_depth = 0
+    ctx.errors = vec_new()
+    ctx.warnings = vec_new()
+    ctx.symtab = symtab
+    return ctx
+}
+
+task var_own_new() -> ptr {
+    set vo = alloc(1, 48) as ptr(VarOwnership)
+    vo.is_moved = false; vo.moved_at = 0
+    vo.immut_borrows = 0; vo.has_mut_borrow = false; vo.mut_borrow_at = 0
+    vo.borrows = vec_new()
+    return vo
+}
+
+task borrow_rec_new(var_name: string, is_mut: bool, scope_depth: int, line: int) -> ptr {
+    set b = alloc(1, 40) as ptr(Borrow)
+    b.var_name = str_copy(var_name); b.is_mut = is_mut
+    b.scope_depth = scope_depth; b.created_at = line
+    return b
+}
+
+task borrow_enter_scope(ctx: ptr(BorrowCtx)) { ctx.scope_depth = ctx.scope_depth + 1 }
+
+task borrow_exit_scope(ctx: ptr(BorrowCtx)) {
+    set states = ctx.states; set depth = ctx.scope_depth
+    set keys = hashmap_keys(states)
+    loop i from 0 to vec_len(keys) - 1 {
+        set key = vec_get(keys, i) as string
+        set vo = hashmap_get(states, key) as ptr(VarOwnership)
+        check vo != null {
+            set new_borrows = vec_new()
+            loop j from 0 to vec_len(vo.borrows) - 1 {
+                set b = vec_get(vo.borrows, j) as ptr(Borrow)
+                check b.scope_depth == depth {
+                    check b.is_mut { vo.has_mut_borrow = false; vo.mut_borrow_at = 0 }
+                    else { vo.immut_borrows = vo.immut_borrows - 1 }
+                } else { vec_push(new_borrows, b) }
+            }
+            vo.borrows = new_borrows
+        }
+    }
+    ctx.scope_depth = depth - 1
+}
+
+task borrow_declare_var(ctx: ptr(BorrowCtx), name: string, type_name: string, line: int) {
+    set vo = var_own_new()
+    hashmap_insert(ctx.states, name, vo)
+}
+
+task borrow_get_state(ctx: ptr(BorrowCtx), name: string) -> ptr {
+    return hashmap_get(ctx.states, name)
+}
+
+task borrow_error(ctx: ptr(BorrowCtx), msg: string) { vec_push(ctx.errors, str_copy(msg)) }
+task borrow_warning(ctx: ptr(BorrowCtx), msg: string) { vec_push(ctx.warnings, str_copy(msg)) }
+
+task borrow_check_read(ctx: ptr(BorrowCtx), name: string, line: int) -> bool {
+    set vo = hashmap_get(ctx.states, name) as ptr(VarOwnership)
+    check vo == null { return true }
+    check vo.is_moved {
+        set msg = str_concat(str_concat("Cannot use '", name), "' after move at line ")
+        msg = str_concat(msg, int_to_str(vo.moved_at)); borrow_error(ctx, msg); return false
+    }
+    check vo.has_mut_borrow {
+        set msg = str_concat(str_concat("Cannot use '", name), "' because it is already borrowed as mutable at line ")
+        msg = str_concat(msg, int_to_str(vo.mut_borrow_at)); borrow_error(ctx, msg); return false
+    }
+    return true
+}
+
+task borrow_check_mutate(ctx: ptr(BorrowCtx), name: string, line: int) -> bool {
+    set vo = hashmap_get(ctx.states, name) as ptr(VarOwnership)
+    check vo == null { return true }
+    check vo.is_moved {
+        set msg = str_concat(str_concat("Cannot mutate '", name), "' after move at line ")
+        msg = str_concat(msg, int_to_str(vo.moved_at)); borrow_error(ctx, msg); return false
+    }
+    check vo.immut_borrows > 0 {
+        set first_line = 0
+        loop j from 0 to vec_len(vo.borrows) - 1 {
+            set b = vec_get(vo.borrows, j) as ptr(Borrow)
+            check not b.is_mut { first_line = b.created_at; break }
+        }
+        set msg = str_concat(str_concat("Cannot mutate '", name), "' because it is already borrowed as immutable at line ")
+        msg = str_concat(msg, int_to_str(first_line)); borrow_error(ctx, msg); return false
+    }
+    check vo.has_mut_borrow {
+        set msg = str_concat(str_concat("Cannot mutate '", name), "' because it is already borrowed as mutable at line ")
+        msg = str_concat(msg, int_to_str(vo.mut_borrow_at)); borrow_error(ctx, msg); return false
+    }
+    return true
+}
+
+task borrow_mark_moved(ctx: ptr(BorrowCtx), name: string, line: int) -> bool {
+    set vo = hashmap_get(ctx.states, name) as ptr(VarOwnership)
+    check vo == null { return true }
+    check vo.is_moved {
+        set msg = str_concat(str_concat("Cannot move '", name), "' because it was already moved at line ")
+        msg = str_concat(msg, int_to_str(vo.moved_at)); borrow_error(ctx, msg); return false
+    }
+    check vo.immut_borrows > 0 or vo.has_mut_borrow {
+        check vo.has_mut_borrow {
+            set msg = str_concat(str_concat("Cannot move '", name), "' because it is borrowed as mutable at line ")
+            msg = str_concat(msg, int_to_str(vo.mut_borrow_at)); borrow_error(ctx, msg)
+        } else {
+            set first_line = 0
+            loop j from 0 to vec_len(vo.borrows) - 1 {
+                set b = vec_get(vo.borrows, j) as ptr(Borrow)
+                check not b.is_mut { first_line = b.created_at; break }
+            }
+            set msg = str_concat(str_concat("Cannot move '", name), "' because it is borrowed as immutable at line ")
+            msg = str_concat(msg, int_to_str(first_line)); borrow_error(ctx, msg)
+        }
+        return false
+    }
+    vo.is_moved = true; vo.moved_at = line; return true
+}
+
+task borrow_immut_borrow(ctx: ptr(BorrowCtx), name: string, line: int) -> bool {
+    set vo = hashmap_get(ctx.states, name) as ptr(VarOwnership)
+    check vo == null { vo = var_own_new(); hashmap_insert(ctx.states, name, vo) }
+    check vo.has_mut_borrow {
+        set msg = str_concat(str_concat("Cannot borrow '", name), "' as immutable because it is already borrowed as mutable at line ")
+        msg = str_concat(msg, int_to_str(vo.mut_borrow_at)); borrow_error(ctx, msg); return false
+    }
+    check vo.is_moved {
+        set msg = str_concat(str_concat("Cannot borrow '", name), "' because it was moved at line ")
+        msg = str_concat(msg, int_to_str(vo.moved_at)); borrow_error(ctx, msg); return false
+    }
+    vo.immut_borrows = vo.immut_borrows + 1
+    set b = borrow_rec_new(name, false, ctx.scope_depth, line); vec_push(vo.borrows, b)
+    return true
+}
+
+task borrow_mut_borrow(ctx: ptr(BorrowCtx), name: string, line: int) -> bool {
+    set vo = hashmap_get(ctx.states, name) as ptr(VarOwnership)
+    check vo == null { vo = var_own_new(); hashmap_insert(ctx.states, name, vo) }
+    check vo.immut_borrows > 0 {
+        set first_line = 0
+        loop j from 0 to vec_len(vo.borrows) - 1 {
+            set b = vec_get(vo.borrows, j) as ptr(Borrow)
+            check not b.is_mut { first_line = b.created_at; break }
+        }
+        set msg = str_concat(str_concat("Cannot borrow '", name), "' as mutable because it is already borrowed as immutable at line ")
+        msg = str_concat(msg, int_to_str(first_line)); borrow_error(ctx, msg); return false
+    }
+    check vo.has_mut_borrow {
+        set msg = str_concat(str_concat("Cannot borrow '", name), "' as mutable because it is already borrowed as mutable at line ")
+        msg = str_concat(msg, int_to_str(vo.mut_borrow_at)); borrow_error(ctx, msg); return false
+    }
+    check vo.is_moved {
+        set msg = str_concat(str_concat("Cannot borrow '", name), "' because it was moved at line ")
+        msg = str_concat(msg, int_to_str(vo.moved_at)); borrow_error(ctx, msg); return false
+    }
+    vo.has_mut_borrow = true; vo.mut_borrow_at = line
+    set b = borrow_rec_new(name, true, ctx.scope_depth, line); vec_push(vo.borrows, b)
+    return true
+}
+
+task borrow_transfer_ownership(ctx: ptr(BorrowCtx), src_name: string, dst_name: string,
+                                src_type: string, line: int) -> bool {
+    check is_copy_type(src_type) { return true }
+    set src_vo = hashmap_get(ctx.states, src_name) as ptr(VarOwnership)
+    check src_vo != null { check not borrow_mark_moved(ctx, src_name, line) { return false } }
+    set dst_vo = hashmap_get(ctx.states, dst_name) as ptr(VarOwnership)
+    check dst_vo != null { dst_vo.is_moved = false; dst_vo.moved_at = 0 }
+    else { borrow_declare_var(ctx, dst_name, src_type, line) }
+    return true
+}
+
+struct SemanticError { message: string; line: int; column: int; severity: int }
+
+struct Analyzer {
+    symtab:     ptr; errors:     Vec; warnings:   Vec
+    current_func: string; in_loop: bool; in_unsafe: bool
+    return_type: string; borrow_ctx: ptr
+}
+
+task analyzer_new() -> ptr {
+    set a = alloc(1, 96) as ptr(Analyzer)
+    a.symtab = symtab_new(); a.errors = vec_new(); a.warnings = vec_new()
+    a.current_func = ""; a.in_loop = false; a.in_unsafe = false
+    a.return_type = "void"; a.borrow_ctx = borrow_new(a.symtab)
+    return a
+}
+
+task analyzer_error(a: ptr(Analyzer), msg: string, line: int) {
+    set err = alloc(1, 32) as ptr(SemanticError)
+    err.message = str_copy(msg); err.line = line; err.column = 0; err.severity = 0
+    vec_push(a.errors, err)
+}
+
+task analyzer_warning(a: ptr(Analyzer), msg: string, line: int) {
+    set warn = alloc(1, 32) as ptr(SemanticError)
+    warn.message = str_copy(msg); warn.line = line; warn.column = 0; warn.severity = 1
+    vec_push(a.warnings, warn)
+}
+
+task analyze_program(a: ptr(Analyzer), prog: ptr(Program)) -> bool {
+    loop i from 0 to program_stmt_count(prog) - 1 {
+        set stmt = program_get_stmt(prog, i); analyze_top_level_decl(a, stmt)
+    }
+    loop i from 0 to program_stmt_count(prog) - 1 {
+        set stmt = program_get_stmt(prog, i); analyze_stmt(a, stmt)
+    }
+    set borrow_errs = vec_len(a.borrow_ctx as ptr(BorrowCtx).errors)
+    check borrow_errs > 0 {
+        loop i from 0 to borrow_errs - 1 {
+            set err_msg = vec_get(a.borrow_ctx as ptr(BorrowCtx).errors, i) as string
+            analyzer_error(a, err_msg, 0)
+        }
+    }
+    return vec_len(a.errors) == 0
+}
+
+task analyze_top_level_decl(a: ptr(Analyzer), stmt: ptr(Stmt)) {
+    set kind = stmt_kind(stmt)
+    check kind == STMT_TASK_DECL {
+        set name = stmt_get_name(stmt); set ret_type = stmt_get_return_type(stmt)
+        check str_len(ret_type) == 0 { ret_type = "void" }
+        set sym = symbol_new(name, SYMBOL_FUNC, ret_type, false, false, false, 0, 0)
+        check not symtab_define(a.symtab as ptr(SymbolTable), sym) {
+            analyzer_error(a, str_concat("Function already defined: ", name), 0)
+        }
+    }
+    check kind == STMT_STRUCT_DECL {
+        set name = stmt_get_name(stmt)
+        set sym = symbol_new(name, SYMBOL_STRUCT, name, false, false, false, 0, 0)
+        check not symtab_define(a.symtab as ptr(SymbolTable), sym) {
+            analyzer_error(a, str_concat("Struct already defined: ", name), 0)
+        }
+    }
+    check kind == STMT_CONST_DECL {
+        set name = stmt_get_name(stmt)
+        set sym = symbol_new(name, SYMBOL_CONST, "int", true, false, false, 0, 0)
+        check not symtab_define(a.symtab as ptr(SymbolTable), sym) {
+            analyzer_error(a, str_concat("Constant already defined: ", name), 0)
+        }
+    }
+}
+
+task analyze_stmt(a: ptr(Analyzer), stmt: ptr(Stmt)) {
+    set kind = stmt_kind(stmt)
+    check kind == STMT_VAR_DECL { analyze_var_decl(a, stmt); return }
+    check kind == STMT_TASK_DECL { analyze_func_decl(a, stmt); return }
+    check kind == STMT_IF { analyze_if_stmt(a, stmt); return }
+    check kind == STMT_LOOP or kind == STMT_LOOP_RANGE or kind == STMT_LOOP_COND or kind == STMT_LOOP_TIMES { analyze_loop_stmt(a, stmt); return }
+    check kind == STMT_RETURN { analyze_return_stmt(a, stmt); return }
+    check kind == STMT_BLOCK {
+        symtab_enter_scope(a.symtab as ptr(SymbolTable)); borrow_enter_scope(a.borrow_ctx as ptr(BorrowCtx))
+        set block = stmt_get_block(stmt)
+        loop i from 0 to block_stmt_count(block) - 1 { analyze_stmt(a, block_get_stmt(block, i)) }
+        borrow_exit_scope(a.borrow_ctx as ptr(BorrowCtx)); symtab_exit_scope(a.symtab as ptr(SymbolTable))
+        return
+    }
+    check kind == STMT_OVERRIDE {
+        set prev = a.in_unsafe; a.in_unsafe = true
+        symtab_enter_scope(a.symtab as ptr(SymbolTable)); borrow_enter_scope(a.borrow_ctx as ptr(BorrowCtx))
+        set block = stmt_get_block(stmt)
+        loop i from 0 to block_stmt_count(block) - 1 { analyze_stmt(a, block_get_stmt(block, i)) }
+        borrow_exit_scope(a.borrow_ctx as ptr(BorrowCtx)); symtab_exit_scope(a.symtab as ptr(SymbolTable))
+        a.in_unsafe = prev; return
+    }
+}
+
+task analyze_var_decl(a: ptr(Analyzer), stmt: ptr(Stmt)) {
+    set name = stmt_get_name(stmt); set type_name = stmt_get_type(stmt); set init_expr = stmt_get_expr(stmt)
+    check str_len(type_name) == 0 and init_expr != null { type_name = infer_type(a, init_expr) }
+    check str_len(type_name) == 0 { type_name = "int" }
+    borrow_declare_var(a.borrow_ctx as ptr(BorrowCtx), name, type_name, 0)
+    check init_expr != null {
+        set init_type = analyze_expr(a, init_expr)
+        check not types_compatible(type_name, init_type) {
+            analyzer_error(a, str_concat(str_concat("Type mismatch: expected ", type_name), str_concat(", got ", init_type)), 0)
+        }
+        check init_expr != null {
+            set init_kind = expr_kind(init_expr)
+            check init_kind == EXPR_VAR {
+                set src_name = expr_get_str(init_expr)
+                set src_sym = symtab_lookup(a.symtab as ptr(SymbolTable), src_name)
+                check src_sym != null {
+                    set src_type = src_sym as ptr(Symbol).type_name
+                    check is_move_type(src_type) {
+                        borrow_transfer_ownership(a.borrow_ctx as ptr(BorrowCtx), src_name, name, src_type, 0)
+                    }
+                }
+            }
+        }
+    }
+    set is_sensitive = stmt_is_sensitive(stmt)
+    set sym = symbol_new(name, SYMBOL_VAR, type_name, false, true, is_sensitive, 0, 0)
+    check not symtab_define(a.symtab as ptr(SymbolTable), sym) {
+        analyzer_error(a, str_concat("Variable already defined: ", name), 0)
+    }
+}
+
+task analyze_func_decl(a: ptr(Analyzer), stmt: ptr(Stmt)) {
+    set name = stmt_get_name(stmt); set ret_type = stmt_get_return_type(stmt)
+    check str_len(ret_type) == 0 { ret_type = "void" }
+    set prev_func = a.current_func; set prev_ret = a.return_type
+    a.current_func = name; a.return_type = ret_type
+    symtab_enter_scope(a.symtab as ptr(SymbolTable))
+    a.symtab as ptr(SymbolTable).current as ptr(Scope).is_func = true
+    borrow_enter_scope(a.borrow_ctx as ptr(BorrowCtx))
+    set params = stmt_get_params(stmt)
+    check params != null {
+        loop i from 0 to params_count(params) - 1 {
+            set param = params_get(params, i)
+            set pname = param_get_name(param); set ptype = param_get_type(param)
+            check str_len(ptype) == 0 { ptype = "int" }
+            set sym = symbol_new(pname, SYMBOL_PARAM, ptype, false, true, false, 0, 0)
+            check not symtab_define(a.symtab as ptr(SymbolTable), sym) {
+                analyzer_error(a, str_concat("Duplicate parameter: ", pname), 0)
+            }
+            borrow_declare_var(a.borrow_ctx as ptr(BorrowCtx), pname, ptype, 0)
+        }
+    }
+    set body = stmt_get_block(stmt)
+    check body != null {
+        loop i from 0 to block_stmt_count(body) - 1 { analyze_stmt(a, block_get_stmt(body, i)) }
+    }
+    check not str_eq(ret_type, "void") {
+        check not has_return_path(body) { analyzer_warning(a, str_concat("Function may not return: ", name), 0) }
+    }
+    borrow_exit_scope(a.borrow_ctx as ptr(BorrowCtx)); symtab_exit_scope(a.symtab as ptr(SymbolTable))
+    a.current_func = prev_func; a.return_type = prev_ret
+}
+
+task analyze_if_stmt(a: ptr(Analyzer), stmt: ptr(Stmt)) {
+    set cond = stmt_get_condition(stmt); set cond_type = analyze_expr(a, cond)
+    check not str_eq(cond_type, "bool") and not str_eq(cond_type, "int") {
+        analyzer_error(a, "Condition must be bool or int", 0)
+    }
+    symtab_enter_scope(a.symtab as ptr(SymbolTable)); borrow_enter_scope(a.borrow_ctx as ptr(BorrowCtx))
+    set then_block = stmt_get_then_block(stmt)
+    check then_block != null { loop i from 0 to block_stmt_count(then_block) - 1 { analyze_stmt(a, block_get_stmt(then_block, i)) } }
+    borrow_exit_scope(a.borrow_ctx as ptr(BorrowCtx)); symtab_exit_scope(a.symtab as ptr(SymbolTable))
+    set else_block = stmt_get_else_block(stmt)
+    check else_block != null {
+        symtab_enter_scope(a.symtab as ptr(SymbolTable)); borrow_enter_scope(a.borrow_ctx as ptr(BorrowCtx))
+        loop i from 0 to block_stmt_count(else_block) - 1 { analyze_stmt(a, block_get_stmt(else_block, i)) }
+        borrow_exit_scope(a.borrow_ctx as ptr(BorrowCtx)); symtab_exit_scope(a.symtab as ptr(SymbolTable))
+    }
+}
+
+task analyze_loop_stmt(a: ptr(Analyzer), stmt: ptr(Stmt)) {
+    set prev = a.in_loop; a.in_loop = true
+    symtab_enter_scope(a.symtab as ptr(SymbolTable)); a.symtab as ptr(SymbolTable).current as ptr(Scope).is_loop = true
+    borrow_enter_scope(a.borrow_ctx as ptr(BorrowCtx))
+    set body = stmt_get_block(stmt)
+    check body != null { loop i from 0 to block_stmt_count(body) - 1 { analyze_stmt(a, block_get_stmt(body, i)) } }
+    borrow_exit_scope(a.borrow_ctx as ptr(BorrowCtx)); symtab_exit_scope(a.symtab as ptr(SymbolTable))
+    a.in_loop = prev
+}
+
+task analyze_return_stmt(a: ptr(Analyzer), stmt: ptr(Stmt)) {
+    set expr = stmt_get_expr(stmt)
+    check str_eq(a.return_type, "void") { check expr != null { analyzer_error(a, "Cannot return value from void function", 0) }; return }
+    check expr == null { analyzer_error(a, "Must return a value", 0); return }
+    set ret_type = analyze_expr(a, expr)
+    check not types_compatible(a.return_type, ret_type) {
+        analyzer_error(a, str_concat(str_concat("Return type mismatch: expected ", a.return_type), str_concat(", got ", ret_type)), 0)
+    }
+}
+
+task analyze_expr(a: ptr(Analyzer), expr: ptr(Expr)) -> string {
+    check expr == null { return "void" }
+    set kind = expr_kind(expr)
+    check kind == EXPR_INT { return "int" }
+    check kind == EXPR_FLOAT { return "float" }
+    check kind == EXPR_STRING { return "string" }
+    check kind == EXPR_BOOL { return "bool" }
+    check kind == EXPR_NULL { return "ptr" }
+    check kind == EXPR_VAR {
+        set name = expr_get_name(expr); set sym = symtab_lookup(a.symtab as ptr(SymbolTable), name)
+        check sym == null { analyzer_error(a, str_concat("Undefined variable: ", name), 0); return "int" }
+        borrow_check_read(a.borrow_ctx as ptr(BorrowCtx), name, expr_get_line(expr))
+        return sym as ptr(Symbol).type_name
+    }
+    check kind == EXPR_BINARY {
+        set left = expr_get_left(expr); set right = expr_get_right(expr); set op = expr_get_op(expr)
+        set lt = analyze_expr(a, left); set rt = analyze_expr(a, right)
+        check is_comparison_op(op) { return "bool" }
+        check is_logical_op(op) { return "bool" }
+        return lt
+    }
+    check kind == EXPR_UNARY {
+        set operand = expr_get_operand(expr); set op = expr_get_op(expr); set ot = analyze_expr(a, operand)
+        check str_eq(op, "not") or str_eq(op, "!") { return "bool" }
+        check str_eq(op, "-") { return ot }
+        check str_eq(op, "&") {
+            check operand != null { check expr_kind(operand) == EXPR_VAR { borrow_immut_borrow(a.borrow_ctx as ptr(BorrowCtx), expr_get_str(operand), expr_get_line(expr)) } }
+            return "ptr"
+        }
+        return ot
+    }
+    check kind == EXPR_CALL {
+        set name = expr_get_name(expr); set sym = symtab_lookup(a.symtab as ptr(SymbolTable), name)
+        check sym == null { analyzer_error(a, str_concat("Undefined function: ", name), 0); return "int" }
+        set args = expr_get_args(expr); set line = expr_get_line(expr)
+        check args != null {
+            loop i from 0 to args_count(args) - 1 {
+                set arg = args_get(args, i); analyze_expr(a, arg)
+                check arg != null {
+                    check expr_kind(arg) == EXPR_VAR {
+                        set aname = expr_get_str(arg); set asym = symtab_lookup(a.symtab as ptr(SymbolTable), aname)
+                        check asym != null { check is_move_type(asym as ptr(Symbol).type_name) and is_consuming_call(name) { borrow_mark_moved(a.borrow_ctx as ptr(BorrowCtx), aname, line) } }
+                    }
+                }
+            }
+        }
+        return sym as ptr(Symbol).type_name
+    }
+    check kind == EXPR_FIELD {
+        set obj = expr_get_object(expr); analyze_expr(a, obj); return "int"
+    }
+    check kind == EXPR_INDEX {
+        set arr = expr_get_array(expr); set idx = expr_get_index(expr); analyze_expr(a, arr); analyze_expr(a, idx); return "int"
+    }
+    return "int"
+}
+
+task types_compatible(t1: string, t2: string) -> bool {
+    check str_eq(t1, t2) { return true }
+    check is_numeric_type(t1) and is_numeric_type(t2) { return true }
+    check str_eq(t1, "ptr") or str_eq(t2, "ptr") { return true }
+    return false
+}
+
+task is_numeric_type(t: string) -> bool {
+    return str_eq(t, "int") or str_eq(t, "int8") or str_eq(t, "int16") or
+           str_eq(t, "int64") or str_eq(t, "uint8") or str_eq(t, "uint16") or
+           str_eq(t, "uint32") or str_eq(t, "uint64") or str_eq(t, "float")
+}
+
+task is_comparison_op(op: string) -> bool {
+    return str_eq(op, "==") or str_eq(op, "!=") or str_eq(op, "<") or str_eq(op, ">") or str_eq(op, "<=") or str_eq(op, ">=")
+}
+
+task is_logical_op(op: string) -> bool {
+    return str_eq(op, "and") or str_eq(op, "or") or str_eq(op, "&&") or str_eq(op, "||")
+}
+
+task infer_type(a: ptr(Analyzer), expr: ptr(Expr)) -> string { return analyze_expr(a, expr) }
+
+task has_return_path(block: ptr(Block)) -> bool {
+    check block == null { return false }
+    set count = block_stmt_count(block)
+    check count == 0 { return false }
+    loop i from 0 to count - 1 {
+        set stmt = block_get_stmt(block, i)
+        check stmt_kind(stmt) == STMT_RETURN { return true }
+    }
+    return false
+}
+
+task analyzer_print_errors(a: ptr(Analyzer)) {
+    loop i from 0 to vec_len(a.errors) - 1 {
+        set err = vec_get(a.errors, i) as ptr(SemanticError); print_str("error: "); println(err.message)
+    }
+    loop i from 0 to vec_len(a.warnings) - 1 {
+        set warn = vec_get(a.warnings, i) as ptr(SemanticError); print_str("warning: "); println(warn.message)
+    }
+    check vec_len(a.errors) > 0 { print_int(vec_len(a.errors)); println(" error(s)") }
+    check vec_len(a.warnings) > 0 { print_int(vec_len(a.warnings)); println(" warning(s)") }
+}
+
+task analyzer_has_errors(a: ptr(Analyzer)) -> bool { return vec_len(a.errors) > 0 }
+task analyzer_error_count(a: ptr(Analyzer)) -> int { return vec_len(a.errors) }

@@ -1,0 +1,55 @@
+import "stdlib_native.sov"
+import "stdlib_ast.sov"
+import "lexer_self.sov"
+import "parser_self.sov"
+import "codegen_self.sov"
+
+set VERSION = "0.1.0"
+
+task print_usage() {
+    print_str("Sovereign v0.1.0\n")
+    print_str("Usage: sovereign build <file.sov>\n")
+}
+
+task main(argc: int, argv: ptr) -> int {
+    check argc < 2 {
+        print_str("Usage: sovereign build <file.sov>\n")
+        return 1
+    }
+    set i = 1
+    set fidx = 0
+    loop i < argc {
+        set argval = argv_get_string(argv, i)
+        check str_eq(argval, "-o") {
+            i = i + 1
+            i = i + 1
+            continue
+        }
+        check str_starts_with(argval, "-") {
+            i = i + 1
+            continue
+        }
+        check fidx == 0 {
+            fidx = i
+        }
+        i = i + 1
+    }
+    check fidx == 0 {
+        return 1
+    }
+    set fname = argv_get_string(argv, fidx)
+    set src = file_read_all(fname)
+    check str_len(src) == 0 {
+        return 1
+    }
+    set lex = lexer_new(src, fname)
+    set tok = lexer_tokenize(lex)
+    set par = parser_new(tok, fname)
+    set prog = parser_parse(par)
+    set cg = codegen_new()
+    set out = codegen_generate(cg, prog)
+    set oname = str_replace(fname, ".sov", "")
+    set oname2 = str_concat(oname, ".c")
+    file_write_all(oname2, out)
+    return 0
+}

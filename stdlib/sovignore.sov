@@ -2,7 +2,6 @@ task sovignore_load() -> VecStr {
     set patterns = vecstr_new()
     set content = file_read_all(".sovignore")
     check content == null or str_len(content) == 0 { return patterns }
-
     set lines = str_split(content, "\n")
     set n = vecstr_len(lines)
     loop i from 0 to n - 1 {
@@ -14,19 +13,14 @@ task sovignore_load() -> VecStr {
 }
 
 task sovignore_matches(pattern: string, path: string) -> bool {
-    check str_ends_with(pattern, "/") {
-        return str_starts_with(path, pattern)
-    }
-
+    check str_ends_with(pattern, "/") { return str_starts_with(path, pattern) }
     check str_starts_with(pattern, "*.") {
         set ext = str_substr(pattern, 1, str_len(pattern) - 1)
         return str_ends_with(path, ext)
     }
-
     check str_starts_with(pattern, "*/") {
         return str_contains(path, str_substr(pattern, 1, str_len(pattern) - 1))
     }
-
     check str_contains(pattern, "*") {
         set parts = str_split(pattern, "*")
         set pos = 0
@@ -40,7 +34,6 @@ task sovignore_matches(pattern: string, path: string) -> bool {
         }
         return true
     }
-
     return str_eq(path, pattern)
 }
 
