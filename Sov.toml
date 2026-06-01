@@ -1,0 +1,15 @@
+[package]
+name = "my-project"
+version = "0.1.0"
+description = "A Sovereign project"
+
+[dependencies]
+stdlib = "0.1.0"
+
+[build]
+target = "c"
+optimize = false
+
+[profile.release]
+optimize = true
+lto = true

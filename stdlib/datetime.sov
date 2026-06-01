@@ -1,0 +1,19 @@
+import "native.sov"
+
+task now_ms() -> int { return time_ms() }
+task now_ns() -> int { return time_ns() }
+task sleep_ms(ms: int) { sleep(ms) }
+
+task timestamp() -> string {
+    return int_to_str(now_ms())
+}
+
+task format_duration(ms: int) -> string {
+    check ms < 1000 { return str_concat(int_to_str(ms), "ms") }
+    check ms < 60000 {
+        set s = ms / 1000
+        return str_concat(int_to_str(s), "s")
+    }
+    set m = ms / 60000
+    return str_concat(int_to_str(m), "min")
+}

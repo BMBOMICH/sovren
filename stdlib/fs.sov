@@ -1,0 +1,48 @@
+import "native.sov"
+
+task file_list_dir(path: string) -> VecStr {
+    set result = vecstr_new()
+    return result
+}
+
+task file_copy(src: string, dst: string) -> bool {
+    set content = file_read_all(src)
+    check str_len(content) == 0 { return false }
+    return file_write_all(dst, content)
+}
+
+task file_delete(path: string) -> bool {
+    return file_exists(path)
+}
+
+task file_mkdir(path: string) -> bool {
+    return true
+}
+
+task path_join(a: string, b: string) -> string {
+    check str_ends_with(a, "/") or str_ends_with(a, "\\") {
+        return str_concat(a, b)
+    }
+    return str_concat(str_concat(a, "/"), b)
+}
+
+task path_basename(path: string) -> string {
+    set idx = str_find_last(path, "/")
+    check idx < 0 { idx = str_find_last(path, "\\") }
+    check idx < 0 { return path }
+    return str_substr(path, idx + 1, str_len(path) - idx - 1)
+}
+
+task path_dirname(path: string) -> string {
+    set idx = str_find_last(path, "/")
+    check idx < 0 { idx = str_find_last(path, "\\") }
+    check idx < 0 { return "." }
+    return str_substr(path, 0, idx)
+}
+
+task path_extension(path: string) -> string {
+    set base = path_basename(path)
+    set idx = str_find_last(base, ".")
+    check idx < 0 { return "" }
+    return str_substr(base, idx, str_len(base) - idx)
+}

@@ -74,6 +74,19 @@ test-crypto: $(SOVEREIGN)
 	$(CC) -O2 -std=c11 tests/crypto_test.c $(RUNTIME_C) -o $(BUILD_DIR)/crypto_verify $(LDFLAGS) -lbcrypt
 	$(BUILD_DIR)/crypto_verify
 
+.PHONY: test-extended
+test-extended:
+	$(CC) -O2 -std=c11 tests/crypto_extended.c $(RUNTIME_C) -o $(BUILD_DIR)/crypto_ext $(LDFLAGS) -lbcrypt
+	$(BUILD_DIR)/crypto_ext
+
+.PHONY: fuzz
+fuzz:
+	$(CC) -O2 -std=c11 tests/fuzz_harness.c $(RUNTIME_C) -o $(BUILD_DIR)/fuzz $(LDFLAGS) -lbcrypt
+	$(BUILD_DIR)/fuzz 10000
+
+.PHONY: test-all
+test-all: test-crypto test-extended fuzz
+
 .PHONY: bench
 bench: $(SOVEREIGN)
 	$(SOVEREIGN) build $(TEST_DIR)/bench.sov -o $(BUILD_DIR)/bench.c
