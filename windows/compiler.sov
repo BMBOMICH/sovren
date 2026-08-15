@@ -33,6 +33,7 @@ kv: 0
 pro_at: 0
 skip_al: blank
 used_al: 0
+self_dir: 0
 used_sl: 0
 used_eq: 0
 used_pr: 0
@@ -3557,6 +3558,38 @@ emit_write_lit s:
     emit(184)
     emit4(1)
     sysc()
+# windows hands back argv[0] wrapped in quotes, as a drive path with
+# backslashes. turn it into the plain form the file calls understand.
+tidy_path s:
+    r: unquote(s)
+    n: length(r)
+    # drop a leading drive letter such as Z:
+    if n > 2
+        if _sov_byte_at(r, 1) is 58
+            r: cut(r, 2, n)
+            n: n - 2
+    # backslash to slash
+    o: _sov_alloc(n + 1)
+    i: 0
+    as long as i < n
+        b: _sov_byte_at(r, i)
+        if b is 92
+            b: 47
+        dummy: _sov_set_byte(o, i, b)
+        i: i + 1
+    dummy: _sov_set_byte(o, n, 0)
+    return as text o
+
+unquote s:
+    n: length(s)
+    if n < 2
+        return s
+    if _sov_byte_at(s, 0) is not 34
+        return s
+    e: n
+    if _sov_byte_at(s, n - 1) is 34
+        e: n - 1
+    return cut(s, 1, e)
 dirname p:
     n: length(p)
     if n is 0
@@ -3564,7 +3597,11 @@ dirname p:
     i: n
     as long as i > 0
         i: i - 1
-        if _sov_byte_at(p, i) is 47
+        b: _sov_byte_at(p, i)
+        # windows writes paths with a backslash
+        if b is 92
+            b: 47
+        if b is 47
             if i is 0
                 return "/"
             return cut(p, 0, i)
@@ -4001,6 +4038,10 @@ write_elf path:
     if hd is 0
         hd: load_file("windows/head.bin")
     if hd is 0
+        hd: load_file(join(self_dir, "/head.bin"))
+    if hd is 0
+        hd: load_file(join(self_dir, "/windows/head.bin"))
+    if hd is 0
         print "Error: cannot read head.bin"
         had_err: 1
         return
@@ -4149,8 +4190,19 @@ write_elf path:
     _sov_write_n(path, flat, filesz)
     _sov_chmod(path, 493)
 use_one name:
-    path: join("library/", name)
-    path: join(path, ".sov")
+    tail: join(name, ".sov")
+    path: join("library/", tail)
+    r: load_file(path)
+    if r is not 0
+        return r
+    # not in this folder, so look beside the compiler
+    path: join(self_dir, join("/library/", tail))
+    r: load_file(path)
+    if r is not 0
+        return r
+    # the compiler binary usually sits one level down, in linux/ or
+    # windows/, with library/ next to that folder
+    path: join(self_dir, join("/../library/", tail))
     return load_file(path)
 take_use name:
     mark: join(" ", join(name, " "))
@@ -4178,6 +4230,9 @@ pull_uses src:
         i: i + 1
     return out
 main argc argv:
+    # remember where this compiler lives, so its library and runtime
+    # are found no matter which folder you run it from
+    self_dir: dirname(tidy_path(peek_ptr(argv, 0)))
     if argc < 2
         print "Usage: sovren <file.sov> [-o out]"
         print "sovren — native x86-64, no C, no Python"
@@ -4250,9 +4305,9 @@ main argc argv:
         if rt is 0
             rt: load_file("linux/runtime.sov")
         if rt is 0
-            a0: peek_ptr(argv, 0)
-            bd: dirname(a0)
-            rt: load_file(join(bd, "/runtime.sov"))
+            rt: load_file(join(self_dir, "/runtime.sov"))
+        if rt is 0
+            rt: load_file(join(self_dir, "/../runtime.sov"))
         if rt is 0
             print "Error: cannot read runtime"
             fail()

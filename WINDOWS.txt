@@ -1,0 +1,28 @@
+Running Sovren on Windows
+=========================
+
+The file you want is  windows\sovren.exe
+
+Everything else in this project is a Linux program, including the
+file called "sovren" with no extension. Windows cannot run those.
+
+Open PowerShell here and try:
+
+    .\windows\sovren.exe hello.sov -o hello.exe
+    .\hello.exe
+
+Note the .\ at the front and the .exe at the end. PowerShell wants
+both.
+
+Working in another folder is fine. Call it with its full path:
+
+    C:\path\to\sovren\windows\sovren.exe myfile.sov -o myfile.exe
+
+It finds its own library folder, so it does not matter where you are.
+
+Building for other machines from Windows:
+
+    .\windows\sovren.exe app.sov -o app.exe            Windows
+    .\windows\sovren.exe app.sov --mac -o app          Mac
+    .\windows\sovren.exe app.sov --android -o app      Android
+    .\windows\sovren.exe app.sov --ios -o app          iPhone
