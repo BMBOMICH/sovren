@@ -1,0 +1,67 @@
+# rle.sov — run length compression: pairs of (count, byte)
+use mem
+use string
+
+rle_runlen p n i:
+    c: peek_byte(p, i)
+    cnt: 1
+    k: i + 1
+    done: 0
+    as long as done is 0
+        if k >= n
+            done: 1
+        if not
+            if cnt >= 255
+                done: 1
+            if not
+                if peek_byte(p, k) is c
+                    cnt: cnt + 1
+                    k: k + 1
+                if not
+                    done: 1
+    return cnt
+
+rle_size p n:
+    t: 0
+    i: 0
+    as long as i < n
+        i: i + rle_runlen(p, n, i)
+        t: t + 2
+    return t
+
+rle_pack p n:
+    out: mem_new(rle_size(p, n) + 8)
+    o: 0
+    i: 0
+    as long as i < n
+        cnt: rle_runlen(p, n, i)
+        poke_byte(out, o, cnt)
+        poke_byte(out, o + 1, peek_byte(p, i))
+        o: o + 2
+        i: i + cnt
+    return out
+
+rle_unsize p n:
+    t: 0
+    i: 0
+    as long as i < n
+        t: t + peek_byte(p, i)
+        i: i + 2
+    return t
+
+rle_unpack p n:
+    tot: rle_unsize(p, n)
+    out: mem_new(tot + 1)
+    o: 0
+    i: 0
+    as long as i < n
+        cnt: peek_byte(p, i)
+        c: peek_byte(p, i + 1)
+        k: 0
+        as long as k < cnt
+            poke_byte(out, o, c)
+            o: o + 1
+            k: k + 1
+        i: i + 2
+    poke_byte(out, o, 0)
+    return as text out

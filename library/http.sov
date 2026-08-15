@@ -1,0 +1,48 @@
+# http.sov — HTTP/1.0 request text + a real GET
+# needs _sov_list
+use string
+use sock
+
+http_get_req host path:
+    a: str_cat("GET ", path)
+    a: str_cat(a, " HTTP/1.0\r\nHost: ")
+    a: str_cat(a, host)
+    return str_cat(a, "\r\n\r\n")
+
+http_post_req host path body:
+    n: _sov_strlen(body)
+    a: str_cat("POST ", path)
+    a: str_cat(a, " HTTP/1.0\r\nHost: ")
+    a: str_cat(a, host)
+    a: str_cat(a, "\r\nContent-Length: ")
+    a: str_cat(a, num_text(n))
+    a: str_cat(a, "\r\n\r\n")
+    return str_cat(a, body)
+
+http_ok body:
+    a: "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n"
+    return str_cat(a, body)
+
+http_not_found:
+    return "HTTP/1.0 404 Not Found\r\nContent-Type: text/plain\r\n\r\nnot found\r\n"
+
+http_serve port:
+    return sock_listen(port)
+
+http_get ip0 ip1 ip2 ip3 port host path:
+    fd: sock_connect(ip0, ip1, ip2, ip3, port)
+    if fd < 0
+        return blank
+    sock_send(fd, http_get_req(host, path))
+    r: sock_recv(fd, 8192)
+    sock_close(fd)
+    return r
+
+http_body r:
+    p: str_find(r, "\r\n\r\n")
+    if p > 0 - 1
+        return str_cut(r, p + 4, str_len(r))
+    p: str_find(r, "\n\n")
+    if p > 0 - 1
+        return str_cut(r, p + 2, str_len(r))
+    return r

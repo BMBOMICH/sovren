@@ -1,0 +1,96 @@
+# file.sov — read && write files
+
+use sys
+file_open_read path:
+    return sys_open(path, 0)
+
+file_open_write path:
+    return sys_open(path, 577)
+
+file_close fd:
+    return sys_close(fd)
+
+file_size path:
+    fd: file_open_read(path)
+    if fd < 0
+        return 0 - 1
+    n: sys_seek(fd, 0, 2)
+    sys_close(fd)
+    return n
+
+file_read_all path:
+    fd: file_open_read(path)
+    if fd < 0
+        return 0
+    n: sys_seek(fd, 0, 2)
+    sys_seek(fd, 0, 0)
+    if n < 1
+        buf: _sov_alloc(8192)
+        got: sys_read(fd, buf, 8191)
+        sys_close(fd)
+        if got < 1
+            poke_byte(buf, 0, 0)
+            return as text buf
+        poke_byte(buf, got, 0)
+        return as text buf
+    buf: _sov_alloc(n + 1)
+    got: sys_read(fd, buf, n)
+    sys_close(fd)
+    poke_byte(buf, got, 0)
+    return as text buf
+
+file_write_all path data:
+    fd: file_open_write(path)
+    if fd < 0
+        return 0
+    n: _sov_strlen(data)
+    w: sys_write(fd, data, n)
+    sys_close(fd)
+    if w is n
+        return 1
+    return 0
+
+file_append path data:
+    fd: sys_open(path, 1089)
+    if fd < 0
+        return 0
+    n: _sov_strlen(data)
+    sys_write(fd, data, n)
+    sys_close(fd)
+    return 1
+
+file_exists path:
+    fd: file_open_read(path)
+    if fd < 0
+        return 0
+    sys_close(fd)
+    return 1
+
+file_delete path:
+    if sys_unlink(path) is 0
+        return 1
+    return 0
+
+file_read_max path cap:
+    fd: file_open_read(path)
+    if fd < 0
+        return 0
+    buf: _sov_alloc(cap + 1)
+    got: sys_read(fd, buf, cap)
+    sys_close(fd)
+    if got < 1
+        poke_byte(buf, 0, 0)
+        return as text buf
+    poke_byte(buf, got, 0)
+    return as text buf
+
+file_rename a b:
+    if sys_rename(a, b) is 0
+        return 1
+    return 0
+
+file_copy a b:
+    d: file_read_all(a)
+    if d is 0
+        return 0
+    return file_write_all(b, d)

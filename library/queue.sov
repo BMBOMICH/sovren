@@ -1,0 +1,33 @@
+# queue.sov — first in, first out (head index + list)
+# memory: [head i64][list ptr]
+# needs _sov_list
+use list
+
+queue_new:
+    q: _sov_alloc(16)
+    poke_i64(q, 0, 0)
+    poke_i64(q, 8, list_new())
+    return q
+
+queue_put q v:
+    lst: peek_i64(q, 8)
+    lst: list_add(lst, v)
+    poke_i64(q, 8, lst)
+    return q
+
+queue_len q:
+    lst: peek_i64(q, 8)
+    h: peek_i64(q, 0)
+    n: list_len(lst) - h
+    if n < 0
+        return 0
+    return n
+
+queue_get q:
+    lst: peek_i64(q, 8)
+    h: peek_i64(q, 0)
+    if h >= list_len(lst)
+        return 0
+    v: list_get(lst, h)
+    poke_i64(q, 0, h + 1)
+    return v

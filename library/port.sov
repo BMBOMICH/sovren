@@ -1,0 +1,8 @@
+# port.sov — x86 I/O ports and CPU control.
+# FREESTANDING/KERNEL ONLY: these are privileged and will
+# fault inside a normal Linux program. Use in Sovren OS code.
+#
+# port_out8 p v   send one byte to an I/O port
+# port_in8 p      read one byte from an I/O port
+# cli / sti       disable / enable interrupts
+# hlt             halt until next interrupt

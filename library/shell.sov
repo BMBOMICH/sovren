@@ -1,0 +1,46 @@
+# shell.sov — run a program
+use sys
+use proc
+
+shell_run name:
+    pid: proc_fork()
+    if pid is 0
+        argv: _sov_alloc(24)
+        poke_i64(argv, 0, name)
+        poke_i64(argv, 8, 0)
+        syscall(59, name, argv, 0, 0, 0, 0)
+        sys_exit(127)
+    if pid > 0
+        proc_wait_pid(pid)
+        return 1
+    return 0
+
+shell_run_arg name arg:
+    pid: proc_fork()
+    if pid is 0
+        argv: _sov_alloc(32)
+        poke_i64(argv, 0, name)
+        poke_i64(argv, 8, arg)
+        poke_i64(argv, 16, 0)
+        syscall(59, name, argv, 0, 0, 0, 0)
+        sys_exit(127)
+    if pid > 0
+        proc_wait_pid(pid)
+        return 1
+    return 0
+
+# shell_sh — run a command line through /bin/sh, so pipes and > work
+shell_sh cmd:
+    pid: proc_fork()
+    if pid is 0
+        argv: _sov_alloc(40)
+        poke_i64(argv, 0, "/bin/sh")
+        poke_i64(argv, 8, "-c")
+        poke_i64(argv, 16, cmd)
+        poke_i64(argv, 24, 0)
+        syscall(59, "/bin/sh", argv, 0, 0, 0, 0)
+        sys_exit(127)
+    if pid > 0
+        proc_wait_pid(pid)
+        return 1
+    return 0

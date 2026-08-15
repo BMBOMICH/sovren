@@ -1,0 +1,108 @@
+# vec.sov — growable number array in raw memory
+use mem
+VEC_HDR: 16
+
+vec_new cap:
+    c: cap
+    if c < 4
+        c: 4
+    p: mem_new(VEC_HDR + c * 8)
+    poke_i64(p, 0, 0)
+    poke_i64(p, 8, c)
+    return p
+
+vec_len v:
+    return peek_i64(v, 0)
+
+vec_cap v:
+    return peek_i64(v, 8)
+
+vec_get v i:
+    if i < 0
+        return 0
+    if i >= vec_len(v)
+        return 0
+    return peek_i64(v, VEC_HDR + i * 8)
+
+vec_set v i x:
+    if i < 0
+        return v
+    if i >= vec_len(v)
+        return v
+    poke_i64(v, VEC_HDR + i * 8, x)
+    return v
+
+vec_push v x:
+    n: vec_len(v)
+    c: vec_cap(v)
+    if n < c
+        poke_i64(v, VEC_HDR + n * 8, x)
+        poke_i64(v, 0, n + 1)
+        return v
+    nv: vec_new(c * 2)
+    i: 0
+    as long as i < n
+        poke_i64(nv, VEC_HDR + i * 8, peek_i64(v, VEC_HDR + i * 8))
+        i: i + 1
+    poke_i64(nv, 0, n)
+    poke_i64(nv, VEC_HDR + n * 8, x)
+    poke_i64(nv, 0, n + 1)
+    return nv
+
+vec_pop v:
+    n: vec_len(v)
+    if n is 0
+        return 0
+    poke_i64(v, 0, n - 1)
+    return peek_i64(v, VEC_HDR + (n - 1) * 8)
+
+vec_sum v:
+    t: 0
+    i: 0
+    as long as i < vec_len(v)
+        t: t + vec_get(v, i)
+        i: i + 1
+    return t
+
+vec_find v x:
+    i: 0
+    as long as i < vec_len(v)
+        if vec_get(v, i) is x
+            return i
+        i: i + 1
+    return 0 - 1
+
+vec_clear v:
+    poke_i64(v, 0, 0)
+    return v
+
+vec_reverse v:
+    n: vec_len(v)
+    i: 0
+    as long as i < n / 2
+        a: vec_get(v, i)
+        b: vec_get(v, n - 1 - i)
+        vec_set(v, i, b)
+        vec_set(v, n - 1 - i, a)
+        i: i + 1
+    return v
+
+vec_sort v:
+    n: vec_len(v)
+    i: 1
+    as long as i < n
+        k: vec_get(v, i)
+        j: i - 1
+        done: 0
+        as long as done is 0
+            if j < 0
+                done: 1
+            if not
+                if vec_get(v, j) <= k
+                    done: 1
+                if not
+                    vec_set(v, j + 1, vec_get(v, j))
+                    j: j - 1
+        vec_set(v, j + 1, k)
+        i: i + 1
+    return v

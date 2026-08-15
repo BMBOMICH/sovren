@@ -1,0 +1,30 @@
+# path.sov — join && split paths
+use string
+
+path_join a b:
+    n: str_len(a)
+    if n is 0
+        return b
+    if peek_byte(a, n - 1) is 47
+        return str_cat(a, b)
+    return str_join3(a, "/", b)
+
+path_base p:
+    n: str_len(p)
+    i: n
+    as long as i > 0
+        i: i - 1
+        if peek_byte(p, i) is 47
+            return str_cut(p, i + 1, n)
+    return p
+
+path_dir p:
+    n: str_len(p)
+    i: n
+    as long as i > 0
+        i: i - 1
+        if peek_byte(p, i) is 47
+            if i is 0
+                return "/"
+            return str_cut(p, 0, i)
+    return "."

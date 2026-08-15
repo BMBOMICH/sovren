@@ -1,0 +1,38 @@
+# presence.sov — who is online, with a last-seen time
+use file
+use string
+use num
+use time
+use list
+
+pres_path dir name:
+    return as text str_join3(dir, "/", str_cat(name, ".on"))
+
+pres_on dir name:
+    return file_write_all(pres_path(dir, name), num_text(time_now()))
+
+pres_off dir name:
+    return file_delete(pres_path(dir, name))
+
+pres_is_on dir name:
+    return file_exists(pres_path(dir, name))
+
+pres_seen dir name:
+    t: file_read_all(pres_path(dir, name))
+    if t is 0
+        return 0
+    return str_num(t)
+
+pres_idle dir name:
+    s: pres_seen(dir, name)
+    if s is 0
+        return 0 - 1
+    return time_now() - s
+
+pres_fresh dir name secs:
+    i: pres_idle(dir, name)
+    if i < 0
+        return 0
+    if i > secs
+        return 0
+    return 1

@@ -1,0 +1,26 @@
+# crc32.sov — CRC-32 checksum (IEEE, as used by zip and png)
+use bit32
+use string
+
+crc32_step c:
+    k: 0
+    r: c
+    as long as k < 8
+        if wand(r, 1) is 1
+            r: wxor(shr(r, 1), 3988292384)
+        if not
+            r: shr(r, 1)
+        k: k + 1
+    return r
+
+crc32_bytes p n:
+    c: 4294967295
+    i: 0
+    as long as i < n
+        c: wxor(c, peek_byte(p, i))
+        c: crc32_step(c)
+        i: i + 1
+    return wxor(c, 4294967295)
+
+crc32_text s:
+    return crc32_bytes(s, str_len(s))

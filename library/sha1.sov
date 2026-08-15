@@ -1,0 +1,105 @@
+# sha1.sov — SHA-1 (legacy checksums, NOT for security)
+use bit32
+use string
+use mem
+use sha256
+
+sha1_rotl x n:
+    return wor(shl(x, n), shr(x, 32 - n))
+
+sha1_bytes data n:
+    tot: n + 9
+    as long as tot % 64 is not 0
+        tot: tot + 1
+    buf: _sov_alloc(tot + 8)
+    i: 0
+    as long as i < n
+        poke_byte(buf, i, peek_byte(data, i))
+        i: i + 1
+    poke_byte(buf, n, 128)
+    i: n + 1
+    as long as i < tot
+        poke_byte(buf, i, 0)
+        i: i + 1
+    bits: n * 8
+    poke_byte(buf, tot - 1, bits % 256)
+    poke_byte(buf, tot - 2, (bits / 256) % 256)
+    poke_byte(buf, tot - 3, (bits / 65536) % 256)
+    poke_byte(buf, tot - 4, (bits / 16777216) % 256)
+    h0: 1732584193
+    h1: 4023233417
+    h2: 2562383102
+    h3: 271733878
+    h4: 3285377520
+    w: _sov_alloc(80 * 8)
+    blk: 0
+    as long as blk < tot
+        t: 0
+        as long as t < 16
+            b0: peek_byte(buf, blk + t * 4)
+            b1: peek_byte(buf, blk + t * 4 + 1)
+            b2: peek_byte(buf, blk + t * 4 + 2)
+            b3: peek_byte(buf, blk + t * 4 + 3)
+            poke_i64(w, t * 8, b0 * 16777216 + b1 * 65536 + b2 * 256 + b3)
+            t: t + 1
+        t: 16
+        as long as t < 80
+            v: wxor(wxor(peek_i64(w, (t-3)*8), peek_i64(w, (t-8)*8)), wxor(peek_i64(w, (t-14)*8), peek_i64(w, (t-16)*8)))
+            poke_i64(w, t * 8, sha1_rotl(v, 1))
+            t: t + 1
+        a: h0
+        b: h1
+        c: h2
+        d: h3
+        e: h4
+        t: 0
+        as long as t < 80
+            if t < 20
+                f: wor(wand(b, c), wand(wnot(b), d))
+                k: 1518500249
+            if not
+                if t < 40
+                    f: wxor(wxor(b, c), d)
+                    k: 1859775393
+                if not
+                    if t < 60
+                        f: wor(wor(wand(b, c), wand(b, d)), wand(c, d))
+                        k: 2400959708
+                    if not
+                        f: wxor(wxor(b, c), d)
+                        k: 3395469782
+            tmp: wadd(wadd(sha1_rotl(a, 5), f), wadd(wadd(e, k), peek_i64(w, t * 8)))
+            e: d
+            d: c
+            c: sha1_rotl(b, 30)
+            b: a
+            a: tmp
+            t: t + 1
+        h0: wadd(h0, a)
+        h1: wadd(h1, b)
+        h2: wadd(h2, c)
+        h3: wadd(h3, d)
+        h4: wadd(h4, e)
+        blk: blk + 64
+    out: _sov_alloc(48)
+    poke_i64(out, 0, h0)
+    poke_i64(out, 8, h1)
+    poke_i64(out, 16, h2)
+    poke_i64(out, 24, h3)
+    poke_i64(out, 32, h4)
+    return out
+
+sha1_hex text:
+    hs: sha1_bytes(text, _sov_strlen(text))
+    out: _sov_alloc(48)
+    i: 0
+    as long as i < 5
+        v: peek_i64(hs, i * 8)
+        j: 0
+        as long as j < 8
+            nib: wand(shr(v, 28 - j * 4), 15)
+            poke_byte(out, i * 8 + j, sha_hexd(nib))
+            j: j + 1
+        i: i + 1
+    poke_byte(out, 40, 0)
+    return as text out

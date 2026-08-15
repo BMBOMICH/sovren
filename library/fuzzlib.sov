@@ -1,0 +1,94 @@
+# fuzz.sov — random program generator and checker, written in Sovren
+# It builds a random arithmetic expression, works out the answer with its own
+# evaluator, writes the same expression as a Sovren program, and compares.
+use rand
+use string
+use num
+use file
+use vec
+use shell
+
+fz_seed: 12345
+
+fz_next:
+    fz_seed: (fz_seed * 1103515245 + 12345) % 2147483648
+    if fz_seed < 0
+        fz_seed: fz_seed + 2147483648
+    return fz_seed
+
+fz_pick n:
+    if n <= 0
+        return 0
+    return fz_next() % n
+
+# --- build an expression and its value at the same time ---
+fz_txt: ""
+fz_val: 0
+
+fz_atom:
+    v: fz_pick(50)
+    fz_txt: num_text(v)
+    return v
+
+fz_build depth:
+    if depth <= 0
+        return fz_atom()
+    if fz_pick(10) < 3
+        return fz_atom()
+    a: fz_build(depth - 1)
+    at: fz_txt
+    op: fz_pick(5)
+    b: fz_build(depth - 1)
+    bt: fz_txt
+    if op is 3
+        if b is 0
+            b: 1
+            bt: "1"
+    if op is 4
+        if b is 0
+            b: 1
+            bt: "1"
+    r: 0
+    ot: " + "
+    if op is 0
+        r: a + b
+    if op is 1
+        r: a - b
+        ot: " - "
+    if op is 2
+        r: a * b
+        ot: " * "
+    if op is 3
+        r: a / b
+        ot: " / "
+    if op is 4
+        r: a % b
+        ot: " % "
+    fz_txt: str_join3("(", str_join3(at, ot, bt), ")")
+    return r
+
+fz_one:
+    e: fz_build(3)
+    src: str_join3("main:\n    print ", fz_txt, "\n")
+    d: file_write_all("/tmp/sovfz.sov", src)
+    d: shell_sh("./sovren /tmp/sovfz.sov -o /tmp/sovfz.bin >/dev/null 2>&1")
+    d: shell_sh("chmod +x /tmp/sovfz.bin 2>/dev/null; /tmp/sovfz.bin > /tmp/sovfz.out 2>&1")
+    got: file_read_all("/tmp/sovfz.out")
+    if got is 0
+        return 0
+    if str_num(str_trim(got)) is e
+        return 1
+    _sov_print("MISMATCH")
+    _sov_print(fz_txt)
+    _sov_print(str_join3("  got  ", str_trim(got), ""))
+    _sov_print(str_join3("  want ", num_text(e), ""))
+    return 0
+
+fz_run n:
+    bad: 0
+    i: 0
+    as long as i < n
+        if fz_one() is 0
+            bad: bad + 1
+        i: i + 1
+    return bad

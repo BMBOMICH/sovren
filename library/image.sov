@@ -1,0 +1,71 @@
+# image.sov — PPM P6 pictures (real pixels, no jpeg)
+# memory: [w i64][h i64][RGB bytes...]
+# needs _sov_list
+use file
+use sys
+use num
+use string
+use mem
+
+img_new w h:
+    n: w * h * 3
+    p: mem_new(16 + n)
+    poke_i64(p, 0, w)
+    poke_i64(p, 8, h)
+    mem_zero(p + 16, n)
+    return p
+
+img_w im:
+    return peek_i64(im, 0)
+
+img_h im:
+    return peek_i64(im, 8)
+
+img_pix im:
+    return im + 16
+
+img_off im x y:
+    return (y * img_w(im) + x) * 3
+
+img_set im x y r g b:
+    if x < 0
+        return 0
+    if y < 0
+        return 0
+    if x >= img_w(im)
+        return 0
+    if y >= img_h(im)
+        return 0
+    i: img_off(im, x, y)
+    p: img_pix(im)
+    poke_byte(p, i, r)
+    poke_byte(p, i + 1, g)
+    poke_byte(p, i + 2, b)
+    return 1
+
+img_r im x y:
+    return peek_byte(img_pix(im), img_off(im, x, y))
+
+img_g im x y:
+    return peek_byte(img_pix(im), img_off(im, x, y) + 1)
+
+img_b im x y:
+    return peek_byte(img_pix(im), img_off(im, x, y) + 2)
+
+img_save path im:
+    w: img_w(im)
+    h: img_h(im)
+    hdr: str_join3("P6\n", num_text(w), " ")
+    hdr: str_join3(hdr, num_text(h), "\n255\n")
+    hn: str_len(hdr)
+    pn: w * h * 3
+    all: mem_new(hn + pn + 1)
+    mem_copy(all, hdr, hn)
+    mem_copy(all + hn, img_pix(im), pn)
+    poke_byte(all, hn + pn, 0)
+    fd: file_open_write(path)
+    if fd < 0
+        return 0
+    sys_write(fd, all, hn + pn)
+    file_close(fd)
+    return 1

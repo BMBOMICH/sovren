@@ -1,0 +1,14 @@
+# id.sov — unique ids
+# needs _sov_list
+use token
+use time
+use num
+use string
+
+id_new:
+    return token_hex(16)
+
+id_time:
+    t: num_text(time_now())
+    r: token_hex(4)
+    return str_join3(t, "-", r)

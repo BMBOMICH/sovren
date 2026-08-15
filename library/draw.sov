@@ -1,0 +1,116 @@
+# draw.sov — lines, boxes and circles on an image
+# Colours are one number: rgb(r, g, b)
+use image
+use math
+
+rgb r g b:
+    return r * 65536 + g * 256 + b
+
+rgb_r c:
+    return (c / 65536) % 256
+
+rgb_g c:
+    return (c / 256) % 256
+
+rgb_b c:
+    return c % 256
+
+draw_dot im x y c:
+    img_set(im, x, y, rgb_r(c), rgb_g(c), rgb_b(c))
+    return im
+
+draw_hline im y x0 x1 c:
+    lo: x0
+    hi: x1
+    if x1 < x0
+        lo: x1
+        hi: x0
+    x: lo
+    as long as x <= hi
+        draw_dot(im, x, y, c)
+        x: x + 1
+    return im
+
+draw_vline im x y0 y1 c:
+    lo: y0
+    hi: y1
+    if y1 < y0
+        lo: y1
+        hi: y0
+    y: lo
+    as long as y <= hi
+        draw_dot(im, x, y, c)
+        y: y + 1
+    return im
+
+draw_box im x0 y0 x1 y1 c:
+    draw_hline(im, y0, x0, x1, c)
+    draw_hline(im, y1, x0, x1, c)
+    draw_vline(im, x0, y0, y1, c)
+    draw_vline(im, x1, y0, y1, c)
+    return im
+
+draw_fill im x0 y0 x1 y1 c:
+    y: y0
+    as long as y <= y1
+        draw_hline(im, y, x0, x1, c)
+        y: y + 1
+    return im
+
+draw_line im x0 y0 x1 y1 c:
+    dx: abs(x1 - x0)
+    dy: abs(y1 - y0)
+    sx: 1
+    if x0 > x1
+        sx: 0 - 1
+    sy: 1
+    if y0 > y1
+        sy: 0 - 1
+    err: dx - dy
+    x: x0
+    y: y0
+    as long as 1 is 1
+        draw_dot(im, x, y, c)
+        if x is x1
+            if y is y1
+                return im
+        e2: err * 2
+        if e2 > 0 - dy
+            err: err - dy
+            x: x + sx
+        if e2 < dx
+            err: err + dx
+            y: y + sy
+    return im
+
+draw_circle im cx cy rad c:
+    x: rad
+    y: 0
+    err: 0
+    as long as x >= y
+        draw_dot(im, cx + x, cy + y, c)
+        draw_dot(im, cx + y, cy + x, c)
+        draw_dot(im, cx - y, cy + x, c)
+        draw_dot(im, cx - x, cy + y, c)
+        draw_dot(im, cx - x, cy - y, c)
+        draw_dot(im, cx - y, cy - x, c)
+        draw_dot(im, cx + y, cy - x, c)
+        draw_dot(im, cx + x, cy - y, c)
+        y: y + 1
+        if err <= 0
+            err: err + 2 * y + 1
+        if not
+            x: x - 1
+            err: err - 2 * x + 1
+    return im
+
+draw_disc im cx cy rad c:
+    y: 0 - rad
+    as long as y <= rad
+        x: 0 - rad
+        as long as x <= rad
+            if x * x + y * y <= rad * rad
+                draw_dot(im, cx + x, cy + y, c)
+            x: x + 1
+        y: y + 1
+    return im

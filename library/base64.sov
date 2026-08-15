@@ -1,0 +1,87 @@
+# base64.sov — encode && decode
+# needs _sov_list
+
+b64_ch v:
+    if v < 26
+        return v + 65
+    if v < 52
+        return v - 26 + 97
+    if v < 62
+        return v - 52 + 48
+    if v is 62
+        return 43
+    return 47
+
+b64_val c:
+    if c > 64
+        if c < 91
+            return c - 65
+    if c > 96
+        if c < 123
+            return c - 97 + 26
+    if c > 47
+        if c < 58
+            return c - 48 + 52
+    if c is 43
+        return 62
+    if c is 47
+        return 63
+    return 0 - 1
+
+b64_encode p n:
+    out: _sov_alloc(n * 2 + 8)
+    i: 0
+    j: 0
+    as long as i < n
+        a: peek_byte(p, i)
+        b: 0
+        c: 0
+        left: n - i
+        if left > 1
+            b: peek_byte(p, i + 1)
+        if left > 2
+            c: peek_byte(p, i + 2)
+        x: a * 65536 + b * 256 + c
+        poke_byte(out, j, b64_ch(x / 262144))
+        poke_byte(out, j + 1, b64_ch((x / 4096) % 64))
+        if left is 1
+            poke_byte(out, j + 2, 61)
+            poke_byte(out, j + 3, 61)
+        if not
+            poke_byte(out, j + 2, b64_ch((x / 64) % 64))
+            if left is 2
+                poke_byte(out, j + 3, 61)
+            if not
+                poke_byte(out, j + 3, b64_ch(x % 64))
+        j: j + 4
+        i: i + 3
+    poke_byte(out, j, 0)
+    return as text out
+
+b64_decode s:
+    n: _sov_strlen(s)
+    out: _sov_alloc(n + 1)
+    i: 0
+    j: 0
+    as long as i + 3 < n
+        va: b64_val(peek_byte(s, i))
+        vb: b64_val(peek_byte(s, i + 1))
+        vc: b64_val(peek_byte(s, i + 2))
+        vd: b64_val(peek_byte(s, i + 3))
+        if va < 0
+            i: n
+        if not
+            if vb < 0
+                i: n
+            if not
+                poke_byte(out, j, va * 4 + vb / 16)
+                j: j + 1
+                if peek_byte(s, i + 2) is not 61
+                    poke_byte(out, j, (vb % 16) * 16 + vc / 4)
+                    j: j + 1
+                if peek_byte(s, i + 3) is not 61
+                    poke_byte(out, j, (vc % 4) * 64 + vd)
+                    j: j + 1
+                i: i + 4
+    poke_byte(out, j, 0)
+    return as text out

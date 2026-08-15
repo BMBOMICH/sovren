@@ -1,0 +1,15 @@
+# count.sov — count a byte in text
+# needs _sov_list
+
+count_byte s b:
+    n: _sov_strlen(s)
+    i: 0
+    c: 0
+    as long as i < n
+        if peek_byte(s, i) is b
+            c: c + 1
+        i: i + 1
+    return c
+
+count_lines s:
+    return count_byte(s, 10)

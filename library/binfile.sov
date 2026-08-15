@@ -1,0 +1,56 @@
+# binfile.sov — read and write raw binary
+use file
+use sys
+use mem
+use string
+
+bf_read path:
+    return file_read_all(path)
+
+bf_size path:
+    fd: file_open_read(path)
+    if fd < 0
+        return 0 - 1
+    n: sys_seek(fd, 0, 2)
+    file_close(fd)
+    return n
+
+bf_write path p n:
+    fd: file_open_write(path)
+    if fd < 0
+        return 0
+    sys_write(fd, p, n)
+    file_close(fd)
+    return 1
+
+bf_u8 p i:
+    return peek_byte(p, i)
+
+bf_u16le p i:
+    return peek_byte(p, i) + peek_byte(p, i + 1) * 256
+
+bf_u32le p i:
+    return bf_u16le(p, i) + bf_u16le(p, i + 2) * 65536
+
+bf_u16be p i:
+    return peek_byte(p, i) * 256 + peek_byte(p, i + 1)
+
+bf_u32be p i:
+    return bf_u16be(p, i) * 65536 + bf_u16be(p, i + 2)
+
+bf_put_u16le p i v:
+    poke_byte(p, i, v % 256)
+    poke_byte(p, i + 1, (v / 256) % 256)
+    return p
+
+bf_put_u32le p i v:
+    bf_put_u16le(p, i, v % 65536)
+    bf_put_u16le(p, i + 2, (v / 65536) % 65536)
+    return p
+
+bf_put_u32be p i v:
+    poke_byte(p, i, (v / 16777216) % 256)
+    poke_byte(p, i + 1, (v / 65536) % 256)
+    poke_byte(p, i + 2, (v / 256) % 256)
+    poke_byte(p, i + 3, v % 256)
+    return p

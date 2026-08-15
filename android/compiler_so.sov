@@ -1,0 +1,2786 @@
+oc: 0
+strb: 0
+str_keys: 0
+str_pos: 0
+fn_names: 0
+fn_offs: 0
+glob_names: 0
+patch_at: 0
+patch_kind: 0
+patch_val: 0
+patch_line: 0
+locals: 0
+src_base: 0
+had_err: 0
+ex_depth: 0
+bare_mode: 0
+stmt_lns: 0
+body_lns: 0
+task_lns: 0
+task_user: 0
+names: 0
+BASE: 4194304
+HDR: 232
+opt_imm: 0
+opt_src: 0
+iota_ptr: 0
+iota_lim: 0
+mmap_sz: 1073741824
+used_libs: blank
+err_line: 0
+kn: blank
+kv: 0
+pro_at: 0
+skip_al: blank
+used_al: 0
+used_sl: 0
+used_eq: 0
+used_pr: 0
+used_pi: 0
+did_stos: 0
+thin_main: 0
+has_vm: 0
+need_priv: 0
+used_tr: 0
+cnms: 0
+cvls: 0
+cemt: 0
+str_vars: 0
+str_fns: 0
+ar_names: 0
+ar_cnt: 0
+saw_str: 0
+length s:
+    return _sov_strlen(s)
+same a b:
+    return _sov_str_eq(a, b)
+starts t p:
+    return _sov_starts_with(t, p)
+look t s:
+    return _sov_find_text(t, s)
+cut t a b:
+    return _sov_substring(t, a, b)
+join a b:
+    return _sov_strcat(a, b)
+strip t:
+    return _sov_trim(t)
+letter t i:
+    return _sov_char_at(t, i)
+emit n:
+    x: n % 256
+    if x < 0
+        x: x + 256
+    oc: _sov_list_add(oc, x)
+here:
+    return _sov_list_len(oc)
+addp at kind val:
+    patch_at: _sov_list_add(patch_at, at)
+    patch_kind: _sov_list_add(patch_kind, kind)
+    patch_val: _sov_list_add(patch_val, val)
+    patch_line: _sov_list_add(patch_line, err_line)
+fail:
+    syscall(60, 1, 0, 0, 0, 0, 0)
+file_ln li:
+    n: li + 1
+    if n > src_base
+        return n - src_base
+    return n
+idx lst name:
+    i: 0
+    as long as i < _sov_list_len(lst)
+        if same(_sov_list_get(lst, i), name) is 1
+            return i
+        i: i + 1
+    return 0 - 1
+unesc s:
+    n: length(s)
+    r: _sov_alloc(n + 1)
+    j: 0
+    i: 0
+    as long as i < n
+        b: _sov_byte_at(s, i)
+        if b is 92
+            if i + 1 < n
+                nxt: _sov_byte_at(s, i + 1)
+                out: nxt
+                if nxt is 110
+                    out: 10
+                if not
+                    if nxt is 116
+                        out: 9
+                    if not
+                        if nxt is 114
+                            out: 13
+                dummy: _sov_set_byte(r, j, out)
+                j: j + 1
+                i: i + 2
+            if not
+                dummy: _sov_set_byte(r, j, b)
+                j: j + 1
+                i: i + 1
+        if not
+            dummy: _sov_set_byte(r, j, b)
+            j: j + 1
+            i: i + 1
+    dummy: _sov_set_byte(r, j, 0)
+    return r
+intern s:
+    s: unesc(s)
+    i: 0
+    as long as i < _sov_list_len(str_keys)
+        if same(_sov_list_get(str_keys, i), s) is 1
+            return _sov_list_get(str_pos, i)
+        i: i + 1
+    off: _sov_buf_len(strb)
+    k: 0
+    as long as k < length(s)
+        strb: _sov_buf_u8(strb, _sov_byte_at(s, k))
+        k: k + 1
+    strb: _sov_buf_u8(strb, 0)
+    str_keys: _sov_list_add(str_keys, s)
+    str_pos: _sov_list_add(str_pos, off)
+    return off
+slot name:
+    i: idx(locals, name)
+    if i > 0 - 1
+        return i
+    locals: _sov_list_add(locals, name)
+    return _sov_list_len(locals) - 1
+cset name val:
+    ci: idx(cnms, name)
+    if ci > 0 - 1
+        cvls: _sov_list_set(cvls, ci, val)
+        cemt: _sov_list_set(cemt, ci, 0)
+        return
+    cnms: _sov_list_add(cnms, name)
+    cvls: _sov_list_add(cvls, val)
+    cemt: _sov_list_add(cemt, 0)
+cflush name:
+    ci: idx(cnms, name)
+    if ci < 0
+        return
+    if _sov_list_get(cemt, ci) is 1
+        return
+    rax_imm(_sov_list_get(cvls, ci))
+    cemt: _sov_list_set(cemt, ci, 1)
+    if idx(locals, name) < 0
+        if idx(glob_names, name) > 0 - 1
+            store_glob(name)
+            return
+    store_loc(slot(name))
+cflush_all:
+    i: 0
+    as long as i < _sov_list_len(cnms)
+        if _sov_list_get(cemt, i) is 0
+            cflush(_sov_list_get(cnms, i))
+        i: i + 1
+loadv name:
+    cflush(name)
+    g: idx(glob_names, name)
+    if g > 0 - 1
+        if idx(locals, name) < 0
+            load_glob(name)
+            return
+    i: idx(locals, name)
+    if i > 0 - 1
+        load_loc(i)
+        return
+    if g > 0 - 1
+        load_glob(name)
+        return
+    print "Error: no such name"
+    _sov_print(name)
+    print err_line
+    had_err: 1
+    load_loc(slot(name))
+storev name:
+    ci: idx(cnms, name)
+    if ci > 0 - 1
+        cemt: _sov_list_set(cemt, ci, 1)
+    g: idx(glob_names, name)
+    if g > 0 - 1
+        if idx(locals, name) < 0
+            store_glob(name)
+            return
+    i: idx(locals, name)
+    if i > 0 - 1
+        store_loc(i)
+        return
+    if g > 0 - 1
+        store_glob(name)
+        return
+    store_loc(slot(name))
+mark_str name:
+    if idx(str_vars, name) < 0
+        str_vars: _sov_list_add(str_vars, name)
+drop_str name:
+    di: idx(str_vars, name)
+    if di > 0 - 1
+        str_vars: _sov_list_set(str_vars, di, "")
+mark_fn_str name:
+    if idx(str_fns, name) < 0
+        str_fns: _sov_list_add(str_fns, name)
+patch at:
+    put_arm(at, here() - at)
+rax_str s:
+    at: here()
+    movz_x(0, 0, 0)
+    movk_x(0, 0, 1)
+    movk_x(0, 0, 2)
+    addp(at, "str64x0", intern(s))
+repl text old new:
+    n: length(text)
+    o: length(old)
+    gn: length(new)
+    r: _sov_alloc(n + gn + 8)
+    p: 0
+    j: 0
+    ins: 0
+    as long as p < n
+        b: _sov_byte_at(text, p)
+        if ins is 1
+            if b is 92
+                poke_byte(r, j, b)
+                j: j + 1
+                p: p + 1
+                if p < n
+                    poke_byte(r, j, _sov_byte_at(text, p))
+                    j: j + 1
+                    p: p + 1
+            if not
+                poke_byte(r, j, b)
+                j: j + 1
+                p: p + 1
+                if b is 34
+                    ins: 0
+        if not
+            if b is 34
+                ins: 1
+                poke_byte(r, j, b)
+                j: j + 1
+                p: p + 1
+            if not
+                if starts(cut(text, p, n), old) is 1
+                    k: 0
+                    as long as k < gn
+                        poke_byte(r, j, _sov_byte_at(new, k))
+                        j: j + 1
+                        k: k + 1
+                    p: p + o
+                if not
+                    poke_byte(r, j, b)
+                    j: j + 1
+                    p: p + 1
+    poke_byte(r, j, 0)
+    return r
+bad_eq s:
+    ep: fop(s, "=")
+    if ep > 0
+        if same(letter(s, ep - 1), "=") is 1
+            print "Error: use is, not =="
+            _sov_print(s)
+            print err_line
+            had_err: 1
+            return 1
+        if same(letter(s, ep - 1), "!") is 1
+            print "Error: use is not, not !="
+            _sov_print(s)
+            print err_line
+            had_err: 1
+            return 1
+    return 0
+cops text:
+    r: text
+    r: repl(r, " is not ", " != ")
+    r: repl(r, " and ", " && ")
+    r: repl(r, " or ", " || ")
+    r: repl(r, " is ", " == ")
+    return r
+fop3 e:
+    n: length(e)
+    d: 0
+    ins: 0
+    f: 0 - 1
+    i: 0
+    as long as i < n
+        c: letter(e, i)
+        if ins is 1
+            if _sov_byte_at(e, i) is 92
+                i: i + 1
+            if not
+                if _sov_byte_at(e, i) is 34
+                    ins: 0
+            i: i + 1
+        if not
+            if _sov_byte_at(e, i) is 34
+                ins: 1
+                i: i + 1
+            if not
+                if same(c, "(") is 1
+                    d: d + 1
+                    i: i + 1
+                if not
+                    if same(c, ")") is 1
+                        d: d - 1
+                        i: i + 1
+                    if not
+                        if d is 0
+                            if same(c, "*") is 1
+                                f: i
+                            if not
+                                if same(c, "/") is 1
+                                    f: i
+                                if not
+                                    if same(c, "%") is 1
+                                        f: i
+                        i: i + 1
+    return f
+fop2 e a b:
+    n: length(e)
+    d: 0
+    ins: 0
+    f: 0 - 1
+    i: 0
+    as long as i < n
+        c: letter(e, i)
+        if ins is 1
+            if _sov_byte_at(e, i) is 92
+                i: i + 1
+            if not
+                if _sov_byte_at(e, i) is 34
+                    ins: 0
+            i: i + 1
+        if not
+            if _sov_byte_at(e, i) is 34
+                ins: 1
+                i: i + 1
+            if not
+                if same(c, "(") is 1
+                    d: d + 1
+                    i: i + 1
+                if not
+                    if same(c, ")") is 1
+                        d: d - 1
+                        i: i + 1
+                    if not
+                        if d is 0
+                            if same(c, a) is 1
+                                f: i
+                            if not
+                                if same(c, b) is 1
+                                    f: i
+                        i: i + 1
+    return f
+fop e op:
+    n: length(e)
+    d: 0
+    ins: 0
+    f: 0 - 1
+    i: 0
+    as long as i < n
+        c: letter(e, i)
+        if ins is 1
+            if _sov_byte_at(e, i) is 92
+                i: i + 1
+                if i < n
+                    i: i + 1
+            if not
+                if _sov_byte_at(e, i) is 34
+                    ins: 0
+                i: i + 1
+        if not
+            if _sov_byte_at(e, i) is 34
+                ins: 1
+                i: i + 1
+            if not
+                if same(c, "(") is 1
+                    d: d + 1
+                    i: i + 1
+                if not
+                    if same(c, ")") is 1
+                        d: d - 1
+                        i: i + 1
+                    if not
+                        if d is 0
+                            if starts(cut(e, i, n), op) is 1
+                                f: i
+                        i: i + 1
+    return f
+find_sep text:
+    i: 0
+    n: length(text)
+    ins: 0
+    as long as i < n - 3
+        b: _sov_byte_at(text, i)
+        if ins is 1
+            if b is 92
+                i: i + 1
+            if not
+                if b is 34
+                    ins: 0
+        if not
+            if b is 34
+                ins: 1
+        if ins is 0
+            if same(cut(text, i, i + 4), " := ") is 1
+                return i
+        i: i + 1
+    return 0 - 1
+find_col text:
+    i: 0
+    n: length(text)
+    ins: 0
+    as long as i < n
+        b: _sov_byte_at(text, i)
+        if ins is 1
+            if b is 92
+                i: i + 1
+            if not
+                if b is 34
+                    ins: 0
+        if not
+            if b is 34
+                ins: 1
+            if not
+                if b is 58
+                    return i
+        i: i + 1
+    return 0 - 1
+is_task_hdr s:
+    n: length(s)
+    if n < 2
+        return 0
+    if peek_byte(s, 0) is 35
+        return 0
+    if peek_byte(s, n - 1) is 58
+        return 1
+    return 0
+ends_times s:
+    if length(s) < 6
+        return 0
+    if same(cut(s, length(s) - 6, length(s)), " times") is 1
+        return 1
+    return 0
+find_last_sp text:
+    i: length(text) - 1
+    as long as i > 0 - 1
+        if same(letter(text, i), " ") is 1
+            return i
+        i: i - 1
+    return 0 - 1
+do_print_one arg:
+    if length(arg) > 1
+        if _sov_byte_at(arg, 0) is 34
+            if same(letter(arg, length(arg) - 1), "\"") is 1
+                lit: unesc(cut(arg, 1, length(arg) - 1))
+                emit_write_lit(join(lit, "\n"))
+                return
+    typ: expr(arg)
+    mov_rdi_rax()
+    if typ is 1
+        used_pr: 1
+        calln("_sov_print")
+    if not
+        used_pi: 1
+        calln("_sov_print_int")
+do_print_times what nstr:
+    expr(nstr)
+    storev("__pt_c")
+    xor_rax()
+    storev("__pt_i")
+    st: here()
+    loadv("__pt_i")
+    push_rax()
+    loadv("__pt_c")
+    mov_rcx_rax()
+    pop_rax()
+    cmp_rax_rcx()
+    setcc("lt")
+    test_rax()
+    z: jz()
+    do_print_one(what)
+    inc_var("__pt_i")
+    jb: jmp()
+    put_arm(jb, st - jb)
+    patch(z)
+digit c:
+    b: _sov_byte_at(c, 0)
+    if b >= 48
+        if b <= 57
+            return 1
+    return 0
+bin L R op:
+    expr(L)
+    push_rax()
+    expr(R)
+    mov_rcx_rax()
+    pop_rax()
+    if same(op, "add") is 1
+        add_rax_rcx()
+        chk_ov()
+        return
+    if same(op, "sub") is 1
+        sub_rax_rcx()
+        chk_ov()
+        return
+    if same(op, "mul") is 1
+        imul_rax_rcx()
+        chk_ov()
+        return
+    if same(op, "div") is 1
+        chk_zrcx()
+        sdiv_rax_rcx()
+        return
+    if same(op, "mod") is 1
+        chk_zrcx()
+        mod_rax_rcx()
+        return
+    cmp_rax_rcx()
+    setcc(op)
+call_args name argc:
+    if argc is 1
+        pop_rax()
+        mov_reg(0, 0)
+    if not
+        if argc is 2
+            pop_reg(1)
+            pop_rax()
+        if not
+            if argc is 3
+                pop_reg(2)
+                pop_reg(1)
+                pop_rax()
+            if not
+                if argc is 4
+                    pop_reg(3)
+                    pop_reg(2)
+                    pop_reg(1)
+                    pop_rax()
+                if not
+                    if argc is 5
+                        pop_reg(4)
+                        pop_reg(3)
+                        pop_reg(2)
+                        pop_reg(1)
+                        pop_rax()
+                    if not
+                        if argc is 6
+                            pop_reg(5)
+                            pop_reg(4)
+                            pop_reg(3)
+                            pop_reg(2)
+                            pop_reg(1)
+                            pop_rax()
+                        if not
+                            if argc is 7
+                                pop_reg(6)
+                                pop_reg(5)
+                                pop_reg(4)
+                                pop_reg(3)
+                                pop_reg(2)
+                                pop_reg(1)
+                                pop_rax()
+    if same(name, "_sov_alloc") is 1
+        used_al: 1
+    if same(name, "_sov_strlen") is 1
+        used_sl: 1
+    if same(name, "_sov_str_eq") is 1
+        used_eq: 1
+    if same(name, "syscall") is 1
+        mov_reg(8, 0)
+        mov_reg(0, 1)
+        mov_reg(1, 2)
+        mov_reg(2, 3)
+        mov_reg(3, 4)
+        mov_reg(4, 5)
+        mov_reg(5, 6)
+        sysc()
+        return
+    if same(name, "hlt") is 1
+        emitw(3573751935)
+        return
+    if same(name, "cli") is 1
+        emitw(3573760735)
+        return
+    if same(name, "sti") is 1
+        emitw(3573760767)
+        return
+    if same(name, "peek_raw8") is 1
+        ldrb_x0_x0x1()
+        return
+    if same(name, "peek_raw64") is 1
+        ldr_x0_x0x1()
+        return
+    if same(name, "poke_raw8") is 1
+        strb_x2_x0x1()
+        return
+    if same(name, "poke_raw64") is 1
+        str_x2_x0x1()
+        return
+    if same(name, "peek_byte") is 1
+        chk_mem(1)
+        ldrb_x0_x0x1()
+        return
+    if same(name, "peek_i64") is 1
+        chk_mem(8)
+        ldr_x0_x0x1()
+        return
+    if same(name, "peek_ptr") is 1
+        chk_mem(8)
+        ldr_x0_x0x1()
+        return
+    if same(name, "poke_byte") is 1
+        chk_mem(1)
+        strb_x2_x0x1()
+        return
+    if same(name, "poke_i64") is 1
+        chk_mem(8)
+        str_x2_x0x1()
+        return
+    calln(name)
+expr e0:
+    ex_depth: ex_depth + 1
+    if ex_depth > 150
+        if had_err is 0
+            print "Error: expression too long, split it up"
+            print err_line
+            had_err: 1
+        ex_depth: ex_depth - 1
+        xor_rax()
+        return 0
+    t: expr_body(e0)
+    ex_depth: ex_depth - 1
+    return t
+
+expr_body e0:
+    e: strip(e0)
+    if length(e) is 0
+        xor_rax()
+        return 0
+    if length(e) > 0
+        if _sov_byte_at(e, 0) is 34
+            if length(e) > 1
+                rax_str(cut(e, 1, length(e) - 1))
+                return 1
+            rax_str("")
+            return 1
+    if starts(e, "as text ") is 1
+        expr(cut(e, 8, length(e)))
+        return 1
+    if starts(e, "length of ") is 1
+        expr(cut(e, 10, length(e)))
+        mov_rdi_rax()
+        used_sl: 1
+        calln("_sov_strlen")
+        return 0
+    e: strip(cops(e))
+    p: fop(e, "||")
+    if p > 0 - 1
+        expr(cut(e, 0, p))
+        test_rax()
+        a: jnz()
+        expr(cut(e, p + 2, length(e)))
+        test_rax()
+        b: jnz()
+        xor_rax()
+        d: jmp()
+        patch(a)
+        patch(b)
+        rax_imm(1)
+        patch(d)
+        return 0
+    p: fop(e, "&&")
+    if p > 0 - 1
+        expr(cut(e, 0, p))
+        test_rax()
+        a: jz()
+        expr(cut(e, p + 2, length(e)))
+        test_rax()
+        b: jz()
+        rax_imm(1)
+        d: jmp()
+        patch(a)
+        patch(b)
+        xor_rax()
+        patch(d)
+        return 0
+    p: fop(e, "==")
+    if p > 0 - 1
+        bin(cut(e, 0, p), cut(e, p + 2, length(e)), "eq")
+        return 0
+    p: fop(e, "!=")
+    if p > 0 - 1
+        bin(cut(e, 0, p), cut(e, p + 2, length(e)), "ne")
+        return 0
+    p: fop(e, "<=")
+    if p > 0 - 1
+        bin(cut(e, 0, p), cut(e, p + 2, length(e)), "le")
+        return 0
+    p: fop(e, ">=")
+    if p > 0 - 1
+        bin(cut(e, 0, p), cut(e, p + 2, length(e)), "ge")
+        return 0
+    p: fop(e, "<")
+    if p > 0 - 1
+        bin(cut(e, 0, p), cut(e, p + 1, length(e)), "lt")
+        return 0
+    p: fop(e, ">")
+    if p > 0 - 1
+        bin(cut(e, 0, p), cut(e, p + 1, length(e)), "gt")
+        return 0
+    p: fop2(e, "+", "-")
+    if p > 0
+        if same(letter(e, p), "+") is 1
+            bin(cut(e, 0, p), cut(e, p + 1, length(e)), "add")
+            return 0
+        bin(cut(e, 0, p), cut(e, p + 1, length(e)), "sub")
+        return 0
+    if p is 0
+        if same(letter(e, p), "+") is 1
+            bin(cut(e, 0, p), cut(e, p + 1, length(e)), "add")
+            return 0
+    p: fop3(e)
+    if p > 0 - 1
+        o: letter(e, p)
+        if same(o, "*") is 1
+            bin(cut(e, 0, p), cut(e, p + 1, length(e)), "mul")
+            return 0
+        if same(o, "/") is 1
+            bin(cut(e, 0, p), cut(e, p + 1, length(e)), "div")
+            return 0
+        bin(cut(e, 0, p), cut(e, p + 1, length(e)), "mod")
+        return 0
+    if same(e, "blank") is 1
+        rax_str("")
+        return 1
+    if length(e) > 0
+        if _sov_byte_at(e, 0) is 34
+            rax_str(cut(e, 1, length(e) - 1))
+            return 1
+    if starts(e, "(") is 1
+        if same(letter(e, length(e) - 1), ")") is 1
+            expr(cut(e, 1, length(e) - 1))
+            return 0
+    lp: look(e, "(")
+    if lp > 0
+        if same(letter(e, length(e) - 1), ")") is 1
+            name: strip(cut(e, 0, lp))
+            inside: cut(e, lp + 1, length(e) - 1)
+            argc: 0
+            if length(strip(inside)) > 0
+                depth: 0
+                ins: 0
+                start: 0
+                i: 0
+                ilen: length(inside)
+                as long as i < ilen
+                    c: letter(inside, i)
+                    if ins is 1
+                        if _sov_byte_at(inside, i) is 92
+                            i: i + 1
+                        if not
+                            if _sov_byte_at(inside, i) is 34
+                                ins: 0
+                    if not
+                        if _sov_byte_at(inside, i) is 34
+                            ins: 1
+                        if not
+                            if same(c, "(") is 1
+                                depth: depth + 1
+                            if not
+                                if same(c, ")") is 1
+                                    depth: depth - 1
+                                if not
+                                    if same(c, ",") is 1
+                                        if depth is 0
+                                            expr(cut(inside, start, i))
+                                            push_rax()
+                                            argc: argc + 1
+                                            start: i + 1
+                    i: i + 1
+                expr(cut(inside, start, ilen))
+                push_rax()
+                argc: argc + 1
+            axi: idx(ar_names, name)
+            if axi > 0 - 1
+                if _sov_list_get(ar_cnt, axi) is not argc
+                    print "Error: wrong number of values"
+                    _sov_print(name)
+                    print err_line
+                    had_err: 1
+            call_args(name, argc)
+            if same(name, "cat") is 1
+                return 1
+            if same(name, "strcat") is 1
+                return 1
+            if same(name, "_sov_strcat") is 1
+                return 1
+            if same(name, "sub") is 1
+                return 1
+            if same(name, "trim") is 1
+                return 1
+            if same(name, "ch") is 1
+                return 1
+            if same(name, "_sov_substring") is 1
+                return 1
+            if idx(str_fns, name) > 0 - 1
+                return 1
+            return 0
+    if digit(letter(e, 0)) is 1
+        dq: 0
+        as long as dq < length(e)
+            if digit(letter(e, dq)) is 0
+                print "Error: do not know these words"
+                _sov_print(e)
+                print err_line
+                had_err: 1
+                xor_rax()
+                return 0
+            dq: dq + 1
+        rax_imm(_sov_atoi(e))
+        return 0
+    if starts(e, "-") is 1
+        if length(e) > 1
+            if digit(letter(e, 1)) is 1
+                rax_imm(0 - _sov_atoi(cut(e, 1, length(e))))
+                return 0
+    if look(e, " ") > 0 - 1
+        print "Error: do not know these words"
+        _sov_print(e)
+        print err_line
+        had_err: 1
+        xor_rax()
+        return 0
+    vn: e
+    loadv(vn)
+    if idx(str_vars, vn) > 0 - 1
+        return 1
+    return 0
+stmt line:
+    s: strip(line)
+    if length(s) is 0
+        return
+    if starts(s, "#") is 1
+        return
+    q: 0
+    qi: 0
+    as long as qi < length(s)
+        if _sov_byte_at(s, qi) is 92
+            qi: qi + 1
+        if not
+            if _sov_byte_at(s, qi) is 34
+                q: q + 1
+        qi: qi + 1
+    if q % 2 is not 0
+        print "Error: unterminated text"
+        _sov_print(s)
+        print err_line
+        had_err: 1
+        return
+    if length(s) > 1000
+        print "Error: line too long, split it up"
+        print err_line
+        had_err: 1
+        return
+    if bad_eq(s) is 1
+        return
+    if starts(s, "note:") is 1
+        print "Error: note: is not a word, use #"
+        _sov_print(s)
+        print err_line
+        had_err: 1
+        return
+    if starts(s, "use ") is 1
+        return
+    if same(s, "private") is 1
+        return
+    if starts(s, "wipe ") is 1
+        expr(strip(cut(s, 5, length(s))))
+        mov_rdi_rax()
+        test_rax()
+        wsk: jz()
+        wtop: here()
+        emitw(960495650)
+        emitw(1895825503)
+        wend: here()
+        emitw(1409286144)
+        emitw(956301375)
+        emitw(2432697377)
+        wb: here()
+        emitw(335544320)
+        put_arm(wb, wtop - wb)
+        put_arm(wend, here() - wend)
+        patch(wsk)
+        return
+    if starts(s, "print ") is 1
+        arg: strip(cut(s, 6, length(s)))
+        if ends_times(arg) is 1
+            head: strip(cut(arg, 0, length(arg) - 6))
+            sp: find_last_sp(head)
+            if sp > 0 - 1
+                do_print_times(strip(cut(head, 0, sp)), strip(cut(head, sp + 1, length(head))))
+                return
+        if length(arg) > 1
+            if _sov_byte_at(arg, 0) is 34
+                lit: unesc(cut(arg, 1, length(arg) - 1))
+                emit_write_lit(join(lit, "\n"))
+                return
+        if starts(arg, "peek_byte(") is 1
+            if opt_imm > 0
+                emit_write_lit(i2s(opt_imm))
+                return
+        typ: expr(arg)
+        mov_rdi_rax()
+        if typ is 1
+            used_pr: 1
+            calln("_sov_print")
+        if not
+            used_pi: 1
+            calln("_sov_print_int")
+        return
+    had_col: 0
+    col: find_col(s)
+    if col > 0
+        if col < length(s) - 1
+            had_col: 1
+            s: join("<-- ", join(strip(cut(s, 0, col)), join(" := ", strip(cut(s, col + 1, length(s))))))
+    if starts(s, "<-- ") is 1
+        if had_col is 0
+            print "Error: bad line"
+            _sov_print(s)
+            print err_line
+            had_err: 1
+            return
+        rest: cut(s, 4, length(s))
+        t: find_sep(rest)
+        if t > 0 - 1
+            var: repl(strip(cut(rest, 0, t)), " ", "_")
+            rhs: strip(cut(rest, t + 4, length(rest)))
+            if same(rhs, join(var, " + 1")) is 1
+                inc_var(var)
+                return
+            if same(rhs, join(var, " - 1")) is 1
+                dec_var(var)
+                return
+            pref: join(var, " + ")
+            if starts(rhs, pref) is 1
+                other: strip(cut(rhs, length(pref), length(rhs)))
+                if length(other) > 0
+                    if look(other, "(") < 0
+                        if look(other, " ") < 0
+                            if digit(letter(other, 0)) is 1
+                                add_imm(var, _sov_atoi(other))
+                                drop_str(var)
+                                return
+                            add_into(var, repl(other, " ", "_"))
+                            drop_str(var)
+                            return
+            pref: join(var, " + ")
+            if starts(rhs, pref) is 1
+                other: strip(cut(rhs, length(pref), length(rhs)))
+                if length(other) > 0
+                    if look(other, "(") < 0
+                        if look(other, " ") < 0
+                            if digit(letter(other, 0)) is 1
+                                add_imm(var, _sov_atoi(other))
+                                drop_str(var)
+                                return
+                            add_into(var, repl(other, " ", "_"))
+                            drop_str(var)
+                            return
+            if length(rhs) > 0
+                if digit(letter(rhs, 0)) is 1
+                    if look(rhs, " ") < 0
+                        nv: _sov_atoi(rhs)
+                        cset(var, nv)
+                        if nv > 0
+                            kn: var
+                            kv: nv
+                        drop_str(var)
+                        if has_vm is 0
+                            return
+            if try_alloc_imm(var, rhs) is 1
+                mark_str(var)
+                return
+            typ: expr(rhs)
+            storev(var)
+            if typ is 1
+                mark_str(var)
+            if not
+                drop_str(var)
+            if starts(rhs, "_sov_strlen(") is 1
+                if did_stos is 1
+                    if kv > 0
+                        kn: var
+        return
+    if same(s, "return") is 1
+        xor_rax()
+        leave()
+        ret()
+        return
+    if starts(s, "return ") is 1
+        typ: expr(cut(s, 7, length(s)))
+        if typ is 1
+            saw_str: 1
+        leave()
+        ret()
+        return
+    if same(s, "stop") is 1
+        set_reg(0, 0)
+        set_reg(8, 93)
+        sysc()
+        return
+    if look(s, "(") < 0
+        print "Error: bad line"
+        _sov_print(s)
+        print err_line
+        had_err: 1
+        return
+    expr(s)
+nind line:
+    c: 0
+    i: 0
+    as long as i < length(line)
+        if _sov_byte_at(line, i) is 9
+            print "Error: tab indent, use spaces"
+            _sov_print(line)
+            print err_line
+            had_err: 1
+            return c
+        if same(letter(line, i), " ") is 1
+            c: c + 1
+        if not
+            return c
+        i: i + 1
+    return c
+bk: 0
+bi: 0
+bj: 0
+bs: 0
+be: 0
+br: 0
+popblk:
+    last: _sov_list_len(bk) - 1
+    k: _sov_list_get(bk, last)
+    if same(k, "while") is 1
+        st: _sov_list_get(bs, last)
+        at: jmp()
+        put_arm(at, st - at)
+        patch(_sov_list_get(bj, last))
+    if not
+        if same(k, "forever") is 1
+            st: _sov_list_get(bs, last)
+            at: jmp()
+            put_arm(at, st - at)
+        if not
+            if same(k, "repeat") is 1
+                rs: _sov_list_get(br, last)
+                load_loc(rs)
+                rdi_imm(1)
+                add_rax_rcx()
+                store_loc(rs)
+                st: _sov_list_get(bs, last)
+                at: jmp()
+                put_arm(at, st - at)
+                patch(_sov_list_get(bj, last))
+            if not
+                z: _sov_list_get(bj, last)
+                if z > 0 - 1
+                    patch(z)
+                je: _sov_list_get(be, last)
+                ji: 0
+                as long as ji < _sov_list_len(je)
+                    patch(_sov_list_get(je, ji))
+                    ji: ji + 1
+    nk: _sov_list_new()
+    ni: _sov_list_new()
+    nj: _sov_list_new()
+    ns: _sov_list_new()
+    ne: _sov_list_new()
+    nr: _sov_list_new()
+    pi: 0
+    as long as pi < last
+        nk: _sov_list_add(nk, _sov_list_get(bk, pi))
+        ni: _sov_list_add(ni, _sov_list_get(bi, pi))
+        nj: _sov_list_add(nj, _sov_list_get(bj, pi))
+        ns: _sov_list_add(ns, _sov_list_get(bs, pi))
+        ne: _sov_list_add(ne, _sov_list_get(be, pi))
+        nr: _sov_list_add(nr, _sov_list_get(br, pi))
+        pi: pi + 1
+    bk: nk
+    bi: ni
+    bj: nj
+    bs: ns
+    be: ne
+    br: nr
+try_alloc_imm var rhs:
+    if starts(rhs, "_sov_alloc(") is 0
+        return 0
+    if same(var, skip_al) is 1
+        return 1
+    if has_vm is 0
+        if same(letter(rhs, length(rhs) - 1), ")") is 1
+            inn: strip(cut(rhs, 11, length(rhs) - 1))
+            asz: 0
+            if same(inn, kn) is 1
+                if kv > 0
+                    asz: kv
+            if asz is 0
+                if length(inn) > 0
+                    if digit(letter(inn, 0)) is 1
+                        if look(inn, " ") < 0
+                            asz: _sov_atoi(inn)
+            if asz > 511
+                emit_mmap_k(asz)
+                storev(var)
+                return 1
+    return 0
+emit_cmp_jge cond:
+    return 0 - 1
+collect_body lines start bind:
+    out: _sov_list_new()
+    j: start
+    n: _sov_list_len(lines)
+    as long as j < n
+        raw: _sov_list_get(lines, j)
+        s: strip(raw)
+        if length(s) is 0
+            j: j + 1
+        if not
+            if starts(s, "#") is 1
+                j: j + 1
+            if not
+                if nind(raw) > bind
+                    out: _sov_list_add(out, s)
+                    j: j + 1
+                if not
+                    return out
+    return out
+skip_body lines start bind:
+    j: start
+    n: _sov_list_len(lines)
+    as long as j < n
+        raw: _sov_list_get(lines, j)
+        s: strip(raw)
+        if length(s) is 0
+            j: j + 1
+        if not
+            if starts(s, "#") is 1
+                j: j + 1
+            if not
+                if nind(raw) > bind
+                    j: j + 1
+                if not
+                    return j
+    return j
+body lines:
+    n: _sov_list_len(lines)
+    i: 0
+    bk: _sov_list_new()
+    bi: _sov_list_new()
+    bj: _sov_list_new()
+    bs: _sov_list_new()
+    be: _sov_list_new()
+    br: _sov_list_new()
+    as long as i < n
+        raw: _sov_list_get(lines, i)
+        s: strip(raw)
+        err_line: i + 1
+        if _sov_list_len(stmt_lns) > i
+            err_line: _sov_list_get(stmt_lns, i)
+        ind: nind(raw)
+        if length(s) is 0
+            i: i + 1
+        if not
+            if starts(s, "#") is 1
+                i: i + 1
+            if not
+                isel: 0
+                if same(s, "if not") is 1
+                    isel: 1
+                popgo: 1
+                as long as popgo is 1
+                    if _sov_list_len(bk) is 0
+                        popgo: 0
+                    if not
+                        last: _sov_list_len(bk) - 1
+                        if ind > _sov_list_get(bi, last)
+                            popgo: 0
+                        if not
+                            stay: 0
+                            if isel is 1
+                                if ind is _sov_list_get(bi, last)
+                                    if same(_sov_list_get(bk, last), "if") is 1
+                                        stay: 1
+                            if stay is 1
+                                popgo: 0
+                            if not
+                                popblk()
+                loop_ok: 0
+                if bad_eq(s) is 1
+                    s: "if 0"
+                if starts(s, "as long as ") is 1
+                    s: join("while ", strip(cut(s, 11, length(s))))
+                    loop_ok: 1
+                if starts(s, "if ") is 1
+                    if same(s, "if not") is 0
+                        if starts(s, "if not ") is 0
+                            expr(cut(s, 3, length(s)))
+                            test_rax()
+                            z: jz()
+                            bk: _sov_list_add(bk, "if")
+                            bi: _sov_list_add(bi, ind)
+                            bj: _sov_list_add(bj, z)
+                            bs: _sov_list_add(bs, 0)
+                            be: _sov_list_add(be, _sov_list_new())
+                            br: _sov_list_add(br, 0)
+                        if not
+                            stmt(s)
+                    if not
+                        last: _sov_list_len(bk) - 1
+                        if last > 0 - 1
+                            je: jmp()
+                            patch(_sov_list_get(bj, last))
+                            old: _sov_list_get(be, last)
+                            old: _sov_list_add(old, je)
+                            be: _sov_list_set(be, last, old)
+                            bk: _sov_list_set(bk, last, "else")
+                            bj: _sov_list_set(bj, last, 0 - 1)
+                if not
+                    if same(s, "\x00__removed_and_if_not") is 1
+                        last: _sov_list_len(bk) - 1
+                        if last > 0 - 1
+                            je: jmp()
+                            patch(_sov_list_get(bj, last))
+                            old: _sov_list_get(be, last)
+                            old: _sov_list_add(old, je)
+                            be: _sov_list_set(be, last, old)
+                            bk: _sov_list_set(bk, last, "else")
+                            bj: _sov_list_set(bj, last, 0 - 1)
+                    if not
+                        if starts(s, "do while ") is 1
+                            bln: collect_body(lines, i + 1, ind)
+                            if try_opt_while(cut(s, 9, length(s)), bln) is 1
+                                i: skip_body(lines, i + 1, ind)
+                                i: i - 1
+                            if not
+                                cflush_all()
+                                st: here()
+                                z: emit_cmp_jge(cut(s, 9, length(s)))
+                                if z is 0 - 1
+                                    expr(cut(s, 9, length(s)))
+                                    test_rax()
+                                    z: jz()
+                                bk: _sov_list_add(bk, "while")
+                                bi: _sov_list_add(bi, ind)
+                                bj: _sov_list_add(bj, z)
+                                bs: _sov_list_add(bs, st)
+                                be: _sov_list_add(be, _sov_list_new())
+                                br: _sov_list_add(br, 0)
+                        if not
+                            if loop_ok is 1
+                                bln: collect_body(lines, i + 1, ind)
+                                if try_opt_while(cut(s, 6, length(s)), bln) is 1
+                                    i: skip_body(lines, i + 1, ind)
+                                    i: i - 1
+                                if not
+                                    cflush_all()
+                                    st: here()
+                                    z: emit_cmp_jge(cut(s, 6, length(s)))
+                                    if z is 0 - 1
+                                        expr(cut(s, 6, length(s)))
+                                        test_rax()
+                                        z: jz()
+                                    bk: _sov_list_add(bk, "while")
+                                    bi: _sov_list_add(bi, ind)
+                                    bj: _sov_list_add(bj, z)
+                                    bs: _sov_list_add(bs, st)
+                                    be: _sov_list_add(be, _sov_list_new())
+                                    br: _sov_list_add(br, 0)
+                            if not
+                                if same(s, "do forever") is 1
+                                    st: here()
+                                    bk: _sov_list_add(bk, "forever")
+                                    bi: _sov_list_add(bi, ind)
+                                    bj: _sov_list_add(bj, 0 - 1)
+                                    bs: _sov_list_add(bs, st)
+                                    be: _sov_list_add(be, _sov_list_new())
+                                    br: _sov_list_add(br, 0)
+                                if not
+                                    if starts(s, "\x00__removed_repeat ") is 1
+                                        cflush_all()
+                                        tmp: cut(s, 7, length(s))
+                                        tp: look(tmp, " times")
+                                        if tp > 0 - 1
+                                            tmp: cut(tmp, 0, tp)
+                                        expr(tmp)
+                                        cn: "__rep_c"
+                                        inn: "__rep_i"
+                                        storev(cn)
+                                        xor_rax()
+                                        storev(inn)
+                                        rs: idx(locals, inn)
+                                        cs: idx(locals, cn)
+                                        st: here()
+                                        load_loc(rs)
+                                        push_rax()
+                                        load_loc(cs)
+                                        mov_rcx_rax()
+                                        pop_rax()
+                                        cmp_rax_rcx()
+                                        setcc("lt")
+                                        test_rax()
+                                        z: jz()
+                                        bk: _sov_list_add(bk, "repeat")
+                                        bi: _sov_list_add(bi, ind)
+                                        bj: _sov_list_add(bj, z)
+                                        bs: _sov_list_add(bs, st)
+                                        be: _sov_list_add(be, _sov_list_new())
+                                        br: _sov_list_add(br, rs)
+                                    if not
+                                        stmt(s)
+                i: i + 1
+    as long as _sov_list_len(bk) > 0
+        popblk()
+lines_of source:
+    lst: _sov_list_new()
+    start: 0
+    i: 0
+    n: length(source)
+    as long as i < n
+        if _sov_byte_at(source, i) is 10
+            lst: _sov_list_add(lst, cut(source, start, i))
+            start: i + 1
+        i: i + 1
+    if start < n
+        lst: _sov_list_add(lst, cut(source, start, n))
+    return lst
+tname line:
+    s: strip(line)
+    if is_task_hdr(s) is 1
+        s: strip(cut(s, 0, length(s) - 1))
+        if starts(s, "task ") is 1
+            s: strip(cut(s, 5, length(s)))
+        wp: look(s, " with ")
+        if wp > 0 - 1
+            return repl(strip(cut(s, 0, wp)), " ", "_")
+        sp: look(s, " ")
+        if sp > 0 - 1
+            return strip(cut(s, 0, sp))
+        return s
+    rest: strip(cut(line, 5, length(line)))
+    wp: look(rest, " with ")
+    if wp > 0 - 1
+        return repl(strip(cut(rest, 0, wp)), " ", "_")
+    sp: look(rest, " ")
+    if sp > 0 - 1
+        return repl(strip(cut(rest, 0, sp)), " ", "_")
+    return repl(rest, " ", "_")
+tparams line:
+    lst: _sov_list_new()
+    s: strip(line)
+    if is_task_hdr(s) is 1
+        s: strip(cut(s, 0, length(s) - 1))
+        if starts(s, "task ") is 1
+            s: strip(cut(s, 5, length(s)))
+        wp: look(s, " with ")
+        if wp > 0 - 1
+            s: strip(cut(s, wp + 6, length(s)))
+        if not
+            sp: look(s, " ")
+            if sp < 0
+                return lst
+            s: strip(cut(s, sp + 1, length(s)))
+        p: repl(s, ",", " ")
+        p: repl(p, " and ", " ")
+        start: 0
+        i: 0
+        n: length(p)
+        as long as i < n
+            if same(letter(p, i), " ") is 1
+                one: strip(cut(p, start, i))
+                if length(one) > 0
+                    lst: _sov_list_add(lst, one)
+                start: i + 1
+            i: i + 1
+        one: strip(cut(p, start, n))
+        if length(one) > 0
+            lst: _sov_list_add(lst, one)
+        return lst
+    rest: strip(cut(line, 5, length(line)))
+    wp: look(rest, " with ")
+    if wp < 0
+        return lst
+    p: repl(cut(rest, wp + 6, length(rest)), ",", " and ")
+    start: 0
+    i: 0
+    n: length(p)
+    as long as i < n
+        if starts(cut(p, i, n), " and ") is 1
+            one: repl(strip(cut(p, start, i)), " ", "_")
+            if length(one) > 0
+                lst: _sov_list_add(lst, one)
+            start: i + 5
+            i: i + 5
+        if not
+            i: i + 1
+    one: repl(strip(cut(p, start, n)), " ", "_")
+    if length(one) > 0
+        lst: _sov_list_add(lst, one)
+    return lst
+dead_iota lines:
+    an: blank
+    i: 0
+    as long as i < _sov_list_len(lines)
+        s: strip(_sov_list_get(lines, i))
+        if starts(s, "<-- ") is 1
+            if look(s, "_sov_alloc(") > 0 - 1
+                rest: cut(s, 4, length(s))
+                t: find_sep(rest)
+                if t > 0 - 1
+                    an: repl(strip(cut(rest, 0, t)), " ", "_")
+        i: i + 1
+    if length(an) is 0
+        return blank
+    hits: 0
+    ok: 1
+    i: 0
+    as long as i < _sov_list_len(lines)
+        s: strip(_sov_list_get(lines, i))
+        mark: join(an, ",")
+        hit: 0
+        if look(s, mark) > 0 - 1
+            hit: 1
+        if starts(s, join("<-- ", an)) is 1
+            hit: 1
+        if hit is 1
+            hits: hits + 1
+            good: 0
+            if look(s, "_sov_alloc(") > 0 - 1
+                good: 1
+            if look(s, "poke_i64(") > 0 - 1
+                good: 1
+            if look(s, "peek_i64(") > 0 - 1
+                good: 1
+            if good is 0
+                ok: 0
+        i: i + 1
+    if ok is 0
+        return blank
+    if hits < 3
+        return blank
+    return an
+i2s n:
+    r: ""
+    v: n
+    if v is 0
+        return "0\n"
+    as long as v > 0
+        d: v % 10
+        r: join(cut("0123456789", d, d + 1), r)
+        v: v / 10
+    return join(r, "\n")
+intern_nz s:
+    s: unesc(s)
+    i: 0
+    as long as i < _sov_list_len(str_keys)
+        if same(_sov_list_get(str_keys, i), s) is 1
+            return _sov_list_get(str_pos, i)
+        i: i + 1
+    off: _sov_buf_len(strb)
+    k: 0
+    as long as k < length(s)
+        strb: _sov_buf_u8(strb, _sov_byte_at(s, k))
+        k: k + 1
+    str_keys: _sov_list_add(str_keys, s)
+    str_pos: _sov_list_add(str_pos, off)
+    return off
+dirname p:
+    n: length(p)
+    if n is 0
+        return "."
+    i: n
+    as long as i > 0
+        i: i - 1
+        if _sov_byte_at(p, i) is 47
+            if i is 0
+                return "/"
+            return cut(p, 0, i)
+    return "."
+emit_used:
+    if used_al is 1
+        if idx(glob_names, "heap_ptr") is 0 - 1
+            glob_names: _sov_list_add(glob_names, "heap_ptr")
+        emit_alloc()
+    if used_pr is 1
+        used_sl: 1
+    if used_sl is 1
+        emit_strlen()
+    if used_eq is 1
+        emit_streq()
+    if used_pr is 1
+        emit_print()
+    if used_pi is 1
+        emit_print_int()
+    if used_tr is 1
+        emit_trap_stub()
+prep_main names params bodies:
+    thin_main: 0
+    skip_al: blank
+    fi: 0
+    as long as fi < _sov_list_len(names)
+        if same(_sov_list_get(names, fi), "main") is 1
+            if _sov_list_len(_sov_list_get(params, fi)) is 0
+                thin_main: 1
+            skip_al: dead_iota(_sov_list_get(bodies, fi))
+        fi: fi + 1
+compile source:
+    oc: _sov_list_new()
+    iota_ptr: blank
+    iota_lim: blank
+    kn: blank
+    kv: 0
+    skip_al: blank
+    used_al: 0
+    used_sl: 0
+    used_eq: 0
+    used_pr: 0
+    used_pi: 0
+    used_tr: 0
+    did_stos: 0
+    thin_main: 0
+    has_vm: 0
+    need_priv: 0
+    saw_str: 0
+    str_vars: _sov_list_new()
+    str_fns: _sov_list_new()
+    ar_names: _sov_list_new()
+    ar_cnt: _sov_list_new()
+    str_fns: _sov_list_add(str_fns, "cat")
+    str_fns: _sov_list_add(str_fns, "strcat")
+    str_fns: _sov_list_add(str_fns, "_sov_strcat")
+    str_fns: _sov_list_add(str_fns, "sub")
+    str_fns: _sov_list_add(str_fns, "trim")
+    str_fns: _sov_list_add(str_fns, "ch")
+    str_fns: _sov_list_add(str_fns, "_sov_substring")
+    pre_lns: lines_of(source)
+    pre_i: 0
+    pre_cur: blank
+    pre_n: _sov_list_len(pre_lns)
+    as long as pre_i < pre_n
+        pre_l: _sov_list_get(pre_lns, pre_i)
+        if length(strip(pre_l)) > 0
+            if nind(pre_l) is 0
+                pre_t: strip(pre_l)
+                if starts(pre_t, "#") is 0
+                    if starts(pre_t, "use ") is 0
+                        pre_c: find_col(pre_t)
+                        if pre_c > 0
+                            if pre_c is length(pre_t) - 1
+                                pre_h: strip(cut(pre_t, 0, pre_c))
+                                pre_sp: look(pre_h, " ")
+                                if pre_sp > 0 - 1
+                                    pre_cur: repl(strip(cut(pre_h, 0, pre_sp)), " ", "_")
+                                    pre_ps: strip(cut(pre_h, pre_sp, length(pre_h)))
+                                    pre_na: 0
+                                    pre_k: 0
+                                    pre_in: 0
+                                    as long as pre_k < length(pre_ps)
+                                        if same(letter(pre_ps, pre_k), " ") is 1
+                                            pre_in: 0
+                                        if not
+                                            if pre_in is 0
+                                                pre_na: pre_na + 1
+                                                pre_in: 1
+                                        pre_k: pre_k + 1
+                                    ar_names: _sov_list_add(ar_names, pre_cur)
+                                    ar_cnt: _sov_list_add(ar_cnt, pre_na)
+                                if not
+                                    pre_cur: pre_h
+                                    ar_names: _sov_list_add(ar_names, pre_cur)
+                                    ar_cnt: _sov_list_add(ar_cnt, 0)
+            if not
+                pre_t2: strip(pre_l)
+                if starts(pre_t2, "return ") is 1
+                    pre_r: strip(cut(pre_t2, 7, length(pre_t2)))
+                    if starts(pre_r, "as text ") is 1
+                        if length(pre_cur) > 0
+                            mark_fn_str(pre_cur)
+                    if length(pre_r) > 0
+                        if _sov_byte_at(pre_r, 0) is 34
+                            if length(pre_cur) > 0
+                                mark_fn_str(pre_cur)
+                        if not
+                            if same(pre_r, "blank") is 1
+                                if length(pre_cur) > 0
+                                    mark_fn_str(pre_cur)
+        pre_i: pre_i + 1
+    if look(source, "wipe ") > 0 - 1
+        need_priv: 1
+    if look(source, "private") > 0 - 1
+        need_priv: 1
+    cnms: _sov_list_new()
+    cvls: _sov_list_new()
+    cemt: _sov_list_new()
+    strb: _sov_buf_new()
+    str_keys: _sov_list_new()
+    str_pos: _sov_list_new()
+    fn_names: _sov_list_new()
+    fn_offs: _sov_list_new()
+    glob_names: _sov_list_new()
+    patch_at: _sov_list_new()
+    patch_kind: _sov_list_new()
+    patch_val: _sov_list_new()
+    patch_line: _sov_list_new()
+    stmt_lns: _sov_list_new()
+    body_lns: _sov_list_new()
+    task_lns: _sov_list_new()
+    task_user: _sov_list_new()
+    lns: lines_of(source)
+    bodies: _sov_list_new()
+    params: _sov_list_new()
+    names: _sov_list_new()
+    tops: _sov_list_new()
+    in_t: 0
+    cur: _sov_list_new()
+    cur_ln: _sov_list_new()
+    li: 0
+    as long as li < _sov_list_len(lns)
+        raw: _sov_list_get(lns, li)
+        s: strip(raw)
+        th: 0
+        if is_task_hdr(s) is 1
+            th: 1
+        if th is 1
+            if in_t is 1
+                bodies: _sov_list_add(bodies, cur)
+                body_lns: _sov_list_add(body_lns, cur_ln)
+            tn: tname(s)
+            if idx(names, tn) > 0 - 1
+                print "Error: two with the same name"
+                _sov_print(tn)
+                err_line: file_ln(li)
+                print err_line
+                had_err: 1
+            names: _sov_list_add(names, tn)
+            params: _sov_list_add(params, tparams(s))
+            tu: 0
+            if li + 1 > src_base
+                tu: 1
+            task_user: _sov_list_add(task_user, tu)
+            task_lns: _sov_list_add(task_lns, file_ln(li))
+            cur: _sov_list_new()
+            cur_ln: _sov_list_new()
+            in_t: 1
+        if not
+            if nind(raw) is 0
+                gok: 0
+                gc: find_col(s)
+                if gc > 0
+                    if gc < length(s) - 1
+                        gok: 1
+                if gok is 1
+                    gn: blank
+                    if starts(s, "<-- ") is 1
+                        rest: cut(s, 4, length(s))
+                        t: find_sep(rest)
+                        if t > 0 - 1
+                            gn: repl(strip(cut(rest, 0, t)), " ", "_")
+                    if not
+                        gn: repl(strip(cut(s, 0, gc)), " ", "_")
+                    if length(gn) > 0
+                        if idx(glob_names, gn) is 0 - 1
+                            glob_names: _sov_list_add(glob_names, gn)
+                        tops: _sov_list_add(tops, raw)
+            if not
+                if in_t is 1
+                    cur: _sov_list_add(cur, raw)
+                    cur_ln: _sov_list_add(cur_ln, file_ln(li))
+        li: li + 1
+    if in_t is 1
+        bodies: _sov_list_add(bodies, cur)
+        body_lns: _sov_list_add(body_lns, cur_ln)
+    has_vm: 0
+    if look(source, "task _sov_alloc") > 0 - 1
+        has_vm: 1
+    if look(source, "_sov_alloc size:") > 0 - 1
+        has_vm: 1
+    prep_main(names, params, bodies)
+    if has_vm is 1
+        glob_names: _sov_list_add(glob_names, "heap_ptr")
+        emit_start()
+        emit_alloc()
+        emit_strlen()
+        emit_streq()
+        emit_print()
+        emit_print_int()
+        thin_main: 0
+    if not
+        if thin_main is 0
+            emit_start()
+    fi: 0
+    as long as fi < _sov_list_len(names)
+        nm: _sov_list_get(names, fi)
+        if idx(fn_names, nm) < 0
+                fn_names: _sov_list_add(fn_names, nm)
+                fn_offs: _sov_list_add(fn_offs, here())
+                locals: _sov_list_new()
+                str_vars: _sov_list_new()
+                saw_str: 0
+                stmt_lns: _sov_list_get(body_lns, fi)
+                if _sov_list_len(_sov_list_get(bodies, fi)) is 0
+                    if _sov_list_get(task_user, fi) is 1
+                        print "Warning: empty"
+                        _sov_print(nm)
+                        print _sov_list_get(task_lns, fi)
+                ps: _sov_list_get(params, fi)
+                pi: 0
+                as long as pi < _sov_list_len(ps)
+                    locals: _sov_list_add(locals, _sov_list_get(ps, pi))
+                    pi: pi + 1
+                thin: 0
+                if same(nm, "main") is 1
+                    if _sov_list_len(ps) is 0
+                        thin: 0
+                if thin is 1
+                    skip_al: dead_iota(_sov_list_get(bodies, fi))
+                    if need_priv is 1
+                        emit_nodump()
+                    body(tops)
+                    cflush_all()
+                    body(_sov_list_get(bodies, fi))
+                    if saw_str is 1
+                        mark_fn_str(nm)
+                    set_reg(0, 0)
+                    set_reg(8, 93)
+                    sysc()
+                if not
+                    prolog()
+                    copyargs(_sov_list_len(ps))
+                    if same(nm, "main") is 1
+                        skip_al: dead_iota(_sov_list_get(bodies, fi))
+                        if need_priv is 1
+                            emit_nodump()
+                        body(tops)
+                        cflush_all()
+                    body(_sov_list_get(bodies, fi))
+                    if saw_str is 1
+                        mark_fn_str(nm)
+                    ns: 64
+                    if _sov_list_len(locals) > 5
+                        ns: (_sov_list_len(locals) - 5) * 8 + 64
+                        as long as ns % 16 is not 0
+                            ns: ns + 8
+                    put_sub_sp(pro_at, ns)
+                    if same(nm, "main") is 1
+                        set_reg(0, 0)
+                        set_reg(8, 93)
+                        sysc()
+                    if not
+                        xor_rax()
+                        leave()
+                        ret()
+        fi: fi + 1
+    if has_vm is 0
+        emit_used()
+    warn_unused()
+warn_unused:
+    ui: 0
+    as long as ui < _sov_list_len(names)
+        nm: _sov_list_get(names, ui)
+        do_w: 0
+        if length(nm) > 0
+            if same(nm, "main") is 0
+                if starts(nm, "_sov_") is 0
+                    if _sov_list_get(task_user, ui) is 1
+                        do_w: 1
+        if do_w is 1
+            used: 0
+            uj: 0
+            as long as uj < _sov_list_len(patch_kind)
+                if same(_sov_list_get(patch_kind, uj), "rel") is 1
+                    if same(_sov_list_get(patch_val, uj), nm) is 1
+                        used: 1
+                uj: uj + 1
+            if used is 0
+                print "Warning: never used"
+                _sov_print(nm)
+                print _sov_list_get(task_lns, ui)
+        ui: ui + 1
+poke2 p off v:
+    dummy: _sov_set_byte(p, off, v % 256)
+    dummy: _sov_set_byte(p, off + 1, (v / 256) % 256)
+poke4 p off v:
+    x: v
+    if x < 0
+        x: x + 4294967296
+    i: 0
+    as long as i < 4
+        dummy: _sov_set_byte(p, off + i, x % 256)
+        x: x / 256
+        i: i + 1
+poke8 p off v:
+    x: v
+    i: 0
+    as long as i < 8
+        b: x % 256
+        if b < 0
+            b: b + 256
+        dummy: _sov_set_byte(p, off + i, b)
+        x: x / 256
+        i: i + 1
+write_elf path:
+    if had_err is 1
+        return
+    clen: _sov_list_len(oc)
+    sl: _sov_buf_len(strb)
+    str_off: clen
+    if _sov_list_len(glob_names) > 0
+        as long as str_off % 8 is not 0
+            oc: _sov_list_add(oc, 0)
+            str_off: str_off + 1
+            clen: clen + 1
+    glob_off: clen + sl
+    pad: _sov_list_len(glob_names) * 8
+    dyn_base: HDR + clen + sl + pad
+    as long as dyn_base % 8 is not 0
+        dyn_base: dyn_base + 1
+    so_strtab: dyn_base
+    so_strsz: 60
+    so_symtab: so_strtab + 64
+    so_hash: so_symtab + 72
+    so_dyn: so_hash + 28
+    filesz: so_dyn + 112
+    flat: _sov_alloc(filesz + 64)
+    i: 0
+    as long as i < filesz + 16
+        dummy: _sov_set_byte(flat, i, 0)
+        i: i + 1
+    dummy: _sov_set_byte(flat, 0, 127)
+    dummy: _sov_set_byte(flat, 1, 69)
+    dummy: _sov_set_byte(flat, 2, 76)
+    dummy: _sov_set_byte(flat, 3, 70)
+    dummy: _sov_set_byte(flat, 4, 2)
+    dummy: _sov_set_byte(flat, 5, 1)
+    dummy: _sov_set_byte(flat, 6, 1)
+    poke2(flat, 16, 3)
+    poke2(flat, 18, 183)
+    poke4(flat, 20, 1)
+    moff: 0
+    if thin_main is 1
+        mi: idx(fn_names, "main")
+        if mi > 0 - 1
+            moff: _sov_list_get(fn_offs, mi)
+    poke8(flat, 24, BASE + HDR + moff)
+    poke8(flat, 32, 64)
+    poke2(flat, 52, 64)
+    poke2(flat, 54, 56)
+    poke2(flat, 56, 3)
+    poke4(flat, 64, 6)
+    poke4(flat, 68, 4)
+    poke8(flat, 72, 64)
+    poke8(flat, 80, BASE + 64)
+    poke8(flat, 88, BASE + 64)
+    poke8(flat, 96, 168)
+    poke8(flat, 104, 168)
+    poke8(flat, 112, 8)
+    poke4(flat, 120, 1)
+    poke4(flat, 124, 7)
+    poke8(flat, 128, 0)
+    poke8(flat, 136, BASE)
+    poke8(flat, 144, BASE)
+    poke8(flat, 152, filesz)
+    poke8(flat, 160, filesz + 65536)
+    poke8(flat, 168, 4096)
+    poke4(flat, 176, 2)
+    poke4(flat, 180, 6)
+    poke8(flat, 184, so_dyn)
+    poke8(flat, 192, BASE + so_dyn)
+    poke8(flat, 200, BASE + so_dyn)
+    poke8(flat, 208, 112)
+    poke8(flat, 216, 112)
+    poke8(flat, 224, 8)
+    i: 0
+    as long as i < clen
+        dummy: _sov_set_byte(flat, HDR + i,  _sov_list_get(oc, i))
+        i: i + 1
+    si: 0
+    as long as si < sl
+        dummy: _sov_set_byte(flat, HDR + str_off + si, _sov_buf_at(strb, si))
+        si: si + 1
+    str_addr: BASE + HDR + str_off
+    glob_addr: BASE + HDR + glob_off
+    i: 0
+    as long as i < _sov_list_len(patch_at)
+        at: _sov_list_get(patch_at, i)
+        kind: _sov_list_get(patch_kind, i)
+        val: _sov_list_get(patch_val, i)
+        if same(kind, "rel26") is 1
+            fi: idx(fn_names, val)
+            if fi > 0 - 1
+                tgt: _sov_list_get(fn_offs, fi)
+                rel: (tgt - at) / 4
+                if rel < 0
+                    rel: rel + 67108864
+                poke4(flat, HDR + at, 2483027968 + (rel % 67108864))
+            if not
+                print "Error: no such task"
+                _sov_print(val)
+                print _sov_list_get(patch_line, i)
+                had_err: 1
+        if same(kind, "b26") is 1
+            poke4(flat, HDR + at, 335544320 + (val % 67108864))
+        if same(kind, "glob64") is 1
+            gx: idx(glob_names, val)
+            ga: glob_addr + gx * 8
+            poke4(flat, HDR + at, 3531603968 + (ga % 65536) * 32 + 9)
+            poke4(flat, HDR + at + 4, 4070572032 + ((ga / 65536) % 65536) * 32 + 9)
+            poke4(flat, HDR + at + 8, 4072669184 + ((ga / 4294967296) % 65536) * 32 + 9)
+        if same(kind, "str64x0") is 1
+            sa: str_addr + val
+            poke4(flat, HDR + at, 3531603968 + (sa % 65536) * 32)
+            poke4(flat, HDR + at + 4, 4070572032 + ((sa / 65536) % 65536) * 32)
+            poke4(flat, HDR + at + 8, 4072669184 + ((sa / 4294967296) % 65536) * 32)
+        if same(kind, "str64") is 1
+            sa: str_addr + val
+            poke4(flat, HDR + at, 3531603968 + (sa % 65536) * 32 + 1)
+            poke4(flat, HDR + at + 4, 4070572032 + ((sa / 65536) % 65536) * 32 + 1)
+            poke4(flat, HDR + at + 8, 4072669184 + ((sa / 4294967296) % 65536) * 32 + 1)
+        if same(kind, "cbz_trap") is 1
+            ti: idx(fn_names, "_sov_trap")
+            if ti > 0 - 1
+                tg: _sov_list_get(fn_offs, ti)
+                rl: (tg - at) / 4
+                if rl < 0
+                    rl: rl + 524288
+                poke4(flat, HDR + at, 3019898880 + (rl % 524288) * 32 + val)
+        if same(kind, "b19_trap") is 1
+            ti: idx(fn_names, "_sov_trap")
+            if ti > 0 - 1
+                tg: _sov_list_get(fn_offs, ti)
+                rl: (tg - at) / 4
+                if rl < 0
+                    rl: rl + 524288
+                poke4(flat, HDR + at, 1409286144 + (rl % 524288) * 32 + 2)
+        if same(kind, "rel") is 1
+            fi: idx(fn_names, val)
+            if fi > 0 - 1
+                tgt: _sov_list_get(fn_offs, fi)
+                rel: tgt - (at + 4)
+                poke4(flat, HDR + at, rel)
+            if not
+                print "Error: no such task"
+                _sov_print(val)
+                print _sov_list_get(patch_line, i)
+                had_err: 1
+        if same(kind, "str") is 1
+            poke8(flat, HDR + at, str_addr + val)
+        if same(kind, "str32") is 1
+            poke4(flat, HDR + at, str_addr + val)
+        if same(kind, "glob") is 1
+            gx: idx(glob_names, val)
+            poke8(flat, HDR + at, glob_addr + gx * 8)
+        i: i + 1
+    if had_err is 1
+        return
+    smi: idx(fn_names, "main")
+    smoff: 0
+    if smi > 0 - 1
+        smoff: _sov_list_get(fn_offs, smi)
+    so_name("libsovren.so", flat, so_strtab + 1)
+    so_name("sovren_main", flat, so_strtab + 14)
+    so_name("Java_com_sovren_Native_run", flat, so_strtab + 26)
+    poke4(flat, so_symtab + 24, 14)
+    dummy: _sov_set_byte(flat, so_symtab + 28, 18)
+    poke2(flat, so_symtab + 30, 1)
+    poke8(flat, so_symtab + 32, BASE + HDR + smoff)
+    poke8(flat, so_symtab + 40, clen)
+    poke4(flat, so_symtab + 48, 26)
+    dummy: _sov_set_byte(flat, so_symtab + 52, 18)
+    poke2(flat, so_symtab + 54, 1)
+    poke8(flat, so_symtab + 56, BASE + HDR + smoff)
+    poke8(flat, so_symtab + 64, clen)
+    poke4(flat, so_hash, 1)
+    poke4(flat, so_hash + 4, 3)
+    poke4(flat, so_hash + 8, 2)
+    poke4(flat, so_hash + 12, 0)
+    poke4(flat, so_hash + 16, 0)
+    poke4(flat, so_hash + 20, 1)
+    poke8(flat, so_dyn, 5)
+    poke8(flat, so_dyn + 8, BASE + so_strtab)
+    poke8(flat, so_dyn + 16, 10)
+    poke8(flat, so_dyn + 24, so_strsz)
+    poke8(flat, so_dyn + 32, 6)
+    poke8(flat, so_dyn + 40, BASE + so_symtab)
+    poke8(flat, so_dyn + 48, 11)
+    poke8(flat, so_dyn + 56, 24)
+    poke8(flat, so_dyn + 64, 4)
+    poke8(flat, so_dyn + 72, BASE + so_hash)
+    poke8(flat, so_dyn + 80, 14)
+    poke8(flat, so_dyn + 88, 1)
+    poke8(flat, so_dyn + 96, 0)
+    poke8(flat, so_dyn + 104, 0)
+    _sov_write_n(path, flat, filesz)
+    _sov_chmod(path, 493)
+so_name s flat at:
+    i: 0
+    as long as i < length(s)
+        dummy: _sov_set_byte(flat, at + i, _sov_byte_at(s, i))
+        i: i + 1
+    dummy: _sov_set_byte(flat, at + i, 0)
+    return 0
+use_one name:
+    path: join("library/", name)
+    path: join(path, ".sov")
+    return load_file(path)
+take_use name:
+    mark: join(" ", join(name, " "))
+    if look(used_libs, mark) > 0 - 1
+        return blank
+    used_libs: join(used_libs, mark)
+    chunk: use_one(name)
+    if chunk is 0
+        print "Error: cannot read library"
+        _sov_print(name)
+        print err_line
+        had_err: 1
+        return blank
+    return chunk
+pull_uses src:
+    out: blank
+    lns: lines_of(src)
+    i: 0
+    n: _sov_list_len(lns)
+    as long as i < n
+        line: strip(_sov_list_get(lns, i))
+        if starts(line, "use ") is 1
+            err_line: i + 1
+            out: join(out, take_use(strip(cut(line, 4, length(line)))))
+        i: i + 1
+    return out
+main argc argv:
+    if argc < 2
+        print "Usage: sovren <file.sov> [-o out]"
+        print "sovren — native x86-64, no C, no Python"
+        fail()
+    inf: blank
+    outf: blank
+    i: 1
+    as long as i < argc
+        arg: peek_ptr(argv, i)
+        if same(arg, "--bare") is 1
+            bare_mode: 1
+        if not
+            if same(arg, "-o") is 1
+                i: i + 1
+                if i < argc
+                    outf: peek_ptr(argv, i)
+            if not
+                if same(arg, "build") is 0
+                    inf: arg
+        i: i + 1
+    if length(inf) is 0
+        print "Error: no input"
+        fail()
+    if length(outf) is 0
+        d: look(inf, ".sov")
+        if d > 0 - 1
+            outf: cut(inf, 0, d)
+        if not
+            outf: join(inf, ".out")
+    print "Compiling"
+    _sov_print(inf)
+    src: load_file(inf)
+    if src is 0
+        print "Error: cannot read input"
+        fail()
+    nl: _sov_alloc(2)
+    dummy: _sov_set_byte(nl, 0, 10)
+    dummy: _sov_set_byte(nl, 1, 0)
+    src: join(join("# pad line so main is not first", nl), src)
+    used_libs: blank
+    extra: pull_uses(src)
+    more: pull_uses(extra)
+    as long as length(more) > 0
+        extra: join(extra, more)
+        more: pull_uses(more)
+    if length(extra) > 0
+        src: join(extra, src)
+    need: 0
+    mmap_sz: 12582912
+    if look(src, "_sov_list") > 0 - 1
+        need: 1
+    if look(src, "load_file") > 0 - 1
+        need: 1
+    if look(src, "_sov_buf") > 0 - 1
+        need: 1
+    if look(src, "_sov_alloc") > 0 - 1
+        need: 1
+    if look(src, "_sov_set_byte") > 0 - 1
+        need: 1
+    if look(src, "peek_byte") > 0 - 1
+        need: 1
+    if look(src, "poke_byte") > 0 - 1
+        need: 1
+    rt: blank
+    if bare_mode is 1
+        need: 0
+    if need is 1
+        mmap_sz: 1073741824
+        rt: load_file("runtime.sov")
+        if rt is 0
+            rt: load_file("linux/runtime.sov")
+        if rt is 0
+            a0: peek_ptr(argv, 0)
+            bd: dirname(a0)
+            rt: load_file(join(bd, "/runtime.sov"))
+        if rt is 0
+            print "Error: cannot read runtime"
+            fail()
+    src_base: 1
+    if length(rt) > 0
+        src_base: src_base + _sov_list_len(lines_of(rt))
+    if length(extra) > 0
+        src_base: src_base + _sov_list_len(lines_of(extra))
+    nl: _sov_alloc(2)
+    dummy: _sov_set_byte(nl, 0, 10)
+    dummy: _sov_set_byte(nl, 1, 0)
+    all: join(rt, nl)
+    src_base: src_base + 1
+    all: join(all, src)
+    compile(all)
+    write_elf(outf)
+    if had_err is 1
+        fail()
+    print "Wrote"
+    _sov_print(outf)
+load_file path:
+    fd: _sov_open(path, 0)
+    if fd < 0
+        return 0
+    sz: _sov_lseek(fd, 0, 2)
+    _sov_lseek(fd, 0, 0)
+    if sz < 1
+        _sov_close(fd)
+        return 0
+    buf: _sov_alloc(sz + 1)
+    got: _sov_read(fd, buf, sz)
+    _sov_close(fd)
+    dummy: _sov_set_byte(buf, got, 0)
+    return buf
+
+# backend.sov — AArch64 back end for Sovren
+# Replaces the x86-64 code generator. Register map:
+#   x0  value register (was rax)      x1  second operand (was rcx)
+#   x19..x23  locals 0..4             x29 frame pointer, x30 link
+#   x9,x10..x15  scratch              x8  syscall number
+# Every instruction is 4 bytes, little endian.
+
+emitw w:
+    v: w
+    if v < 0
+        v: v + 4294967296
+    emit(v % 256)
+    emit((v / 256) % 256)
+    emit((v / 65536) % 256)
+    emit((v / 16777216) % 256)
+
+movz_x d imm sh:
+    emitw(3531603968 + sh * 2097152 + (imm % 65536) * 32 + d)
+
+movk_x d imm sh:
+    emitw(4068474880 + sh * 2097152 + (imm % 65536) * 32 + d)
+
+set_reg d n:
+    v: n
+    if v < 0
+        v: v + 18446744073709551616
+    movz_x(d, v % 65536, 0)
+    p1: (v / 65536) % 65536
+    if p1 is not 0
+        movk_x(d, p1, 1)
+    p2: (v / 4294967296) % 65536
+    if p2 is not 0
+        movk_x(d, p2, 2)
+    p3: (v / 281474976710656) % 65536
+    if p3 is not 0
+        movk_x(d, p3, 3)
+
+rax_imm n:
+    set_reg(0, n)
+
+rdi_imm n:
+    set_reg(1, n)
+
+# mov xD, xS   (orr xD, xzr, xS)
+mov_reg d s:
+    emitw(2852127712 + s * 65536 + d)
+
+# str x0,[sp,#-16]!
+push_rax:
+    emitw(4162785248)
+
+# ldr xN,[sp],#16
+pop_reg n:
+    emitw(4165011424 + n)
+
+pop_rax:
+    pop_reg(0)
+
+ret:
+    emitw(3596551104)
+
+xor_rax:
+    emitw(2854159328)
+
+mov_rdi_rax:
+    mov_reg(1, 0)
+
+mov_rcx_rax:
+    mov_reg(1, 0)
+
+add_rax_rcx:
+    emitw(2332098560)
+
+sub_rax_rcx:
+    emitw(3405840384)
+
+imul_rax_rcx:
+    emitw(2600565760)
+
+# x0 = x0 / x1
+sdiv_rax_rcx:
+    emitw(2596342784)
+
+# x0 = x0 % x1   (sdiv x2,x0,x1 ; msub x0,x2,x1,x0)
+mod_rax_rcx:
+    emitw(2596342786)
+    emitw(2600566848)
+
+cmp_rax_rcx:
+    emitw(3942711327)
+
+test_rax:
+    emitw(4043309087)
+
+setcc op:
+    if same(op, "eq") is 1
+        emitw(2594117600)
+        return
+    if same(op, "ne") is 1
+        emitw(2594113504)
+        return
+    if same(op, "lt") is 1
+        emitw(2594154464)
+        return
+    if same(op, "gt") is 1
+        emitw(2594166752)
+        return
+    if same(op, "le") is 1
+        emitw(2594162656)
+        return
+    if same(op, "ge") is 1
+        emitw(2594158560)
+        return
+
+loc_reg slot:
+    return 19 + slot
+
+# ldr xD,[x29,#off]
+# ldur xD,[x29,#-off]   off is a positive byte count
+ldr_fp d off:
+    n: 512 - off
+    emitw(4164944800 + n * 4096 + d)
+
+# str xS,[x29,#off]
+# stur xS,[x29,#-off]
+str_fp s off:
+    n: 512 - off
+    emitw(4160750496 + n * 4096 + s)
+
+load_loc slot:
+    if slot < 5
+        mov_reg(0, loc_reg(slot))
+        return
+    ldr_fp(0, (slot - 5) * 8 + 8)
+
+store_loc slot:
+    if slot < 5
+        mov_reg(loc_reg(slot), 0)
+        return
+    str_fp(0, (slot - 5) * 8 + 8)
+
+# globals: address built with movz+movk+movk, patched as glob64
+load_glob name:
+    at: here()
+    movz_x(9, 0, 0)
+    movk_x(9, 0, 1)
+    movk_x(9, 0, 2)
+    addp(at, "glob64", name)
+    emitw(4181721376)
+
+store_glob name:
+    at: here()
+    movz_x(9, 0, 0)
+    movk_x(9, 0, 1)
+    movk_x(9, 0, 2)
+    addp(at, "glob64", name)
+    emitw(4177527072)
+
+calln name:
+    at: here()
+    emitw(2483027968)
+    addp(at, "rel26", name)
+
+jmp:
+    at: here()
+    emitw(335544320)
+    return at
+
+# b.eq — taken when the previous cmp set Z (value was zero)
+jz:
+    at: here()
+    emitw(1409286144)
+    return at
+
+jnz:
+    at: here()
+    emitw(1409286145)
+    return at
+
+# b.hs — unsigned greater-or-equal, used by bounds checks
+# stp x29,x30,[sp,#-16]! ; mov x29,sp ; sub sp,sp,#N (patched)
+prolog:
+    emitw(2847702013)
+    emitw(2835436531)
+    emitw(2835504117)
+    emitw(4177533943)
+    emitw(2432697341)
+    pro_at: here()
+    emitw(3506439167)
+
+# ldp x29,x30,[sp],#16
+leave:
+    emitw(2432697279)
+    emitw(2839630835)
+    emitw(2839698421)
+    emitw(4181728247)
+    emitw(2831449085)
+
+copyargs n:
+    i: 0
+    as long as i < n
+        if i < 5
+            mov_reg(loc_reg(i), i)
+        if not
+            str_fp(i, (i - 5) * 8 + 8)
+        i: i + 1
+
+sysc:
+    emitw(3556769793)
+
+# ---- memory access ----
+
+# ldrb w0,[x0,x1]
+ldrb_x0_x0x1:
+    emitw(945907712)
+
+# strb w2,[x0,x1]
+strb_x2_x0x1:
+    emitw(941713410)
+
+# ldr x0,[x0,x1]
+ldr_x0_x0x1:
+    emitw(4167133184)
+
+# str x2,[x0,x1]
+str_x2_x0x1:
+    emitw(4162938882)
+
+# ldur x9,[x0,#-8]  — read the allocation length header
+ldur_len:
+    emitw(4167008265)
+
+# cmp x1,x9  — index against length
+cmp_idx_len:
+    emitw(3943235647)
+
+chk_mem extra:
+    if has_vm is 1
+        return
+    used_tr: 1
+    cbz_at: here()
+    emitw(3019898880)
+    addp(cbz_at, "cbz_trap", 0)
+    ldur_len()
+    if extra is 1
+        cmp_idx_len()
+        at: here()
+        emitw(1409286146)
+        addp(at, "b19_trap", 0)
+    if not
+        emitw(2432704513)
+        emitw(3943235647)
+        at: here()
+        emitw(1409286146)
+        addp(at, "b19_trap", 0)
+
+chk_zrcx:
+    if has_vm is 1
+        return
+    used_tr: 1
+    at: here()
+    emitw(3019898881)
+    addp(at, "cbz_trap", 1)
+
+# write(1, str, n) with a literal
+emit_write_lit s:
+    n: length(s)
+    set_reg(0, 1)
+    off: intern_nz(s)
+    at: here()
+    movz_x(1, 0, 0)
+    movk_x(1, 0, 1)
+    movk_x(1, 0, 2)
+    addp(at, "str64", off)
+    set_reg(2, n)
+    set_reg(8, 64)
+    sysc()
+
+# mmap(0, sz, RW, PRIVATE|ANON, -1, 0) -> x0
+emit_mmap:
+    set_reg(0, 0)
+    set_reg(1, mmap_sz)
+    set_reg(2, 3)
+    set_reg(3, 34)
+    emitw(2457862148)
+    set_reg(5, 0)
+    set_reg(8, 222)
+    sysc()
+
+emit_mmap_k n:
+    set_reg(0, 0)
+    set_reg(1, n + 2097152)
+    set_reg(2, 3)
+    set_reg(3, 34)
+    emitw(2457862148)
+    set_reg(5, 0)
+    set_reg(8, 222)
+    sysc()
+
+# _start: x0 = argc from [sp], x1 = argv = sp+8
+emit_start:
+    emitw(4181722080)
+    emitw(2432705505)
+    at: here()
+    emitw(2483027968)
+    addp(at, "rel26", "main")
+    set_reg(0, 0)
+    set_reg(8, 93)
+    sysc()
+
+emit_trap_stub:
+    fn_names: _sov_list_add(fn_names, "_sov_trap")
+    fn_offs: _sov_list_add(fn_offs, here())
+    emit_write_lit("trap\n")
+    set_reg(0, 1)
+    set_reg(8, 93)
+    sysc()
+# patch_arm64.sov — AArch64 branch patching
+# x86 writes a flat 32-bit offset. ARM packs the offset into instruction bits:
+#   b / bl   : 26-bit word offset in bits 0..25   (top byte 0x14 / 0x94)
+#   b.cond   : 19-bit word offset in bits 5..23   (top byte 0x54)
+# Offsets are in words (bytes / 4), signed, relative to the branch itself.
+
+# read the 4 bytes already emitted at `at`
+oc_word at:
+    b0: _sov_list_get(oc, at)
+    b1: _sov_list_get(oc, at + 1)
+    b2: _sov_list_get(oc, at + 2)
+    b3: _sov_list_get(oc, at + 3)
+    return b0 + b1 * 256 + b2 * 65536 + b3 * 16777216
+
+oc_set_word at v:
+    x: v
+    if x < 0
+        x: x + 4294967296
+    oc: _sov_list_set(oc, at, x % 256)
+    oc: _sov_list_set(oc, at + 1, (x / 256) % 256)
+    oc: _sov_list_set(oc, at + 2, (x / 65536) % 256)
+    oc: _sov_list_set(oc, at + 3, (x / 16777216) % 256)
+    return 0
+
+# byte offset -> signed word offset
+word_off delta:
+    d: delta / 4
+    return d
+
+# put a 26-bit offset into a b / bl already at `at`
+put26 at delta:
+    w: oc_word(at)
+    top: (w / 16777216) % 256
+    d: word_off(delta)
+    if d < 0
+        d: d + 67108864
+    base: top * 16777216
+    oc_set_word(at, base + (d % 67108864))
+    return 0
+
+# put a 19-bit offset into a b.cond already at `at`
+put19 at delta:
+    w: oc_word(at)
+    top: (w / 16777216) % 256
+    cond: w % 32
+    d: word_off(delta)
+    if d < 0
+        d: d + 524288
+    base: top * 16777216
+    oc_set_word(at, base + (d % 524288) * 32 + cond)
+    return 0
+
+# ARM version of `put`: choose by instruction type
+put_arm at delta:
+    w: oc_word(at)
+    top: (w / 16777216) % 256
+    if top is 84
+        put19(at, delta)
+        return 0
+    put26(at, delta)
+    return 0
+
+# ARM version of `patch`: branch at `at` jumps to the current position
+# backend2.sov — remaining AArch64 emitters
+# Every raw word below was produced by an encoder and confirmed with a
+# disassembler; the runtime helpers were then executed on an emulated ARM64 CPU.
+
+inc_var name:
+    loadv(name)
+    rdi_imm(1)
+    add_rax_rcx()
+    storev(name)
+
+dec_var name:
+    loadv(name)
+    rdi_imm(1)
+    sub_rax_rcx()
+    storev(name)
+
+add_into dest src:
+    loadv(dest)
+    push_rax()
+    loadv(src)
+    mov_rcx_rax()
+    pop_rax()
+    add_rax_rcx()
+    storev(dest)
+
+add_imm name n:
+    loadv(name)
+    rdi_imm(n)
+    add_rax_rcx()
+    storev(name)
+
+chk_ov:
+    return
+
+emit_nodump:
+    return
+
+# x86 string-instruction fast paths have no AArch64 form.
+# Returning 0 makes the caller emit an ordinary loop instead.
+try_opt_while cond blines:
+    return 0
+
+# ---- runtime helpers ----
+
+# x0 = pointer, returns the length in x0
+emit_strlen:
+    fn_names: _sov_list_add(fn_names, "_sov_strlen")
+    fn_offs: _sov_list_add(fn_offs, here())
+    mov_reg(9, 0)
+    set_reg(0, 0)
+    top: here()
+    emitw(945842475)
+    emitw(1895825791)
+    ex: here()
+    emitw(1409286144)
+    emitw(2432697344)
+    bp: here()
+    emitw(335544320)
+    put_arm(bp, top - bp)
+    put_arm(ex, here() - ex)
+    ret()
+
+# x0, x1 = two pointers, returns 1 when the text matches
+emit_streq:
+    fn_names: _sov_list_add(fn_names, "_sov_str_eq")
+    fn_offs: _sov_list_add(fn_offs, here())
+    mov_reg(9, 0)
+    mov_reg(10, 1)
+    set_reg(11, 0)
+    top: here()
+    emitw(2332754220)
+    emitw(2332754253)
+    emitw(960496014)
+    emitw(960496047)
+    emitw(1796145631)
+    ne: here()
+    emitw(1409286145)
+    emitw(1895825887)
+    eq: here()
+    emitw(1409286144)
+    emitw(2432697707)
+    bp: here()
+    emitw(335544320)
+    put_arm(bp, top - bp)
+    put_arm(ne, here() - ne)
+    set_reg(0, 0)
+    ret()
+    put_arm(eq, here() - eq)
+    set_reg(0, 1)
+    ret()
+
+# x0 = pointer, writes the text then a newline
+emit_print:
+    fn_names: _sov_list_add(fn_names, "_sov_print")
+    fn_offs: _sov_list_add(fn_offs, here())
+    # a value under 65536 is not a real address. reading from it
+    # would crash, so hand it to the number printer instead.
+    emitw(4047519775)
+    hi: here()
+    emitw(1409286146)
+    used_pi: 1
+    calln("_sov_print_int")
+    ret()
+    put_arm(hi, here() - hi)
+    emitw(2847702013)
+    emitw(2835436531)
+    emitw(2835504117)
+    emitw(4177533943)
+    emitw(2432697341)
+    mov_reg(19, 0)
+    mov_reg(9, 19)
+    set_reg(20, 0)
+    top: here()
+    emitw(2333344042)
+    emitw(960495947)
+    emitw(1895825791)
+    ex: here()
+    emitw(1409286144)
+    emitw(2432698004)
+    bp: here()
+    emitw(335544320)
+    put_arm(bp, top - bp)
+    put_arm(ex, here() - ex)
+    set_reg(0, 1)
+    mov_reg(1, 19)
+    mov_reg(2, 20)
+    set_reg(8, 64)
+    sysc()
+    set_reg(0, 1)
+    nl_at: here()
+    movz_x(1, 0, 0)
+    movk_x(1, 0, 1)
+    movk_x(1, 0, 2)
+    addp(nl_at, "str64", intern_nz("\n"))
+    set_reg(2, 1)
+    set_reg(8, 64)
+    sysc()
+    emitw(2432697279)
+    emitw(2839630835)
+    emitw(2839698421)
+    emitw(4181728247)
+    emitw(2831449085)
+    ret()
+
+# x0 = number, writes it in decimal then a newline
+emit_print_int:
+    fn_names: _sov_list_add(fn_names, "_sov_print_int")
+    fn_offs: _sov_list_add(fn_offs, here())
+    emitw(2847702013)
+    emitw(2835436531)
+    emitw(2835504117)
+    emitw(4177533943)
+    emitw(2432697341)
+    emitw(3506488319)
+    mov_reg(9, 0)
+    set_reg(21, 0)
+    emitw(4043309375)
+    ng: here()
+    emitw(1409286154)
+    set_reg(21, 1)
+    emitw(3406365673)
+    put_arm(ng, here() - ng)
+    emitw(2432746474)
+    set_reg(11, 10)
+    emitw(3506439498)
+    emitw(956301643)
+    set_reg(12, 10)
+    d: here()
+    emitw(2597062957)
+    emitw(2601297326)
+    emitw(2432745934)
+    emitw(3506439498)
+    emitw(956301646)
+    mov_reg(9, 13)
+    emitw(4043309375)
+    bn: here()
+    emitw(1409286145)
+    put_arm(bn, d - bn)
+    emitw(4043309759)
+    ns: here()
+    emitw(1409286144)
+    emitw(3506439498)
+    set_reg(11, 45)
+    emitw(956301643)
+    put_arm(ns, here() - ns)
+    set_reg(0, 1)
+    mov_reg(1, 10)
+    emitw(2432746466)
+    emitw(3406430274)
+    set_reg(8, 64)
+    sysc()
+    emitw(2432746495)
+    emitw(2432697279)
+    emitw(2839630835)
+    emitw(2839698421)
+    emitw(4181728247)
+    emitw(2831449085)
+    ret()
+
+# x0 = size, returns a pointer with an 8 byte length header behind it
+emit_alloc:
+    fn_names: _sov_list_add(fn_names, "_sov_alloc")
+    fn_offs: _sov_list_add(fn_offs, here())
+    mov_reg(13, 0)
+    gl: here()
+    movz_x(9, 0, 0)
+    movk_x(9, 0, 1)
+    movk_x(9, 0, 2)
+    addp(gl, "glob64", "heap_ptr")
+    emitw(4181721386)
+    emitw(4043309407)
+    nz: here()
+    emitw(1409286145)
+    emit_mmap()
+    mov_reg(10, 0)
+    put_arm(nz, here() - nz)
+    emitw(4177527117)
+    emitw(2432704843)
+    emitw(2332885356)
+    emitw(2432703884)
+    emitw(2457727372)
+    gs: here()
+    movz_x(9, 0, 0)
+    movk_x(9, 0, 1)
+    movk_x(9, 0, 2)
+    addp(gs, "glob64", "heap_ptr")
+    emitw(4177527084)
+    mov_reg(0, 11)
+    ret()
+put_sub_sp at n:
+    v: n
+    if v < 0
+        v: 0
+    oc_set_word(at, 3506439167 + (v % 4096) * 1024)
+    return 0

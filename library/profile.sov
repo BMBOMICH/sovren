@@ -1,0 +1,12 @@
+# profile.sov — one profile file
+use file
+use string
+use ini
+
+profile_set path key value:
+    line: str_join3(key, "=", value)
+    line: str_cat(line, "\n")
+    return file_append(path, line)
+
+profile_get path key:
+    return ini_load(path, key)

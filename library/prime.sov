@@ -1,0 +1,65 @@
+# prime.sov — prime numbers
+use vec
+use bitset
+
+pr_is n:
+    if n < 2
+        return 0
+    if n < 4
+        return 1
+    if n % 2 is 0
+        return 0
+    i: 3
+    as long as i * i <= n
+        if n % i is 0
+            return 0
+        i: i + 2
+    return 1
+
+pr_next n:
+    k: n + 1
+    as long as pr_is(k) is 0
+        k: k + 1
+    return k
+
+pr_sieve limit:
+    b: bs_new(limit + 1)
+    i: 2
+    as long as i <= limit
+        b: bs_set(b, i)
+        i: i + 1
+    i: 2
+    as long as i * i <= limit
+        if bs_get(b, i) is 1
+            j: i * i
+            as long as j <= limit
+                b: bs_clear(b, j)
+                j: j + i
+        i: i + 1
+    return b
+
+pr_list limit:
+    b: pr_sieve(limit)
+    out: vec_new(16)
+    i: 2
+    as long as i <= limit
+        if bs_get(b, i) is 1
+            out: vec_push(out, i)
+        i: i + 1
+    return out
+
+pr_count limit:
+    return vec_len(pr_list(limit))
+
+pr_factor n:
+    out: vec_new(8)
+    v: n
+    d: 2
+    as long as d * d <= v
+        as long as v % d is 0
+            out: vec_push(out, d)
+            v: v / d
+        d: d + 1
+    if v > 1
+        out: vec_push(out, v)
+    return out

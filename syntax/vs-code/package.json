@@ -1,0 +1,26 @@
+{
+  "name": "sovren",
+  "displayName": "Sovren",
+  "description": "Colors and file type for the Sovren language",
+  "version": "0.0.1",
+  "publisher": "sovren",
+  "engines": { "vscode": "^1.74.0" },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "sovren",
+        "aliases": ["Sovren", "sovren"],
+        "extensions": [".sov"],
+        "configuration": "./language.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "sovren",
+        "scopeName": "source.sovren",
+        "path": "./sovren.tmLanguage.json"
+      }
+    ]
+  }
+}

@@ -1,0 +1,29 @@
+# dm.sov — one-to-one messages
+# needs _sov_list
+use store
+use string
+
+dm_file a b:
+    if str_len(a) < str_len(b)
+        return str_join3("dm-", a, str_cat("-", b))
+    if str_eq(a, b) is 1
+        return str_cat("dm-", a)
+    i: 0
+    n: str_len(a)
+    if str_len(b) < n
+        n: str_len(b)
+    as long as i < n
+        ca: peek_byte(a, i)
+        cb: peek_byte(b, i)
+        if ca < cb
+            return str_join3("dm-", a, str_cat("-", b))
+        if cb < ca
+            return str_join3("dm-", b, str_cat("-", a))
+        i: i + 1
+    return str_join3("dm-", a, str_cat("-", b))
+
+dm_send a b text:
+    return store_put(dm_file(a, b), str_join3(a, ": ", text))
+
+dm_read a b:
+    return store_load(dm_file(a, b))

@@ -1,0 +1,41 @@
+# user.sov — people as name|age|bio lines
+# needs _sov_list
+use string
+use store
+use num
+
+user_line name age bio:
+    a: str_join3(name, "|", num_text(age))
+    return str_join3(a, "|", bio)
+
+user_name line:
+    p: str_find(line, "|")
+    if p < 0
+        return line
+    return str_cut(line, 0, p)
+
+user_age line:
+    p: str_find(line, "|")
+    if p < 0
+        return 0
+    rest: str_cut(line, p + 1, str_len(line))
+    q: str_find(rest, "|")
+    if q < 0
+        return str_num(rest)
+    return str_num(str_cut(rest, 0, q))
+
+user_bio line:
+    p: str_find(line, "|")
+    if p < 0
+        return blank
+    rest: str_cut(line, p + 1, str_len(line))
+    q: str_find(rest, "|")
+    if q < 0
+        return rest
+    return str_cut(rest, q + 1, str_len(rest))
+
+user_save path name age bio:
+    return store_put(path, user_line(name, age, bio))
+
+user_load path:
+    return store_load(path)

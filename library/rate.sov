@@ -1,0 +1,39 @@
+# rate.sov — count hits in a time window
+# needs _sov_list
+use file
+use string
+use time
+use num
+
+rate_hit path:
+    t: time_now()
+    line: str_cat(num_text(t), "\n")
+    file_append(path, line)
+    return t
+
+rate_count path since:
+    text: file_read_all(path)
+    if text is 0
+        return 0
+    n: str_len(text)
+    line: 0
+    i: 0
+    c: 0
+    as long as i < n
+        if peek_byte(text, i) is 10
+            v: str_num(str_cut(text, line, i))
+            if v > since
+                c: c + 1
+            if not
+                if v is since
+                    c: c + 1
+            line: i + 1
+        i: i + 1
+    return c
+
+rate_ok path window maxn:
+    now: time_now()
+    n: rate_count(path, now - window)
+    if n < maxn
+        return 1
+    return 0

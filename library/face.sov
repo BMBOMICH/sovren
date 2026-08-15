@@ -1,0 +1,76 @@
+# face.sov — faces
+#
+# A big net like RetinaFace is its own program. Sovren talks to it.
+#   1. tool:  your detector prints 1 || 0
+#        face_from_tool("/opt/retinaface", "photo.jpg")
+#   2. net:   a small server on this machine
+#        face_from_http(127, 0, 0, 1, 8080, "/face?f=photo.jpg")
+#   3. built-in: skin-color count on a PPM (no extra program)
+#        face_maybe(im)
+# needs _sov_list
+use tool
+use string
+use image
+use http
+
+face_from_tool prog path:
+    r: tool_out(prog, path)
+    if str_eq(r, "1") is 1
+        return 1
+    if str_starts(r, "1") is 1
+        return 1
+    if str_find(r, "face") > 0 - 1
+        return 1
+    return 0
+
+face_from_http a b c d port path:
+    r: http_get(a, b, c, d, port, "127.0.0.1", path)
+    body: http_body(r)
+    if str_find(body, "1") > 0 - 1
+        return 1
+    if str_find(body, "face") > 0 - 1
+        return 1
+    return 0
+
+face_skin_ok r g b:
+    if r < 96
+        return 0
+    if g < 41
+        return 0
+    if b < 21
+        return 0
+    if r < g
+        return 0
+    if r < b
+        return 0
+    dg: r - g
+    if dg < 0
+        dg: 0 - dg
+    if dg < 16
+        return 0
+    return 1
+
+face_skin_count im:
+    w: img_w(im)
+    h: img_h(im)
+    n: 0
+    y: 0
+    as long as y < h
+        x: 0
+        as long as x < w
+            if face_skin_ok(img_r(im, x, y), img_g(im, x, y), img_b(im, x, y)) is 1
+                n: n + 1
+            x: x + 1
+        y: y + 1
+    return n
+
+face_maybe im:
+    tot: img_w(im) * img_h(im)
+    if tot is 0
+        return 0
+    n: face_skin_count(im)
+    pct: n * 100 / tot
+    if pct > 4
+        if pct < 70
+            return 1
+    return 0

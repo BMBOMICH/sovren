@@ -1,0 +1,17 @@
+# report.sov — who reported whom && why
+# needs _sov_list
+use store
+use string
+use time
+use num
+
+report_line from about why:
+    a: str_join3(from, ">", about)
+    a: str_join3(a, "|", why)
+    return str_join3(a, "|", num_text(time_now()))
+
+report_add path from about why:
+    return store_put(path, report_line(from, about, why))
+
+report_all path:
+    return store_load(path)

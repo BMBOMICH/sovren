@@ -1,0 +1,20 @@
+# room.sov — chat rooms on disk
+# needs _sov_list
+use store
+use string
+use file
+
+room_file name:
+    return str_cat("room-", name)
+
+room_post name from text:
+    return store_put(room_file(name), str_join3(from, ": ", text))
+
+room_read name:
+    return store_load(room_file(name))
+
+room_clear name:
+    return store_clear(room_file(name))
+
+room_exists name:
+    return file_exists(room_file(name))

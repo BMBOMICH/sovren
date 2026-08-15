@@ -1,0 +1,40 @@
+# notify.sov — a notice queue per user
+use file
+use string
+use list
+use num
+use time
+
+noti_path dir who:
+    return as text str_join3(dir, "/", str_cat(who, ".msg"))
+
+noti_add dir who text:
+    l: str_join3(num_text(time_now()), "\t", text)
+    return file_append(noti_path(dir, who), str_cat(l, "\n"))
+
+noti_all dir who:
+    t: file_read_all(noti_path(dir, who))
+    out: list_new()
+    if t is 0
+        return out
+    start: 0
+    i: 0
+    n: str_len(t)
+    as long as i < n
+        if peek_byte(t, i) is 10
+            out: list_add(out, str_cut(t, start, i))
+            start: i + 1
+        i: i + 1
+    return out
+
+noti_count dir who:
+    return list_len(noti_all(dir, who))
+
+noti_clear dir who:
+    return file_delete(noti_path(dir, who))
+
+noti_text line:
+    p: str_find(line, "\t")
+    if p < 0
+        return as text line
+    return as text str_cut(line, p + 1, str_len(line))

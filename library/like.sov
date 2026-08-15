@@ -1,0 +1,23 @@
+# like.sov — who liked whom
+# needs _sov_list
+use store
+use string
+use file
+
+like_add path who whom:
+    return store_put(path, str_join3(who, ">", whom))
+
+like_has path who whom:
+    t: file_read_all(path)
+    if t is 0
+        return 0
+    want: str_join3(who, ">", whom)
+    if str_find(t, want) > 0 - 1
+        return 1
+    return 0
+
+like_both path a b:
+    if like_has(path, a, b) is 1
+        if like_has(path, b, a) is 1
+            return 1
+    return 0

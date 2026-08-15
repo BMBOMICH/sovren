@@ -1,0 +1,37 @@
+# map.sov — key then value, key then value
+# needs _sov_list
+use list
+use string
+
+map_new:
+    return list_new()
+
+map_set m k v:
+    i: 0
+    n: list_len(m)
+    as long as i < n
+        if str_eq(list_get(m, i), k) is 1
+            list_set(m, i + 1, v)
+            return m
+        i: i + 2
+    m: list_add(m, k)
+    m: list_add(m, v)
+    return m
+
+map_get m k:
+    i: 0
+    n: list_len(m)
+    as long as i < n
+        if str_eq(list_get(m, i), k) is 1
+            return list_get(m, i + 1)
+        i: i + 2
+    return 0
+
+map_has m k:
+    i: 0
+    n: list_len(m)
+    as long as i < n
+        if str_eq(list_get(m, i), k) is 1
+            return 1
+        i: i + 2
+    return 0

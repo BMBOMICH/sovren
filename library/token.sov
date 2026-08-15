@@ -1,0 +1,13 @@
+# token.sov — random hex tokens
+# needs _sov_list
+use rand
+use hex
+
+token_hex n:
+    if n < 1
+        n: 8
+    b: rand_bytes(n)
+    return hex_from_bytes(b, n)
+
+token_new:
+    return token_hex(16)

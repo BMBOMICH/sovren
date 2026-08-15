@@ -1,0 +1,200 @@
+write_elf path:
+    if had_err is 1
+        return
+    clen: _sov_list_len(oc)
+    sl: _sov_buf_len(strb)
+    str_off: clen
+    if _sov_list_len(glob_names) > 0
+        as long as str_off % 8 is not 0
+            oc: _sov_list_add(oc, 0)
+            str_off: str_off + 1
+            clen: clen + 1
+    glob_off: clen + sl
+    pad: _sov_list_len(glob_names) * 8
+    dyn_base: HDR + clen + sl + pad
+    as long as dyn_base % 8 is not 0
+        dyn_base: dyn_base + 1
+    so_strtab: dyn_base
+    so_strsz: 60
+    so_symtab: so_strtab + 64
+    so_hash: so_symtab + 72
+    so_dyn: so_hash + 28
+    filesz: so_dyn + 112
+    flat: _sov_alloc(filesz + 64)
+    i: 0
+    as long as i < filesz + 16
+        dummy: _sov_set_byte(flat, i, 0)
+        i: i + 1
+    dummy: _sov_set_byte(flat, 0, 127)
+    dummy: _sov_set_byte(flat, 1, 69)
+    dummy: _sov_set_byte(flat, 2, 76)
+    dummy: _sov_set_byte(flat, 3, 70)
+    dummy: _sov_set_byte(flat, 4, 2)
+    dummy: _sov_set_byte(flat, 5, 1)
+    dummy: _sov_set_byte(flat, 6, 1)
+    poke2(flat, 16, 3)
+    poke2(flat, 18, 183)
+    poke4(flat, 20, 1)
+    moff: 0
+    if thin_main is 1
+        mi: idx(fn_names, "main")
+        if mi > 0 - 1
+            moff: _sov_list_get(fn_offs, mi)
+    poke8(flat, 24, BASE + HDR + moff)
+    poke8(flat, 32, 64)
+    poke2(flat, 52, 64)
+    poke2(flat, 54, 56)
+    poke2(flat, 56, 3)
+    poke4(flat, 64, 6)
+    poke4(flat, 68, 4)
+    poke8(flat, 72, 64)
+    poke8(flat, 80, BASE + 64)
+    poke8(flat, 88, BASE + 64)
+    poke8(flat, 96, 168)
+    poke8(flat, 104, 168)
+    poke8(flat, 112, 8)
+    poke4(flat, 120, 1)
+    poke4(flat, 124, 7)
+    poke8(flat, 128, 0)
+    poke8(flat, 136, BASE)
+    poke8(flat, 144, BASE)
+    poke8(flat, 152, filesz)
+    poke8(flat, 160, filesz + 65536)
+    poke8(flat, 168, 4096)
+    poke4(flat, 176, 2)
+    poke4(flat, 180, 6)
+    poke8(flat, 184, so_dyn)
+    poke8(flat, 192, BASE + so_dyn)
+    poke8(flat, 200, BASE + so_dyn)
+    poke8(flat, 208, 112)
+    poke8(flat, 216, 112)
+    poke8(flat, 224, 8)
+    i: 0
+    as long as i < clen
+        dummy: _sov_set_byte(flat, HDR + i,  _sov_list_get(oc, i))
+        i: i + 1
+    si: 0
+    as long as si < sl
+        dummy: _sov_set_byte(flat, HDR + str_off + si, _sov_buf_at(strb, si))
+        si: si + 1
+    str_addr: BASE + HDR + str_off
+    glob_addr: BASE + HDR + glob_off
+    i: 0
+    as long as i < _sov_list_len(patch_at)
+        at: _sov_list_get(patch_at, i)
+        kind: _sov_list_get(patch_kind, i)
+        val: _sov_list_get(patch_val, i)
+        if same(kind, "rel26") is 1
+            fi: idx(fn_names, val)
+            if fi > 0 - 1
+                tgt: _sov_list_get(fn_offs, fi)
+                rel: (tgt - at) / 4
+                if rel < 0
+                    rel: rel + 67108864
+                poke4(flat, HDR + at, 2483027968 + (rel % 67108864))
+            if not
+                print "Error: no such task"
+                _sov_print(val)
+                print _sov_list_get(patch_line, i)
+                had_err: 1
+        if same(kind, "b26") is 1
+            poke4(flat, HDR + at, 335544320 + (val % 67108864))
+        if same(kind, "glob64") is 1
+            gx: idx(glob_names, val)
+            ga: glob_addr + gx * 8
+            poke4(flat, HDR + at, 3531603968 + (ga % 65536) * 32 + 9)
+            poke4(flat, HDR + at + 4, 4070572032 + ((ga / 65536) % 65536) * 32 + 9)
+            poke4(flat, HDR + at + 8, 4072669184 + ((ga / 4294967296) % 65536) * 32 + 9)
+        if same(kind, "str64x0") is 1
+            sa: str_addr + val
+            poke4(flat, HDR + at, 3531603968 + (sa % 65536) * 32)
+            poke4(flat, HDR + at + 4, 4070572032 + ((sa / 65536) % 65536) * 32)
+            poke4(flat, HDR + at + 8, 4072669184 + ((sa / 4294967296) % 65536) * 32)
+        if same(kind, "str64") is 1
+            sa: str_addr + val
+            poke4(flat, HDR + at, 3531603968 + (sa % 65536) * 32 + 1)
+            poke4(flat, HDR + at + 4, 4070572032 + ((sa / 65536) % 65536) * 32 + 1)
+            poke4(flat, HDR + at + 8, 4072669184 + ((sa / 4294967296) % 65536) * 32 + 1)
+        if same(kind, "cbz_trap") is 1
+            ti: idx(fn_names, "_sov_trap")
+            if ti > 0 - 1
+                tg: _sov_list_get(fn_offs, ti)
+                rl: (tg - at) / 4
+                if rl < 0
+                    rl: rl + 524288
+                poke4(flat, HDR + at, 3019898880 + (rl % 524288) * 32 + val)
+        if same(kind, "b19_trap") is 1
+            ti: idx(fn_names, "_sov_trap")
+            if ti > 0 - 1
+                tg: _sov_list_get(fn_offs, ti)
+                rl: (tg - at) / 4
+                if rl < 0
+                    rl: rl + 524288
+                poke4(flat, HDR + at, 1409286144 + (rl % 524288) * 32 + 2)
+        if same(kind, "rel") is 1
+            fi: idx(fn_names, val)
+            if fi > 0 - 1
+                tgt: _sov_list_get(fn_offs, fi)
+                rel: tgt - (at + 4)
+                poke4(flat, HDR + at, rel)
+            if not
+                print "Error: no such task"
+                _sov_print(val)
+                print _sov_list_get(patch_line, i)
+                had_err: 1
+        if same(kind, "str") is 1
+            poke8(flat, HDR + at, str_addr + val)
+        if same(kind, "str32") is 1
+            poke4(flat, HDR + at, str_addr + val)
+        if same(kind, "glob") is 1
+            gx: idx(glob_names, val)
+            poke8(flat, HDR + at, glob_addr + gx * 8)
+        i: i + 1
+    if had_err is 1
+        return
+    smi: idx(fn_names, "main")
+    smoff: 0
+    if smi > 0 - 1
+        smoff: _sov_list_get(fn_offs, smi)
+    so_name("libsovren.so", flat, so_strtab + 1)
+    so_name("sovren_main", flat, so_strtab + 14)
+    so_name("Java_com_sovren_Native_run", flat, so_strtab + 26)
+    poke4(flat, so_symtab + 24, 14)
+    dummy: _sov_set_byte(flat, so_symtab + 28, 18)
+    poke2(flat, so_symtab + 30, 1)
+    poke8(flat, so_symtab + 32, BASE + HDR + smoff)
+    poke8(flat, so_symtab + 40, clen)
+    poke4(flat, so_symtab + 48, 26)
+    dummy: _sov_set_byte(flat, so_symtab + 52, 18)
+    poke2(flat, so_symtab + 54, 1)
+    poke8(flat, so_symtab + 56, BASE + HDR + smoff)
+    poke8(flat, so_symtab + 64, clen)
+    poke4(flat, so_hash, 1)
+    poke4(flat, so_hash + 4, 3)
+    poke4(flat, so_hash + 8, 2)
+    poke4(flat, so_hash + 12, 0)
+    poke4(flat, so_hash + 16, 0)
+    poke4(flat, so_hash + 20, 1)
+    poke8(flat, so_dyn, 5)
+    poke8(flat, so_dyn + 8, BASE + so_strtab)
+    poke8(flat, so_dyn + 16, 10)
+    poke8(flat, so_dyn + 24, so_strsz)
+    poke8(flat, so_dyn + 32, 6)
+    poke8(flat, so_dyn + 40, BASE + so_symtab)
+    poke8(flat, so_dyn + 48, 11)
+    poke8(flat, so_dyn + 56, 24)
+    poke8(flat, so_dyn + 64, 4)
+    poke8(flat, so_dyn + 72, BASE + so_hash)
+    poke8(flat, so_dyn + 80, 14)
+    poke8(flat, so_dyn + 88, 1)
+    poke8(flat, so_dyn + 96, 0)
+    poke8(flat, so_dyn + 104, 0)
+    _sov_write_n(path, flat, filesz)
+    _sov_chmod(path, 493)
+so_name s flat at:
+    i: 0
+    as long as i < length(s)
+        dummy: _sov_set_byte(flat, at + i, _sov_byte_at(s, i))
+        i: i + 1
+    dummy: _sov_set_byte(flat, at + i, 0)
+    return 0

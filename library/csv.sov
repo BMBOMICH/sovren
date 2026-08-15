@@ -1,0 +1,16 @@
+# csv.sov — split one CSV line on commas
+use string
+use list
+
+csv_split line:
+    lst: list_new()
+    n: str_len(line)
+    start: 0
+    i: 0
+    as long as i < n
+        if peek_byte(line, i) is 44
+            lst: list_add(lst, str_cut(line, start, i))
+            start: i + 1
+        i: i + 1
+    lst: list_add(lst, str_cut(line, start, n))
+    return lst

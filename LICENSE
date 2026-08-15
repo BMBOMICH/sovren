@@ -1,0 +1,1174 @@
+================================================================================
+              PROPRIETARY SOURCE-VISIBLE LICENSE — VERSION 1.0
+         Copyright (c) 2026 Elxan Hüseynov (also transliterated
+              as Elxan Huseynov). All Rights Reserved.
+                         First Published: August 2026
+                         Published:        August 14, 2026
+                         Last Reviewed:    August 15, 2026
+================================================================================
+
+STRICTLY PROPRIETARY — THE SOURCE IS VISIBLE FOR EVALUATION, SECURITY,
+AND COMMUNITY CONTRIBUTION. THE COMPILER ITSELF MAY NOT BE SOLD, HOSTED,
+OR REDISTRIBUTED.
+
+PROGRAMS YOU WRITE IN SOVREN ARE YOURS. YOU MAY SELL THEM, SHIP THEM,
+AND KEEP ALL REVENUE, WITH NO FEE OR PERMISSION NEEDED (SECTION 3.1.3).
+
+This Software is Sovren: the language, its compiler, runtime, libraries,
+examples, documentation, and all associated materials. They are the sole
+and exclusive intellectual property of Elxan Hüseynov ("the Author").
+
+This copy of the Proprietary Source-Visible License — Version 1.0 is
+applied to a programming language. Clauses that exist in the full PSVL
+text only for products with user accounts, biometrics, payments, chat,
+maps, push notifications, or similar application features are omitted
+here because Sovren does not provide those features. Omission does not
+waive any right of the Author. The full PSVL remains the Author's
+license form.
+
+The source is made publicly visible to allow evaluation, security
+auditing, performance research, learning the language, and official
+contributions back to this project. Anyone may use the compiler to
+build their own software, including software they sell.
+
+By cloning, forking, downloading, compiling, or running this source
+or the Software, you agree to this license. Only viewing the source
+on a public host is not acceptance. Active acquisition or use is
+required.
+
+The Author does not consent to access, processing, copying, indexing,
+ingestion, or training by any automated system, bot, crawler, scraper,
+artificial intelligence model, or machine learning system, and reserves
+all rights against such use. The limited exception for official
+dependency and security tooling is in Section 2.5.
+
+================================================================================
+                            PLAIN ENGLISH SUMMARY
+           (For Readability Only — Not a Substitute for the Full License)
+================================================================================
+
+This is NOT an open-source license.
+
+YOU CAN:
+  - Read and evaluate the source
+  - Write programs in Sovren, compile them, run them, and SELL them.
+    Programs you write are yours. You may charge for them, ship them
+    in a product, run them as a paid service, and keep all the money.
+    No fee or agreement with the Author is needed.
+  - Use Sovren at work, including for internal company tools
+  - Fork and change the source solely to send improvements back
+  - Test speed, security, and correctness in a local environment
+  - Translate the book or docs and send the translation back
+  - Show your own contributions on your personal portfolio
+
+YOU CANNOT:
+  - Sell, host, or charge for the Sovren compiler itself, or build a
+    competing language or compiler from it
+  - Redistribute, sublicense, or publish the Sovren compiler, runtime
+    source, or library source as your own (this does not limit apps
+    you build and ship)
+  - Train AI models on the source
+  - Decompile or reverse engineer the official compiler binaries
+  - Install the compiler itself on government, military, or
+    intelligence systems (selling your apps to them is fine)
+  - Use it for any harmful, illegal, or exploitative purpose
+  - Put Sovren, or an app you wrote in Sovren, inside a weapons
+    system, or in control of anything where a failure could kill
+    or seriously injure someone — life support, flight control,
+    nuclear control, emergency dispatch (Sections 4.4.2 and 4.4.6).
+    These are the ONLY two limits on apps you write. Ordinary
+    business software for hospitals, airlines, and similar
+    organisations is fine.
+
+IMPORTANT:
+  - ALL CONTRIBUTIONS become the permanent intellectual property of
+    the Author (Section 5).
+  - This license is REVOCABLE for Material Breach (Sections 2.4 and 6.3).
+  - You agree to INDEMNIFY the Author for harms caused by your misuse
+    (Section 6.14).
+  - Anyone holding a separate commercial agreement for the Software
+    itself must carry CYBER LIABILITY INSURANCE (Section 6.17). This
+    does not apply to people who simply sell Your Programs.
+  - Disputes go to BINDING ARBITRATION in Baku, Azerbaijan. You WAIVE
+    class actions except where local consumer law forbids that waiver
+    (Section 6.6).
+  - The Author's liability is capped at USD $100, except for things
+    that cannot lawfully be capped (Section 8).
+  - GOOD-FAITH SECURITY RESEARCH is allowed locally, with private
+    disclosure to the Author first (Section 3.3).
+  - Official dependency bots (Dependabot, Renovate, and equivalents)
+    are allowed (Section 3.3.4).
+  - If the Author MATERIALLY CHANGES this license, you get 30 days
+    notice and a right to exit (Section 6.10).
+
+The full terms below govern. This summary is not a substitute.
+
+================================================================================
+                             TABLE OF CONTENTS
+================================================================================
+
+  SECTION 1  — DEFINITIONS
+  SECTION 2  — LICENSE GRANT
+  SECTION 3  — PERMITTED USES
+  SECTION 4  — PROHIBITED USES
+  SECTION 5  — CONTRIBUTOR TERMS
+  SECTION 6  — LEGAL & STRUCTURAL PROVISIONS
+  SECTION 7  — DISCLAIMER OF WARRANTIES
+  SECTION 8  — LIMITATION OF LIABILITY
+  SECTION 9  — GENERAL PROVISIONS
+
+================================================================================
+                           SECTION 1 — DEFINITIONS
+================================================================================
+
+"Software"              — The Sovren language, compiler, runtime,
+                          libraries, examples, documentation, and all
+                          other materials in this Repository and any
+                          official release.
+
+"Author"                — Elxan Hüseynov (also transliterated as
+                          Elxan Huseynov), the sole intellectual
+                          property owner of the Software, including
+                          authorized successors and assigns under
+                          Section 6.13.
+
+"You" / "Licensee"      — Any individual or legal entity accessing or
+                          using the Software. Automated Systems and AI
+                          Systems are not Licensees. The people or
+                          entities that run them remain Licensees.
+
+"Contribution"          — Any code, documentation, translation, design,
+                          feedback, Pull Request, issue, or other
+                          material submitted to the Author or this
+                          Repository.
+
+"Contributor"           — Any individual who submits a Contribution.
+
+"Permitted Use"         — A use authorized under Section 3.
+
+"Restricted Use"        — A use prohibited under Section 4.
+
+"Sandbox"               — An isolated, local, non-public environment
+                          used only to evaluate or test the Software.
+
+"Authorized Security    — Security research within Section 3.3, done
+ Research"                locally, with findings reported privately to
+                          the Author before any public disclosure.
+
+"Confidential           — Non-public information that is proprietary to
+ Information"             the Author and not generally known, including
+                          unpublished compiler internals and trade
+                          secrets. Public or independently discovered
+                          information is not Confidential Information.
+
+"Commercial Use"        — Use of the Software itself directed toward
+                          commercial advantage, including sale, rental,
+                          hosting, or licensing of the Software, and
+                          use that supports paid access to the Software.
+                          Evaluating the Software on personal time for
+                          learning is not Commercial Use merely because
+                          you work at a company. Commercial Use does
+                          NOT include writing, compiling, running,
+                          selling, or otherwise monetizing Your
+                          Programs (see Section 3.1.3).
+
+"Your Programs"         — Source code you author in the Sovren language,
+                          and the binaries produced from it by the
+                          official compiler. Your Programs are yours.
+                          A binary the official compiler produces is
+                          Your Program even though the compiler builds
+                          runtime and library code into it. Shipping
+                          that binary is not redistribution of the
+                          Software.
+
+"Non-Commercial Use"    — Any use that is not Commercial Use, including
+                          personal use, education, academic research,
+                          and writing, running, and monetizing Your
+                          Programs.
+
+"Personal Use"          — Use by one natural person for that person's
+                          own private, non-business purposes, on
+                          devices they own or control.
+
+"Derivative Work"       — Any modification, port, translation, rewrite,
+                          fork, or adaptation of the Software, in whole
+                          or in part. Your Programs are not Derivative
+                          Works, and neither are the binaries the
+                          official compiler produces from them.
+
+"Repository"            — The official source repository designated by
+                          the Author, plus official release channels.
+                          Forks and unofficial mirrors are not
+                          Repositories.
+
+"Pull Request"          — A submission through the official Repository
+                          (or another channel the Author names)
+                          proposing changes for the Author's review.
+
+"Material Breach"       — A breach that (a) causes or is likely to
+                          cause significant harm; (b) involves any
+                          Prohibited Use under Section 4; (c) involves
+                          unauthorized disclosure of Confidential
+                          Information; or (d) is repeated after written
+                          notice. Minor good-faith breaches that are
+                          promptly cured are not Material Breach.
+
+"AI System"             — Any artificial intelligence model, machine
+                          learning system, large language model,
+                          generative model, automated coding assistant,
+                          or related system that can ingest, process,
+                          learn from, or generate output from input
+                          data.
+
+"Automated System"      — Any non-human actor, including bots,
+                          crawlers, scrapers, scripts, and AI Systems.
+                          Official dependency and security tooling
+                          under Section 3.3.4 is not an Automated
+                          System for Section 2.5.
+
+"Trademark"             — Any name, logo, or mark associated with the
+                          Author or Sovren, registered or not.
+
+"Good Faith"            — Honesty of intent, no intent to take unfair
+                          advantage, and conduct a reasonable person
+                          would consider fair.
+
+"Reasonable Efforts"    — The efforts a reasonably prudent person in
+                          the same situation would expend. Does not
+                          require best efforts.
+
+"Affiliate"             — Any entity that controls, is controlled by,
+                          or is under common control with the Author,
+                          where control means more than fifty percent
+                          (50%) of voting equity or the power to
+                          direct management.
+
+"Effective Date"        — The date the Licensee first accepts under
+                          clause 9.7.1.
+
+"Minor"                 — Any natural person under eighteen (18), or
+                          under the age of majority in their
+                          jurisdiction if higher.
+
+================================================================================
+                          SECTION 2 — LICENSE GRANT
+================================================================================
+
+2.1 GRANT OF LIMITED LICENSE
+    Subject to full compliance with this license, the Author grants
+    You a limited, non-exclusive, non-transferable, non-sublicensable,
+    revocable license to access and use the Software solely for the
+    Permitted Uses in Section 3.
+
+2.2 SCOPE OF GRANT
+    No other rights are granted, whether by implication, estoppel, or
+    otherwise. All rights not granted in Section 3 are reserved.
+
+2.2.1 YOUR PROGRAMS CONTROL
+      Section 3.1.3 grants you the right to write, run, ship, and sell
+      Your Programs, including the runtime and library code the
+      official compiler builds into them. If any other part of this
+      license is read to limit that right, Section 3.1.3 controls and
+      the other reading does not apply. Nothing in this license
+      requires you to pay the Author, obtain permission, or sign an
+      agreement in order to sell software you wrote in Sovren.
+
+      THE ONLY EXCEPTIONS: clauses 4.4.2 (weapons systems) and 4.4.6
+      (life-critical control) do restrict Your Programs, and they
+      prevail over this clause and over Section 3.1.3. No other
+      clause does.
+
+2.3 NO OPEN SOURCE RIGHTS
+    This license is not an open-source license as defined by the Open
+    Source Initiative. Except for Your Programs under Section 3.1.3,
+    nothing here grants redistribution rights, modification for
+    separate publication, or sublicensing.
+
+2.4 REVOCABILITY
+    The Author may revoke this license as to any Licensee in
+    violation, under Section 6.3.
+
+2.5 AUTOMATED SYSTEMS AND AI — NO CONSENT
+    The Author does not consent to access, reading, processing,
+    copying, indexing, caching, ingestion, fine-tuning, or training
+    on any part of this Software by any Automated System or AI
+    System.
+
+    This non-consent applies whether or not a robots.txt file is
+    present. Such access is unauthorized.
+
+    EXCEPTION: Official dependency-management, security-scanning, and
+    code-quality bots within Section 3.3.4 (for example Dependabot or
+    Renovate) are not subject to this clause for those limited
+    purposes. The exception does not extend to training or
+    fine-tuning.
+
+2.6 LICENSE FILE PRESERVATION AND ATTRIBUTION
+    Any permitted copy or fork of the Software must keep this license
+    file intact. Removing or hiding it is a Material Breach. Where
+    sharing the Software is permitted under Section 3, keep all
+    copyright notices. This clause does not apply to Your Programs:
+    you are not required to ship this license, or any notice, with
+    software you wrote in Sovren.
+
+================================================================================
+                          SECTION 3 — PERMITTED USES
+================================================================================
+
+Any use of the Software not listed here is prohibited. This restriction
+applies to the Software itself. Your Programs are governed by Section
+3.1.3, which permits commercial use.
+
+────────────────────────────────────────────────────────────────────────────────
+3.1 PERSONAL & INDIVIDUAL USE
+────────────────────────────────────────────────────────────────────────────────
+
+3.1.1 USE OF THE SOFTWARE
+      You may use the Software to write Sovren programs, compile them
+      with the official compiler, and run the programs you wrote,
+      provided you do not give others the compiler itself, do not host
+      the compiler commercially, and do not monetize the Software
+      itself. Shipping and monetizing Your Programs, including the
+      runtime and library code the compiler builds into them, is
+      expressly allowed under Section 3.1.3.
+
+3.1.2 OFFLINE EVALUATION
+      You may evaluate the Software offline solely for personal or
+      authorized research purposes.
+
+3.1.3 YOUR PROGRAMS, INCLUDING COMMERCIAL USE
+      Programs you write in Sovren are your expression. This license
+      does not claim ownership of the text of programs you author,
+      except that the compiler, runtime, libraries, and language
+      design remain the Author's.
+
+      You may use Your Programs for any lawful purpose, including
+      commercial purposes. You may sell Your Programs, charge for
+      them, put them behind a subscription, ship them in a product,
+      run them as a paid service, and keep all revenue. No fee,
+      royalty, or separate agreement with the Author is required.
+
+      This permission covers Your Programs and the binaries the
+      official compiler produces from them. The compiler builds parts
+      of the runtime and libraries into every binary it makes. You may
+      ship, sell, and distribute those binaries anywhere, including
+      app stores and package registries, and the embedded runtime and
+      library code travels with them at no cost and with no separate
+      permission needed.
+
+      What this does not permit: giving others the compiler itself,
+      the runtime source, or the library source, or shipping a program
+      whose purpose is to hand the Software to someone else. The
+      prohibitions in Section 4.1 and 4.3 apply to the Software as a
+      development tool, not to Your Programs.
+
+────────────────────────────────────────────────────────────────────────────────
+3.2 EDUCATION & RESEARCH
+────────────────────────────────────────────────────────────────────────────────
+
+3.2.1 EDUCATIONAL & STUDENT USE
+      Schools, universities, students, and educators may run,
+      evaluate, and test the Software for internal educational or
+      academic-learning purposes. No redistribution or public
+      commercial deployment of the compiler is permitted under this
+      exception. Students and staff may monetize Your Programs under
+      Section 3.1.3.
+
+3.2.2 ACADEMIC RESEARCH
+      Academic researchers may evaluate the language, compiler, and
+      algorithms for peer-reviewed studies.
+
+3.2.3 PERFORMANCE AND CORRECTNESS RESEARCH
+      Researchers may measure speed and correctness of the compiler
+      and of programs written in Sovren, and may publish methods and
+      results with full transparency.
+
+3.2.4 CODE COMPLEXITY & MAINTAINABILITY ANALYSIS
+      Contributors may analyze complexity and maintainability solely
+      to propose improvements to the Author.
+
+3.2.5 FORMAL AND SECURITY ANALYSIS
+      Qualified researchers may apply static analysis or formal
+      methods to the Software, provided findings are reported to the
+      Author.
+
+────────────────────────────────────────────────────────────────────────────────
+3.3 SECURITY & BUG RESEARCH
+────────────────────────────────────────────────────────────────────────────────
+
+3.3.1 SECURITY VULNERABILITY RESEARCH
+      Security researchers may conduct Authorized Security Research,
+      including analyzing the compiler and runtime to find
+      vulnerabilities, solely if:
+      (a) all research is local and offline;
+      (b) discoveries are reported privately to the Author before any
+      public or third-party disclosure (other than co-researchers
+      bound by equivalent confidentiality);
+      (c) no public disclosure is made before the earlier of (i) the
+      Author issuing a patch, (ii) written permission, or (iii)
+      ninety (90) days after good-faith private disclosure with no
+      reasonable Author response.
+
+3.3.2 SECURITY RESEARCH TECHNIQUE EXEMPTION
+      Notwithstanding Sections 4.2, 4.6, and 4.8, Authorized Security
+      Research under 3.3.1 may use the minimum methods needed to
+      identify and document a specific vulnerability, only locally,
+      with full disclosure of methods to the Author, and with no
+      sharing of findings without the Author's prior written consent.
+
+3.3.3 LOCAL SCANNING
+      Researchers may run vulnerability scanners and dependency audit
+      tools against local copies of this Software.
+
+3.3.4 AUTOMATED DEPENDENCY SCANNING & UPDATES
+      Official dependency-update services, security scanners, and
+      repository bots (such as Dependabot or Renovate) may read this
+      Software solely to compile dependency graphs, detect known
+      vulnerabilities, and submit update patches via Pull Request.
+      This does not allow training or fine-tuning any AI System.
+
+────────────────────────────────────────────────────────────────────────────────
+3.4 PERFORMANCE & OPTIMIZATION
+────────────────────────────────────────────────────────────────────────────────
+
+3.4.1 PERFORMANCE BENCHMARKING & PUBLISHING
+      You may run speed tests on this Software and publish results if
+      your method, data, environment, and scripts are published with
+      them.
+
+3.4.2 MEMORY AND TOOLCHAIN PROFILING
+      Contributors may profile memory and compare compilation
+      toolchains on local builds to propose improvements.
+
+3.4.3 REPRODUCIBLE BUILD TESTING
+      Build engineers may verify that the same source produces
+      matching binaries under matching conditions.
+
+3.4.4 ALTERNATIVE OS TESTING
+      Contributors may compile and run this Software on other
+      operating systems solely to evaluate compatibility (including
+      Linux, Windows, and Mac targets provided in the tree).
+
+────────────────────────────────────────────────────────────────────────────────
+3.5 DOCUMENTATION & TRANSLATION
+────────────────────────────────────────────────────────────────────────────────
+
+3.5.1 DOCUMENTATION AND BOOK TRANSLATION
+      You may translate book.md and other documentation, provided the
+      translation is offered back to this project.
+
+3.5.2 DOCUMENTATION CONTRIBUTIONS
+      Contributors may improve documentation via Pull Requests.
+
+────────────────────────────────────────────────────────────────────────────────
+3.6 CONTRIBUTIONS & COMMUNITY
+────────────────────────────────────────────────────────────────────────────────
+
+3.6.1 FORKING FOR PULL REQUESTS
+      You may fork this Repository and change the code solely to
+      improve the Software, with the Good-Faith intent of sending
+      those improvements back via Pull Request. If a Pull Request is
+      not merged, the fork stays under this clause if you (a) make no
+      commercial use of the fork, (b) do not redistribute or publish
+      the fork, and (c) delete the fork within a reasonable time if
+      you will not contribute further.
+      Permitted improvements include performance, security, bug
+      fixes, features, documentation, translation, refactoring,
+      readability, tests, and other quality or correctness work.
+
+3.6.2 BUG REPORTS, ISSUES, AND FEATURE REQUESTS
+      You may file issues and feature requests on the official
+      Repository.
+
+3.6.3 CODE REVIEW AND FEEDBACK
+      You may review official changes and send feedback through
+      official channels.
+
+3.6.4 BETA TESTING
+      Users invited by the Author may test pre-release versions.
+
+3.6.5 CONTRIBUTOR RECOGNITION
+      Contributors whose Pull Requests are accepted may factually
+      state that fact on a resume, portfolio, or professional
+      profile. This does not grant a right to publish the
+      proprietary source beyond clause 3.9.1.
+
+3.6.6 RESPONSIBLE DISCLOSURE
+      Security researchers may privately report vulnerabilities
+      under clause 3.3.1.
+
+────────────────────────────────────────────────────────────────────────────────
+3.7 DISPLAY & PROMOTION
+────────────────────────────────────────────────────────────────────────────────
+
+3.7.1 PORTFOLIO DISPLAY
+      Contributors may show snippets or screenshots of code they
+      authored and contributed, on a personal professional portfolio.
+
+3.7.2 REVIEWS, TALKS, TUTORIALS, AND CITATION
+      You may factually mention Sovren in articles, talks, tutorials
+      about officially documented features, social posts, and
+      academic citations. Journalists may include factual screenshots
+      of official examples.
+
+3.7.3 TRADEMARK FACTUAL PROMOTION
+      You may factually use the name Sovren to point people to the
+      official project. You may not put the name or marks on a
+      modified or external product.
+
+────────────────────────────────────────────────────────────────────────────────
+3.8 TESTING ENVIRONMENTS
+────────────────────────────────────────────────────────────────────────────────
+
+3.8.1 LOCAL MACHINE AND SANDBOX
+      You may run this Software on a local machine and in isolated
+      Sandbox environments for authorized contribution and testing.
+
+3.8.2 CONTAINERS AND HARDWARE RIGS
+      Contributors may run local builds in containers or on test
+      hardware for compatibility and performance evaluation.
+
+────────────────────────────────────────────────────────────────────────────────
+3.9 LEGAL & HUMANITARIAN
+────────────────────────────────────────────────────────────────────────────────
+
+3.9.1 NON-PROFIT AND HUMANITARIAN EVALUATION
+      Registered non-profits, charities, and humanitarian
+      organizations may evaluate this Software in a Sandbox. No
+      commercial deployment of the Software itself, and no
+      redistribution. Your Programs remain governed by Section 3.1.3.
+
+3.9.2 HACKATHON AND CONFERENCE DEMO
+      Non-commercial hackathon participants and authorized speakers
+      may evaluate or demonstrate publicly visible features. No
+      redistribution of the Software.
+
+3.9.3 ARCHIVAL
+      Accredited libraries and preservation institutions may keep a
+      read-only copy for historical preservation, with no public
+      redistribution.
+
+3.9.4 LEGAL PROCEEDINGS AND WHISTLEBLOWING
+      This Software may be submitted as evidence where legally
+      compelled. The Author must be notified where legally
+      permitted. Nothing here prohibits disclosure to a competent
+      authority as required or permitted by law.
+
+3.9.5 JOURNALISM
+      Accredited press may evaluate publicly visible features for
+      factual reporting, provided proprietary source is not
+      reproduced.
+
+================================================================================
+                         SECTION 4 — PROHIBITED USES
+================================================================================
+
+Every clause in this Section 4 is a strict prohibition on the Software.
+Any use of the Software not permitted under Section 3 is prohibited even
+if it is not listed here. This Section restricts the Software as a
+development tool. It does not restrict Your Programs, which Section
+3.1.3 governs, with two exceptions: clauses 4.4.2 (weapons systems)
+and 4.4.6 (life-critical control) apply to Your Programs as well.
+
+────────────────────────────────────────────────────────────────────────────────
+4.1 COMMERCIAL PROHIBITIONS ON THE SOFTWARE ITSELF
+────────────────────────────────────────────────────────────────────────────────
+
+4.1.1 NO SELLING OR MONETIZATION OF THE SOFTWARE
+      You may not sell, monetize, rent, lease, or host this Software,
+      its compiler binaries, or its underlying logic. This does not
+      restrict Your Programs, which you may monetize freely under
+      Section 3.1.3.
+
+4.1.2 NO SUBSCRIPTION WRAPPING OF THE SOFTWARE
+      You may not wrap this Software inside a paid service or charge
+      for access to the compiler or language. Charging for Your
+      Programs, including as a paid or subscription service, is
+      allowed under Section 3.1.3.
+
+4.1.3 NO ADVERTISING INJECTION INTO THE SOFTWARE
+      You may not insert advertisements or tracking into the compiler,
+      the runtime, the libraries, or any modified copy of them. This
+      does not restrict Your Programs: an application you write may
+      carry advertising or analytics like any other software you own.
+
+4.1.4 NO WHITE-LABEL OR COMPETING LANGUAGE
+      You may not repackage the Software as a multi-tenant developer
+      platform, a white-label compiler, or a competing language or
+      compiler for resale or redistribution. Building an ordinary
+      multi-tenant application in Sovren, such as a SaaS product that
+      serves many customers, is permitted under Section 3.1.3.
+
+4.1.5 BUSINESS USE
+      A business may install the Software and use it to write,
+      compile, and run Your Programs, including for internal
+      operations and for products it sells. A separate written
+      commercial agreement with the Author is required only to sell,
+      host, or otherwise monetize the Software itself, as described
+      in Sections 4.1.1 and 4.3.1.
+
+4.1.6 NO PAID CONSULTING FROM THIS CODEBASE
+      You may not provide paid consulting or training that sells
+      access to this proprietary codebase without the Author's prior
+      written consent.
+
+4.1.7 NO CROWDFUNDING FOR UNAUTHORIZED FORKS
+      You may not raise funds to finance unauthorized forks or
+      Derivative Works without the Author's prior written consent.
+
+4.1.8 NO OEM BUNDLING OF THE SOFTWARE
+      You may not bundle the compiler or its source with hardware or
+      other software without a separate written agreement. Shipping
+      Your Programs on a device, or inside another product, is
+      permitted under Section 3.1.3.
+
+────────────────────────────────────────────────────────────────────────────────
+4.2 CORE IP & ARCHITECTURE PROHIBITIONS
+────────────────────────────────────────────────────────────────────────────────
+
+4.2.1 NO REVERSE ENGINEERING OF OFFICIAL BUILDS
+      You may not decompile, disassemble, or reverse engineer the
+      official compiler or runtime binaries, except to the limited
+      extent mandatory law (including, where applicable, Article 6 of
+      EU Directive 2009/24/EC on interoperability) cannot be
+      prohibited. You may freely inspect, debug, and analyse binaries
+      produced from programs you wrote.
+
+4.2.2 NO BINARY ANALYSIS OF OFFICIAL BUILDS
+      You may not perform static or dynamic analysis of official
+      compiled builds to extract unpublished compiler internals.
+
+4.2.3 NO STRUCTURAL REPLICATION
+      To the maximum extent permitted by law, you may not copy the
+      Software's protectable expression — including distinctive
+      syntax expression, original documentation, and official
+      branding — to launch a competing language or compiler. This
+      does not protect unprotectable ideas or methods.
+
+4.2.4 NO SEPARATE PROJECT
+      You may not use this code or a fork of it to launch a separate
+      or competing language, compiler, website, or service.
+
+4.2.5 NO SOURCE-TO-SOURCE TRANSPILING
+      You may not translate or rewrite the Software's source into
+      another language without the Author's prior written consent.
+
+4.2.6 NO LINKING THE COMPILER INTO EXTERNAL PRODUCTS
+      You may not statically or dynamically link the compiler, or its
+      source, as a dependency inside a third-party product. This does
+      not restrict Your Programs: the compiler builds runtime and
+      library code into every binary it makes, and shipping those
+      binaries is permitted under Section 3.1.3, including binaries
+      you ship as a library for others to call.
+
+4.2.7 NO PUBLISHING THE SOFTWARE TO PACKAGE REGISTRIES
+      You may not publish the Software, its source, or the compiler to
+      package registries. Publishing Your Programs, including compiled
+      binaries and shared libraries the official compiler produced, is
+      permitted under Section 3.1.3.
+
+4.2.8 NO SUBLICENSING
+      You may not sublicense or transfer any rights in this Software.
+
+────────────────────────────────────────────────────────────────────────────────
+4.3 DISTRIBUTION & DEPLOYMENT PROHIBITIONS
+────────────────────────────────────────────────────────────────────────────────
+
+4.3.1 NO UNAUTHORIZED HOSTING
+      You may not deploy or operate this Software as a cloud or
+      software-as-a-service offering, or host the compiler for others,
+      without a separate written commercial agreement.
+
+4.3.2 NO UNAUTHORIZED DISTRIBUTION OF THE SOFTWARE
+      You may not distribute this Software or a derivative of it
+      through app stores, unofficial mirrors, CDNs, or package
+      registries without the Author's prior written consent. This
+      does not restrict Your Programs: binaries built by the official
+      compiler may be published anywhere, including app stores and
+      package registries (Section 3.1.3).
+
+4.3.3 NO P2P OR TORRENT DISTRIBUTION
+      You may not distribute this Software through peer-to-peer
+      networks or torrents.
+
+────────────────────────────────────────────────────────────────────────────────
+4.4 GOVERNMENT, MILITARY & INSTITUTIONAL PROHIBITIONS
+────────────────────────────────────────────────────────────────────────────────
+
+4.4.1 NO OPERATIONAL GOVERNMENT USE OF THE SOFTWARE
+      A government entity may not install or operate the Software
+      itself (the compiler and its source) without a separate written
+      agreement. This does not prohibit non-operational evaluation or
+      classroom use by public universities as permitted under Sections
+      3.2 and 3.9, or compelled legal access under Section 3.9.4, and
+      it does not prohibit anyone from selling or supplying Your
+      Programs to a government buyer.
+
+4.4.2 NO MILITARY OR INTELLIGENCE OPERATIONAL USE
+      The Software itself may not be deployed operationally by any
+      military, defense contractor, weapons program, or intelligence
+      agency, and Your Programs may not be used in a weapons system.
+      Purely academic non-operational study is not prohibited.
+
+4.4.3 NO LAW ENFORCEMENT USE WITHOUT LAWFUL AUTHORIZATION
+      This Software may not be used by law enforcement for
+      investigative or surveillance purposes without a lawfully
+      issued warrant or equivalent order, and prior notice to the
+      Author where lawfully permitted.
+
+4.4.4 NO MASS SURVEILLANCE OR PREDICTIVE POLICING
+      This Software may not be used for population-level surveillance,
+      predictive policing, or social credit systems.
+
+4.4.5 NO EXPORT TO SANCTIONED JURISDICTIONS
+      This Software may not be exported or made accessible to any
+      country, person, or entity subject to sanctions administered by
+      Azerbaijan, the United Nations Security Council, the European
+      Union, the United States (OFAC), or the United Kingdom (OFSI),
+      as those lists stand at the time of the export or access.
+
+4.4.6 NO LIFE-CRITICAL CONTROL USE
+      Neither the Software nor Your Programs may be used as a
+      controlling component where a failure could cause death,
+      injury, or severe environmental harm, including life support,
+      flight control, nuclear control, weapons, and emergency
+      dispatch. Ordinary business software for organisations in
+      these industries, such as scheduling, billing, records, or
+      reporting, is not restricted by this clause. The Software
+      carries no warranty for any such use. See also clause 7.5.
+
+────────────────────────────────────────────────────────────────────────────────
+4.5 ARTIFICIAL INTELLIGENCE PROHIBITIONS
+────────────────────────────────────────────────────────────────────────────────
+
+4.5.1 NO AI TRAINING ON SOURCE CODE
+      You may not copy, scrape, or use the Software's source (or any
+      Derivative Work), in whole or in part, to train, fine-tune,
+      evaluate, or test any AI System, including large language
+      models and generative coding assistants.
+
+4.5.2 NO AI TRAINING ON ASSOCIATED MATERIALS
+      You may not use the documentation, examples, or design of this
+      Software to train generative models.
+
+────────────────────────────────────────────────────────────────────────────────
+4.6 SECURITY ATTACK PROHIBITIONS
+────────────────────────────────────────────────────────────────────────────────
+
+These prohibitions apply outside Authorized Security Research.
+
+4.6.1 NO ATTACKS ON THE SOFTWARE OR PEOPLE RUNNING IT
+      You may not attack, exploit, or disrupt this Software, official
+      hosts, or machines running it, including denial-of-service,
+      injection, memory-corruption exploits, privilege escalation,
+      supply-chain attacks via Pull Requests, man-in-the-middle
+      attacks, replay of credentials, or similar methods.
+
+4.6.2 NO MALWARE
+      You may not modify or use this Software to inject malware,
+      spyware, ransomware, or cryptocurrency miners.
+
+────────────────────────────────────────────────────────────────────────────────
+4.7 HARMFUL & ILLEGAL USE
+────────────────────────────────────────────────────────────────────────────────
+
+4.7.1 NO HARASSMENT, STALKING, OR DOXXING
+      You may not use this Software to harass, stalk, or expose
+      private personal information of any person.
+
+4.7.2 NO TRAFFICKING OR CHILD EXPLOITATION
+      You are strictly prohibited from using this Software in any
+      manner that sexually exploits or endangers a Minor, or that
+      facilitates human trafficking. This prohibition is
+      unconditional.
+
+4.7.3 NO HATE, DISCRIMINATION, OR DISINFORMATION CAMPAIGNS
+      You may not modify this Software to amplify hate speech or to
+      run coordinated disinformation campaigns.
+
+4.7.4 NO FINANCIAL CRIME
+      You may not use this Software to launder money, evade
+      sanctions, or commit fraud.
+
+4.7.5 NO OTHER ILLEGAL USE
+      You may not use this Software for any purpose that is illegal
+      in the applicable jurisdiction.
+
+────────────────────────────────────────────────────────────────────────────────
+4.8 CODE MANIPULATION PROHIBITIONS
+────────────────────────────────────────────────────────────────────────────────
+
+4.8.1 NO RUNTIME HOOKING OF OFFICIAL BUILDS
+      You may not hook, patch, or inject into official compiler
+      binaries at runtime, outside Authorized Security Research.
+
+4.8.2 NO REPACKAGING OR RESIGNING
+      You may not unpack official binaries, modify them, and
+      re-sign them for distribution.
+
+4.8.3 NO CI/CD OR DEPENDENCY TAMPERING
+      You may not alter official build or dependency files to inject
+      unauthorized packages or backdoored releases.
+
+4.8.4 NO WEAKENING OF HARDENING
+      You may not remove security-hardening from Production builds
+      of the official compiler.
+
+────────────────────────────────────────────────────────────────────────────────
+4.9 BRANDING PROHIBITIONS
+────────────────────────────────────────────────────────────────────────────────
+
+4.9.1 NO TRADEMARK MISUSE
+      Viewing this code does not grant rights to use any Trademark
+      except factual pointing to the official project under
+      clause 3.7.3.
+
+4.9.2 NO EXTRACTION OF EMBEDDED SECRETS
+      You may not extract signing keys, tokens, or other embedded
+      secrets from the Software.
+
+================================================================================
+                        SECTION 5 — CONTRIBUTOR TERMS
+================================================================================
+
+5.1 CONTRIBUTOR AGE REQUIREMENT
+    You must be at least eighteen (18) years of age to submit any
+    Contribution. By submitting, you represent that you are at least
+    18 and able to enter a binding agreement.
+    Using Sovren to learn and to write programs is not restricted by
+    this clause. Only Contributions (Pull Requests and similar
+    submissions) require age 18.
+
+5.2 INTELLECTUAL PROPERTY ASSIGNMENT
+    By submitting any Contribution you irrevocably assign to Elxan
+    Hüseynov, effective on submission and whether or not later
+    accepted, full, perpetual, irrevocable, worldwide, royalty-free
+    ownership of all intellectual property rights in that
+    Contribution.
+
+    FALLBACK LICENSE WHERE ASSIGNMENT IS NOT PERMITTED: Where a
+    jurisdiction does not permit assignment of a right (including
+    moral rights), you instead grant the Author an exclusive,
+    perpetual, irrevocable, worldwide, royalty-free, transferable,
+    sublicensable license to exercise that right to the maximum
+    extent permitted, and you waive assertion of moral rights
+    against the Author to the maximum extent permitted.
+
+5.3 PATENT NON-ASSERTION
+    By submitting a Contribution, you covenant not to assert patent
+    claims against Elxan Hüseynov or authorized users based on
+    intellectual property in that Contribution.
+
+5.4 REPRESENTATION OF ORIGINALITY
+    You represent that the Contribution is your original work, that
+    you have the right to assign it, that it does not infringe third
+    parties, and that it contains no malicious code.
+
+5.5 NO OBLIGATION TO ACCEPT OR CREDIT
+    The Author need not review, accept, merge, or credit any
+    Contribution.
+
+5.6 SURVIVAL OF ASSIGNMENT
+    Clauses 5.2 and 5.3 survive termination, amendment, and change
+    of control of the Author.
+
+================================================================================
+                   SECTION 6 — LEGAL & STRUCTURAL PROVISIONS
+================================================================================
+
+6.1 GOVERNING LAW & JURISDICTION
+    This license is governed by the laws of Azerbaijan, without
+    regard to conflict-of-law rules. Subject to Section 6.6, the
+    courts of Azerbaijan have exclusive jurisdiction over matters
+    not subject to arbitration.
+
+6.2 SEVERABILITY
+    If any provision is held invalid, the rest remains in force. The
+    invalid provision shall be modified to the minimum extent needed
+    to make it valid while preserving the Author's intent, or
+    severed if modification is not possible.
+
+6.3 LICENSE TERMINATION
+    6.3.1 This license terminates automatically upon Material Breach.
+    6.3.2 For non-Material Breaches, the Author shall give written
+          notice and thirty (30) days to cure, where reasonably
+          practicable. If not cured, the license ends at the close of
+          that period. No cure period applies to Material Breach,
+          imminent harm, child exploitation, criminal activity, or
+          repeated violations.
+    6.3.3 The Author may also terminate as to a Licensee in violation
+          upon written notice under clause 6.5.
+    6.3.4 Upon termination you must cease all use of the Software,
+          delete all copies and forks of the Software in your control,
+          destroy Derivative Works of the Software, and certify
+          compliance within fourteen (14) days if the Author asks.
+          Termination does not require you to withdraw, recall, delete,
+          or stop selling Your Programs that were already built and
+          shipped, and it does not affect your customers' right to
+          keep using them. You simply may not compile new ones.
+    6.3.5 Termination does not limit other remedies.
+
+6.4 POST-TERMINATION SURVIVAL
+    These survive termination: Section 1 (as needed), Section 4,
+    Section 5 (clauses 5.2, 5.3, 5.4, and 5.6), Sections 6.1, 6.2,
+    6.3.4, 6.6, 6.9, 6.14, 6.15, 6.17, 6.18 (for any commercial
+    agreement), Section 7, and Section 8.
+
+6.5 NOTICE
+    Notices shall be in writing by email to the Author's official
+    contact on the official Repository, or by post to the Author's
+    last known address. Email is deemed delivered on the earlier of
+    confirmed receipt and three (3) business days if not returned.
+    Post is deemed delivered five (5) business days after dispatch.
+
+6.6 DISPUTE RESOLUTION & ARBITRATION
+    6.6.1 Disputes shall be finally settled by binding arbitration,
+          except as provided in 6.6.5.
+    6.6.2 A single arbitrator shall be agreed, or if not agreed
+          within thirty (30) days, appointed by a recognized
+          arbitration institution.
+    6.6.3 Arbitration shall be in English, seated in Baku,
+          Azerbaijan, under applicable international arbitration
+          rules.
+    6.6.4 The award is final and enforceable. Appeal is waived except
+          for fraud or manifest error of law.
+    6.6.5 The Author may seek emergency injunctive relief to prevent
+          irreparable harm without waiving arbitration.
+    6.6.6 CLASS-ACTION WAIVER. Disputes are individual. Neither party
+          may bring a class, collective, or representative action,
+          except where mandatory consumer law forbids that waiver, in
+          which case this clause applies only to the maximum extent
+          permitted.
+
+6.7 WAIVER
+    Delay in enforcing a right is not a waiver. Any waiver must be
+    in writing and signed by the Author.
+
+6.8 ENTIRE AGREEMENT
+    This license is the entire agreement as to the Software. Informal
+    comments do not change it. The only way to change it is a formal
+    amendment under clause 6.10.
+
+6.9 EXPORT CONTROL & SANCTIONS
+    6.9.1 This Software may include cryptographic components and may
+          be subject to export and sanctions laws of Azerbaijan, the
+          United States, the European Union, the United Kingdom, and
+          the United Nations Security Council.
+    6.9.2 You represent that you are not in, under the control of, or
+          a national of a sanctioned country or on a prohibited-party
+          list, and that you will not export this Software to a
+          sanctioned person or place.
+    6.9.3 You are responsible for complying with export and privacy
+          laws that apply to you.
+
+6.10 AMENDMENTS
+     6.10.1 The Author may amend this license by publishing a new
+            version in the official Repository.
+     6.10.2 For non-material changes, continued use after publication
+            is acceptance.
+     6.10.3 For MATERIAL changes (expanded obligations, reduced
+            rights, dispute-resolution changes, or Section 5
+            changes):
+            (a) the Author shall use Reasonable Efforts to give
+            notice via the Repository and, where email is known,
+            by email;
+            (b) changes take effect no earlier than thirty (30) days
+            after publication;
+            (c) continued use after that date is acceptance if you
+            had a reasonable chance to review;
+            (d) if you do not accept, you may stop all use within
+            the 30-day window, subject only to surviving
+            obligations;
+            (e) prior versions shall remain accessible.
+     6.10.4 Contributions accepted under a prior version stay under
+            that version's assignment terms.
+
+6.11 FORCE MAJEURE
+     The Author is not liable for failure caused by events beyond
+     reasonable control, including war, disaster, pandemic,
+     governmental action, cyberattack, or widespread infrastructure
+     failure.
+
+6.12 MINORS
+     Submitting Contributions is limited to persons 18 and older
+     (Section 5.1). This language may be used by younger people to
+     learn and to write programs. Do not submit a Minor's personal
+     data to the Author or the Repository. If you discover such
+     data, notify the Author and stop processing it.
+
+6.13 ASSIGNMENT
+     6.13.1 The Author may assign this license to a successor or
+            Affiliate. Where practicable, notice will be published
+            in the Repository. The assignee must take on the
+            Author's obligations and may not impose more burdensome
+            terms on existing Licensees except under clause 6.10.3.
+     6.13.2 Licensees may not assign this license without prior
+            written consent, except by operation of law if the
+            transferee is bound.
+     6.13.3 If the Author dies or ceases to exist without a named
+            successor, rights pass to legal heirs or statutory
+            successors under applicable law.
+
+6.14 INDEMNIFICATION
+     6.14.1 You will indemnify the Author against claims, damages,
+            and reasonable legal costs arising from your Material
+            Breach, illegal use, negligence or willful misconduct,
+            infringing Contributions, or unauthorized distribution,
+            in proportion to your fault, and not for the Author's
+            own gross negligence, willful misconduct, or fraud.
+     6.14.2 The Author shall give prompt notice of an indemnified
+            claim. Failure to notify does not relieve you except to
+            the extent you are materially prejudiced.
+     6.14.3 You may assume defense of an indemnified claim at your
+            expense. The Author shall cooperate reasonably.
+
+6.15 CONFIDENTIALITY
+     6.15.1 You may gain access to Confidential Information.
+     6.15.2 You will protect it with at least reasonable care, not
+            disclose it without prior written consent, use it only
+            for Permitted Uses, and limit access to people who need
+            it and are bound to equivalent confidentiality.
+     6.15.3 These duties do not apply to information that is public
+            through no fault of yours, already known without duty,
+            independently developed, or required by law (with
+            prompt notice where legally permitted).
+     6.15.4 These duties last five (5) years after termination, or
+            longer for information that remains a trade secret.
+
+6.16 STATUTE OF LIMITATIONS
+     Claims must be commenced within five (5) years from when the
+     claimant knew or reasonably should have known the facts,
+     except where mandatory law requires a longer period.
+
+6.17 ENTERPRISE INSURANCE REQUIREMENT
+     6.17.1 Any entity with a separate written commercial agreement
+            must maintain cyber-liability insurance for the life of
+            that agreement.
+     6.17.2 Minimum coverage is USD $1,000,000 per occurrence, or
+            such other amount as the commercial agreement states.
+     6.17.3 Certificates shall be provided within fourteen (14) days
+            of request.
+     6.17.4 Failure to maintain insurance is a material breach of
+            the commercial agreement.
+     6.17.5 The Author may revoke a commercial license for Material
+            Breach, insurance failure, unpaid fees after thirty
+            (30) days' notice, or other grounds in that agreement.
+
+6.18 ACCESSIBILITY
+     The Author will use reasonable efforts to keep documentation
+     and official examples usable. This is an effort obligation,
+     not a guarantee.
+
+================================================================================
+                      SECTION 7 — DISCLAIMER OF WARRANTIES
+================================================================================
+
+7.1 THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT
+    WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
+    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE,
+    NON-INFRINGEMENT, SECURITY, ACCURACY, OR COMPLETENESS.
+
+7.2 THE AUTHOR MAKES NO WARRANTY THAT THE SOFTWARE WILL MEET YOUR
+    REQUIREMENTS, BE UNINTERRUPTED OR ERROR-FREE, THAT DEFECTS WILL
+    BE CORRECTED, OR THAT IT IS FREE FROM HARMFUL COMPONENTS.
+
+7.3 YOU USE THE SOFTWARE AT YOUR OWN RISK, INCLUDING ANY DAMAGE TO
+    SYSTEMS OR LOSS OF DATA.
+
+7.4 NO ADVICE CREATES A WARRANTY NOT STATED HERE.
+
+7.5 NO FITNESS FOR HIGH-RISK USE. THE SOFTWARE IS NOT INTENDED FOR
+    HAZARDOUS OR FAIL-SAFE ENVIRONMENTS. ANY SUCH USE IS AT YOUR
+    OWN RISK AND IS PROHIBITED UNDER CLAUSE 4.4.6.
+
+7.6 NO WARRANTY OF REGULATORY COMPLIANCE. YOU ARE SOLELY
+    RESPONSIBLE FOR WHETHER YOUR USE COMPLIES WITH LAWS THAT APPLY
+    TO YOU.
+
+================================================================================
+                       SECTION 8 — LIMITATION OF LIABILITY
+================================================================================
+
+8.1 TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE AUTHOR IS NOT
+    LIABLE FOR INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+    CONSEQUENTIAL, OR PUNITIVE DAMAGES, INCLUDING LOSS OF PROFITS,
+    DATA, OR GOODWILL, EVEN IF ADVISED OF THE POSSIBILITY.
+
+8.2 THE AUTHOR'S TOTAL CUMULATIVE LIABILITY TO ANY LICENSEE SHALL
+    NOT EXCEED ONE HUNDRED US DOLLARS (USD $100.00).
+
+8.3 CLAUSES 8.1 AND 8.2 DO NOT APPLY TO LIABILITY THAT CANNOT BE
+    LIMITED, INCLUDING (WHERE APPLICABLE) GROSS NEGLIGENCE, WILLFUL
+    MISCONDUCT, FRAUD, DEATH OR PERSONAL INJURY CAUSED BY THE
+    AUTHOR'S NEGLIGENCE, NON-WAIVABLE CONSUMER CLAIMS, AND OTHER
+    LIABILITY THAT CANNOT BE LIMITED IN THE LICENSEE'S
+    JURISDICTION.
+
+8.4 WHERE A JURISDICTION FORBIDS SOME LIMITS, THE REMAINING LIMITS
+    APPLY TO THE MAXIMUM EXTENT PERMITTED.
+
+================================================================================
+                        SECTION 9 — GENERAL PROVISIONS
+================================================================================
+
+9.1 HEADINGS
+    Headings are for convenience only.
+
+9.2 LANGUAGE
+    English is the controlling version. If a translation conflicts,
+    English prevails, except where mandatory local law requires a
+    local-language version to control, and then only to that
+    minimum extent.
+
+9.3 NO PARTNERSHIP
+    This license creates no partnership, employment, or agency.
+
+9.4 THIRD-PARTY RIGHTS
+    No third-party enforcement rights except as stated.
+
+9.5 TRADEMARK NOTICE
+    All Trademarks associated with Sovren are the exclusive
+    property of Elxan Hüseynov. No right to use them is granted
+    except under clause 3.7.3.
+
+9.6 CUMULATIVE REMEDIES
+    The Author's remedies are cumulative.
+
+9.7 ACCEPTANCE METHODS
+    9.7.1 Acceptance occurs when you do an act that is clearly
+          acceptance of THIS license, including: cloning this
+          Repository; forking it; downloading files with intent to
+          use or evaluate; compiling or running the Software;
+          submitting a Pull Request; or using a control that
+          specifically names this license.
+          Generic buttons such as "OK" or "Continue" are not
+          acceptance unless the interface clearly presents the act
+          as acceptance of this license.
+    9.7.2 Only viewing the source on a public host is not
+          acceptance.
+    9.7.3 Acceptance has the force of a handwritten signature.
+    9.7.4 The Author does not consent to Automated System or AI
+          System access, subject to Section 2.5.
+
+9.8 INTERPRETATION
+    Ambiguity shall be resolved consistent with the Author's stated
+    intent: protection of intellectual property and of the Software,
+    to the extent consistent with the governing law. This rule does
+    not apply to Section 3.1.3. Any ambiguity about whether you may
+    write, run, ship, or sell Your Programs shall be resolved in
+    favour of permitting it, as clause 2.2.1 requires. This
+    permissive rule does not extend to clauses 4.4.2 and 4.4.6.
+
+9.9 CONTACT
+    For licensing, commercial agreements, violation reports, or
+    security disclosures, contact the Author through the official
+    Repository.
+
+================================================================================
+        Copyright (c) 2026 Elxan Hüseynov (also transliterated
+             as Elxan Huseynov). All Rights Reserved.
+      Proprietary Source-Visible License — Version 1.0 — August 2026
+    Unauthorized use, reproduction, or distribution of the Software is
+    strictly prohibited. Programs you write in Sovren are yours to sell
+    and ship freely under Section 3.1.3.
+================================================================================

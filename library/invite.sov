@@ -1,0 +1,19 @@
+# invite.sov — invite codes
+# needs _sov_list
+use file
+use string
+use token
+use store
+
+invite_new path:
+    c: token_hex(6)
+    store_put(path, c)
+    return c
+
+invite_ok path code:
+    t: file_read_all(path)
+    if t is 0
+        return 0
+    if str_find(t, code) > 0 - 1
+        return 1
+    return 0

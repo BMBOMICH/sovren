@@ -1,0 +1,113 @@
+# fixed.sov — decimal numbers as scaled integers (6 decimal places)
+# 1.0 is stored as 1000000. Use fx_make to build, fx_text to show.
+use string
+use num
+
+FX_ONE: 1000000
+FX_HALF: 500000
+
+fx_make whole frac:
+    return whole * FX_ONE + frac
+
+fx_from n:
+    return n * FX_ONE
+
+fx_whole a:
+    return a / FX_ONE
+
+fx_frac a:
+    r: a % FX_ONE
+    if r < 0
+        r: 0 - r
+    return r
+
+fx_add a b:
+    return a + b
+
+fx_sub a b:
+    return a - b
+
+fx_mul a b:
+    ah: a / FX_ONE
+    al: a % FX_ONE
+    if a < 0
+        ah: 0 - ((0 - a) / FX_ONE)
+        al: 0 - ((0 - a) % FX_ONE)
+    return ah * b + (al * b) / FX_ONE
+
+fx_div a b:
+    if b is 0
+        return 0
+    q: (a / b) * FX_ONE
+    r: a % b
+    return q + (r * FX_ONE) / b
+
+fx_neg a:
+    return 0 - a
+
+fx_abs a:
+    if a < 0
+        return 0 - a
+    return a
+
+fx_floor a:
+    if a < 0
+        if a % FX_ONE is not 0
+            return (a / FX_ONE - 1) * FX_ONE
+    return (a / FX_ONE) * FX_ONE
+
+fx_ceil a:
+    if a % FX_ONE is 0
+        return a
+    if a > 0
+        return (a / FX_ONE + 1) * FX_ONE
+    return (a / FX_ONE) * FX_ONE
+
+fx_round a:
+    if a < 0
+        return 0 - fx_round(0 - a)
+    return ((a + FX_HALF) / FX_ONE) * FX_ONE
+
+fx_min a b:
+    if a < b
+        return a
+    return b
+
+fx_max a b:
+    if a > b
+        return a
+    return b
+
+fx_pad6 n:
+    out: _sov_alloc(8)
+    v: n
+    i: 5
+    as long as i >= 0
+        poke_byte(out, i, 48 + v % 10)
+        v: v / 10
+        i: i - 1
+    poke_byte(out, 6, 0)
+    return as text out
+
+fx_text a:
+    w: fx_whole(a)
+    f: fx_frac(a)
+    sign: ""
+    if a < 0
+        if w is 0
+            sign: "-"
+    body: str_cat(num_text(w), ".")
+    body: str_cat(body, fx_pad6(f))
+    return as text str_cat(sign, body)
+
+fx_sqrt a:
+    if a <= 0
+        return 0
+    x: a
+    i: 0
+    as long as i < 40
+        if x is 0
+            return 0
+        x: (x + fx_div(a, x)) / 2
+        i: i + 1
+    return x

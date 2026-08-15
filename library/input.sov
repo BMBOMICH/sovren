@@ -1,0 +1,26 @@
+# input.sov — read from the keyboard
+use key
+use string
+use num
+
+input_line:
+    return as text key_line(512)
+
+input_num:
+    return str_num(key_line(64))
+
+input_ask q:
+    _sov_print(q)
+    return as text key_line(512)
+
+input_yes q:
+    _sov_print(q)
+    a: key_line(8)
+    if str_len(a) is 0
+        return 0
+    c: peek_byte(a, 0)
+    if c is 121
+        return 1
+    if c is 89
+        return 1
+    return 0

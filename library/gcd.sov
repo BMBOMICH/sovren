@@ -1,0 +1,26 @@
+# gcd.sov — lowest common multiple and fraction helpers
+# gcd itself lives in math
+use math
+
+lcm a b:
+    g: gcd(a, b)
+    if g is 0
+        return 0
+    return (a / g) * b
+
+frac_top a b:
+    g: gcd(a, b)
+    if g is 0
+        return a
+    return a / g
+
+frac_bot a b:
+    g: gcd(a, b)
+    if g is 0
+        return b
+    return b / g
+
+coprime a b:
+    if gcd(a, b) is 1
+        return 1
+    return 0

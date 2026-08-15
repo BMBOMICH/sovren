@@ -1,0 +1,131 @@
+# tui.sov — full screen text apps: move the cursor anywhere,
+# colour it, size the window, read arrow keys.
+
+use sys
+use num
+use string
+
+# the escape byte, 27. built here so no new syntax is needed.
+tui_esc:
+    p: _sov_alloc(2)
+    poke_byte(p, 0, 27)
+    poke_byte(p, 1, 0)
+    return as text p
+
+# ESC followed by [
+tui_csi:
+    p: _sov_alloc(3)
+    poke_byte(p, 0, 27)
+    poke_byte(p, 1, 91)
+    poke_byte(p, 2, 0)
+    return as text p
+
+# put the cursor on a row and column. top left is 1 1.
+tui_goto row col:
+    s: str_cat(tui_csi(), num_text(row))
+    s: str_cat(s, ";")
+    s: str_cat(s, num_text(col))
+    s: str_cat(s, "H")
+    write_out(s)
+    return 1
+
+tui_clear:
+    write_out(str_cat(str_cat(tui_csi(), "2J"), str_cat(tui_csi(), "H")))
+    return 1
+
+# wipe from the cursor to the end of the line
+tui_clear_line:
+    write_out(str_cat(tui_csi(), "K"))
+    return 1
+
+# wipe from the cursor to the bottom
+tui_clear_down:
+    write_out(str_cat(tui_csi(), "J"))
+    return 1
+
+tui_hide:
+    write_out(str_cat(tui_csi(), "?25l"))
+    return 1
+
+tui_show:
+    write_out(str_cat(tui_csi(), "?25h"))
+    return 1
+
+# swap to a private screen, so the shell is untouched when you leave
+tui_enter:
+    write_out(str_cat(tui_csi(), "?1049h"))
+    return 1
+
+tui_leave:
+    write_out(str_cat(tui_csi(), "?1049l"))
+    return 1
+
+# colours 0-7 are black red green yellow blue magenta cyan white
+tui_fg c:
+    s: str_cat(str_cat(tui_csi(), "3"), num_text(c))
+    s: str_cat(s, "m")
+    write_out(s)
+    return 1
+
+tui_bg c:
+    s: str_cat(str_cat(tui_csi(), "4"), num_text(c))
+    s: str_cat(s, "m")
+    write_out(s)
+    return 1
+
+# any of the 256 colours
+tui_fg256 c:
+    s: str_cat(str_cat(tui_csi(), "38;5;"), num_text(c))
+    s: str_cat(s, "m")
+    write_out(s)
+    return 1
+
+tui_bg256 c:
+    s: str_cat(str_cat(tui_csi(), "48;5;"), num_text(c))
+    s: str_cat(s, "m")
+    write_out(s)
+    return 1
+
+tui_bold:
+    write_out(str_cat(tui_csi(), "1m"))
+    return 1
+
+tui_dim:
+    write_out(str_cat(tui_csi(), "2m"))
+    return 1
+
+tui_reverse:
+    write_out(str_cat(tui_csi(), "7m"))
+    return 1
+
+tui_reset:
+    write_out(str_cat(tui_csi(), "0m"))
+    return 1
+
+# how many rows and columns the window has. ask the system;
+# fall back to 80 by 24 if it will not say.
+tui_rows:
+    w: _sov_alloc(16)
+    poke_i64(w, 0, 0)
+    poke_i64(w, 8, 0)
+    r: sys_ioctl(1, 21523, w)
+    n: peek_byte(w, 0) + peek_byte(w, 1) * 256
+    if n < 1
+        return 24
+    return n
+
+tui_cols:
+    w: _sov_alloc(16)
+    poke_i64(w, 0, 0)
+    poke_i64(w, 8, 0)
+    r: sys_ioctl(1, 21523, w)
+    n: peek_byte(w, 2) + peek_byte(w, 3) * 256
+    if n < 1
+        return 80
+    return n
+
+# write text at a spot in one go
+tui_at row col s:
+    tui_goto(row, col)
+    write_out(s)
+    return 1

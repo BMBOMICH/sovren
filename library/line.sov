@@ -1,0 +1,32 @@
+# line.sov — one line at a time on a fd
+
+use sys
+use sock
+line_send fd s:
+    sock_send(fd, s)
+    n: _sov_alloc(2)
+    poke_byte(n, 0, 10)
+    poke_byte(n, 1, 0)
+    sys_send(fd, n, 1)
+    return 1
+
+line_recv fd cap:
+    buf: _sov_alloc(cap + 1)
+    i: 0
+    tmp: _sov_alloc(2)
+    as long as i < cap
+        g: sys_recv(fd, tmp, 1)
+        if g < 1
+            poke_byte(buf, i, 0)
+            return as text buf
+        c: peek_byte(tmp, 0)
+        if c is 10
+            poke_byte(buf, i, 0)
+            return as text buf
+        if c is 13
+            i: i
+        if not
+            poke_byte(buf, i, c)
+            i: i + 1
+    poke_byte(buf, i, 0)
+    return as text buf

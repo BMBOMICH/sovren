@@ -1,0 +1,94 @@
+#!/bin/sh
+# Pick a machine and run that compiler.
+ROOT=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+HERE=$(pwd)
+cd "$ROOT" || exit 1
+
+for a in "$@"; do
+    case "$a" in
+        --version|-v)
+            echo "Sovren 0.1.0"
+            exit 0
+            ;;
+        --help|-h)
+            echo "Usage: sovren <file.sov> [-o out] [target]"
+            echo ""
+            echo "Targets:"
+            echo "  (none)         Linux, ELF x86-64"
+            echo "  --windows      Windows, PE32+ x86-64"
+            echo "  --mac          macOS, Mach-O x86-64"
+            echo "  --android      Android, ELF aarch64"
+            echo "  --android-so   Android shared library"
+            echo "  --ios          iOS, Mach-O arm64, code signed"
+            echo "  --bare         Bare metal, no OS"
+            echo ""
+            echo "  --arm64 is another name for --android."
+            echo "  --macos is another name for --mac."
+            echo ""
+            echo "Other:"
+            echo "  --version, -v  Print the version"
+            echo "  --help, -h     Print this"
+            echo ""
+            echo "Read book.md to learn the language."
+            exit 0
+            ;;
+    esac
+done
+
+target=linux
+prev=""
+for a in "$@"; do
+    case "$a" in
+        --linux) target=linux ;;
+        --windows) target=windows ;;
+        --mac|--macos) target=mac ;;
+        --android) target=android ;;
+        --android-so) target=android_so ;;
+        --ios) target=ios ;;
+        --arm64) target=android ;;
+    esac
+    if [ "$prev" = "-o" ]; then
+        case "$a" in
+            *.exe) target=windows ;;
+        esac
+    fi
+    prev=$a
+done
+
+n=0
+for a in "$@"; do
+    case "$a" in
+        --linux|--windows|--mac|--macos|--android|--android-so|--ios|--arm64) ;;
+        -*)
+            n=$((n + 1))
+            eval "arg_$n=\$a"
+            ;;
+        /*)
+            n=$((n + 1))
+            eval "arg_$n=\$a"
+            ;;
+        *)
+            # A path typed relative to the directory the user is in.
+            # This script moved to the install directory, so make it
+            # absolute or the compiler looks in the wrong place.
+            n=$((n + 1))
+            eval "arg_$n=\$HERE/\$a"
+            ;;
+    esac
+done
+i=1
+set --
+while [ "$i" -le "$n" ]; do
+    eval "set -- \"\$@\" \"\$arg_$i\""
+    i=$((i + 1))
+done
+
+case "$target" in
+    android_so) bin="$ROOT/android/compiler_so" ;;
+    *) bin="$ROOT/$target/compiler" ;;
+esac
+if [ ! -x "$bin" ]; then
+    echo "Error: no compiler for $target"
+    exit 1
+fi
+exec "$bin" "$@"

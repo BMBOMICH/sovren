@@ -1,0 +1,22 @@
+# WARNING: djb2 is a lookup hash, NOT cryptographic. Use sha256 for security.
+# hash.sov — djb2 kept inside 31-bit so multiply never traps
+# needs _sov_list
+
+hash_text s:
+    h: 5381
+    i: 0
+    n: _sov_strlen(s)
+    as long as i < n
+        h: h * 33 + peek_byte(s, i)
+        h: h % 2147483647
+        i: i + 1
+    return h
+
+hash_bytes p n:
+    h: 5381
+    i: 0
+    as long as i < n
+        h: h * 33 + peek_byte(p, i)
+        h: h % 2147483647
+        i: i + 1
+    return h

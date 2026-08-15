@@ -1,0 +1,51 @@
+# set.sov — a set of numbers
+use vec
+
+set_new:
+    return vec_new(8)
+
+set_has s x:
+    if vec_find(s, x) > 0 - 1
+        return 1
+    return 0
+
+set_add s x:
+    if set_has(s, x) is 1
+        return s
+    return vec_push(s, x)
+
+set_len s:
+    return vec_len(s)
+
+set_get s i:
+    return vec_get(s, i)
+
+set_union a b:
+    r: set_new()
+    i: 0
+    as long as i < set_len(a)
+        r: set_add(r, set_get(a, i))
+        i: i + 1
+    i: 0
+    as long as i < set_len(b)
+        r: set_add(r, set_get(b, i))
+        i: i + 1
+    return r
+
+set_inter a b:
+    r: set_new()
+    i: 0
+    as long as i < set_len(a)
+        if set_has(b, set_get(a, i)) is 1
+            r: set_add(r, set_get(a, i))
+        i: i + 1
+    return r
+
+set_diff a b:
+    r: set_new()
+    i: 0
+    as long as i < set_len(a)
+        if set_has(b, set_get(a, i)) is 0
+            r: set_add(r, set_get(a, i))
+        i: i + 1
+    return r

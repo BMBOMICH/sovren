@@ -1,0 +1,55 @@
+# heap.sov — smallest number comes out first
+use vec
+
+heap_new:
+    return vec_new(8)
+
+heap_len h:
+    return vec_len(h)
+
+heap_push h x:
+    h: vec_push(h, x)
+    i: vec_len(h) - 1
+    as long as i > 0
+        p: (i - 1) / 2
+        if vec_get(h, p) <= vec_get(h, i)
+            i: 0
+        if not
+            t: vec_get(h, p)
+            vec_set(h, p, vec_get(h, i))
+            vec_set(h, i, t)
+            i: p
+    return h
+
+heap_peek h:
+    if vec_len(h) is 0
+        return 0
+    return vec_get(h, 0)
+
+heap_pop h:
+    n: vec_len(h)
+    if n is 0
+        return 0
+    top: vec_get(h, 0)
+    vec_set(h, 0, vec_get(h, n - 1))
+    poke_i64(h, 0, n - 1)
+    n: n - 1
+    i: 0
+    as long as i < n
+        l: i * 2 + 1
+        r: i * 2 + 2
+        m: i
+        if l < n
+            if vec_get(h, l) < vec_get(h, m)
+                m: l
+        if r < n
+            if vec_get(h, r) < vec_get(h, m)
+                m: r
+        if m is i
+            i: n
+        if not
+            t: vec_get(h, i)
+            vec_set(h, i, vec_get(h, m))
+            vec_set(h, m, t)
+            i: m
+    return top

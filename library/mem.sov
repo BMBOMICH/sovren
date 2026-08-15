@@ -1,0 +1,18 @@
+# mem.sov — memory
+
+mem_new n:
+    return _sov_alloc(n)
+
+mem_zero p n:
+    i: 0
+    as long as i < n
+        poke_byte(p, i, 0)
+        i: i + 1
+    return p
+
+mem_copy dst src n:
+    i: 0
+    as long as i < n
+        poke_byte(dst, i, peek_byte(src, i))
+        i: i + 1
+    return dst

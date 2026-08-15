@@ -1,0 +1,39 @@
+# assert.sov — checks that stop the program when wrong
+use string
+use num
+
+as_pass: 0
+as_fail: 0
+
+as_eq name got want:
+    if got is want
+        as_pass: as_pass + 1
+        return 1
+    as_fail: as_fail + 1
+    _sov_print(str_cat("FAIL ", name))
+    _sov_print(str_join3("  got ", num_text(got), ""))
+    _sov_print(str_join3("  want ", num_text(want), ""))
+    return 0
+
+as_true name v:
+    return as_eq(name, v, 1)
+
+as_false name v:
+    return as_eq(name, v, 0)
+
+as_text name got want:
+    if str_eq(got, want) is 1
+        as_pass: as_pass + 1
+        return 1
+    as_fail: as_fail + 1
+    _sov_print(str_cat("FAIL ", name))
+    _sov_print(str_cat("  got ", got))
+    _sov_print(str_cat("  want ", want))
+    return 0
+
+as_report:
+    _sov_print(str_join3("passed ", num_text(as_pass), ""))
+    _sov_print(str_join3("failed ", num_text(as_fail), ""))
+    if as_fail > 0
+        return 1
+    return 0

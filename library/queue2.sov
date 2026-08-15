@@ -1,0 +1,33 @@
+# queue2.sov — first in, first out
+use vec
+
+q2_new:
+    return vec_new(8)
+
+q2_len q:
+    return vec_len(q)
+
+q2_push q x:
+    return vec_push(q, x)
+
+q2_peek q:
+    if vec_len(q) is 0
+        return 0
+    return vec_get(q, 0)
+
+q2_pop q:
+    n: vec_len(q)
+    if n is 0
+        return 0
+    f: vec_get(q, 0)
+    i: 1
+    as long as i < n
+        vec_set(q, i - 1, vec_get(q, i))
+        i: i + 1
+    poke_i64(q, 0, n - 1)
+    return f
+
+q2_empty q:
+    if vec_len(q) is 0
+        return 1
+    return 0

@@ -1,0 +1,15 @@
+# test.sov — check a value
+
+test_eq a b:
+    if a is b
+        print "ok"
+        return 1
+    print "fail"
+    return 0
+
+test_ok v:
+    if v is 0
+        print "fail"
+        return 0
+    print "ok"
+    return 1

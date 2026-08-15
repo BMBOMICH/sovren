@@ -1,0 +1,191 @@
+# arm64.sov — AArch64 code generator for Sovren
+# x0 = value register (was rax), x1 = second operand (was rcx)
+# x19..x23 = locals 0..4, x29 = frame pointer, x30 = link register
+# x9 = scratch for global addresses. Every instruction is 4 bytes.
+
+emitw w:
+    v: w
+    if v < 0
+        v: v + 4294967296
+    emit(v % 256)
+    emit((v / 256) % 256)
+    emit((v / 65536) % 256)
+    emit((v / 16777216) % 256)
+
+movz_x d imm sh:
+    emitw(3531603968 + sh * 2097152 + (imm % 65536) * 32 + d)
+
+movk_x d imm sh:
+    emitw(4068474880 + sh * 2097152 + (imm % 65536) * 32 + d)
+
+set_reg d n:
+    v: n
+    if v < 0
+        v: v + 18446744073709551616
+    movz_x(d, v % 65536, 0)
+    p1: (v / 65536) % 65536
+    if p1 is not 0
+        movk_x(d, p1, 1)
+    p2: (v / 4294967296) % 65536
+    if p2 is not 0
+        movk_x(d, p2, 2)
+    p3: (v / 281474976710656) % 65536
+    if p3 is not 0
+        movk_x(d, p3, 3)
+
+rax_imm n:
+    set_reg(0, n)
+
+rdi_imm n:
+    set_reg(1, n)
+
+push_rax:
+    emitw(4162785248)
+
+pop_rax:
+    emitw(4165011424)
+
+pop_rcx:
+    emitw(4165011425)
+
+ret:
+    emitw(3596551104)
+
+xor_rax:
+    emitw(2854159328)
+
+mov_reg d s:
+    emitw(2852127712 + s * 65536 + d - 0)
+
+mov_rdi_rax:
+    mov_reg(1, 0)
+
+mov_rsi_rax:
+    mov_reg(2, 0)
+
+mov_rcx_rax:
+    mov_reg(1, 0)
+
+mov_rax_rdi:
+    mov_reg(0, 1)
+
+add_rax_rcx:
+    emitw(2332098560)
+
+sub_rax_rcx:
+    emitw(3405840384)
+
+imul_rax_rcx:
+    emitw(2600565760)
+
+sdiv_rax_rcx:
+    emitw(2596342784)
+
+# x0 % x1  ->  sdiv x2,x0,x1 ; msub x0,x2,x1,x0   (verified on ARM64 CPU)
+mod_rax_rcx:
+    emitw(2596342786)
+    emitw(2600566848)
+
+cmp_rax_rcx:
+    emitw(3942711327)
+
+test_rax:
+    emitw(4043309087)
+
+setcc op:
+    if same(op, "eq") is 1
+        emitw(2594117600)
+        return
+    if same(op, "ne") is 1
+        emitw(2594113504)
+        return
+    if same(op, "lt") is 1
+        emitw(2594154464)
+        return
+    if same(op, "gt") is 1
+        emitw(2594166752)
+        return
+    if same(op, "le") is 1
+        emitw(2594162656)
+        return
+    if same(op, "ge") is 1
+        emitw(2594158560)
+        return
+
+loc_reg slot:
+    return 19 + slot
+
+ldr_fp d off:
+    emitw(4181722016 + (off / 8) * 1024 + d - 0)
+
+str_fp d off:
+    emitw(4177527712 + (off / 8) * 1024 + d - 0)
+
+load_loc slot:
+    if slot < 5
+        mov_reg(0, loc_reg(slot))
+        return
+    ldr_fp(0, (slot - 5) * 8 + 16)
+
+store_loc slot:
+    if slot < 5
+        mov_reg(loc_reg(slot), 0)
+        return
+    str_fp(0, (slot - 5) * 8 + 16)
+
+load_glob name:
+    at: here()
+    movz_x(9, 0, 0)
+    movk_x(9, 0, 1)
+    movk_x(9, 0, 2)
+    addp(at, "glob64", name)
+    emitw(4181721376)
+
+store_glob name:
+    at: here()
+    movz_x(9, 0, 0)
+    movk_x(9, 0, 1)
+    movk_x(9, 0, 2)
+    addp(at, "glob64", name)
+    emitw(4177527072)
+
+calln name:
+    at: here()
+    emitw(2483027968)
+    addp(at, "rel26", name)
+
+jmp:
+    at: here()
+    emitw(335544320)
+    return at
+
+jz:
+    at: here()
+    emitw(1409286144)
+    return at
+
+jnz:
+    at: here()
+    emitw(1409286145)
+    return at
+
+# stp x29,x30,[sp,#-16]! ; mov x29,sp
+prolog:
+    emitw(2847898621)
+    emitw(2432697341)
+
+# ldp x29,x30,[sp],#16
+epilog:
+    emitw(2831252477)
+
+copyargs n:
+    i: 0
+    as long as i < n
+        if i < 5
+            mov_reg(loc_reg(i), i)
+        if not
+            str_fp(i, (i - 5) * 8 + 16)
+        i: i + 1
+
+sysc:
+    emitw(3556769793)

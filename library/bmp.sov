@@ -1,0 +1,43 @@
+# bmp.sov — write Windows BMP pictures
+use image
+use mem
+use binfile
+use file
+
+bmp_save path im:
+    w: img_w(im)
+    h: img_h(im)
+    rowraw: w * 3
+    pad: 0
+    as long as (rowraw + pad) % 4 is not 0
+        pad: pad + 1
+    row: rowraw + pad
+    datasz: row * h
+    total: 54 + datasz
+    b: mem_new(total + 8)
+    i: 0
+    as long as i < total
+        poke_byte(b, i, 0)
+        i: i + 1
+    poke_byte(b, 0, 66)
+    poke_byte(b, 1, 77)
+    bf_put_u32le(b, 2, total)
+    bf_put_u32le(b, 10, 54)
+    bf_put_u32le(b, 14, 40)
+    bf_put_u32le(b, 18, w)
+    bf_put_u32le(b, 22, h)
+    bf_put_u16le(b, 26, 1)
+    bf_put_u16le(b, 28, 24)
+    bf_put_u32le(b, 34, datasz)
+    y: 0
+    as long as y < h
+        sy: h - 1 - y
+        x: 0
+        as long as x < w
+            o: 54 + y * row + x * 3
+            poke_byte(b, o, img_b(im, x, sy))
+            poke_byte(b, o + 1, img_g(im, x, sy))
+            poke_byte(b, o + 2, img_r(im, x, sy))
+            x: x + 1
+        y: y + 1
+    return bf_write(path, b, total)

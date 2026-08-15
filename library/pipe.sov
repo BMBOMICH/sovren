@@ -1,0 +1,29 @@
+# pipe.sov — Linux pipe: two 32-bit fds at bytes 0 && 4
+use sys
+
+pipe_new:
+    fds: _sov_alloc(16)
+    poke_i64(fds, 0, 0)
+    poke_i64(fds, 8, 0)
+    if sys_pipe(fds) is 0
+        return fds
+    return 0
+
+pipe_read_fd fds:
+    a: peek_byte(fds, 0)
+    b: peek_byte(fds, 1)
+    c: peek_byte(fds, 2)
+    d: peek_byte(fds, 3)
+    return a + b * 256 + c * 65536 + d * 16777216
+
+pipe_write_fd fds:
+    a: peek_byte(fds, 4)
+    b: peek_byte(fds, 5)
+    c: peek_byte(fds, 6)
+    d: peek_byte(fds, 7)
+    return a + b * 256 + c * 65536 + d * 16777216
+
+pipe_close fds:
+    sys_close(pipe_read_fd(fds))
+    sys_close(pipe_write_fd(fds))
+    return 1

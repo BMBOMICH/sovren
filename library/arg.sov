@@ -1,0 +1,55 @@
+# arg.sov — command line from /proc/self/cmdline (null-separated)
+# needs _sov_list
+use file
+use string
+
+arg_raw:
+    return file_read_max("/proc/self/cmdline", 4095)
+
+arg_copy raw a b:
+    n: b - a
+    if n < 0
+        n: 0
+    out: _sov_alloc(n + 1)
+    i: 0
+    as long as i < n
+        poke_byte(out, i, peek_byte(raw, a + i))
+        i: i + 1
+    poke_byte(out, n, 0)
+    return as text out
+
+arg_count:
+    r: arg_raw()
+    if r is 0
+        return 0
+    n: 0
+    i: 0
+    as long as i < 4096
+        if peek_byte(r, i) is 0
+            if i is 0
+                return 0
+            n: n + 1
+            if peek_byte(r, i + 1) is 0
+                return n
+        i: i + 1
+    return n
+
+arg_at k:
+    r: arg_raw()
+    if r is 0
+        return blank
+    n: 0
+    i: 0
+    as long as i < 4096
+        if peek_byte(r, i) is 0
+            return blank
+        if n is k
+            e: i
+            as long as peek_byte(r, e) is not 0
+                e: e + 1
+            return arg_copy(r, i, e)
+        as long as peek_byte(r, i) is not 0
+            i: i + 1
+        i: i + 1
+        n: n + 1
+    return blank

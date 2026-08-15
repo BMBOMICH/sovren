@@ -1,0 +1,36 @@
+{
+  "name": "Sovren",
+  "scopeName": "source.sovren",
+  "fileTypes": ["sov"],
+  "patterns": [
+    { "name": "comment.line.number-sign.sovren", "match": "#.*$" },
+    {
+      "name": "string.quoted.double.sovren",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        { "name": "constant.character.escape.sovren", "match": "\\\\[ntr\"\\\\]" }
+      ]
+    },
+    {
+      "name": "keyword.control.sovren",
+      "match": "\\b(return|if not|if|as long as|times|stop|use|wipe|private|print|and|or|is not|is|not|blank|as text)\\b"
+    },
+    {
+      "name": "keyword.operator.sovren",
+      "match": "==|!=|<=|>=|&&|\\|\\||[+\\-*/%<>=:]"
+    },
+    {
+      "name": "support.function.sovren",
+      "match": "\\b(syscall|peek_byte|peek_i64|peek_ptr|poke_byte|poke_i64)\\b"
+    },
+    {
+      "name": "constant.numeric.sovren",
+      "match": "\\b[0-9]+\\b"
+    },
+    {
+      "name": "entity.name.function.sovren",
+      "match": "^[A-Za-z_][A-Za-z0-9_]*\\b(?=.*:)"
+    }
+  ]
+}

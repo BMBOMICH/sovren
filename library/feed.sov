@@ -1,0 +1,85 @@
+# feed.sov — a timeline file: who, when, text
+use file
+use string
+use num
+use time
+use list
+
+feed_line who text:
+    a: str_join3(num_text(time_now()), "\t", who)
+    return str_join3(a, "\t", text)
+
+feed_post path who text:
+    l: str_cat(feed_line(who, text), "\n")
+    return file_append(path, l)
+
+feed_count path:
+    t: file_read_all(path)
+    if t is 0
+        return 0
+    n: 0
+    i: 0
+    as long as i < str_len(t)
+        if peek_byte(t, i) is 10
+            n: n + 1
+        i: i + 1
+    return n
+
+feed_all path:
+    t: file_read_all(path)
+    if t is 0
+        return as text ""
+    return as text t
+
+feed_lines path:
+    t: file_read_all(path)
+    out: list_new()
+    if t is 0
+        return out
+    start: 0
+    i: 0
+    n: str_len(t)
+    as long as i < n
+        if peek_byte(t, i) is 10
+            out: list_add(out, str_cut(t, start, i))
+            start: i + 1
+        i: i + 1
+    if start < n
+        out: list_add(out, str_cut(t, start, n))
+    return out
+
+feed_field line k:
+    p: 0
+    f: 0
+    i: 0
+    n: str_len(line)
+    as long as i < n
+        if peek_byte(line, i) is 9
+            if f is k
+                return as text str_cut(line, p, i)
+            f: f + 1
+            p: i + 1
+        i: i + 1
+    if f is k
+        return as text str_cut(line, p, n)
+    return as text ""
+
+feed_when line:
+    return as text feed_field(line, 0)
+
+feed_who line:
+    return as text feed_field(line, 1)
+
+feed_text line:
+    return as text feed_field(line, 2)
+
+feed_by path who:
+    ls: feed_lines(path)
+    out: list_new()
+    i: 0
+    as long as i < list_len(ls)
+        l: list_get(ls, i)
+        if str_eq(feed_who(l), who) is 1
+            out: list_add(out, l)
+        i: i + 1
+    return out

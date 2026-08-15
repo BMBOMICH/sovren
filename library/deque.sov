@@ -1,0 +1,47 @@
+# deque.sov — add and take from both ends
+use vec
+
+dq_new:
+    return vec_new(8)
+
+dq_len q:
+    return vec_len(q)
+
+dq_push_back q x:
+    return vec_push(q, x)
+
+dq_back q:
+    n: vec_len(q)
+    if n is 0
+        return 0
+    return vec_get(q, n - 1)
+
+dq_front q:
+    if vec_len(q) is 0
+        return 0
+    return vec_get(q, 0)
+
+dq_pop_back q:
+    return vec_pop(q)
+
+dq_pop_front q:
+    n: vec_len(q)
+    if n is 0
+        return 0
+    f: vec_get(q, 0)
+    i: 1
+    as long as i < n
+        vec_set(q, i - 1, vec_get(q, i))
+        i: i + 1
+    poke_i64(q, 0, n - 1)
+    return f
+
+dq_push_front q x:
+    n: vec_len(q)
+    q: vec_push(q, 0)
+    i: n
+    as long as i > 0
+        vec_set(q, i, vec_get(q, i - 1))
+        i: i - 1
+    vec_set(q, 0, x)
+    return q

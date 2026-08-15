@@ -1,0 +1,61 @@
+# date.sov — unix seconds to year month day
+# needs _sov_list
+
+date_leap y:
+    if y % 400 is 0
+        return 1
+    if y % 100 is 0
+        return 0
+    if y % 4 is 0
+        return 1
+    return 0
+
+date_mdays y m:
+    if m is 1
+        return 31
+    if m is 2
+        if date_leap(y) is 1
+            return 29
+        return 28
+    if m is 3
+        return 31
+    if m is 4
+        return 30
+    if m is 5
+        return 31
+    if m is 6
+        return 30
+    if m is 7
+        return 31
+    if m is 8
+        return 31
+    if m is 9
+        return 30
+    if m is 10
+        return 31
+    if m is 11
+        return 30
+    return 31
+
+date_ymd t:
+    if t < 0
+        t: 0
+    days: t / 86400
+    y: 1970
+    as long as 1
+        yl: 365
+        if date_leap(y) is 1
+            yl: 366
+        if days < yl
+            m: 1
+            as long as m < 13
+                md: date_mdays(y, m)
+                if days < md
+                    return y * 10000 + m * 100 + days + 1
+                days: days - md
+                m: m + 1
+            return y * 10000 + 1201
+        days: days - yl
+        y: y + 1
+        if y > 3000
+            return y * 10000 + 101

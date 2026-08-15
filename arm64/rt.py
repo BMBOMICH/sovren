@@ -1,0 +1,31 @@
+import struct
+def w(v): return struct.pack('<I', v & 0xFFFFFFFF)
+def movz(d,i,s=0): return w(0xD2800000+(s<<21)+((i&0xFFFF)<<5)+d)
+def movk(d,i,s):   return w(0xF2800000+(s<<21)+((i&0xFFFF)<<5)+d)
+def setreg(d,v):
+    v&=0xFFFFFFFFFFFFFFFF
+    c=movz(d,v&0xFFFF)
+    if (v>>16)&0xFFFF: c+=movk(d,(v>>16)&0xFFFF,1)
+    if (v>>32)&0xFFFF: c+=movk(d,(v>>32)&0xFFFF,2)
+    if (v>>48)&0xFFFF: c+=movk(d,(v>>48)&0xFFFF,3)
+    return c
+def mov_reg(d,s):  return w(0xAA0003E0+(s<<16)+d)
+def add_r(d,n,m):  return w(0x8B000000|(m<<16)|(n<<5)|d)
+def sub_r(d,n,m):  return w(0xCB000000|(m<<16)|(n<<5)|d)
+def add_i(d,n,i):  return w(0x91000000|(i<<10)|(n<<5)|d)
+def sub_i(d,n,i):  return w(0xD1000000|(i<<10)|(n<<5)|d)
+def ldrb(rt,rn):   return w(0x39400000|(rn<<5)|rt)
+def strb(rt,rn):   return w(0x39000000|(rn<<5)|rt)
+def ldr(rt,rn,off=0): return w(0xF9400000|((off//8)<<10)|(rn<<5)|rt)
+def str_(rt,rn,off=0):return w(0xF9000000|((off//8)<<10)|(rn<<5)|rt)
+def cmp_i(n,i):    return w(0xF1000000|(i<<10)|(n<<5)|31)
+def cmpw_i(n,i):   return w(0x71000000|(i<<10)|(n<<5)|31)
+def cmp_r(n,m):    return w(0xEB000000|(m<<16)|(n<<5)|31)
+def cmpw_r(n,m):   return w(0x6B000000|(m<<16)|(n<<5)|31)
+def bcond(c,off):  return w(0x54000000|(((off//4)&0x7FFFF)<<5)|c)
+def b(off):        return w(0x14000000|((off//4)&0x03FFFFFF))
+def bl(off):       return w(0x94000000|((off//4)&0x03FFFFFF))
+def udiv(d,n,m):   return w(0x9AC00800|(m<<16)|(n<<5)|d)
+def msub(d,n,m,a): return w(0x9B008000|(m<<16)|(a<<10)|(n<<5)|d)
+RET=w(0xD65F03C0); SVC=w(0xD4000001)
+EQ,NE,LT,GT,LE,GE = 0,1,11,12,13,10

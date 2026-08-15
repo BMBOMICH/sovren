@@ -1,0 +1,52 @@
+# dict.sov — key/value store (text keys)
+use list
+use string
+
+dict_new:
+    l: list_new()
+    l: list_add(l, list_new())
+    l: list_add(l, list_new())
+    return l
+
+dict_keys d:
+    return list_get(d, 0)
+
+dict_vals d:
+    return list_get(d, 1)
+
+dict_find d k:
+    ks: dict_keys(d)
+    i: 0
+    as long as i < list_len(ks)
+        if str_eq(list_get(ks, i), k) is 1
+            return i
+        i: i + 1
+    return 0 - 1
+
+dict_set d k v:
+    i: dict_find(d, k)
+    if i > 0 - 1
+        vs: dict_vals(d)
+        vs: list_set(vs, i, v)
+        return d
+    ks: dict_keys(d)
+    vs: dict_vals(d)
+    ks: list_add(ks, k)
+    vs: list_add(vs, v)
+    d: list_set(d, 0, ks)
+    d: list_set(d, 1, vs)
+    return d
+
+dict_get d k:
+    i: dict_find(d, k)
+    if i < 0
+        return 0
+    return list_get(dict_vals(d), i)
+
+dict_has d k:
+    if dict_find(d, k) > 0 - 1
+        return 1
+    return 0
+
+dict_len d:
+    return list_len(dict_keys(d))

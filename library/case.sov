@@ -1,0 +1,34 @@
+# case.sov — upper && lower letters
+# needs _sov_list
+
+case_up_byte c:
+    if c > 96
+        if c < 123
+            return c - 32
+    return c
+
+case_low_byte c:
+    if c > 64
+        if c < 91
+            return c + 32
+    return c
+
+case_upper s:
+    n: _sov_strlen(s)
+    o: _sov_alloc(n + 1)
+    i: 0
+    as long as i < n
+        poke_byte(o, i, case_up_byte(peek_byte(s, i)))
+        i: i + 1
+    poke_byte(o, n, 0)
+    return as text o
+
+case_lower s:
+    n: _sov_strlen(s)
+    o: _sov_alloc(n + 1)
+    i: 0
+    as long as i < n
+        poke_byte(o, i, case_low_byte(peek_byte(s, i)))
+        i: i + 1
+    poke_byte(o, n, 0)
+    return as text o

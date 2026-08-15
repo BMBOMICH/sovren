@@ -1,0 +1,8 @@
+# fill.sov — fill bytes
+
+fill_bytes p n v:
+    i: 0
+    as long as i < n
+        poke_byte(p, i, v)
+        i: i + 1
+    return p

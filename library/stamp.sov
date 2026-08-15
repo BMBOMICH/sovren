@@ -1,0 +1,11 @@
+# stamp.sov — put a time on a line
+# needs _sov_list
+use time
+use num
+use string
+
+stamp_now:
+    return num_text(time_now())
+
+stamp_line s:
+    return str_join3(stamp_now(), " ", s)

@@ -1,0 +1,44 @@
+# hex.sov — bytes to hex text && back
+# needs _sov_list
+
+hex_digit d:
+    if d < 10
+        return d + 48
+    return d + 87
+
+hex_val c:
+    if c > 47
+        if c < 58
+            return c - 48
+    if c > 96
+        if c < 103
+            return c - 87
+    if c > 64
+        if c < 71
+            return c - 55
+    return 0
+
+hex_from_bytes p n:
+    out: _sov_alloc(n * 2 + 1)
+    i: 0
+    as long as i < n
+        b: peek_byte(p, i)
+        poke_byte(out, i * 2, hex_digit(b / 16))
+        poke_byte(out, i * 2 + 1, hex_digit(b % 16))
+        i: i + 1
+    poke_byte(out, n * 2, 0)
+    return as text out
+
+hex_to_bytes s:
+    n: _sov_strlen(s)
+    out: _sov_alloc(n / 2 + 1)
+    i: 0
+    j: 0
+    as long as i + 1 < n
+        hi: hex_val(peek_byte(s, i))
+        lo: hex_val(peek_byte(s, i + 1))
+        poke_byte(out, j, hi * 16 + lo)
+        i: i + 2
+        j: j + 1
+    poke_byte(out, j, 0)
+    return as text out

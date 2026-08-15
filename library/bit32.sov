@@ -1,0 +1,87 @@
+# bit32.sov — 32-bit word helpers (pure Sovren)
+
+M32: 4294967296
+
+w32 x:
+    r: x % M32
+    if r < 0
+        r: r + M32
+    return r
+
+wand a b:
+    r: 0
+    p: 1
+    x: w32(a)
+    y: w32(b)
+    i: 0
+    as long as i < 32
+        if x % 2 is 1
+            if y % 2 is 1
+                r: r + p
+        x: x / 2
+        y: y / 2
+        p: p * 2
+        i: i + 1
+    return r
+
+wor a b:
+    r: 0
+    p: 1
+    x: w32(a)
+    y: w32(b)
+    i: 0
+    as long as i < 32
+        da: x % 2
+        db: y % 2
+        if da is 1
+            r: r + p
+        if not
+            if db is 1
+                r: r + p
+        x: x / 2
+        y: y / 2
+        p: p * 2
+        i: i + 1
+    return r
+
+wxor a b:
+    r: 0
+    p: 1
+    x: w32(a)
+    y: w32(b)
+    i: 0
+    as long as i < 32
+        da: x % 2
+        db: y % 2
+        if da is not db
+            r: r + p
+        x: x / 2
+        y: y / 2
+        p: p * 2
+        i: i + 1
+    return r
+
+wnot a:
+    return w32(4294967295 - w32(a))
+
+shr a n:
+    r: w32(a)
+    i: 0
+    as long as i < n
+        r: r / 2
+        i: i + 1
+    return r
+
+shl a n:
+    r: w32(a)
+    i: 0
+    as long as i < n
+        r: w32(r * 2)
+        i: i + 1
+    return r
+
+rotr a n:
+    return wor(shr(a, n), shl(a, 32 - n))
+
+wadd a b:
+    return w32(w32(a) + w32(b))

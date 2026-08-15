@@ -1,0 +1,61 @@
+# string.sov — text
+# needs _sov_list
+
+str_len s:
+    return _sov_strlen(s)
+
+str_eq a b:
+    return _sov_str_eq(a, b)
+
+str_cat a b:
+    return _sov_strcat(a, b)
+
+str_cut s a b:
+    return _sov_substring(s, a, b)
+
+str_find s n:
+    return _sov_find_text(s, n)
+
+str_starts s p:
+    return _sov_starts_with(s, p)
+
+str_trim s:
+    return _sov_trim(s)
+
+str_num s:
+    return _sov_atoi(s)
+
+str_at s i:
+    return peek_byte(s, i)
+
+str_empty s:
+    if s is 0
+        return 1
+    if peek_byte(s, 0) is 0
+        return 1
+    return 0
+
+str_join3 a b c:
+    return str_cat(str_cat(a, b), c)
+
+str_has s n:
+    if str_find(s, n) > 0 - 1
+        return 1
+    return 0
+
+str_ends s p:
+    ls: str_len(s)
+    lp: str_len(p)
+    if lp > ls
+        return 0
+    return str_eq(str_cut(s, ls - lp, ls), p)
+
+str_copy s:
+    n: str_len(s)
+    o: _sov_alloc(n + 1)
+    i: 0
+    as long as i < n
+        poke_byte(o, i, peek_byte(s, i))
+        i: i + 1
+    poke_byte(o, n, 0)
+    return as text o

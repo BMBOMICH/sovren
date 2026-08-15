@@ -1,0 +1,23 @@
+# split.sov — cut text on one byte
+# needs _sov_list
+use list
+use string
+
+split_byte s b:
+    lst: list_new()
+    n: str_len(s)
+    start: 0
+    i: 0
+    as long as i < n
+        if peek_byte(s, i) is b
+            lst: list_add(lst, str_cut(s, start, i))
+            start: i + 1
+        i: i + 1
+    lst: list_add(lst, str_cut(s, start, n))
+    return lst
+
+split_line s:
+    return split_byte(s, 10)
+
+split_comma s:
+    return split_byte(s, 44)

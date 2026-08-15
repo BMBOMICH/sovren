@@ -1,0 +1,20 @@
+# flag.sov — on/off bits in one number
+# needs _sov_list
+use bit
+
+flag_on bits n:
+    m: bit_shl(1, n)
+    if bit_and(bits, m) is 0
+        return bits + m
+    return bits
+
+flag_off bits n:
+    m: bit_shl(1, n)
+    if bit_and(bits, m) is 0
+        return bits
+    return bits - m
+
+flag_has bits n:
+    if bit_and(bits, bit_shl(1, n)) is 0
+        return 0
+    return 1

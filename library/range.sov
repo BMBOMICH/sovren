@@ -1,0 +1,36 @@
+# range.sov — number sequences
+use vec
+
+rg_upto n:
+    v: vec_new(n + 1)
+    i: 0
+    as long as i < n
+        v: vec_push(v, i)
+        i: i + 1
+    return v
+
+rg_from a b:
+    v: vec_new(8)
+    i: a
+    as long as i < b
+        v: vec_push(v, i)
+        i: i + 1
+    return v
+
+rg_step a b s:
+    v: vec_new(8)
+    if s <= 0
+        return v
+    i: a
+    as long as i < b
+        v: vec_push(v, i)
+        i: i + s
+    return v
+
+rg_sum a b:
+    t: 0
+    i: a
+    as long as i < b
+        t: t + i
+        i: i + 1
+    return t

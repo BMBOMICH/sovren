@@ -1,0 +1,14 @@
+# io.sov — print helpers
+use sys
+use string
+
+io_print s:
+    write_out(s)
+    n: _sov_alloc(2)
+    poke_byte(n, 0, 10)
+    poke_byte(n, 1, 0)
+    sys_write(1, n, 1)
+    return 1
+
+io_write s:
+    return write_out(s)

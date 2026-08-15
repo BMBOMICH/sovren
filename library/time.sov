@@ -1,0 +1,30 @@
+# time.sov — clock && sleep
+
+use sys
+time_now:
+    ts: _sov_alloc(16)
+    sys_clock(ts)
+    return peek_i64(ts, 0)
+
+time_now_ns:
+    ts: _sov_alloc(16)
+    sys_clock(ts)
+    sec: peek_i64(ts, 0)
+    ns: peek_i64(ts, 8)
+    return sec * 1000000000 + ns
+
+sleep_sec n:
+    ts: _sov_alloc(16)
+    poke_i64(ts, 0, n)
+    poke_i64(ts, 8, 0)
+    sys_nanosleep(ts)
+    return n
+
+sleep_ms n:
+    sec: n / 1000
+    rem: n % 1000
+    ts: _sov_alloc(16)
+    poke_i64(ts, 0, sec)
+    poke_i64(ts, 8, rem * 1000000)
+    sys_nanosleep(ts)
+    return n

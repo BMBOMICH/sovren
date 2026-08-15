@@ -1,0 +1,55 @@
+# json.sov — pull a "key":"value" || "key":number out of flat text
+# needs _sov_list
+use string
+
+json_skip s i:
+    n: str_len(s)
+    as long as i < n
+        c: peek_byte(s, i)
+        if c is 32
+            i: i + 1
+        if not
+            if c is 9
+                i: i + 1
+            if not
+                if c is 10
+                    i: i + 1
+                if not
+                    if c is 13
+                        i: i + 1
+                    if not
+                        return i
+    return i
+
+json_str text key:
+    want: str_join3("\"", key, "\"")
+    p: str_find(text, want)
+    if p < 0
+        return blank
+    i: json_skip(text, p + str_len(want))
+    if peek_byte(text, i) is not 58
+        return blank
+    i: json_skip(text, i + 1)
+    if peek_byte(text, i) is 34
+        j: i + 1
+        n: str_len(text)
+        as long as j < n
+            if peek_byte(text, j) is 34
+                return str_cut(text, i + 1, j)
+            j: j + 1
+        return blank
+    j: i
+    n: str_len(text)
+    as long as j < n
+        c: peek_byte(text, j)
+        if c is 44
+            return str_cut(text, i, j)
+        if c is 125
+            return str_cut(text, i, j)
+        if c is 93
+            return str_cut(text, i, j)
+        j: j + 1
+    return str_cut(text, i, n)
+
+json_num text key:
+    return str_num(json_str(text, key))

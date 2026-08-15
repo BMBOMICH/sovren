@@ -1,0 +1,17 @@
+# channel.sov — named rooms on disk
+use store
+use string
+use file
+
+channel_path name:
+    return str_cat("channel-", name)
+
+channel_post name from text:
+    line: str_join3(from, ": ", text)
+    return store_put(channel_path(name), line)
+
+channel_read name:
+    return store_load(channel_path(name))
+
+channel_clear name:
+    return store_clear(channel_path(name))

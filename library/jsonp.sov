@@ -1,0 +1,105 @@
+# jsonp.sov — pull values out of JSON text
+use string
+use num
+use list
+
+jp_skip s i:
+    k: i
+    as long as k < str_len(s)
+        c: peek_byte(s, k)
+        if c is 32
+            k: k + 1
+        if not
+            if c is 10
+                k: k + 1
+            if not
+                if c is 9
+                    k: k + 1
+                if not
+                    if c is 13
+                        k: k + 1
+                    if not
+                        return k
+    return k
+
+jp_endstr s i:
+    k: i + 1
+    as long as k < str_len(s)
+        c: peek_byte(s, k)
+        if c is 92
+            k: k + 2
+        if not
+            if c is 34
+                return k
+            k: k + 1
+    return 0 - 1
+
+jp_endval s i:
+    d: 0
+    k: i
+    n: str_len(s)
+    as long as k < n
+        c: peek_byte(s, k)
+        if c is 34
+            k: jp_endstr(s, k)
+            if k < 0
+                return n
+        if not
+            if c is 123
+                d: d + 1
+            if not
+                if c is 91
+                    d: d + 1
+                if not
+                    if c is 125
+                        if d is 0
+                            return k
+                        d: d - 1
+                    if not
+                        if c is 93
+                            if d is 0
+                                return k
+                            d: d - 1
+                        if not
+                            if c is 44
+                                if d is 0
+                                    return k
+        k: k + 1
+    return n
+
+jp_find s key:
+    q: str_join3("\"", key, "\"")
+    p: str_find(s, q)
+    if p < 0
+        return 0 - 1
+    k: jp_skip(s, p + str_len(q))
+    if k >= str_len(s)
+        return 0 - 1
+    if peek_byte(s, k) is not 58
+        return 0 - 1
+    return jp_skip(s, k + 1)
+
+jp_get s key:
+    v: jp_find(s, key)
+    if v < 0
+        return as text ""
+    if peek_byte(s, v) is 34
+        e: jp_endstr(s, v)
+        if e < 0
+            return as text ""
+        return as text str_cut(s, v + 1, e)
+    e: jp_endval(s, v)
+    return as text str_trim(str_cut(s, v, e))
+
+jp_num s key:
+    return str_num(jp_get(s, key))
+
+jp_has s key:
+    if jp_find(s, key) < 0
+        return 0
+    return 1
+
+jp_bool s key:
+    if str_eq(jp_get(s, key), "true") is 1
+        return 1
+    return 0

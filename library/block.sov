@@ -1,0 +1,24 @@
+# block.sov — a file of blocked names
+# needs _sov_list
+use file
+use string
+use store
+
+block_add path name:
+    return store_put(path, name)
+
+block_has path name:
+    t: file_read_all(path)
+    if t is 0
+        return 0
+    want: str_cat(name, "\n")
+    if str_find(t, want) > 0 - 1
+        return 1
+    n: str_len(t)
+    ln: str_len(name)
+    if n is ln
+        return str_eq(t, name)
+    if n > ln
+        if str_eq(str_cut(t, n - ln, n), name) is 1
+            return 1
+    return 0

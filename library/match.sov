@@ -1,0 +1,29 @@
+# match.sov — score two people (dating)
+use string
+use math
+
+match_age a b:
+    return abs(a - b)
+
+match_text a b:
+    if str_eq(a, b) is 1
+        return 100
+    if str_find(a, b) > 0 - 1
+        return 50
+    if str_find(b, a) > 0 - 1
+        return 50
+    return 0
+
+match_score age1 age2 bio1 bio2:
+    s: 100
+    d: match_age(age1, age2)
+    if d > 20
+        s: s - 40
+    if not
+        if d > 10
+            s: s - 20
+    t: match_text(bio1, bio2)
+    s: s + t
+    if s > 200
+        return 200
+    return s

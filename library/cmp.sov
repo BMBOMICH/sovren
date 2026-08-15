@@ -1,0 +1,17 @@
+# cmp.sov — compare bytes
+# needs _sov_list
+
+cmp_bytes a b n:
+    i: 0
+    as long as i < n
+        ca: peek_byte(a, i)
+        cb: peek_byte(b, i)
+        if ca is not cb
+            return ca - cb
+        i: i + 1
+    return 0
+
+cmp_eq a b n:
+    if cmp_bytes(a, b, n) is 0
+        return 1
+    return 0

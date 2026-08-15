@@ -1,0 +1,11 @@
+# uid.sov — who am I on this machine
+use sys
+
+uid_get:
+    return syscall(102, 0, 0, 0, 0, 0, 0)
+
+uid_euid:
+    return syscall(107, 0, 0, 0, 0, 0, 0)
+
+uid_gid:
+    return syscall(104, 0, 0, 0, 0, 0, 0)

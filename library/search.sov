@@ -1,0 +1,22 @@
+# search.sov — find a number || a word in a list
+# needs _sov_list
+use list
+use string
+
+search_num lst v:
+    i: 0
+    n: list_len(lst)
+    as long as i < n
+        if list_get(lst, i) is v
+            return i
+        i: i + 1
+    return 0 - 1
+
+search_text lst s:
+    i: 0
+    n: list_len(lst)
+    as long as i < n
+        if str_eq(list_get(lst, i), s) is 1
+            return i
+        i: i + 1
+    return 0 - 1

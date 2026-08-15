@@ -1,0 +1,45 @@
+# tsv.sov — tab separated rows
+use string
+use list
+use file
+
+tsv_split line:
+    out: list_new()
+    n: str_len(line)
+    start: 0
+    i: 0
+    as long as i <= n
+        cut_here: 0
+        if i is n
+            cut_here: 1
+        if not
+            if peek_byte(line, i) is 9
+                cut_here: 1
+        if cut_here is 1
+            out: list_add(out, str_cut(line, start, i))
+            start: i + 1
+        i: i + 1
+    return out
+
+tsv_rows path:
+    t: file_read_all(path)
+    out: list_new()
+    if t is 0
+        return out
+    n: str_len(t)
+    start: 0
+    i: 0
+    as long as i < n
+        if peek_byte(t, i) is 10
+            out: list_add(out, str_cut(t, start, i))
+            start: i + 1
+        i: i + 1
+    if start < n
+        out: list_add(out, str_cut(t, start, n))
+    return out
+
+tsv_cell line k:
+    f: tsv_split(line)
+    if k >= list_len(f)
+        return as text ""
+    return as text list_get(f, k)

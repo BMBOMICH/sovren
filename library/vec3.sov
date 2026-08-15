@@ -1,0 +1,35 @@
+# vec3.sov — 3D points using fixed-point decimals
+use fixed
+use mem
+
+v3_new x y z:
+    p: mem_new(24)
+    poke_i64(p, 0, x)
+    poke_i64(p, 8, y)
+    poke_i64(p, 16, z)
+    return p
+
+v3_x v:
+    return peek_i64(v, 0)
+v3_y v:
+    return peek_i64(v, 8)
+v3_z v:
+    return peek_i64(v, 16)
+
+v3_add a b:
+    return v3_new(v3_x(a) + v3_x(b), v3_y(a) + v3_y(b), v3_z(a) + v3_z(b))
+
+v3_sub a b:
+    return v3_new(v3_x(a) - v3_x(b), v3_y(a) - v3_y(b), v3_z(a) - v3_z(b))
+
+v3_scale a k:
+    return v3_new(fx_mul(v3_x(a), k), fx_mul(v3_y(a), k), fx_mul(v3_z(a), k))
+
+v3_dot a b:
+    return fx_mul(v3_x(a), v3_x(b)) + fx_mul(v3_y(a), v3_y(b)) + fx_mul(v3_z(a), v3_z(b))
+
+v3_cross a b:
+    return v3_new(fx_mul(v3_y(a), v3_z(b)) - fx_mul(v3_z(a), v3_y(b)), fx_mul(v3_z(a), v3_x(b)) - fx_mul(v3_x(a), v3_z(b)), fx_mul(v3_x(a), v3_y(b)) - fx_mul(v3_y(a), v3_x(b)))
+
+v3_len a:
+    return fx_sqrt(v3_dot(a, a))

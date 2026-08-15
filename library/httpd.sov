@@ -1,0 +1,53 @@
+# httpd.sov — a small web server
+use sock
+use string
+use file
+use num
+
+hd_listen port:
+    return sock_listen(port)
+
+hd_accept fd:
+    return sock_accept(fd)
+
+hd_read c:
+    return as text sock_recv(c, 8192)
+
+hd_method req:
+    p: str_find(req, " ")
+    if p < 0
+        return as text ""
+    return as text str_cut(req, 0, p)
+
+hd_path req:
+    a: str_find(req, " ")
+    if a < 0
+        return as text "/"
+    rest: str_cut(req, a + 1, str_len(req))
+    b: str_find(rest, " ")
+    if b < 0
+        return as text rest
+    return as text str_cut(rest, 0, b)
+
+hd_send c code ctype body:
+    head: str_join3("HTTP/1.1 ", num_text(code), " OK\r\nContent-Type: ")
+    head: str_join3(head, ctype, "\r\nContent-Length: ")
+    head: str_join3(head, num_text(str_len(body)), "\r\nConnection: close\r\n\r\n")
+    sock_send(c, head)
+    sock_send(c, body)
+    return sock_close(c)
+
+hd_html c body:
+    return hd_send(c, 200, "text/html", body)
+
+hd_text c body:
+    return hd_send(c, 200, "text/plain", body)
+
+hd_notfound c:
+    return hd_send(c, 404, "text/plain", "not found")
+
+hd_file c path ctype:
+    b: file_read_all(path)
+    if b is 0
+        return hd_notfound(c)
+    return hd_send(c, 200, ctype, b)

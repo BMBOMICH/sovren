@@ -1,0 +1,64 @@
+# bitset.sov — a compact set of yes/no flags
+use mem
+
+bs_new n:
+    words: n / 32 + 1
+    p: mem_new(8 + words * 8)
+    poke_i64(p, 0, n)
+    i: 0
+    as long as i < words
+        poke_i64(p, 8 + i * 8, 0)
+        i: i + 1
+    return p
+
+bs_size b:
+    return peek_i64(b, 0)
+
+bs_bit k:
+    v: 1
+    i: 0
+    as long as i < k
+        v: v * 2
+        i: i + 1
+    return v
+
+bs_set b i:
+    if i < 0
+        return b
+    if i >= bs_size(b)
+        return b
+    w: i / 32
+    k: i % 32
+    old: peek_i64(b, 8 + w * 8)
+    if (old / bs_bit(k)) % 2 is 0
+        poke_i64(b, 8 + w * 8, old + bs_bit(k))
+    return b
+
+bs_clear b i:
+    if i < 0
+        return b
+    if i >= bs_size(b)
+        return b
+    w: i / 32
+    k: i % 32
+    old: peek_i64(b, 8 + w * 8)
+    if (old / bs_bit(k)) % 2 is 1
+        poke_i64(b, 8 + w * 8, old - bs_bit(k))
+    return b
+
+bs_get b i:
+    if i < 0
+        return 0
+    if i >= bs_size(b)
+        return 0
+    w: i / 32
+    k: i % 32
+    return (peek_i64(b, 8 + w * 8) / bs_bit(k)) % 2
+
+bs_count b:
+    t: 0
+    i: 0
+    as long as i < bs_size(b)
+        t: t + bs_get(b, i)
+        i: i + 1
+    return t

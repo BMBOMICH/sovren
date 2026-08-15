@@ -1,0 +1,97 @@
+# sys.sov — Linux syscalls
+
+sys_read fd buf n:
+    return syscall(0, fd, buf, n, 0, 0, 0)
+
+sys_write fd buf n:
+    return syscall(1, fd, buf, n, 0, 0, 0)
+
+sys_open path flags:
+    return syscall(257, 0 - 100, path, flags, 420, 0, 0)
+
+sys_close fd:
+    return syscall(3, fd, 0, 0, 0, 0, 0)
+
+sys_seek fd off whence:
+    return syscall(8, fd, off, whence, 0, 0, 0)
+
+sys_exit code:
+    syscall(60, code, 0, 0, 0, 0, 0)
+
+sys_mkdir path:
+    return syscall(83, path, 493, 0, 0, 0, 0)
+
+sys_rmdir path:
+    return syscall(84, path, 0, 0, 0, 0, 0)
+
+sys_unlink path:
+    return syscall(87, path, 0, 0, 0, 0, 0)
+
+sys_rename a b:
+    return syscall(82, a, b, 0, 0, 0, 0)
+
+sys_chdir path:
+    return syscall(80, path, 0, 0, 0, 0, 0)
+
+sys_getcwd buf n:
+    return syscall(79, buf, n, 0, 0, 0, 0)
+
+sys_fork:
+    return syscall(57, 0, 0, 0, 0, 0, 0)
+
+sys_wait pid:
+    return syscall(61, pid, 0, 0, 0, 0, 0)
+
+sys_getpid:
+    return syscall(39, 0, 0, 0, 0, 0, 0)
+
+sys_kill pid sig:
+    return syscall(62, pid, sig, 0, 0, 0, 0)
+
+sys_pipe fds:
+    return syscall(22, fds, 0, 0, 0, 0, 0)
+
+sys_dup2 a b:
+    return syscall(33, a, b, 0, 0, 0, 0)
+
+sys_nanosleep ts:
+    return syscall(35, ts, 0, 0, 0, 0, 0)
+
+sys_clock ts:
+    return syscall(228, 0, ts, 0, 0, 0, 0)
+
+sys_getrandom buf n:
+    return syscall(318, buf, n, 0, 0, 0, 0)
+
+sys_ioctl fd req arg:
+    return syscall(16, fd, req, arg, 0, 0, 0)
+
+sys_socket domain typ proto:
+    return syscall(41, domain, typ, proto, 0, 0, 0)
+
+sys_bind fd addr len:
+    return syscall(49, fd, addr, len, 0, 0, 0)
+
+sys_listen fd backlog:
+    return syscall(50, fd, backlog, 0, 0, 0, 0)
+
+sys_accept fd addr lenp:
+    return syscall(43, fd, addr, lenp, 0, 0, 0)
+
+sys_connect fd addr len:
+    return syscall(42, fd, addr, len, 0, 0, 0)
+
+sys_send fd buf n:
+    return syscall(44, fd, buf, n, 0, 0, 0)
+
+sys_recv fd buf n:
+    return syscall(45, fd, buf, n, 0, 0, 0)
+
+write_str fd s:
+    return sys_write(fd, s, _sov_strlen(s))
+
+write_out s:
+    return write_str(1, s)
+
+write_err s:
+    return write_str(2, s)

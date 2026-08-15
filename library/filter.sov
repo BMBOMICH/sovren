@@ -1,0 +1,64 @@
+# filter.sov — bad word detector (real scan, your list + a built-in set)
+# needs _sov_list
+use string
+use case
+use list
+
+filter_has text word:
+    if str_len(word) is 0
+        return 0
+    a: case_lower(text)
+    b: case_lower(word)
+    if str_find(a, b) > 0 - 1
+        return 1
+    return 0
+
+filter_any text words n:
+    i: 0
+    as long as i < n
+        if filter_has(text, list_get(words, i)) is 1
+            return 1
+        i: i + 1
+    return 0
+
+filter_bad text:
+    if filter_has(text, "fuck") is 1
+        return 1
+    if filter_has(text, "shit") is 1
+        return 1
+    if filter_has(text, "bitch") is 1
+        return 1
+    if filter_has(text, "asshole") is 1
+        return 1
+    if filter_has(text, "cunt") is 1
+        return 1
+    if filter_has(text, "nigger") is 1
+        return 1
+    if filter_has(text, "faggot") is 1
+        return 1
+    if filter_has(text, "rape") is 1
+        return 1
+    if filter_has(text, "slut") is 1
+        return 1
+    if filter_has(text, "whore") is 1
+        return 1
+    if filter_has(text, "retard") is 1
+        return 1
+    if filter_has(text, "kys") is 1
+        return 1
+    return 0
+
+filter_ok text:
+    if filter_bad(text) is 1
+        return 0
+    return 1
+
+filter_stars word:
+    n: str_len(word)
+    o: _sov_alloc(n + 1)
+    i: 0
+    as long as i < n
+        poke_byte(o, i, 42)
+        i: i + 1
+    poke_byte(o, n, 0)
+    return as text o

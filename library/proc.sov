@@ -1,0 +1,24 @@
+# proc.sov — processes
+
+use sys
+proc_id:
+    return sys_getpid()
+
+proc_fork:
+    return sys_fork()
+
+proc_wait:
+    return sys_wait(0 - 1)
+
+proc_wait_pid pid:
+    return sys_wait(pid)
+
+proc_kill pid:
+    return sys_kill(pid, 15)
+
+proc_kill9 pid:
+    return sys_kill(pid, 9)
+
+proc_exit code:
+    sys_exit(code)
+    return code

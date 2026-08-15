@@ -1,0 +1,402 @@
+#!/bin/sh
+# Run every check. Must be started from the sovren folder.
+set -e
+SOV=./sovren
+fail=0
+
+ok() {
+    echo "ok $1"
+}
+
+bad() {
+    echo "FAIL $1"
+    fail=1
+}
+
+skip() {
+    echo "skip $1"
+}
+
+# hello number
+$SOV check/hello.sov -o /tmp/sov-c-hello >/tmp/sov-c-log 2>&1
+chmod +x /tmp/sov-c-hello
+out=$(/tmp/sov-c-hello)
+code=$?
+if [ "$out" = "4" ] && [ "$code" = "0" ]; then ok hello; else bad hello; echo "$out exit=$code"; fi
+
+# print of a call that returns a number
+$SOV check/printn.sov -o /tmp/sov-c-pr >/tmp/sov-c-log 2>&1
+chmod +x /tmp/sov-c-pr
+out=$(/tmp/sov-c-pr | tr '\n' ' ')
+code=$?
+echo "$out" | grep -q "8" && echo "$out" | grep -q "10" && [ "$code" = "0" ] && ok printn || bad printn
+
+# math lib
+$SOV check/math.sov -o /tmp/sov-c-math >/tmp/sov-c-log 2>&1
+chmod +x /tmp/sov-c-math
+out=$(/tmp/sov-c-math | tr '\n' ' ')
+echo "$out" | grep -q "3" && echo "$out" | grep -q "8" && ok math || bad math
+
+# missing task must say so, file line, no write, exit 1
+rm -f /tmp/sov-c-miss
+printf '%s\n' '# t' 'main:' '    x: nope()' '    print x' > /tmp/sov-c-miss.sov
+set +e
+$SOV /tmp/sov-c-miss.sov -o /tmp/sov-c-miss >/tmp/sov-c-log 2>&1
+ec=$?
+set -e
+if grep -qE "no such (task|name)" /tmp/sov-c-log && grep -q "nope" /tmp/sov-c-log && ! grep -q "Wrote" /tmp/sov-c-log && [ "$ec" != "0" ] && [ ! -e /tmp/sov-c-miss ]; then ok missing-task; else bad missing-task; echo exit=$ec; cat /tmp/sov-c-log; fi
+
+# two tasks same name, file line of the second, exit 1
+rm -f /tmp/sov-c-dup
+printf '%s\n' '# t' 'foo:' '    return 1' 'foo:' '    return 2' 'main:' '    print 1' > /tmp/sov-c-dup.sov
+set +e
+$SOV /tmp/sov-c-dup.sov -o /tmp/sov-c-dup >/tmp/sov-c-log 2>&1
+ec=$?
+set -e
+if grep -qE "same name" /tmp/sov-c-log && grep -qE "[234]" /tmp/sov-c-log && ! grep -q "Wrote" /tmp/sov-c-log && [ "$ec" != "0" ]; then ok dup-task; else bad dup-task; echo exit=$ec; cat /tmp/sov-c-log; fi
+
+# missing library names the file and line
+rm -f /tmp/sov-c-nl
+printf '%s\n' '# t' 'use does_not_exist' 'main:' '    print 1' > /tmp/sov-c-nl.sov
+set +e
+$SOV /tmp/sov-c-nl.sov -o /tmp/sov-c-nl >/tmp/sov-c-log 2>&1
+ec=$?
+set -e
+if grep -q "cannot read library" /tmp/sov-c-log && grep -q "does_not_exist" /tmp/sov-c-log && ! grep -q "Wrote" /tmp/sov-c-log && [ "$ec" != "0" ]; then ok missing-lib; else bad missing-lib; echo exit=$ec; cat /tmp/sov-c-log; fi
+
+# typo with no parentheses, file line
+rm -f /tmp/sov-c-bad
+set +e
+$SOV check/badline.sov -o /tmp/sov-c-bad >/tmp/sov-c-log 2>&1
+ec=$?
+set -e
+if grep -q "bad line" /tmp/sov-c-log && grep -q "prnt 1" /tmp/sov-c-log && grep -qE "[234]" /tmp/sov-c-log && ! grep -q "Wrote" /tmp/sov-c-log && [ "$ec" != "0" ]; then ok bad-line; else bad bad-line; echo exit=$ec; cat /tmp/sov-c-log; fi
+
+# unused and empty tasks warn, still write
+printf '%s\n' '# t' 'ghost:' '    return 1' 'husk:' 'main:' '    print 1' > /tmp/sov-c-warn.sov
+$SOV /tmp/sov-c-warn.sov -o /tmp/sov-c-warn >/tmp/sov-c-log 2>&1
+if grep -q "never used" /tmp/sov-c-log && grep -q "ghost" /tmp/sov-c-log && grep -q "empty" /tmp/sov-c-log && grep -q "husk" /tmp/sov-c-log && grep -q "Wrote" /tmp/sov-c-log; then ok warn; else bad warn; cat /tmp/sov-c-log; fi
+
+# nested use: file pulls sys
+$SOV check/usefile.sov -o /tmp/sov-c-uf >/tmp/sov-c-log 2>&1
+chmod +x /tmp/sov-c-uf
+out=$(/tmp/sov-c-uf)
+if [ "$out" = "1" ]; then ok use-file; else bad use-file; echo "$out"; fi
+
+# self-host
+$SOV linux/compiler.sov -o /tmp/sov-c-self >/tmp/sov-c-log 2>&1
+if [ -x /tmp/sov-c-self ]; then ok self-host; else bad self-host; cat /tmp/sov-c-log; fi
+
+
+# ---- regression tests for 0.1.0 fixes ----
+
+rej() { # name, file  -> must error, no binary
+    rm -f /tmp/sov-r-out
+    set +e
+    $SOV "$2" -o /tmp/sov-r-out >/tmp/sov-r-log 2>&1
+    ec=$?
+    set -e
+    if [ "$ec" != "0" ] && [ ! -e /tmp/sov-r-out ]; then ok "$1"; else bad "$1"; cat /tmp/sov-r-log; fi
+}
+
+runs() { # name, file, expected
+    $SOV "$2" -o /tmp/sov-r-bin >/tmp/sov-r-log 2>&1
+    chmod +x /tmp/sov-r-bin
+    got=$(/tmp/sov-r-bin | tr '\n' ' ')
+    got=$(echo $got)
+    if [ "$got" = "$3" ]; then ok "$1"; else bad "$1"; echo "got [$got] want [$3]"; fi
+}
+
+printf '%s\n' 'main:' '    note: x' '    print 1' > /tmp/sov-r1.sov
+rej no-note /tmp/sov-r1.sov
+
+printf '%s\n' 'main:' '    if 1 is 2' '        print "a"' '    and if not' '        print "b"' > /tmp/sov-r2.sov
+rej no-and-if-not /tmp/sov-r2.sov
+
+printf '%s\n' 'main:' '    repeat 2' '        print "x"' > /tmp/sov-r3.sov
+rej no-repeat /tmp/sov-r3.sov
+
+printf 'main:\n\tprint 1\n' > /tmp/sov-r4.sov
+rej no-tabs /tmp/sov-r4.sov
+
+printf '%s\n' 'main:' '    print missing' > /tmp/sov-r5.sov
+rej undefined-name /tmp/sov-r5.sov
+
+printf '%s\n' 'main:' '    print "abc' > /tmp/sov-r6.sov
+rej unterminated-text /tmp/sov-r6.sov
+
+printf '%s\n' 'f a:' '    return a' 'main:' '    print f(1, 2)' > /tmp/sov-r7.sov
+rej wrong-arg-count /tmp/sov-r7.sov
+
+printf '%s\n' 'main:' '    print 5 * 3 / 2' '    print 100 / 5 * 2' '    print 10 - 2 - 3' > /tmp/sov-r8.sov
+runs precedence /tmp/sov-r8.sov "7 40 5"
+
+printf '%s\n' 'boom:' '    print "SIDE"' '    return 1' 'main:' '    if 0 is 1 and boom() is 1' '        print "a"' '    print "end"' > /tmp/sov-r9.sov
+runs short-circuit /tmp/sov-r9.sov "end"
+
+printf '%s\n' 'main:' '    print greeting()' '' 'greeting:' '    return "hello"' > /tmp/sov-r10.sov
+runs forward-string /tmp/sov-r10.sov "hello"
+
+printf '%s\n' 'use chat' 'main:' '    print 1' > /tmp/sov-r11.sov
+runs deep-use /tmp/sov-r11.sov "1"
+
+printf '%s\n' 'main:' '    p: _sov_alloc(64)' '    poke_byte(p, 0, 65)' '    print peek_byte(p, 0)' > /tmp/sov-r12.sov
+runs raw-alloc /tmp/sov-r12.sov "65"
+
+
+printf '%s\n' 'M: 256' 'f x:' '    return x % M' 'main:' '    print f(300)' > /tmp/sov-r13.sov
+runs global-in-function /tmp/sov-r13.sov "44"
+
+printf '%s\n' 'use bit32' 'main:' '    print wxor(255, 15)' '    print rotr(1, 1)' > /tmp/sov-r14.sov
+runs bit32 /tmp/sov-r14.sov "240 2147483648"
+
+
+printf '%s\n' 'use feed' 'main:' '    r: feed_post("/tmp/sov-feed.txt", "bob", "hi")' '    print feed_count("/tmp/sov-feed.txt")' '    print feed_who(list_get(feed_lines("/tmp/sov-feed.txt"), 0))' > /tmp/sov-r15.sov
+rm -f /tmp/sov-feed.txt
+runs feed-real /tmp/sov-r15.sov "1 bob"
+
+printf '%s\n' 'use chat' 'main:' '    l: chat_pack("amy", "yo")' '    print chat_from(l)' '    print chat_text(l)' > /tmp/sov-r16.sov
+runs chat-real /tmp/sov-r16.sov "amy yo"
+
+printf '%s\n' 'use dump' 'main:' '    print dump_text("AB")' > /tmp/sov-r17.sov
+runs dump-real /tmp/sov-r17.sov "41 42"
+
+printf '%s\n' 'use sha256' 'main:' '    print sha256_hex("abc")' > /tmp/sov-r18.sov
+runs sha256 /tmp/sov-r18.sov "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+
+printf '%s\n' 'use hmac' 'main:' '    print hmac_sha256("key", "The quick brown fox jumps over the lazy dog")' > /tmp/sov-r19.sov
+runs hmac /tmp/sov-r19.sov "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8"
+
+printf '%s\n' 'main:' '    set x to 5' > /tmp/sov-r20.sov
+rej no-set-syntax /tmp/sov-r20.sov
+
+printf '%s\n' 'main:' '    i: 0' '    i: i + 1' '    i: i - 1' '    i: i + 7' '    print i' > /tmp/sov-r21.sov
+runs incdec-opt /tmp/sov-r21.sov "7"
+
+
+printf '%s\n' 'main:' '    print 5 times 3' > /tmp/sov-r22.sov
+rej no-times-word /tmp/sov-r22.sov
+
+printf '%s\n' 'main:' '    print 6 divided by 2' > /tmp/sov-r23.sov
+rej no-divided-by /tmp/sov-r23.sov
+
+printf '%s\n' 'main:' '    print 7 modulo 3' > /tmp/sov-r24.sov
+rej no-modulo-word /tmp/sov-r24.sov
+
+printf '%s\n' 'main:' '    a: 3' '    if a == 3' '        print "y"' > /tmp/sov-r25.sov
+rej no-eqeq /tmp/sov-r25.sov
+
+printf '%s\n' 'main:' '    a: 3' '    if a != 4' '        print "y"' > /tmp/sov-r26.sov
+rej no-noteq /tmp/sov-r26.sov
+
+printf '%s\n' 'main:' '    print 6 zzz by 2' > /tmp/sov-r27.sov
+rej unknown-words /tmp/sov-r27.sov
+
+printf '%s\n' 'main:' '    print "a == b"' > /tmp/sov-r28.sov
+runs eqeq-in-text /tmp/sov-r28.sov "a == b"
+
+printf '%s\n' 'main:' '    print "loop" 2 times' > /tmp/sov-r29.sov
+runs print-times-ok /tmp/sov-r29.sov "loop loop"
+
+
+printf '%s\n' 'f a b c d e g h:' '    return a*1000000+b*100000+c*10000+d*1000+e*100+g*10+h' 'main:' '    print f(1,2,3,4,5,6,7)' > /tmp/sov-r30.sov
+runs seven-args /tmp/sov-r30.sov "1234567"
+
+printf '%s\n' 'use fixed' 'main:' '    print fx_text(fx_sqrt(fx_from(2)))' '    print fx_text(fx_div(fx_from(1), fx_from(4)))' > /tmp/sov-r31.sov
+runs fixed-point /tmp/sov-r31.sov "1.414213 0.250000"
+
+printf '%s\n' 'use vec' 'main:' '    v: vec_new(2)' '    v: vec_push(v, 5)' '    v: vec_push(v, 3)' '    v: vec_push(v, 9)' '    v: vec_sort(v)' '    print vec_get(v, 0)' '    print vec_sum(v)' > /tmp/sov-r32.sov
+runs vec /tmp/sov-r32.sov "3 17"
+
+printf '%s\n' 'use sha1' 'main:' '    print sha1_hex("abc")' > /tmp/sov-r33.sov
+runs sha1 /tmp/sov-r33.sov "a9993e364706816aba3e25717850c26c9cd0d89d"
+
+printf '%s\n' 'use crc32' 'main:' '    print crc32_text("hello")' > /tmp/sov-r34.sov
+runs crc32 /tmp/sov-r34.sov "907060870"
+
+printf '%s\n' 'use base32' 'main:' '    print b32_text("abc")' > /tmp/sov-r35.sov
+runs base32 /tmp/sov-r35.sov "MFRGG==="
+
+printf '%s\n' 'use lev' 'main:' '    print lev_dist("kitten", "sitting")' > /tmp/sov-r36.sov
+runs levenshtein /tmp/sov-r36.sov "3"
+
+printf '%s\n' 'use glob' 'main:' '    print glob_match("*.sov", "a.sov")' '    print glob_match("*.sov", "a.txt")' > /tmp/sov-r37.sov
+runs glob /tmp/sov-r37.sov "1 0"
+
+printf '%s\n' 'use stat2' 'main:' '    v: vec_new(4)' '    v: vec_push(v, 2)' '    v: vec_push(v, 4)' '    v: vec_push(v, 4)' '    v: vec_push(v, 6)' '    print fx_text(st_mean(v))' > /tmp/sov-r38.sov
+runs stats /tmp/sov-r38.sov "4.000000"
+
+printf '%s\n' 'use heap' 'main:' '    h: heap_new()' '    h: heap_push(h, 7)' '    h: heap_push(h, 2)' '    h: heap_push(h, 5)' '    print heap_pop(h)' '    print heap_pop(h)' > /tmp/sov-r39.sov
+runs heap /tmp/sov-r39.sov "2 5"
+
+
+printf '%s\n' 'use prime' 'main:' '    print pr_count(100)' '    print pr_is(97)' > /tmp/sov-r40.sov
+runs prime /tmp/sov-r40.sov "25 1"
+
+printf '%s\n' 'use matrix' 'main:' '    a: mat_new(2,2)' '    mat_set(a,0,0,1)' '    mat_set(a,1,1,4)' '    print mat_trace(a)' > /tmp/sov-r41.sov
+runs matrix /tmp/sov-r41.sov "5"
+
+printf '%s\n' 'use vec3' 'main:' '    p: v3_new(fx_from(3), fx_from(4), fx_from(0))' '    print fx_text(v3_len(p))' > /tmp/sov-r42.sov
+runs vec3 /tmp/sov-r42.sov "5.000000"
+
+{ echo 'use urlenc'; echo 'main:'; echo '    print ue_encode("a b")'; } > /tmp/sov-r43.sov
+runs urlenc /tmp/sov-r43.sov "a%20b"
+
+printf '%s\n' 'use ipaddr' 'main:' '    print ip_text(ip_parse("192.168.1.10"))' '    print ip_private(ip_parse("8.8.8.8"))' > /tmp/sov-r44.sov
+runs ipaddr /tmp/sov-r44.sov "192.168.1.10 0"
+
+printf '%s\n' 'use bitset' 'main:' '    b: bs_new(100)' '    b: bs_set(b, 5)' '    b: bs_set(b, 70)' '    print bs_count(b)' '    print bs_get(b, 70)' > /tmp/sov-r45.sov
+runs bitset /tmp/sov-r45.sov "2 1"
+
+printf '%s\n' 'use walk' 'main:' '    print walk_count("/tmp") > 0' > /tmp/sov-r46.sov
+runs walk /tmp/sov-r46.sov "1"
+
+printf '%s\n' 'use draw' 'main:' '    im: img_new(16,16)' '    im: draw_fill(im, 0, 0, 15, 15, rgb(1,2,3))' '    r: img_save("/tmp/sov-t.ppm", im)' '    print r' > /tmp/sov-r47.sov
+runs draw /tmp/sov-r47.sov "1"
+
+printf '%s\n' 'use trie' 'main:' '    t: tr_new()' '    t: tr_add(t, "apple")' '    t: tr_add(t, "apply")' '    print list_len(tr_starting(t, "app"))' > /tmp/sov-r48.sov
+runs trie /tmp/sov-r48.sov "2"
+
+
+if python3 -c "import sys" >/dev/null 2>&1; then
+    if python3 check/fuzz.py 1 150 >/tmp/sov-fuzz.log 2>&1; then
+        ok fuzz-x86
+    else
+        bad fuzz-x86; tail -12 /tmp/sov-fuzz.log
+    fi
+fi
+
+
+$SOV check/fuzz_run.sov -o /tmp/sov-fz.bin >/dev/null 2>&1
+chmod +x /tmp/sov-fz.bin 2>/dev/null
+g=$(timeout 600 /tmp/sov-fz.bin 2>&1 | head -1)
+if [ "$g" = "fuzz ok" ]; then ok fuzz-in-sovren; else bad fuzz-in-sovren; echo "  $g"; fi
+
+# every library must compile
+liberr=0
+for lf in library/*.sov; do
+    ln=$(basename "$lf" .sov)
+    printf 'use %s\nmain:\n    print 1\n' "$ln" > /tmp/sov-r-lib.sov
+    if ! $SOV /tmp/sov-r-lib.sov -o /tmp/sov-r-lib.bin >/dev/null 2>&1; then
+        echo "  lib fail: $ln"
+        liberr=1
+    fi
+done
+if [ "$liberr" = "0" ]; then ok all-libraries; else bad all-libraries; fi
+
+
+# ---- AArch64 (Android / iOS) ----
+if python3 -c "import unicorn" >/dev/null 2>&1; then
+    if sh arm64/test_arm64.sh >/tmp/sov-arm-log 2>&1; then
+        ok arm64-codegen
+    else
+        bad arm64-codegen; tail -5 /tmp/sov-arm-log
+    fi
+
+    printf '%s\n' 'main:' '    print 5 * 3 / 2' > /tmp/sov-so.sov
+    $SOV /tmp/sov-so.sov --android-so -o /tmp/sov-so.so >/dev/null 2>&1
+    g=$(timeout 300 python3 arm64/run_so.py /tmp/sov-so.so sovren_main 2>/dev/null | tr -d '\n')
+    if [ "$g" = "7" ]; then ok so-export-sovren_main; else bad so-export-sovren_main; echo "  got $g"; fi
+    g=$(timeout 300 python3 arm64/run_so.py /tmp/sov-so.so Java_com_sovren_Native_run 2>/dev/null | tr -d '\n')
+    if [ "$g" = "7" ]; then ok so-export-jni; else bad so-export-jni; echo "  got $g"; fi
+
+    $SOV hello.sov --ios -o /tmp/sov-ios.bin >/dev/null 2>&1
+    if python3 arm64/check_sig.py /tmp/sov-ios.bin >/dev/null 2>&1; then
+        ok ios-code-signature
+    else
+        bad ios-code-signature
+    fi
+    printf '%s\n' 'use sha256' 'main:' '    print sha256_hex("abc")' > /tmp/sov-arm-sha.sov
+    $SOV /tmp/sov-arm-sha.sov --android -o /tmp/sov-arm-sha.bin >/dev/null 2>&1
+    g=$(timeout 900 python3 arm64/run_arm64.py /tmp/sov-arm-sha.bin 2>&1 | tr -d '\n')
+    if [ "$g" = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" ]; then
+        ok arm64-sha256
+    else
+        bad arm64-sha256; echo "  got $g"
+    fi
+else
+    echo "skip arm64 (pip install unicorn capstone)"
+fi
+
+# ---- macOS (emulated cpu, macOS syscall rules enforced) ----
+if python3 -c "import unicorn" >/dev/null 2>&1; then
+    printf '%s\n' 'main:' '    print 5 * 3 / 2' > /tmp/sov-m1.sov
+    $SOV /tmp/sov-m1.sov --mac -o /tmp/sov-m1.bin >/dev/null 2>&1
+    g=$(timeout 120 python3 mac/run_macho.py /tmp/sov-m1.bin 2>/dev/null | tr -d '\r\n')
+    if [ "$g" = "7" ]; then ok mac-run; else bad mac-run; echo "  got $g"; fi
+
+    printf '%s\n' 'add a b:' '    return a + b' '' 'main:' '    print add(40, 2)' > /tmp/sov-m2.sov
+    $SOV /tmp/sov-m2.sov --mac -o /tmp/sov-m2.bin >/dev/null 2>&1
+    g=$(timeout 120 python3 mac/run_macho.py /tmp/sov-m2.bin 2>/dev/null | tr -d '\r\n')
+    if [ "$g" = "42" ]; then ok mac-job; else bad mac-job; echo "  got $g"; fi
+
+    printf '%s\n' 'fib n:' '    if n < 2' '        return n' '    return fib(n - 1) + fib(n - 2)' '' 'main:' '    print fib(20)' > /tmp/sov-m3.sov
+    $SOV /tmp/sov-m3.sov --mac -o /tmp/sov-m3.bin >/dev/null 2>&1
+    g=$(timeout 120 python3 mac/run_macho.py /tmp/sov-m3.bin 2>/dev/null | tr -d '\r\n')
+    if [ "$g" = "6765" ]; then ok mac-recursion; else bad mac-recursion; echo "  got $g"; fi
+else
+    skip "mac (pip install unicorn)"
+fi
+
+# ---- Windows (needs wine) ----
+if command -v wine >/dev/null 2>&1; then
+    WINEDEBUG=-all; export WINEDEBUG
+    if [ -z "$WINEPREFIX" ]; then WINEPREFIX="$HOME/.cache/wp"; export WINEPREFIX; fi
+    mkdir -p "$WINEPREFIX" 2>/dev/null
+
+    printf '%s\n' 'main:' '    print 5 * 3 / 2' > /tmp/sov-w1.sov
+    $SOV /tmp/sov-w1.sov --windows -o /tmp/sov-w1.exe >/dev/null 2>&1
+    g=$(timeout 120 wine /tmp/sov-w1.exe 2>/dev/null | tr -d '\r\n')
+    if [ "$g" = "7" ]; then ok windows-run; else bad windows-run; echo "  got $g"; fi
+
+    printf '%s\n' 'add a b:' '    return a + b' '' 'main:' '    print add(40, 2)' > /tmp/sov-w2.sov
+    $SOV /tmp/sov-w2.sov --windows -o /tmp/sov-w2.exe >/dev/null 2>&1
+    g=$(timeout 120 wine /tmp/sov-w2.exe 2>/dev/null | tr -d '\r\n')
+    if [ "$g" = "42" ]; then ok windows-job; else bad windows-job; echo "  got $g"; fi
+
+    printf '%s\n' 'use sha256' 'main:' '    print sha256_hex("abc")' > /tmp/sov-w3.sov
+    $SOV /tmp/sov-w3.sov --windows -o /tmp/sov-w3.exe >/dev/null 2>&1
+    g=$(timeout 120 wine /tmp/sov-w3.exe 2>/dev/null | tr -d '\r\n')
+    if [ "$g" = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" ]; then
+        ok windows-sha256
+    else bad windows-sha256; echo "  got $g"; fi
+else
+    skip "windows (apt install wine)"
+fi
+
+# ---- editor libraries (tui, list insert/delete) ----
+printf '%s\n' 'use list' 'main:' '    l: list_new()' '    l: list_add(l, 1)' '    l: list_add(l, 3)' '    l: list_ins(l, 1, 2)' '    print list_get(l, 1)' > /tmp/sov-li.sov
+$SOV /tmp/sov-li.sov -o /tmp/sov-li.bin >/dev/null 2>&1
+g=$(/tmp/sov-li.bin 2>/dev/null)
+if [ "$g" = "2" ]; then ok list-insert; else bad list-insert; echo "  got $g"; fi
+
+printf '%s\n' 'use list' 'main:' '    l: list_new()' '    l: list_add(l, 1)' '    l: list_add(l, 2)' '    l: list_del(l, 0)' '    print list_get(l, 0)' > /tmp/sov-ld.sov
+$SOV /tmp/sov-ld.sov -o /tmp/sov-ld.bin >/dev/null 2>&1
+g=$(/tmp/sov-ld.bin 2>/dev/null)
+if [ "$g" = "2" ]; then ok list-delete; else bad list-delete; echo "  got $g"; fi
+
+printf '%s\n' 'use tui' 'main:' '    tui_goto(3, 5)' > /tmp/sov-tui.sov
+$SOV /tmp/sov-tui.sov -o /tmp/sov-tui.bin >/dev/null 2>&1
+g=$(/tmp/sov-tui.bin 2>/dev/null | od -An -c | tr -d ' \n')
+if [ "$g" = "033[3;5H" ]; then ok tui-goto; else bad tui-goto; echo "  got $g"; fi
+
+$SOV edit.sov -o /tmp/sov-edit >/dev/null 2>&1
+rm -f /tmp/sov-ed.txt
+printf 'hello\023\021' | timeout 30 /tmp/sov-edit /tmp/sov-ed.txt >/dev/null 2>&1
+g=$(cat /tmp/sov-ed.txt 2>/dev/null)
+if [ "$g" = "hello" ]; then ok editor; else bad editor; echo "  got '$g'"; fi
+
+for tgt in --android --ios --android-so; do
+    if $SOV hello.sov $tgt -o /tmp/sov-tgt.bin >/dev/null 2>&1; then
+        ok "target$tgt"
+    else
+        bad "target$tgt"
+    fi
+done
+
+if [ "$fail" = "0" ]; then
+    echo "all checks passed"
+    exit 0
+fi
+echo "some checks failed"
+exit 1

@@ -1,0 +1,47 @@
+# list.sov — growable lists (needs runtime)
+
+list_new:
+    return _sov_list_new()
+
+list_add lst item:
+    return _sov_list_add(lst, item)
+
+list_get lst i:
+    return _sov_list_get(lst, i)
+
+list_set lst i v:
+    return _sov_list_set(lst, i, v)
+
+list_len lst:
+    return _sov_list_len(lst)
+
+list_last lst:
+    n: list_len(lst)
+    if n is 0
+        return 0
+    return list_get(lst, n - 1)
+
+# put a value in the middle. everything after it shifts down.
+list_ins lst i v:
+    n: list_len(lst)
+    if i >= n
+        return _sov_list_add(lst, v)
+    out: _sov_list_new()
+    k: 0
+    as long as k < n
+        if k is i
+            out: _sov_list_add(out, v)
+        out: _sov_list_add(out, list_get(lst, k))
+        k: k + 1
+    return out
+
+# take one out. everything after it shifts up.
+list_del lst i:
+    n: list_len(lst)
+    out: _sov_list_new()
+    k: 0
+    as long as k < n
+        if k is not i
+            out: _sov_list_add(out, list_get(lst, k))
+        k: k + 1
+    return out

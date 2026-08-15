@@ -1,0 +1,57 @@
+# term.sov — terminal screen (ANSI)
+
+use sys
+term_esc a b c n:
+    p: _sov_alloc(8)
+    poke_byte(p, 0, 27)
+    poke_byte(p, 1, 91)
+    poke_byte(p, 2, a)
+    poke_byte(p, 3, b)
+    poke_byte(p, 4, c)
+    poke_byte(p, 5, 0)
+    write_str(1, p)
+    return n
+
+term_clear:
+    p: _sov_alloc(8)
+    poke_byte(p, 0, 27)
+    poke_byte(p, 1, 91)
+    poke_byte(p, 2, 50)
+    poke_byte(p, 3, 74)
+    poke_byte(p, 4, 27)
+    poke_byte(p, 5, 91)
+    poke_byte(p, 6, 72)
+    poke_byte(p, 7, 0)
+    sys_write(1, p, 7)
+    return 1
+
+term_nl:
+    p: _sov_alloc(2)
+    poke_byte(p, 0, 10)
+    poke_byte(p, 1, 0)
+    sys_write(1, p, 1)
+    return 1
+
+term_hide_cursor:
+    p: _sov_alloc(8)
+    poke_byte(p, 0, 27)
+    poke_byte(p, 1, 91)
+    poke_byte(p, 2, 63)
+    poke_byte(p, 3, 50)
+    poke_byte(p, 4, 53)
+    poke_byte(p, 5, 108)
+    poke_byte(p, 6, 0)
+    write_str(1, p)
+    return 1
+
+term_show_cursor:
+    p: _sov_alloc(8)
+    poke_byte(p, 0, 27)
+    poke_byte(p, 1, 91)
+    poke_byte(p, 2, 63)
+    poke_byte(p, 3, 50)
+    poke_byte(p, 4, 53)
+    poke_byte(p, 5, 104)
+    poke_byte(p, 6, 0)
+    write_str(1, p)
+    return 1

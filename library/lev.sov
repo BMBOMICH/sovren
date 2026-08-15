@@ -1,0 +1,46 @@
+# lev.sov — how many edits turn one text into another
+use string
+use mem
+
+lev_dist a b:
+    n: str_len(a)
+    m: str_len(b)
+    if n is 0
+        return m
+    if m is 0
+        return n
+    prev: mem_new((m + 1) * 8)
+    cur: mem_new((m + 1) * 8)
+    j: 0
+    as long as j <= m
+        poke_i64(prev, j * 8, j)
+        j: j + 1
+    i: 1
+    as long as i <= n
+        poke_i64(cur, 0, i)
+        j: 1
+        as long as j <= m
+            cost: 1
+            if peek_byte(a, i - 1) is peek_byte(b, j - 1)
+                cost: 0
+            d1: peek_i64(prev, j * 8) + 1
+            d2: peek_i64(cur, (j - 1) * 8) + 1
+            d3: peek_i64(prev, (j - 1) * 8) + cost
+            best: d1
+            if d2 < best
+                best: d2
+            if d3 < best
+                best: d3
+            poke_i64(cur, j * 8, best)
+            j: j + 1
+        k: 0
+        as long as k <= m
+            poke_i64(prev, k * 8, peek_i64(cur, k * 8))
+            k: k + 1
+        i: i + 1
+    return peek_i64(prev, m * 8)
+
+lev_close a b n:
+    if lev_dist(a, b) <= n
+        return 1
+    return 0

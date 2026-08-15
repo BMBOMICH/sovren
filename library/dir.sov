@@ -1,0 +1,24 @@
+# dir.sov — folders
+
+use sys
+dir_make path:
+    if sys_mkdir(path) is 0
+        return 1
+    return 0
+
+dir_remove path:
+    if sys_rmdir(path) is 0
+        return 1
+    return 0
+
+dir_go path:
+    if sys_chdir(path) is 0
+        return 1
+    return 0
+
+dir_here:
+    buf: _sov_alloc(4096)
+    r: sys_getcwd(buf, 4095)
+    if r is 0
+        return blank
+    return as text buf

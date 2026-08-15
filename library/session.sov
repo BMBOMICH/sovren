@@ -1,0 +1,26 @@
+# session.sov — token files: session-<token> holds the name
+# needs _sov_list
+use file
+use string
+use token
+
+session_path tok:
+    return str_cat("session-", tok)
+
+session_new name:
+    tok: token_new()
+    if file_write_all(session_path(tok), name) is 0
+        return blank
+    return tok
+
+session_who tok:
+    p: file_read_all(session_path(tok))
+    if p is 0
+        return blank
+    return p
+
+session_drop tok:
+    return file_delete(session_path(tok))
+
+session_ok tok:
+    return file_exists(session_path(tok))

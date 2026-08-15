@@ -1,0 +1,14 @@
+# WARNING: built on XOR. NOT secure storage. Demo only.
+# vault.sov — encrypt a file with a key
+use file
+use encrypt
+use string
+
+vault_save path data key:
+    return file_write_all(path, encrypt_xor(data, key))
+
+vault_load path key:
+    raw: file_read_all(path)
+    if raw is 0
+        return 0
+    return decrypt_xor(raw, key)

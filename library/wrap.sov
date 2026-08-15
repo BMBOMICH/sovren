@@ -1,0 +1,56 @@
+# wrap.sov — break text into lines of a given width
+use string
+use list
+
+wrap_text s width:
+    out: list_new()
+    n: str_len(s)
+    start: 0
+    last: 0 - 1
+    i: 0
+    as long as i < n
+        if peek_byte(s, i) is 32
+            last: i
+        if i - start >= width
+            if last > start
+                out: list_add(out, str_cut(s, start, last))
+                start: last + 1
+            if not
+                out: list_add(out, str_cut(s, start, i))
+                start: i
+        i: i + 1
+    if start < n
+        out: list_add(out, str_cut(s, start, n))
+    return out
+
+wrap_pad s width:
+    n: str_len(s)
+    if n >= width
+        return as text s
+    out: _sov_alloc(width + 1)
+    i: 0
+    as long as i < n
+        poke_byte(out, i, peek_byte(s, i))
+        i: i + 1
+    as long as i < width
+        poke_byte(out, i, 32)
+        i: i + 1
+    poke_byte(out, width, 0)
+    return as text out
+
+wrap_padleft s width:
+    n: str_len(s)
+    if n >= width
+        return as text s
+    out: _sov_alloc(width + 1)
+    gap: width - n
+    i: 0
+    as long as i < gap
+        poke_byte(out, i, 32)
+        i: i + 1
+    j: 0
+    as long as j < n
+        poke_byte(out, gap + j, peek_byte(s, j))
+        j: j + 1
+    poke_byte(out, width, 0)
+    return as text out

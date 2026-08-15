@@ -1,0 +1,23 @@
+# rand.sov — random bytes from the kernel
+
+use sys
+rand_bytes n:
+    buf: _sov_alloc(n + 1)
+    sys_getrandom(buf, n)
+    poke_byte(buf, n, 0)
+    return buf
+
+rand_u8:
+    b: rand_bytes(1)
+    return peek_byte(b, 0)
+
+rand_below n:
+    if n < 1
+        return 0
+    return rand_u8() % n
+
+rand_range lo hi:
+    span: hi - lo + 1
+    if span < 1
+        return lo
+    return lo + rand_below(span)

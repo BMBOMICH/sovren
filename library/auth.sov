@@ -1,0 +1,59 @@
+# auth.sov — password lines. Uses SHA-256.
+# NOTE: salted SHA-256 is NOT a slow password hash.
+# For real deployments use a memory-hard KDF.
+# original header:
+# auth.sov — name|salt|hash lines in a file
+# needs _sov_list
+use file
+use string
+use sha256
+use token
+use store
+use num
+
+auth_mix salt pass:
+    return sha256_hex(str_cat(salt, pass))
+
+auth_line name pass:
+    salt: token_hex(8)
+    h: auth_mix(salt, pass)
+    a: str_join3(name, "|", salt)
+    return as text str_join3(a, "|", h)
+
+auth_add path name pass:
+    return store_put(path, auth_line(name, pass))
+
+auth_find text name:
+    want: str_cat(name, "|")
+    n: str_len(text)
+    line: 0
+    i: 0
+    as long as i < n
+        if peek_byte(text, i) is 10
+            if str_starts(str_cut(text, line, i), want) is 1
+                return str_cut(text, line, i)
+            line: i + 1
+        i: i + 1
+    if line < n
+        if str_starts(str_cut(text, line, n), want) is 1
+            return str_cut(text, line, n)
+    return blank
+
+auth_check path name pass:
+    text: file_read_all(path)
+    if text is 0
+        return 0
+    line: auth_find(text, name)
+    if str_empty(line) is 1
+        return 0
+    p1: str_find(line, "|")
+    if p1 < 0
+        return 0
+    rest: str_cut(line, p1 + 1, str_len(line))
+    p2: str_find(rest, "|")
+    if p2 < 0
+        return 0
+    salt: str_cut(rest, 0, p2)
+    want: str_cut(rest, p2 + 1, str_len(rest))
+    got: auth_mix(salt, pass)
+    return str_eq(got, want)

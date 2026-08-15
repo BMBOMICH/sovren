@@ -1,0 +1,38 @@
+# WARNING: XOR is NOT secure encryption. Demo/obfuscation only.
+# encrypt.sov — real XOR lock (same key unlocks)
+# needs _sov_list
+
+xor8 a b:
+    r: 0
+    p: 1
+    x: a % 256
+    y: b % 256
+    i: 0
+    as long as i < 8
+        da: x % 2
+        db: y % 2
+        if da is not db
+            r: r + p
+        x: x / 2
+        y: y / 2
+        p: p * 2
+        i: i + 1
+    return r
+
+encrypt_xor data key:
+    n: _sov_strlen(data)
+    k: _sov_strlen(key)
+    if k is 0
+        return data
+    out: _sov_alloc(n + 1)
+    i: 0
+    as long as i < n
+        a: peek_byte(data, i)
+        b: peek_byte(key, i % k)
+        poke_byte(out, i, xor8(a, b))
+        i: i + 1
+    poke_byte(out, n, 0)
+    return as text out
+
+decrypt_xor data key:
+    return encrypt_xor(data, key)

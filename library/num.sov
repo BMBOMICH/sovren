@@ -1,0 +1,58 @@
+# num.sov — bytes && small numbers
+# needs _sov_list
+
+num_text n:
+    if n is 0
+        return "0"
+    neg: 0
+    x: n
+    if x < 0
+        neg: 1
+        x: 0 - x
+    tmp: _sov_alloc(24)
+    i: 0
+    as long as x > 0
+        poke_byte(tmp, i, (x % 10) + 48)
+        i: i + 1
+        x: x / 10
+    if neg is 1
+        poke_byte(tmp, i, 45)
+        i: i + 1
+    out: _sov_alloc(i + 1)
+    j: 0
+    as long as i > 0
+        i: i - 1
+        poke_byte(out, j, peek_byte(tmp, i))
+        j: j + 1
+    poke_byte(out, j, 0)
+    return out
+
+u16_at p off:
+    a: peek_byte(p, off)
+    b: peek_byte(p, off + 1)
+    return a + b * 256
+
+u32_at p off:
+    a: peek_byte(p, off)
+    b: peek_byte(p, off + 1)
+    c: peek_byte(p, off + 2)
+    d: peek_byte(p, off + 3)
+    return a + b * 256 + c * 65536 + d * 16777216
+
+poke_u16 p off v:
+    poke_byte(p, off, v % 256)
+    poke_byte(p, off + 1, (v / 256) % 256)
+    return v
+
+poke_u32 p off v:
+    poke_byte(p, off, v % 256)
+    v: v / 256
+    poke_byte(p, off + 1, v % 256)
+    v: v / 256
+    poke_byte(p, off + 2, v % 256)
+    v: v / 256
+    poke_byte(p, off + 3, v % 256)
+    return 1
+
+htons v:
+    return (v % 256) * 256 + (v / 256)

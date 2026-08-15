@@ -1,0 +1,37 @@
+# buf.sov — a growing byte buffer
+# needs _sov_list
+use mem
+
+buf_new n:
+    if n < 16
+        n: 16
+    p: mem_new(16 + n)
+    poke_i64(p, 0, n)
+    poke_i64(p, 8, 0)
+    return p
+
+buf_len p:
+    return peek_i64(p, 8)
+
+buf_add p b:
+    cap: peek_i64(p, 0)
+    n: peek_i64(p, 8)
+    if n >= cap
+        nc: cap * 2
+        if nc < n + 1
+            nc: n + 16
+        q: mem_new(16 + nc)
+        poke_i64(q, 0, nc)
+        poke_i64(q, 8, n)
+        mem_copy(q + 16, p + 16, n)
+        p: q
+    poke_byte(p, 16 + n, b)
+    poke_i64(p, 8, n + 1)
+    return p
+
+buf_text p:
+    n: buf_len(p)
+    s: mem_new(n + 1)
+    mem_copy(s, p + 16, n)
+    poke_byte(s, n, 0)
+    return as text s

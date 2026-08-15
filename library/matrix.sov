@@ -1,0 +1,102 @@
+# matrix.sov — rectangular grids of numbers
+use mem
+
+mat_new rows cols:
+    p: mem_new(16 + rows * cols * 8)
+    poke_i64(p, 0, rows)
+    poke_i64(p, 8, cols)
+    return p
+
+mat_rows m:
+    return peek_i64(m, 0)
+
+mat_cols m:
+    return peek_i64(m, 8)
+
+mat_get m r c:
+    if r < 0
+        return 0
+    if c < 0
+        return 0
+    if r >= mat_rows(m)
+        return 0
+    if c >= mat_cols(m)
+        return 0
+    return peek_i64(m, 16 + (r * mat_cols(m) + c) * 8)
+
+mat_set m r c v:
+    if r < 0
+        return m
+    if c < 0
+        return m
+    if r >= mat_rows(m)
+        return m
+    if c >= mat_cols(m)
+        return m
+    poke_i64(m, 16 + (r * mat_cols(m) + c) * 8, v)
+    return m
+
+mat_fill m v:
+    r: 0
+    as long as r < mat_rows(m)
+        c: 0
+        as long as c < mat_cols(m)
+            mat_set(m, r, c, v)
+            c: c + 1
+        r: r + 1
+    return m
+
+mat_ident n:
+    m: mat_new(n, n)
+    mat_fill(m, 0)
+    i: 0
+    as long as i < n
+        mat_set(m, i, i, 1)
+        i: i + 1
+    return m
+
+mat_add a b:
+    m: mat_new(mat_rows(a), mat_cols(a))
+    r: 0
+    as long as r < mat_rows(a)
+        c: 0
+        as long as c < mat_cols(a)
+            mat_set(m, r, c, mat_get(a, r, c) + mat_get(b, r, c))
+            c: c + 1
+        r: r + 1
+    return m
+
+mat_mul a b:
+    m: mat_new(mat_rows(a), mat_cols(b))
+    r: 0
+    as long as r < mat_rows(a)
+        c: 0
+        as long as c < mat_cols(b)
+            t: 0
+            k: 0
+            as long as k < mat_cols(a)
+                t: t + mat_get(a, r, k) * mat_get(b, k, c)
+                k: k + 1
+            mat_set(m, r, c, t)
+            c: c + 1
+        r: r + 1
+    return m
+
+mat_trans a:
+    m: mat_new(mat_cols(a), mat_rows(a))
+    r: 0
+    as long as r < mat_rows(a)
+        c: 0
+        as long as c < mat_cols(a)
+            mat_set(m, c, r, mat_get(a, r, c))
+            c: c + 1
+        r: r + 1
+    return m
+
+mat_trace a:
+    t: 0
+    i: 0
+    as long as i < mat_rows(a)
+        t: t + mat_get(a, i, i)
+        i: i + 1
+    return t

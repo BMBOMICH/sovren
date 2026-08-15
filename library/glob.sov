@@ -1,0 +1,35 @@
+# glob.sov — match text against a pattern with * and ?
+use string
+
+glob_match pat text:
+    return glob_at(pat, 0, text, 0)
+
+glob_at pat pi text ti:
+    pn: str_len(pat)
+    tn: str_len(text)
+    as long as 1 is 1
+        if pi >= pn
+            if ti >= tn
+                return 1
+            return 0
+        c: peek_byte(pat, pi)
+        if c is 42
+            if glob_at(pat, pi + 1, text, ti) is 1
+                return 1
+            if ti < tn
+                ti: ti + 1
+            if not
+                return 0
+        if not
+            if ti >= tn
+                return 0
+            if c is 63
+                pi: pi + 1
+                ti: ti + 1
+            if not
+                if c is peek_byte(text, ti)
+                    pi: pi + 1
+                    ti: ti + 1
+                if not
+                    return 0
+    return 0

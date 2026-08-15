@@ -1,0 +1,43 @@
+# check.sov — input rules for names, ages, mail
+# needs _sov_list
+use ascii
+use string
+
+check_len s lo hi:
+    n: str_len(s)
+    if n < lo
+        return 0
+    if n > hi
+        return 0
+    return 1
+
+check_name s:
+    if check_len(s, 2, 32) is 0
+        return 0
+    i: 0
+    n: str_len(s)
+    as long as i < n
+        c: peek_byte(s, i)
+        if ascii_letter(c) is 0
+            if ascii_digit(c) is 0
+                if c is not 95
+                    if c is not 45
+                        return 0
+        i: i + 1
+    return 1
+
+check_age n:
+    if n < 18
+        return 0
+    if n > 120
+        return 0
+    return 1
+
+check_mail s:
+    if str_find(s, "@") < 1
+        return 0
+    if str_find(s, ".") < 0
+        return 0
+    if check_len(s, 6, 80) is 0
+        return 0
+    return 1

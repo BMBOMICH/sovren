@@ -1,0 +1,46 @@
+# escape.sov — make text safe to show
+# needs _sov_list
+
+escape_html s:
+    n: _sov_strlen(s)
+    out: _sov_alloc(n * 6 + 1)
+    i: 0
+    j: 0
+    as long as i < n
+        c: peek_byte(s, i)
+        if c is 60
+            poke_byte(out, j, 38)
+            poke_byte(out, j + 1, 108)
+            poke_byte(out, j + 2, 116)
+            poke_byte(out, j + 3, 59)
+            j: j + 4
+        if not
+            if c is 62
+                poke_byte(out, j, 38)
+                poke_byte(out, j + 1, 103)
+                poke_byte(out, j + 2, 116)
+                poke_byte(out, j + 3, 59)
+                j: j + 4
+            if not
+                if c is 38
+                    poke_byte(out, j, 38)
+                    poke_byte(out, j + 1, 97)
+                    poke_byte(out, j + 2, 109)
+                    poke_byte(out, j + 3, 112)
+                    poke_byte(out, j + 4, 59)
+                    j: j + 5
+                if not
+                    if c is 34
+                        poke_byte(out, j, 38)
+                        poke_byte(out, j + 1, 113)
+                        poke_byte(out, j + 2, 117)
+                        poke_byte(out, j + 3, 111)
+                        poke_byte(out, j + 4, 116)
+                        poke_byte(out, j + 5, 59)
+                        j: j + 6
+                    if not
+                        poke_byte(out, j, c)
+                        j: j + 1
+        i: i + 1
+    poke_byte(out, j, 0)
+    return as text out

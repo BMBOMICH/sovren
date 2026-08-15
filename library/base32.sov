@@ -1,0 +1,58 @@
+# base32.sov — RFC 4648 base32
+use string
+use mem
+
+b32_chr v:
+    if v < 26
+        return 65 + v
+    return 50 + (v - 26)
+
+b32_encode data n:
+    outlen: ((n + 4) / 5) * 8
+    out: _sov_alloc(outlen + 1)
+    i: 0
+    o: 0
+    as long as i < n
+        b0: peek_byte(data, i)
+        b1: 0
+        b2: 0
+        b3: 0
+        b4: 0
+        if i + 1 < n
+            b1: peek_byte(data, i + 1)
+        if i + 2 < n
+            b2: peek_byte(data, i + 2)
+        if i + 3 < n
+            b3: peek_byte(data, i + 3)
+        if i + 4 < n
+            b4: peek_byte(data, i + 4)
+        poke_byte(out, o, b32_chr(b0 / 8))
+        poke_byte(out, o + 1, b32_chr((b0 % 8) * 4 + b1 / 64))
+        poke_byte(out, o + 2, b32_chr((b1 / 2) % 32))
+        poke_byte(out, o + 3, b32_chr((b1 % 2) * 16 + b2 / 16))
+        poke_byte(out, o + 4, b32_chr((b2 % 16) * 2 + b3 / 128))
+        poke_byte(out, o + 5, b32_chr((b3 / 4) % 32))
+        poke_byte(out, o + 6, b32_chr((b3 % 4) * 8 + b4 / 32))
+        poke_byte(out, o + 7, b32_chr(b4 % 32))
+        rem: n - i
+        if rem < 5
+            pad: 0
+            if rem is 1
+                pad: 6
+            if rem is 2
+                pad: 4
+            if rem is 3
+                pad: 3
+            if rem is 4
+                pad: 1
+            k: 0
+            as long as k < pad
+                poke_byte(out, o + 7 - k, 61)
+                k: k + 1
+        i: i + 5
+        o: o + 8
+    poke_byte(out, outlen, 0)
+    return as text out
+
+b32_text s:
+    return as text b32_encode(s, str_len(s))

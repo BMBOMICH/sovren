@@ -1,0 +1,31 @@
+# dump.sov — show bytes as hex
+use string
+use num
+use mem
+
+dump_hexd v:
+    if v < 10
+        return v + 48
+    return v + 87
+
+dump_hex p n:
+    out: _sov_alloc(n * 3 + 1)
+    i: 0
+    as long as i < n
+        b: peek_byte(p, i)
+        poke_byte(out, i * 3, dump_hexd(b / 16))
+        poke_byte(out, i * 3 + 1, dump_hexd(b % 16))
+        poke_byte(out, i * 3 + 2, 32)
+        i: i + 1
+    poke_byte(out, n * 3, 0)
+    return as text out
+
+dump_text s:
+    return as text dump_hex(s, str_len(s))
+
+dump_byte b:
+    out: _sov_alloc(3)
+    poke_byte(out, 0, dump_hexd(b / 16))
+    poke_byte(out, 1, dump_hexd(b % 16))
+    poke_byte(out, 2, 0)
+    return as text out

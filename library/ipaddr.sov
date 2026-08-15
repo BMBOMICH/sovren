@@ -1,0 +1,53 @@
+# ipaddr.sov — IPv4 addresses as text and numbers
+use string
+use num
+
+ip_make a b c d:
+    return a * 16777216 + b * 65536 + c * 256 + d
+
+ip_a v:
+    return (v / 16777216) % 256
+ip_b v:
+    return (v / 65536) % 256
+ip_c v:
+    return (v / 256) % 256
+ip_d v:
+    return v % 256
+
+ip_text v:
+    s: str_join3(num_text(ip_a(v)), ".", num_text(ip_b(v)))
+    s: str_join3(s, ".", num_text(ip_c(v)))
+    s: str_join3(s, ".", num_text(ip_d(v)))
+    return as text s
+
+ip_parse s:
+    p1: str_find(s, ".")
+    if p1 < 0
+        return 0
+    a: str_num(str_cut(s, 0, p1))
+    r1: str_cut(s, p1 + 1, str_len(s))
+    p2: str_find(r1, ".")
+    if p2 < 0
+        return 0
+    b: str_num(str_cut(r1, 0, p2))
+    r2: str_cut(r1, p2 + 1, str_len(r1))
+    p3: str_find(r2, ".")
+    if p3 < 0
+        return 0
+    c: str_num(str_cut(r2, 0, p3))
+    d: str_num(str_cut(r2, p3 + 1, str_len(r2)))
+    return ip_make(a, b, c, d)
+
+ip_private v:
+    if ip_a(v) is 10
+        return 1
+    if ip_a(v) is 127
+        return 1
+    if ip_a(v) is 192
+        if ip_b(v) is 168
+            return 1
+    if ip_a(v) is 172
+        if ip_b(v) >= 16
+            if ip_b(v) <= 31
+                return 1
+    return 0

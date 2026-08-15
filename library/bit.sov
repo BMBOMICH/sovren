@@ -1,0 +1,64 @@
+# bit.sov — && / || / xor / shift (no extra CPU opcode)
+# needs _sov_list
+
+bit_and a b:
+    r: 0
+    p: 1
+    i: 0
+    as long as i < 32
+        if a % 2 is 1
+            if b % 2 is 1
+                r: r + p
+        a: a / 2
+        b: b / 2
+        p: p * 2
+        i: i + 1
+    return r
+
+bit_or a b:
+    r: 0
+    p: 1
+    i: 0
+    as long as i < 32
+        if a % 2 + b % 2 > 0
+            r: r + p
+        a: a / 2
+        b: b / 2
+        p: p * 2
+        i: i + 1
+    return r
+
+bit_xor a b:
+    r: 0
+    p: 1
+    i: 0
+    as long as i < 32
+        da: a % 2
+        db: b % 2
+        if da is not db
+            r: r + p
+        a: a / 2
+        b: b / 2
+        p: p * 2
+        i: i + 1
+    return r
+
+bit_not8 a:
+    return 255 - (a % 256)
+
+bit_shl a n:
+    i: 0
+    as long as i < n
+        a: a * 2
+        i: i + 1
+    return a
+
+bit_shr a n:
+    i: 0
+    as long as i < n
+        a: a / 2
+        i: i + 1
+    return a
+
+bit_xor8 a b:
+    return bit_xor(a % 256, b % 256) % 256

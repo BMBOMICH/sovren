@@ -1,0 +1,71 @@
+# stat2.sov — averages and spread, using fixed-point decimals
+use fixed
+use vec
+
+st_sum v:
+    return vec_sum(v)
+
+st_mean v:
+    n: vec_len(v)
+    if n is 0
+        return 0
+    return fx_div(fx_from(vec_sum(v)), fx_from(n))
+
+st_min v:
+    n: vec_len(v)
+    if n is 0
+        return 0
+    m: vec_get(v, 0)
+    i: 1
+    as long as i < n
+        if vec_get(v, i) < m
+            m: vec_get(v, i)
+        i: i + 1
+    return m
+
+st_max v:
+    n: vec_len(v)
+    if n is 0
+        return 0
+    m: vec_get(v, 0)
+    i: 1
+    as long as i < n
+        if vec_get(v, i) > m
+            m: vec_get(v, i)
+        i: i + 1
+    return m
+
+st_range v:
+    return st_max(v) - st_min(v)
+
+st_var v:
+    n: vec_len(v)
+    if n is 0
+        return 0
+    mu: st_mean(v)
+    t: 0
+    i: 0
+    as long as i < n
+        d: fx_sub(fx_from(vec_get(v, i)), mu)
+        t: t + fx_mul(d, d)
+        i: i + 1
+    return fx_div(t, fx_from(n))
+
+st_sd v:
+    return fx_sqrt(st_var(v))
+
+st_median v:
+    n: vec_len(v)
+    if n is 0
+        return 0
+    c: vec_new(n)
+    i: 0
+    as long as i < n
+        c: vec_push(c, vec_get(v, i))
+        i: i + 1
+    c: vec_sort(c)
+    if n % 2 is 1
+        return fx_from(vec_get(c, n / 2))
+    a: vec_get(c, n / 2 - 1)
+    b: vec_get(c, n / 2)
+    return fx_div(fx_from(a + b), fx_from(2))

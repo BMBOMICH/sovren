@@ -1,0 +1,43 @@
+# utf.sov — count UTF-8 letters
+# needs _sov_list
+
+utf_width c:
+    if c < 128
+        return 1
+    if c < 224
+        return 2
+    if c < 240
+        return 3
+    return 4
+
+utf_len s:
+    n: _sov_strlen(s)
+    i: 0
+    c: 0
+    as long as i < n
+        w: utf_width(peek_byte(s, i))
+        i: i + w
+        c: c + 1
+    return c
+
+utf_ok s:
+    n: _sov_strlen(s)
+    i: 0
+    as long as i < n
+        b: peek_byte(s, i)
+        w: utf_width(b)
+        if i + w > n
+            return 0
+        if w > 1
+            if b < 192
+                return 0
+        k: 1
+        as long as k < w
+            x: peek_byte(s, i + k)
+            if x < 128
+                return 0
+            if x > 191
+                return 0
+            k: k + 1
+        i: i + w
+    return 1

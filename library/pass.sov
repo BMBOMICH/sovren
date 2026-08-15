@@ -1,0 +1,55 @@
+# pass.sov — password strength
+# needs _sov_list
+use ascii
+
+pass_len s:
+    return _sov_strlen(s)
+
+pass_has_digit s:
+    i: 0
+    n: _sov_strlen(s)
+    as long as i < n
+        if ascii_digit(peek_byte(s, i)) is 1
+            return 1
+        i: i + 1
+    return 0
+
+pass_has_letter s:
+    i: 0
+    n: _sov_strlen(s)
+    as long as i < n
+        if ascii_letter(peek_byte(s, i)) is 1
+            return 1
+        i: i + 1
+    return 0
+
+pass_has_other s:
+    i: 0
+    n: _sov_strlen(s)
+    as long as i < n
+        c: peek_byte(s, i)
+        if ascii_letter(c) is 0
+            if ascii_digit(c) is 0
+                return 1
+        i: i + 1
+    return 0
+
+pass_score s:
+    n: _sov_strlen(s)
+    sc: 0
+    if n > 7
+        sc: sc + 1
+    if n > 11
+        sc: sc + 1
+    if pass_has_digit(s) is 1
+        sc: sc + 1
+    if pass_has_letter(s) is 1
+        sc: sc + 1
+    if pass_has_other(s) is 1
+        sc: sc + 1
+    return sc
+
+pass_ok s:
+    if pass_score(s) > 2
+        return 1
+    return 0

@@ -1,0 +1,111 @@
+# site.sov — make a page you can open in a browser
+# use site
+use file
+use string
+use num
+use escape
+
+site_html: blank
+site_title: "site"
+site_col: "black"
+site_bg: "white"
+site_sz: 20
+site_px: 0
+site_py: 0
+site_has_place: 0
+site_fillc: blank
+
+site_new name:
+    site_html: blank
+    site_title: name
+    site_col: "black"
+    site_bg: "white"
+    site_sz: 20
+    site_has_place: 0
+    site_fillc: blank
+    return 1
+
+site_color name:
+    site_col: name
+    return 1
+
+site_back name:
+    site_bg: name
+    return 1
+
+site_size n:
+    site_sz: n
+    return 1
+
+site_position x y:
+    site_px: x
+    site_py: y
+    site_has_place: 1
+    return 1
+
+site_fill name:
+    site_fillc: name
+    return 1
+
+site_add s:
+    site_html: str_cat(site_html, s)
+    return 1
+
+site_wrap inner:
+    a: "<div style=\"color:"
+    a: str_cat(a, site_col)
+    a: str_cat(a, ";font-size:")
+    a: str_cat(a, num_text(site_sz))
+    a: str_cat(a, "px")
+    if str_len(site_fillc) > 0
+        a: str_cat(a, ";background:")
+        a: str_cat(a, site_fillc)
+        site_fillc: blank
+    if site_has_place is 1
+        a: str_cat(a, ";position:absolute;left:")
+        a: str_cat(a, num_text(site_px))
+        a: str_cat(a, "px;top:")
+        a: str_cat(a, num_text(site_py))
+        a: str_cat(a, "px")
+        site_has_place: 0
+    a: str_cat(a, "\">")
+    a: str_cat(a, inner)
+    a: str_cat(a, "</div>\n")
+    site_add(a)
+    return 1
+
+site_say text:
+    site_wrap(escape_html(text))
+    return 1
+
+site_big text:
+    t: str_cat("<b>", escape_html(text))
+    t: str_cat(t, "</b>")
+    site_wrap(t)
+    return 1
+
+site_button text:
+    t: str_cat("<button>", escape_html(text))
+    t: str_cat(t, "</button>")
+    site_wrap(t)
+    return 1
+
+site_go url text:
+    t: str_cat("<a href=\"", escape_html(url))
+    t: str_cat(t, "\">")
+    t: str_cat(t, escape_html(text))
+    t: str_cat(t, "</a>")
+    site_wrap(t)
+    return 1
+
+site_save path:
+    h: "<!doctype html><html><head><meta charset=\"utf-8\"><title>"
+    h: str_cat(h, escape_html(site_title))
+    h: str_cat(h, "</title><style>body{font-family:sans-serif;margin:28px;color:")
+    h: str_cat(h, site_col)
+    h: str_cat(h, ";background:")
+    h: str_cat(h, site_bg)
+    h: str_cat(h, "}</style></head><body>\n")
+    h: str_cat(h, site_html)
+    h: str_cat(h, "</body></html>\n")
+    return file_write_all(path, h)

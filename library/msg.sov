@@ -1,0 +1,24 @@
+# msg.sov — chat lines: from|text
+use string
+use store
+
+msg_make from text:
+    return str_join3(from, "|", text)
+
+msg_from line:
+    p: str_find(line, "|")
+    if p < 0
+        return line
+    return str_cut(line, 0, p)
+
+msg_text line:
+    p: str_find(line, "|")
+    if p < 0
+        return blank
+    return str_cut(line, p + 1, str_len(line))
+
+msg_save path from text:
+    return store_put(path, msg_make(from, text))
+
+msg_load path:
+    return store_load(path)

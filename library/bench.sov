@@ -1,0 +1,22 @@
+# bench.sov — time how long something takes
+use time
+use num
+use string
+
+bench_start:
+    return time_now_ns()
+
+bench_ns t0:
+    return time_now_ns() - t0
+
+bench_ms t0:
+    return (time_now_ns() - t0) / 1000000
+
+bench_report name t0:
+    ms: bench_ms(t0)
+    line: str_join3(name, ": ", num_text(ms))
+    _sov_print(str_cat(line, " ms"))
+    return ms
+
+bench_secs t0:
+    return (time_now_ns() - t0) / 1000000000

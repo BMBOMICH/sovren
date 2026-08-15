@@ -1,0 +1,11 @@
+# lock.sov — a lock file
+use file
+use sys
+
+lock_take path:
+    if file_exists(path) is 1
+        return 0
+    return file_write_all(path, "1")
+
+lock_drop path:
+    return file_delete(path)

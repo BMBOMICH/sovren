@@ -1,0 +1,10 @@
+# fmt.sov — numbers as text
+# needs _sov_list
+use num
+use string
+
+fmt_int n:
+    return num_text(n)
+
+fmt_join a n b:
+    return str_join3(a, num_text(n), b)

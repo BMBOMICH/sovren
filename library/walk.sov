@@ -1,0 +1,51 @@
+# walk.sov — list the names in a folder (getdents64)
+use sys
+use string
+use list
+use mem
+
+walk_list path:
+    out: list_new()
+    fd: syscall(257, 0 - 100, path, 65536, 0, 0, 0)
+    if fd < 0
+        return out
+    buf: mem_new(32768)
+    as long as 1 is 1
+        n: syscall(217, fd, buf, 32768, 0, 0, 0)
+        if n <= 0
+            sys_close(fd)
+            return out
+        p: 0
+        as long as p < n
+            reclen: peek_byte(buf, p + 16) + peek_byte(buf, p + 17) * 256
+            nm: buf + p + 19
+            out: list_add(out, str_copy(nm))
+            if reclen <= 0
+                p: n
+            if not
+                p: p + reclen
+    sys_close(fd)
+    return out
+
+walk_count path:
+    return list_len(walk_list(path))
+
+walk_ext path ext:
+    all: walk_list(path)
+    out: list_new()
+    i: 0
+    as long as i < list_len(all)
+        nm: list_get(all, i)
+        if str_ends(nm, ext) is 1
+            out: list_add(out, nm)
+        i: i + 1
+    return out
+
+walk_has path name:
+    all: walk_list(path)
+    i: 0
+    as long as i < list_len(all)
+        if str_eq(list_get(all, i), name) is 1
+            return 1
+        i: i + 1
+    return 0

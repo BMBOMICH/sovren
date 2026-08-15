@@ -1,0 +1,44 @@
+# color.sov — text colors
+
+use sys
+color_code n:
+    p: _sov_alloc(8)
+    poke_byte(p, 0, 27)
+    poke_byte(p, 1, 91)
+    poke_byte(p, 2, 51)
+    poke_byte(p, 3, n)
+    poke_byte(p, 4, 109)
+    poke_byte(p, 5, 0)
+    write_str(1, p)
+    return n
+
+color_reset:
+    p: _sov_alloc(8)
+    poke_byte(p, 0, 27)
+    poke_byte(p, 1, 91)
+    poke_byte(p, 2, 48)
+    poke_byte(p, 3, 109)
+    poke_byte(p, 4, 0)
+    write_str(1, p)
+    return 0
+
+color_red:
+    return color_code(49)
+
+color_green:
+    return color_code(50)
+
+color_yellow:
+    return color_code(51)
+
+color_blue:
+    return color_code(52)
+
+color_magenta:
+    return color_code(53)
+
+color_cyan:
+    return color_code(54)
+
+color_white:
+    return color_code(55)
