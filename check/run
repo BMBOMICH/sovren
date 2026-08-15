@@ -338,6 +338,37 @@ else
     skip "mac (pip install unicorn)"
 fi
 
+# ---- Windows: no raw linux syscalls, and it runs on a strict emulator ----
+if python3 -c "import unicorn" >/dev/null 2>&1; then
+    printf '%s\n' 'main:' '    print 5 * 3 / 2' > /tmp/sov-pe1.sov
+    $SOV /tmp/sov-pe1.sov --windows -o /tmp/sov-pe1.exe >/dev/null 2>&1
+    n=$(python3 -c "print(open('/tmp/sov-pe1.exe','rb').read().count(bytes([0x0f,0x05])))")
+    if [ "$n" = "0" ]; then ok windows-no-linux-syscalls; else bad windows-no-linux-syscalls; echo "  found $n"; fi
+
+    g=$(timeout 200 python3 windows/run_pe.py /tmp/sov-pe1.exe 2>/dev/null | tr -d '\r\n')
+    if [ "$g" = "7" ]; then ok windows-emulated-run; else bad windows-emulated-run; echo "  got $g"; fi
+
+    printf '%s\n' 'add a b:' '    return a + b' '' 'main:' '    print add(40, 2)' > /tmp/sov-pe2.sov
+    $SOV /tmp/sov-pe2.sov --windows -o /tmp/sov-pe2.exe >/dev/null 2>&1
+    g=$(timeout 200 python3 windows/run_pe.py /tmp/sov-pe2.exe 2>/dev/null | tr -d '\r\n')
+    if [ "$g" = "42" ]; then ok windows-emulated-job; else bad windows-emulated-job; echo "  got $g"; fi
+
+    # sovren.exe must be able to build itself, byte for byte
+    if command -v wine >/dev/null 2>&1; then
+        $SOV windows/compiler.sov --windows -o /tmp/sov-selfw.exe >/dev/null 2>&1
+        timeout 400 wine /tmp/sov-selfw.exe windows/compiler.sov -o /tmp/sov-selfw2.exe >/dev/null 2>&1
+        a=$(sha256sum /tmp/sov-selfw.exe 2>/dev/null | cut -d" " -f1)
+        b=$(sha256sum /tmp/sov-selfw2.exe 2>/dev/null | cut -d" " -f1)
+        if [ -n "$a" ] && [ "$a" = "$b" ]; then ok windows-self-host; else bad windows-self-host; fi
+    fi
+
+    $SOV hello.sov --windows -o /tmp/sov-pe3.exe >/dev/null 2>&1
+    g=$(timeout 200 python3 windows/run_pe.py /tmp/sov-pe3.exe 2>/dev/null | head -1 | tr -d '\r\n')
+    if [ "$g" = "Hello from Sovren! Fully self-hosted!" ]; then ok windows-hello; else bad windows-hello; echo "  got $g"; fi
+else
+    skip "windows emulator (pip install unicorn)"
+fi
+
 # ---- Windows (needs wine) ----
 if command -v wine >/dev/null 2>&1; then
     WINEDEBUG=-all; export WINEDEBUG
