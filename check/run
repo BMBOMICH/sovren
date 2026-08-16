@@ -318,6 +318,93 @@ else
     echo "skip arm64 (pip install unicorn capstone)"
 fi
 
+# ---- windows: import table regions must not overlap ----
+if python3 -c "import capstone" >/dev/null 2>&1; then
+    $SOV hello.sov --windows -o /tmp/sov-imp.exe >/dev/null 2>&1
+    g=$(python3 -c "
+import struct
+d=open('/tmp/sov-imp.exe','rb').read()
+pe=struct.unpack_from('<I',d,0x3c)[0]; opt=pe+24
+so=pe+24+240
+secs=[]
+for i in range(struct.unpack_from('<H',d,pe+6)[0]):
+    o=so+i*40
+    vs,va,rs,ra=struct.unpack_from('<IIII',d,o+8); secs.append((va,vs,ra,rs))
+def rd(rva,n):
+    for va,vs,ra,rs in secs:
+        if va<=rva<va+max(vs,rs): return d[ra+(rva-va):ra+(rva-va)+n]
+    return b''
+dd=opt+112
+imp=struct.unpack_from('<I',d,dd+8)[0]
+iat=struct.unpack_from('<I',d,dd+12*8)[0]
+ilt,_,_,nm,_=struct.unpack('<IIIII', rd(imp,20))
+bad=0
+for i in range(64):
+    a=struct.unpack('<Q',rd(iat+i*8,8))[0]
+    b=struct.unpack('<Q',rd(ilt+i*8,8))[0]
+    if a==0 and b==0: break
+    if a!=b: bad=1; break
+else:
+    bad=1
+print('ok' if bad==0 else 'bad')
+" 2>/dev/null)
+    if [ "$g" = "ok" ]; then ok windows-import-table; else bad windows-import-table; fi
+fi
+
+# ---- windows: console mode imports present for raw key input ----
+if python3 -c "import capstone" >/dev/null 2>&1; then
+    $SOV hello.sov --windows -o /tmp/sov-con.exe >/dev/null 2>&1
+    g=$(python3 -c "
+import struct
+d=open('/tmp/sov-con.exe','rb').read()
+pe=struct.unpack_from('<I',d,0x3c)[0]; opt=pe+24
+so=pe+24+240
+secs=[]
+for i in range(struct.unpack_from('<H',d,pe+6)[0]):
+    o=so+i*40
+    nm=d[o:o+8].rstrip(b'\0').decode()
+    vs,va,rs,ra=struct.unpack_from('<IIII',d,o+8); secs.append((va,vs,ra,rs))
+def rd(rva,n):
+    for va,vs,ra,rs in secs:
+        if va<=rva<va+max(vs,rs): return d[ra+(rva-va):ra+(rva-va)+n]
+    return b''
+iat=struct.unpack_from('<I',d,opt+112+12*8)[0]
+names=[]
+for i in range(12):
+    v=struct.unpack('<Q',rd(iat+i*8,8))[0]
+    if not v: break
+    names.append(rd((v&0x7FFFFFFF)+2,24).split(b'\0')[0].decode())
+print('ok' if 'GetConsoleMode' in names and 'SetConsoleMode' in names else 'missing')
+" 2>/dev/null)
+    if [ "$g" = "ok" ]; then ok windows-console-imports; else bad windows-console-imports; fi
+fi
+
+# ---- command line arguments reach the program ----
+printf '%s\n' 'use arg' 'main:' '    print arg_count()' '    print as text arg_at(1)' > /tmp/sov-arg.sov
+$SOV /tmp/sov-arg.sov -o /tmp/sov-arg.bin >/dev/null 2>&1
+g=$(/tmp/sov-arg.bin hello there 2>/dev/null | tr '\n' ' ')
+if [ "$g" = "3 hello " ]; then ok args-linux; else bad args-linux; echo "  got '$g'"; fi
+
+if python3 -c "import unicorn" >/dev/null 2>&1; then
+    $SOV /tmp/sov-arg.sov --windows -o /tmp/sov-arg.exe >/dev/null 2>&1
+    g=$(timeout 200 python3 windows/run_pe.py /tmp/sov-arg.exe one two 2>/dev/null | tr '\n' ' ')
+    if [ "$g" = "3 one " ]; then ok args-windows; else bad args-windows; echo "  got '$g'"; fi
+fi
+
+# ---- portable code: no AVX-512 in linux builds either ----
+if python3 -c "import capstone" >/dev/null 2>&1; then
+    $SOV hello.sov -o /tmp/sov-lavx >/dev/null 2>&1
+    g=$(python3 -c "
+from capstone import *
+import struct
+d=open('/tmp/sov-lavx','rb').read()
+e=struct.unpack_from('<Q',d,24)[0]; b=struct.unpack_from('<Q',d,80)[0]
+md=Cs(CS_ARCH_X86,CS_MODE_64); md.skipdata=True
+print(sum(1 for i in md.disasm(d[e-b:],e) if 'zmm' in i.op_str))
+" 2>/dev/null)
+    if [ "$g" = "0" ]; then ok linux-no-avx512; else bad linux-no-avx512; echo "  found $g"; fi
+fi
+
 # ---- macOS (emulated cpu, macOS syscall rules enforced) ----
 if python3 -c "import unicorn" >/dev/null 2>&1; then
     printf '%s\n' 'main:' '    print 5 * 3 / 2' > /tmp/sov-m1.sov
@@ -340,6 +427,31 @@ fi
 
 # ---- Windows: no raw linux syscalls, and it runs on a strict emulator ----
 if python3 -c "import unicorn" >/dev/null 2>&1; then
+    # no AVX-512 anywhere: it crashes on any cpu without it
+    $SOV hello.sov --windows -o /tmp/sov-avx.exe >/dev/null 2>&1
+    g=$(python3 -c "
+from capstone import *
+import struct
+d=open('/tmp/sov-avx.exe','rb').read()
+pe=struct.unpack_from('<I',d,0x3c)[0]; so=pe+24+240
+vs,va,rs,ra=struct.unpack_from('<IIII',d,so+8)
+md=Cs(CS_ARCH_X86,CS_MODE_64); md.skipdata=True
+print(sum(1 for i in md.disasm(d[ra:ra+rs],va) if 'zmm' in i.op_str))
+" 2>/dev/null)
+    if [ "$g" = "0" ]; then ok windows-no-avx512; else bad windows-no-avx512; echo "  found $g"; fi
+
+    # a PE with no relocation table must not claim ASLR, or real
+    # Windows moves the image and every absolute address breaks.
+    $SOV hello.sov --windows -o /tmp/sov-aslr.exe >/dev/null 2>&1
+    g=$(python3 -c "
+import struct
+d=open('/tmp/sov-aslr.exe','rb').read()
+pe=struct.unpack_from('<I',d,0x3c)[0]; opt=pe+24
+ch=struct.unpack_from('<H',d,pe+22)[0]; dl=struct.unpack_from('<H',d,opt+70)[0]
+print('ok' if (ch & 1) and not (dl & 0x40) else 'bad')
+")
+    if [ "$g" = "ok" ]; then ok windows-no-aslr; else bad windows-no-aslr; fi
+
     printf '%s\n' 'main:' '    print 5 * 3 / 2' > /tmp/sov-pe1.sov
     $SOV /tmp/sov-pe1.sov --windows -o /tmp/sov-pe1.exe >/dev/null 2>&1
     n=$(python3 -c "print(open('/tmp/sov-pe1.exe','rb').read().count(bytes([0x0f,0x05])))")

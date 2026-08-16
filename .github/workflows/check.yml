@@ -1,0 +1,281 @@
+name: check
+
+# Every push is tested on real machines: a real Windows box and a
+# real Mac, both free from GitHub, plus Linux. Nobody has to test by
+# hand. If something breaks, the log says exactly what and why.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+
+  # ------------------------------------------------------------------
+  windows:
+    name: Windows on real hardware
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: which machine is this
+        shell: pwsh
+        run: |
+          $c = Get-CimInstance Win32_Processor
+          "cpu      : $($c.Name)"
+          "cores    : $($c.NumberOfCores)"
+          "windows  : $((Get-CimInstance Win32_OperatingSystem).Caption)"
+          "If a later step dies with exit -1073741795 the cpu above is"
+          "missing an instruction the compiler emitted."
+
+      - name: the exe is well formed before running it
+        shell: pwsh
+        run: |
+          $b = [IO.File]::ReadAllBytes("windows\sovren.exe")
+          if ($b[0] -ne 0x4D -or $b[1] -ne 0x5A) { throw "not a PE file" }
+          $pe = [BitConverter]::ToInt32($b, 0x3c)
+          $chars = [BitConverter]::ToUInt16($b, $pe + 22)
+          $dll = [BitConverter]::ToUInt16($b, $pe + 24 + 70)
+          "Characteristics    : 0x{0:X}" -f $chars
+          "DllCharacteristics : 0x{0:X}" -f $dll
+          if (($chars -band 1) -eq 0) { throw "relocations not stripped but there is no reloc table" }
+          if (($dll -band 0x40) -ne 0) { throw "claims ASLR with no reloc table: Windows will move it and it will die" }
+          $n = 0
+          for ($i = 0; $i -lt $b.Length - 1; $i++) { if ($b[$i] -eq 0x0F -and $b[$i+1] -eq 0x05) { $n++ } }
+          "raw linux syscall instructions: $n"
+          if ($n -ne 0) { throw "the exe contains raw linux syscalls, which do nothing on Windows" }
+
+      - name: sovren.exe starts
+        shell: pwsh
+        run: |
+          .\windows\sovren.exe
+          "exit=$LASTEXITCODE"
+          if ($LASTEXITCODE -lt 0) { throw "crashed on startup, exit $LASTEXITCODE" }
+
+      - name: hello.sov
+        shell: pwsh
+        run: |
+          .\windows\sovren.exe hello.sov -o hello.exe
+          if ($LASTEXITCODE -ne 0) { throw "compile failed, exit $LASTEXITCODE" }
+          if (-not (Test-Path hello.exe)) { throw "nothing was written" }
+          $o = (.\hello.exe | Out-String).Trim()
+          $o
+          if ($LASTEXITCODE -ne 0) { throw "run failed, exit $LASTEXITCODE" }
+          if ($o -notmatch "Hello from Sovren") { throw "wrong output" }
+
+      - name: the language itself
+        shell: pwsh
+        run: |
+          function Try-One($name, $src, $want) {
+            $src | Set-Content -NoNewline t.sov
+            .\windows\sovren.exe t.sov -o t.exe 2>&1 | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "$name : compile failed, exit $LASTEXITCODE" }
+            $g = (.\t.exe | Out-String).Trim() -replace "`r`n", " "
+            "{0,-22} {1}" -f $name, $g
+            if ($g -ne $want) { throw "$name : wanted '$want', got '$g'" }
+          }
+          Try-One "add"          "main:`n    print 2 + 2" "4"
+          Try-One "precedence"   "main:`n    print 5 * 3 / 2" "7"
+          Try-One "remainder"    "main:`n    print 7 % 3" "1"
+          Try-One "brackets"     "main:`n    print (2 + 3) * 4" "20"
+          Try-One "negative"     "main:`n    print 0 - 42" "-42"
+          Try-One "text"         "main:`n    print `"hello`"" "hello"
+          Try-One "utf8"         "main:`n    print `"Elxan H" + [char]0xFC + "seynov`"" ("Elxan H" + [char]0xFC + "seynov")
+          Try-One "if"           "main:`n    if 3 > 2`n        print `"yes`"" "yes"
+          Try-One "if not"       "main:`n    if 1 > 2`n        print `"no`"`n    if not`n        print `"else`"" "else"
+          Try-One "and or"       "main:`n    if 1 is 1 and 2 is 2`n        print `"both`"" "both"
+          Try-One "loop"         "main:`n    i: 0`n    as long as i < 3`n        print i`n        i: i + 1" "0 1 2"
+          Try-One "job"          "add a b:`n    return a + b`n`nmain:`n    print add(40, 2)" "42"
+          Try-One "recursion"    "fib n:`n    if n < 2`n        return n`n    return fib(n - 1) + fib(n - 2)`n`nmain:`n    print fib(20)" "6765"
+          Try-One "times"        "main:`n    print `"x`" 3 times" "x x x"
+          Try-One "stop"         "main:`n    print 1`n    stop`n    print 2" "1"
+          Try-One "as text int"  "main:`n    x: 65`n    print as text x" "65"
+
+      - name: errors are reported, not ignored
+        shell: pwsh
+        run: |
+          function Must-Fail($name, $src) {
+            $src | Set-Content -NoNewline bad.sov
+            $out = (.\windows\sovren.exe bad.sov -o bad.exe 2>&1 | Out-String)
+            "{0,-22} exit={1}" -f $name, $LASTEXITCODE
+            if ($LASTEXITCODE -eq 0) { throw "$name : should have been rejected but compiled" }
+          }
+          Must-Fail "unknown name"    "main:`n    print missing"
+          Must-Fail "unclosed quote"  "main:`n    print `"abc"
+          Must-Fail "wrong arg count" "add a b:`n    return a + b`n`nmain:`n    print add(1)"
+          Must-Fail "duplicate job"   "f:`n    return 1`n`nf:`n    return 2`n`nmain:`n    print f()"
+          Must-Fail "old syntax"      "main:`n    set x to 3"
+
+      - name: libraries, all of them, built and run
+        shell: pwsh
+        run: |
+          $fail = @()
+          foreach ($f in Get-ChildItem library\*.sov) {
+            $n = $f.BaseName
+            "use $n`nmain:`n    print 1" | Set-Content -NoNewline lib.sov
+            .\windows\sovren.exe lib.sov -o lib.exe 2>&1 | Out-Null
+            if ($LASTEXITCODE -ne 0) { $fail += "$n (build, exit $LASTEXITCODE)"; continue }
+            $g = (.\lib.exe | Out-String).Trim()
+            if ($LASTEXITCODE -ne 0) { $fail += "$n (run, exit $LASTEXITCODE)"; continue }
+            if ($g -ne "1") { $fail += "$n (printed '$g')" }
+          }
+          "tested $((Get-ChildItem library\*.sov).Count) libraries"
+          if ($fail.Count -gt 0) { $fail | ForEach-Object { "  FAIL $_" }; throw "$($fail.Count) libraries failed" }
+          "all passed"
+
+      - name: hashing matches known answers
+        shell: pwsh
+        run: |
+          function Try-One($name, $src, $want) {
+            $src | Set-Content -NoNewline t.sov
+            .\windows\sovren.exe t.sov -o t.exe 2>&1 | Out-Null
+            $g = (.\t.exe | Out-String).Trim()
+            "{0,-10} {1}" -f $name, $g
+            if ($g -ne $want) { throw "$name : wanted $want" }
+          }
+          Try-One "sha256" "use sha256`nmain:`n    print sha256_hex(`"abc`")" "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+          Try-One "sha1"   "use sha1`nmain:`n    print sha1_hex(`"abc`")" "a9993e364706816aba3e25717850c26c9cd0d89d"
+          Try-One "crc32"  "use crc32`nmain:`n    print crc32_text(`"hello`")" "907060870"
+          Try-One "base64" "use base64`nmain:`n    print b64_encode(`"abc`", 3)" "YWJj"
+          Try-One "hmac"   "use hmac`nmain:`n    print hmac_sha256(`"key`", `"The quick brown fox jumps over the lazy dog`")" "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8"
+          Try-One "bigint" "use bigint`nmain:`n    print bi_text(bi_fact(20))" "2432902008176640000"
+          Try-One "fixed"  "use fixed`nmain:`n    print fx_text(fx_sqrt(fx_from(2)))" "1.414213"
+
+      - name: files, folders, arguments
+        shell: pwsh
+        run: |
+          "use file`nmain:`n    file_write_all(`"w.txt`", `"hi there`")`n    print file_read_all(`"w.txt`")" | Set-Content -NoNewline t.sov
+          .\windows\sovren.exe t.sov -o t.exe
+          $g = (.\t.exe | Out-String).Trim()
+          "file round trip : $g"
+          if ($g -ne "hi there") { throw "file io broken" }
+
+          "use file`nmain:`n    print file_exists(`"hello.sov`")" | Set-Content -NoNewline t.sov
+          .\windows\sovren.exe t.sov -o t.exe
+          $g = (.\t.exe | Out-String).Trim()
+          "file_exists     : $g"
+          if ($g -ne "1") { throw "file_exists broken" }
+
+          "use arg`nmain:`n    print arg_count()`n    print as text arg_at(1)" | Set-Content -NoNewline t.sov
+          .\windows\sovren.exe t.sov -o t.exe
+          $g = (.\t.exe one two | Out-String).Trim() -replace "`r`n", " "
+          "arguments       : $g"
+          if ($g -ne "3 one") { throw "arguments broken" }
+
+      - name: works from a different folder
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force elsewhere | Out-Null
+          Set-Location elsewhere
+          "use string`nmain:`n    print str_copy(`"found its library`")" | Set-Content -NoNewline q.sov
+          ..\windows\sovren.exe q.sov -o q.exe
+          if ($LASTEXITCODE -ne 0) { throw "could not compile from another folder, exit $LASTEXITCODE" }
+          $g = (.\q.exe | Out-String).Trim()
+          $g
+          if ($g -ne "found its library") { throw "wrong output" }
+
+      - name: sovren.exe builds itself, byte for byte
+        shell: pwsh
+        run: |
+          .\windows\sovren.exe windows\compiler.sov -o gen2.exe
+          if ($LASTEXITCODE -ne 0) { throw "self build failed, exit $LASTEXITCODE" }
+          .\gen2.exe windows\compiler.sov -o gen3.exe
+          if ($LASTEXITCODE -ne 0) { throw "gen2 could not build, exit $LASTEXITCODE" }
+          $a = (Get-FileHash gen2.exe -Algorithm SHA256).Hash
+          $b = (Get-FileHash gen3.exe -Algorithm SHA256).Hash
+          "gen2 $a"
+          "gen3 $b"
+          if ($a -ne $b) { throw "not a fixpoint: the compiler does not reproduce itself" }
+
+      - name: it can build for the other machines too
+        shell: pwsh
+        run: |
+          foreach ($t in @("--mac", "--android", "--ios", "--android-so", "--bare")) {
+            .\windows\sovren.exe hello.sov $t -o out.bin 2>&1 | Out-Null
+            "{0,-14} exit={1}" -f $t, $LASTEXITCODE
+            if ($LASTEXITCODE -ne 0) { throw "$t failed from Windows" }
+          }
+
+      - name: the example programs
+        shell: pwsh
+        run: |
+          foreach ($f in @("guess.sov", "show.sov", "play.sov", "mysite.sov", "edit.sov")) {
+            if (-not (Test-Path $f)) { continue }
+            .\windows\sovren.exe $f -o ex.exe 2>&1 | Out-Null
+            "{0,-14} exit={1}" -f $f, $LASTEXITCODE
+            if ($LASTEXITCODE -ne 0) { throw "$f does not compile on Windows" }
+          }
+
+  # ------------------------------------------------------------------
+  macos:
+    name: macOS on real hardware
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: which machine is this
+        run: |
+          sysctl -n machdep.cpu.brand_string || true
+          uname -m
+          sw_vers
+      - name: make things runnable
+        run: chmod +x sovren check/run linux/compiler mac/compiler windows/compiler android/compiler android/compiler_so ios/compiler
+
+      # The compilers in the tree are Linux binaries, so on a Mac the
+      # thing to check is that a Mach-O we ship actually runs. Build it
+      # on Linux, commit it, and run it here.
+      - name: a prebuilt Mach-O runs on this Mac
+        run: |
+          chmod +x mac/hello
+          arch -x86_64 ./mac/hello > out.txt 2>&1 || ./mac/hello > out.txt 2>&1
+          echo "--- output ---"
+          cat out.txt
+          grep -q "Hello from Sovren" out.txt
+
+  # ------------------------------------------------------------------
+  linux:
+    name: Linux and the emulated targets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: which machine is this
+        run: |
+          grep -m1 "model name" /proc/cpuinfo
+          echo "avx512 present:"; grep -o avx512f /proc/cpuinfo | head -1 || echo "  no"
+      - name: make things runnable
+        run: chmod +x sovren check/run linux/compiler mac/compiler windows/compiler android/compiler android/compiler_so ios/compiler arm64/test_arm64.sh
+      - name: tools for the emulated targets
+        run: pip install unicorn capstone lief keystone-engine
+      - name: the whole suite
+        run: sh check/run
+      - name: self host, byte for byte, three times
+        run: |
+          ./sovren linux/compiler.sov -o /tmp/g1 && chmod +x /tmp/g1
+          /tmp/g1 linux/compiler.sov -o /tmp/g2 && chmod +x /tmp/g2
+          /tmp/g2 linux/compiler.sov -o /tmp/g3
+          a=$(sha256sum linux/compiler | cut -d' ' -f1)
+          b=$(sha256sum /tmp/g3 | cut -d' ' -f1)
+          echo "shipped $a"
+          echo "gen3    $b"
+          test "$a" = "$b"
+      - name: every library on every target
+        run: |
+          fail=0
+          for t in "" --windows --mac --android --ios --android-so; do
+            for f in library/*.sov; do
+              n=$(basename "$f" .sov)
+              printf 'use %s\nmain:\n    print 1\n' "$n" > /tmp/L.sov
+              if ! ./sovren /tmp/L.sov $t -o /tmp/L.bin >/dev/null 2>&1; then
+                echo "  FAIL $n ${t:-linux}"; fail=$((fail+1))
+              fi
+            done
+          done
+          echo "failures: $fail"
+          test "$fail" = "0"
+      - name: no warnings from any compiler
+        run: |
+          w=0
+          for c in linux windows mac android ios; do
+            n=$(./sovren $c/compiler.sov -o /tmp/c.bin 2>&1 | grep -ci warning || true)
+            echo "$c: $n warnings"
+            w=$((w+n))
+          done
+          test "$w" = "0"

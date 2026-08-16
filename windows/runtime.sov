@@ -4,21 +4,30 @@
 
 heap_ptr: 0
 heap_end: 0
-g_argc: 0
-g_argv: 0
+# g_argc and g_argv are filled in by the start stub before main runs.
+# They must not be set here: a top level line is emitted inside main
+# and would wipe what the stub stored.
+g_argc: g_argc
+g_argv: g_argv
 
-rt_init argc argv:
-    g_argc: argc
-    g_argv: argv
+# set up the heap. this must not touch g_argc or g_argv: the start
+# stub fills those in before main runs, and _sov_alloc can be called
+# at any time, which would wipe them.
+rt_heap:
     # mmap 64MB anonymous RW: syscall 9
     # addr=0 len=64M prot=3 flags=0x22 fd=-1 off=0
     heap_ptr: syscall(9, 0, 67108864, 3, 34, 0 - 1, 0)
     heap_end: heap_ptr + 67108864
     return heap_ptr
 
+rt_init argc argv:
+    g_argc: argc
+    g_argv: argv
+    return rt_heap()
+
 _sov_alloc size:
     if heap_ptr is 0
-        rt_init(0, 0)
+        rt_heap()
     n: size + 16
     p: heap_ptr
     heap_ptr: heap_ptr + n
@@ -336,6 +345,9 @@ _sov_write_n path data n:
         off: off + w
     _sov_close(fd)
     return 1
+
+_sov_argc:
+    return g_argc
 
 _sov_argv_get i:
     if i < 0

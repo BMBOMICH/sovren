@@ -1,55 +1,54 @@
-# arg.sov — command line from /proc/self/cmdline (null-separated)
+# arg.sov — the words typed after the program name.
+#
+# The runtime keeps argc and argv from the moment the program
+# starts, on every system. That is what this reads. An older
+# version read /proc/self/cmdline, which only exists on Linux, so
+# arguments were always empty on Windows and Mac.
 # needs _sov_list
-use file
+
 use string
 
-arg_raw:
-    return file_read_max("/proc/self/cmdline", 4095)
+arg_count:
+    return _sov_argc()
 
-arg_copy raw a b:
-    n: b - a
-    if n < 0
-        n: 0
-    out: _sov_alloc(n + 1)
-    i: 0
-    as long as i < n
-        poke_byte(out, i, peek_byte(raw, a + i))
+# argument 0 is the program itself, 1 is the first real one
+arg_at k:
+    if k < 0
+        return blank
+    if k >= _sov_argc()
+        return blank
+    p: _sov_argv_get(k)
+    if p is 0
+        return blank
+    return as text p
+
+# every argument after the program name, as one line
+arg_line:
+    out: ""
+    i: 1
+    as long as i < _sov_argc()
+        if i > 1
+            out: str_cat(out, " ")
+        out: str_cat(out, as text arg_at(i))
         i: i + 1
-    poke_byte(out, n, 0)
     return as text out
 
-arg_count:
-    r: arg_raw()
-    if r is 0
-        return 0
-    n: 0
-    i: 0
-    as long as i < 4096
-        if peek_byte(r, i) is 0
-            if i is 0
-                return 0
-            n: n + 1
-            if peek_byte(r, i + 1) is 0
-                return n
+# is this flag present?
+arg_has name:
+    i: 1
+    as long as i < _sov_argc()
+        if str_eq(as text arg_at(i), name) is 1
+            return 1
         i: i + 1
-    return n
+    return 0
 
-arg_at k:
-    r: arg_raw()
-    if r is 0
-        return blank
-    n: 0
-    i: 0
-    as long as i < 4096
-        if peek_byte(r, i) is 0
+# the word after a flag, for things like -o out.txt
+arg_after name:
+    i: 1
+    as long as i < _sov_argc()
+        if str_eq(as text arg_at(i), name) is 1
+            if i + 1 < _sov_argc()
+                return as text arg_at(i + 1)
             return blank
-        if n is k
-            e: i
-            as long as peek_byte(r, e) is not 0
-                e: e + 1
-            return arg_copy(r, i, e)
-        as long as peek_byte(r, i) is not 0
-            i: i + 1
         i: i + 1
-        n: n + 1
     return blank
