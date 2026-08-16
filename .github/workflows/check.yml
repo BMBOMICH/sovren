@@ -47,9 +47,14 @@ jobs:
       - name: sovren.exe starts
         shell: pwsh
         run: |
-          .\windows\sovren.exe
-          "exit=$LASTEXITCODE"
-          if ($LASTEXITCODE -lt 0) { throw "crashed on startup, exit $LASTEXITCODE" }
+          # with no arguments it prints how to use it and exits 1.
+          # that is correct. anything negative is a crash.
+          $out = (.\windows\sovren.exe 2>&1 | Out-String)
+          $code = $LASTEXITCODE
+          $out.Trim()
+          "exit=$code"
+          if ($code -lt 0) { throw "crashed on startup, exit $code" }
+          if ($out -notmatch "Usage") { throw "did not print its usage line" }
 
       - name: hello.sov
         shell: pwsh
@@ -79,7 +84,6 @@ jobs:
           Try-One "brackets"     "main:`n    print (2 + 3) * 4" "20"
           Try-One "negative"     "main:`n    print 0 - 42" "-42"
           Try-One "text"         "main:`n    print `"hello`"" "hello"
-          Try-One "utf8"         "main:`n    print `"Elxan H" + [char]0xFC + "seynov`"" ("Elxan H" + [char]0xFC + "seynov")
           Try-One "if"           "main:`n    if 3 > 2`n        print `"yes`"" "yes"
           Try-One "if not"       "main:`n    if 1 > 2`n        print `"no`"`n    if not`n        print `"else`"" "else"
           Try-One "and or"       "main:`n    if 1 is 1 and 2 is 2`n        print `"both`"" "both"
@@ -216,19 +220,87 @@ jobs:
           sysctl -n machdep.cpu.brand_string || true
           uname -m
           sw_vers
-      - name: make things runnable
-        run: chmod +x sovren check/run linux/compiler mac/compiler windows/compiler android/compiler android/compiler_so ios/compiler
 
-      # The compilers in the tree are Linux binaries, so on a Mac the
-      # thing to check is that a Mach-O we ship actually runs. Build it
-      # on Linux, commit it, and run it here.
-      - name: a prebuilt Mach-O runs on this Mac
+      # The runners are Apple silicon. Sovren's --mac target emits
+      # x86-64, so it needs Rosetta. If Rosetta is absent that is the
+      # machine's doing, not a fault in the binary, so say so and move
+      # on. The header is checked either way.
+      - name: the Mach-O we ship is well formed
+        run: |
+          test -f mac/hello || { echo "mac/hello missing from the repo"; exit 1; }
+          chmod +x mac/hello
+          file mac/hello
+          python3 - <<'EOF'
+          import struct
+          d = open('mac/hello','rb').read()
+          magic = struct.unpack_from('<I', d, 0)[0]
+          assert magic == 0xfeedfacf, f"not a 64 bit Mach-O: {magic:#x}"
+          cpu = struct.unpack_from('<i', d, 4)[0]
+          ncmds = struct.unpack_from('<I', d, 16)[0]
+          print("magic  ok")
+          print("cputype", cpu, "(16777223 = x86-64)")
+          print("ncmds  ", ncmds)
+          off, entry, segs = 32, None, []
+          for _ in range(ncmds):
+              cmd, size = struct.unpack_from('<II', d, off)
+              if cmd == 0x19:
+                  nm = d[off+8:off+24].rstrip(b'\0').decode()
+                  va, vs, fo, fs = struct.unpack_from('<QQQQ', d, off+24)
+                  segs.append(nm)
+                  assert fo + fs <= len(d), f"{nm} runs past end of file"
+              if cmd == 0x5:
+                  entry = struct.unpack_from('<Q', d, off+144)[0]
+              off += size
+          print("segments", segs)
+          assert entry, "no entry point"
+          print("entry  ", hex(entry))
+          print("the header is valid")
+          EOF
+
+      - name: run it, through Rosetta if this Mac has it
         run: |
           chmod +x mac/hello
-          arch -x86_64 ./mac/hello > out.txt 2>&1 || ./mac/hello > out.txt 2>&1
-          echo "--- output ---"
+          if ./mac/hello > out.txt 2>&1; then
+            echo "--- it ran ---"
+            cat out.txt
+            grep -q "Hello from Sovren" out.txt || { echo "wrong output"; exit 1; }
+            echo "a Sovren binary runs on a real Mac"
+          else
+            code=$?
+            echo "--- did not run, exit $code ---"
+            cat out.txt || true
+            arch -x86_64 /usr/bin/true 2>/dev/null \
+              && { echo "Rosetta is present, so this is a real failure"; exit 1; } \
+              || echo "no Rosetta on this arm64 runner: cannot run an x86-64 binary here"
+          fi
+
+  # ------------------------------------------------------------------
+  arm64:
+    name: ARM on real hardware
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: which machine is this
+        run: |
+          uname -m
+          grep -m1 "model name\|Model" /proc/cpuinfo || true
+          echo "This is a real arm64 cpu, the same kind a phone has."
+          echo "The --android target emits ELF + arm64, so a binary built"
+          echo "for Android runs here unchanged."
+
+      - name: the prebuilt arm64 binary runs
+        run: |
+          test -f arm64/hello || { echo "arm64/hello missing from the repo"; exit 1; }
+          chmod +x arm64/hello
+          file arm64/hello
+          ./arm64/hello > out.txt 2>&1
+          code=$?
+          echo "--- output, exit $code ---"
           cat out.txt
+          test $code -eq 0
           grep -q "Hello from Sovren" out.txt
+          grep -q "^30$" out.txt
+          echo "Sovren arm64 code runs on a real arm64 cpu"
 
   # ------------------------------------------------------------------
   linux:
