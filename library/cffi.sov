@@ -1,0 +1,439 @@
+# cffi.sov — call C functions from Sovren.
+#
+# Sovren has no linker, so it does what the dynamic loader does:
+# open the .so, map its LOAD segments into memory, walk the symbol
+# table, and take the address of the function you asked for. Then
+# `cfunc` calls that address with the C convention.
+#
+#   use cffi
+#   main:
+#       h: c_open("/lib/x86_64-linux-gnu/libz.so.1")
+#       f: c_find(h, "zlibVersion")
+#       print as text c_call0(f)
+#
+# What works: functions that do not call out to another library.
+# Those are self contained, and once the RELATIVE relocations are
+# applied they run correctly.
+#
+# What does not: a function that calls through the PLT into another
+# library, for example zlib's crc32, which calls into libc. Resolving
+# those needs a full dynamic linker, which this is not. Such a call
+# will crash rather than return a wrong answer, so you find out at
+# once.
+#
+# Check with c_leaf before calling something you are unsure of.
+
+use sys
+use file
+use string
+use mem
+use cshim
+
+# --- reading numbers out of a mapped file ---
+
+c_u16 p off:
+    return peek_byte(p, off) + peek_byte(p, off + 1) * 256
+
+c_u32 p off:
+    a: peek_byte(p, off)
+    a: a + peek_byte(p, off + 1) * 256
+    a: a + peek_byte(p, off + 2) * 65536
+    a: a + peek_byte(p, off + 3) * 16777216
+    return a
+
+c_u64 p off:
+    return peek_i64(p, off)
+
+# --- opening a library ---
+
+# Map the whole file, then map each LOAD segment where the ELF says
+# it wants to live, as one block so addresses inside stay correct.
+c_open path:
+    fd: sys_open(path, 0)
+    if fd < 0
+        return 0
+    size: sys_seek(fd, 0, 2)
+    sys_seek(fd, 0, 0)
+    if size < 64
+        sys_close(fd)
+        return 0
+    raw: _sov_alloc(size + 16)
+    got: 0
+    as long as got < size
+        n: sys_read(fd, raw + got, size - got)
+        if n < 1
+            got: size
+        if not
+            got: got + n
+    sys_close(fd)
+
+    if peek_byte(raw, 0) is not 127
+        return 0
+    if peek_byte(raw, 1) is not 69
+        return 0
+
+    phoff: c_u64(raw, 32)
+    phnum: c_u16(raw, 56)
+    phsz: c_u16(raw, 54)
+
+    # how much room do the segments need
+    top: 0
+    i: 0
+    as long as i < phnum
+        o: phoff + i * phsz
+        if c_u32(raw, o) is 1
+            va: c_u64(raw, o + 16)
+            msz: c_u64(raw, o + 40)
+            e: va + msz
+            if e > top
+                top: e
+        i: i + 1
+    if top is 0
+        return 0
+
+    # one block, readable writable executable
+    base: syscall(9, 0, top + 65536, 7, 34, 0 - 1, 0)
+    if base < 1
+        return 0
+
+    # copy each segment where it belongs
+    i: 0
+    as long as i < phnum
+        o: phoff + i * phsz
+        if c_u32(raw, o) is 1
+            off: c_u64(raw, o + 8)
+            va: c_u64(raw, o + 16)
+            fsz: c_u64(raw, o + 32)
+            k: 0
+            as long as k < fsz
+                poke_byte(base + va, k, peek_byte(raw + off, k))
+                k: k + 1
+        i: i + 1
+
+    h: _sov_alloc(64)
+    poke_i64(h, 0, base)
+    poke_i64(h, 8, raw)
+    poke_i64(h, 16, phoff)
+    poke_i64(h, 24, phnum)
+    poke_i64(h, 32, phsz)
+    c_relocate(h)
+    return h
+
+# Shared libraries are built to load anywhere, so they carry a list
+# of places that hold an address needing the load point added. The
+# real loader applies these; so do we, or every internal pointer is
+# wrong and the first call crashes.
+c_relocate h:
+    base: peek_i64(h, 0)
+    raw: peek_i64(h, 8)
+    phoff: peek_i64(h, 16)
+    phnum: peek_i64(h, 24)
+    phsz: peek_i64(h, 32)
+
+    dynva: 0
+    dynsz: 0
+    i: 0
+    as long as i < phnum
+        o: phoff + i * phsz
+        if c_u32(raw, o) is 2
+            dynva: c_u64(raw, o + 16)
+            dynsz: c_u64(raw, o + 40)
+        i: i + 1
+    if dynva is 0
+        return 0
+
+    rela: 0
+    relasz: 0
+    jmprel: 0
+    jmpsz: 0
+    d: base + dynva
+    k: 0
+    as long as k < dynsz
+        tag: peek_i64(d, k)
+        val: peek_i64(d, k + 8)
+        if tag is 7
+            rela: val
+        if tag is 8
+            relasz: val
+        if tag is 23
+            jmprel: val
+        if tag is 2
+            jmpsz: val
+        if tag is 0
+            k: dynsz
+        if not
+            k: k + 16
+
+    c_apply(base, rela, relasz)
+    c_apply(base, jmprel, jmpsz)
+    return 1
+
+# type 8 is R_X86_64_RELATIVE: put base + addend at base + offset
+c_apply base at size:
+    if at is 0
+        return 0
+    i: 0
+    as long as i < size
+        e: base + at + i
+        r_off: peek_i64(e, 0)
+        r_info: peek_i64(e, 8)
+        r_add: peek_i64(e, 16)
+        kind: r_info % 4294967296
+        if kind is 8
+            poke_i64(base + r_off, 0, base + r_add)
+        i: i + 24
+    return 1
+
+c_base h:
+    return peek_i64(h, 0)
+
+# --- finding a function ---
+
+# Walk DT_SYMTAB and DT_STRTAB out of the DYNAMIC segment, then look
+# for the name. Returns the address to call, or 0.
+c_find h name:
+    if h is 0
+        return 0
+    base: peek_i64(h, 0)
+    raw: peek_i64(h, 8)
+    phoff: peek_i64(h, 16)
+    phnum: peek_i64(h, 24)
+    phsz: peek_i64(h, 32)
+
+    dynva: 0
+    dynsz: 0
+    i: 0
+    as long as i < phnum
+        o: phoff + i * phsz
+        if c_u32(raw, o) is 2
+            dynva: c_u64(raw, o + 16)
+            dynsz: c_u64(raw, o + 40)
+        i: i + 1
+    if dynva is 0
+        return 0
+
+    symtab: 0
+    strtab: 0
+    syment: 24
+    d: base + dynva
+    k: 0
+    as long as k < dynsz
+        tag: peek_i64(d, k)
+        val: peek_i64(d, k + 8)
+        if tag is 5
+            strtab: val
+        if tag is 6
+            symtab: val
+        if tag is 11
+            syment: val
+        if tag is 0
+            k: dynsz
+        if not
+            k: k + 16
+    if symtab is 0
+        return 0
+    if strtab is 0
+        return 0
+
+    # symbols run until the string table starts
+    n: (strtab - symtab) / syment
+    want: str_len(name)
+    i: 1
+    as long as i < n
+        s: base + symtab + i * syment
+        nameoff: c_u32(s, 0)
+        value: peek_i64(s, 8)
+        if value > 0
+            nm: base + strtab + nameoff
+            if c_same(nm, name, want) is 1
+                return base + value
+        i: i + 1
+    return 0
+
+# compare a C string in memory with a Sovren one
+c_same p s n:
+    i: 0
+    as long as i < n
+        if peek_byte(p, i) is not peek_byte(s, i)
+            return 0
+        i: i + 1
+    if peek_byte(p, n) is not 0
+        return 0
+    return 1
+
+# --- calling ---
+
+c_call0 f:
+    return cfunc(f, 0, 0, 0, 0, 0, 0)
+
+c_call1 f a:
+    return cfunc(f, a, 0, 0, 0, 0, 0)
+
+c_call2 f a b:
+    return cfunc(f, a, b, 0, 0, 0, 0)
+
+c_call3 f a b c:
+    return cfunc(f, a, b, c, 0, 0, 0)
+
+c_call4 f a b c d:
+    return cfunc(f, a, b, c, d, 0, 0)
+
+c_call5 f a b c d e:
+    return cfunc(f, a, b, c, d, e, 0)
+
+c_call6 f a b c d e g:
+    return cfunc(f, a, b, c, d, e, g)
+
+
+
+# Functions that reach out to another library need a real dynamic
+# linker. There is no way to spot them from the first bytes, so the
+# rule is simple: try it. A function that needs linking crashes
+# rather than returning a wrong answer, so a bad call is obvious.
+
+
+# ---- resolving what a library calls ----
+#
+# A shared library reaches other functions through a jump table. Each
+# slot must be filled with a real address before the library runs.
+# Some point back inside the same library; the rest are the handful
+# of C functions every library expects, and Sovren answers those
+# itself. Nothing here loads glibc.
+
+# name to address. built once, then searched by name.
+cs_names: 0
+cs_addrs: 0
+cs_count: 0
+
+cs_add nm a:
+    poke_i64(cs_names, cs_count * 8, nm)
+    poke_i64(cs_addrs, cs_count * 8, a)
+    cs_count: cs_count + 1
+    return 1
+
+cs_build:
+    if cs_count > 0
+        return 1
+    cs_names: _sov_alloc(512)
+    cs_addrs: _sov_alloc(512)
+    cs_count: 0
+    cs_add("malloc", addr_of c_malloc)
+    cs_add("calloc", addr_of c_calloc)
+    cs_add("free", addr_of c_free)
+    cs_add("realloc", addr_of c_realloc)
+    cs_add("memcpy", addr_of c_memcpy)
+    cs_add("memmove", addr_of c_memmove)
+    cs_add("memset", addr_of c_memset)
+    cs_add("memcmp", addr_of c_memcmp)
+    cs_add("memchr", addr_of c_memchr)
+    cs_add("strlen", addr_of c_strlen)
+    cs_add("strcmp", addr_of c_strcmp)
+    cs_add("strcpy", addr_of c_strcpy)
+    cs_add("open", addr_of cs_open)
+    cs_add("read", addr_of cs_read)
+    cs_add("write", addr_of cs_write)
+    cs_add("close", addr_of cs_close)
+    cs_add("lseek", addr_of cs_lseek)
+    cs_add("lseek64", addr_of cs_lseek)
+    cs_add("__errno_location", addr_of c_errno_location)
+    cs_add("__stack_chk_fail", addr_of c_stack_chk_fail)
+    cs_add("abort", addr_of c_abort)
+    cs_add("exit", addr_of c_exit)
+    cs_add("snprintf", addr_of c_snprintf_stub)
+    cs_add("__snprintf_chk", addr_of c_snprintf_stub)
+    cs_add("__vsnprintf_chk", addr_of c_snprintf_stub)
+    cs_add("strerror", addr_of c_strerror_stub)
+    return 1
+
+# what Sovren offers under this name, or 0
+cs_find nm n:
+    cs_build()
+    i: 0
+    as long as i < cs_count
+        if c_same(nm, peek_i64(cs_names, i * 8), n) is 1
+            return peek_i64(cs_addrs, i * 8)
+        i: i + 1
+    return 0
+
+# Fill in the jump table. Returns how many slots could not be filled.
+c_link h:
+    if h is 0
+        return 0 - 1
+    base: peek_i64(h, 0)
+    raw: peek_i64(h, 8)
+    phoff: peek_i64(h, 16)
+    phnum: peek_i64(h, 24)
+    phsz: peek_i64(h, 32)
+
+    dynva: 0
+    dynsz: 0
+    i: 0
+    as long as i < phnum
+        o: phoff + i * phsz
+        if c_u32(raw, o) is 2
+            dynva: c_u64(raw, o + 16)
+            dynsz: c_u64(raw, o + 40)
+        i: i + 1
+    if dynva is 0
+        return 0 - 1
+
+    symtab: 0
+    strtab: 0
+    syment: 24
+    jmprel: 0
+    jmpsz: 0
+    d: base + dynva
+    k: 0
+    as long as k < dynsz
+        tag: peek_i64(d, k)
+        val: peek_i64(d, k + 8)
+        if tag is 5
+            strtab: val
+        if tag is 6
+            symtab: val
+        if tag is 11
+            syment: val
+        if tag is 23
+            jmprel: val
+        if tag is 2
+            jmpsz: val
+        if tag is 0
+            k: dynsz
+        if not
+            k: k + 16
+    if jmprel is 0
+        return 0
+
+    missing: 0
+    k: 0
+    as long as k < jmpsz
+        e: base + jmprel + k
+        r_off: peek_i64(e, 0)
+        r_info: peek_i64(e, 8)
+        si: r_info / 4294967296
+        if si > 0
+            sp: base + symtab + si * syment
+            nameoff: c_u32(sp, 0)
+            value: peek_i64(sp, 8)
+            nm: base + strtab + nameoff
+            got: base + r_off
+            if value > 0
+                # it lives in this same library
+                poke_i64(got, 0, base + value)
+            if not
+                n: _sov_strlen(nm)
+                a: cs_find(nm, n)
+                if a > 0
+                    poke_i64(got, 0, a)
+                if not
+                    missing: missing + 1
+        k: k + 24
+    return missing
+
+# open a library and wire it up in one go
+c_load path:
+    h: c_open(path)
+    if h is 0
+        return 0
+    c_link(h)
+    return h

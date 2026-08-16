@@ -1,0 +1,167 @@
+# cshim.sov — the handful of C functions a library expects to find.
+#
+# A C library does not carry its own malloc or memcpy. It asks the
+# system for them. Rather than load glibc, Sovren answers with its
+# own: c_malloc hands out memory from the Sovren heap, c_strlen is
+# Sovren's strlen. Nothing about the language changes. These are
+# plain Sovren jobs whose addresses get handed to the library.
+
+use sys
+use mem
+
+# ---- memory ----
+
+c_malloc n:
+    if n < 1
+        n: 1
+    return _sov_alloc(n)
+
+c_calloc n sz:
+    total: n * sz
+    if total < 1
+        total: 1
+    p: _sov_alloc(total)
+    i: 0
+    as long as i < total
+        poke_byte(p, i, 0)
+        i: i + 1
+    return p
+
+# the Sovren heap only grows, so letting go costs nothing
+c_free p:
+    return 0
+
+c_realloc p n:
+    q: _sov_alloc(n)
+    if p is 0
+        return q
+    i: 0
+    as long as i < n
+        poke_byte(q, i, peek_byte(p, i))
+        i: i + 1
+    return q
+
+c_memcpy d s n:
+    i: 0
+    as long as i < n
+        poke_byte(d, i, peek_byte(s, i))
+        i: i + 1
+    return d
+
+# may overlap, so copy backwards when the target is above the source
+c_memmove d s n:
+    if d < s
+        return c_memcpy(d, s, n)
+    i: n
+    as long as i > 0
+        i: i - 1
+        poke_byte(d, i, peek_byte(s, i))
+    return d
+
+c_memset d v n:
+    i: 0
+    as long as i < n
+        poke_byte(d, i, v)
+        i: i + 1
+    return d
+
+c_memcmp a b n:
+    i: 0
+    as long as i < n
+        x: peek_byte(a, i)
+        y: peek_byte(b, i)
+        if x < y
+            return 0 - 1
+        if x > y
+            return 1
+        i: i + 1
+    return 0
+
+c_memchr p ch n:
+    i: 0
+    as long as i < n
+        if peek_byte(p, i) is ch
+            return p + i
+        i: i + 1
+    return 0
+
+# ---- text ----
+
+c_strlen s:
+    return _sov_strlen(s)
+
+c_strcmp a b:
+    i: 0
+    as long as i < 1000000
+        x: peek_byte(a, i)
+        y: peek_byte(b, i)
+        if x < y
+            return 0 - 1
+        if x > y
+            return 1
+        if x is 0
+            return 0
+        i: i + 1
+    return 0
+
+c_strcpy d s:
+    i: 0
+    as long as i < 1000000
+        b: peek_byte(s, i)
+        poke_byte(d, i, b)
+        if b is 0
+            return d
+        i: i + 1
+    return d
+
+# ---- files ----
+
+cs_open path flags mode:
+    return syscall(257, 0 - 100, path, flags, mode, 0, 0)
+
+cs_read fd buf n:
+    return syscall(0, fd, buf, n, 0, 0, 0)
+
+cs_write fd buf n:
+    return syscall(1, fd, buf, n, 0, 0, 0)
+
+cs_close fd:
+    return syscall(3, fd, 0, 0, 0, 0, 0)
+
+cs_lseek fd off whence:
+    return syscall(8, fd, off, whence, 0, 0, 0)
+
+# ---- the odds and ends ----
+
+# glibc keeps errno per thread behind this call. one slot is enough
+# for a single threaded program.
+c_errno_slot: 0
+
+c_errno_location:
+    if c_errno_slot is 0
+        c_errno_slot: _sov_alloc(16)
+        poke_i64(c_errno_slot, 0, 0)
+    return c_errno_slot
+
+# a library calls this when it thinks the stack was smashed. there is
+# nothing sensible to do but stop.
+c_stack_chk_fail:
+    print "a C library reported a stack problem"
+    syscall(60, 134, 0, 0, 0, 0, 0)
+    return 0
+
+c_abort:
+    syscall(60, 134, 0, 0, 0, 0, 0)
+    return 0
+
+c_exit code:
+    syscall(60, code, 0, 0, 0, 0, 0)
+    return 0
+
+# not worth writing a printf. anything that needs one gets an empty
+# answer rather than a wrong one.
+c_snprintf_stub:
+    return 0
+
+c_strerror_stub:
+    return 0

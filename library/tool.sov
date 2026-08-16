@@ -27,10 +27,22 @@ tool_out path arg:
         pipe_close(fds)
         return blank
     sys_close(wfd)
-    buf: _sov_alloc(4096)
-    n: sys_read(rfd, buf, 4095)
-    if n < 0
-        n: 0
+    # a pipe arrives in pieces, so keep reading until it is empty.
+    # one read only ever caught the first chunk.
+    cap: 65536
+    buf: _sov_alloc(cap + 1)
+    n: 0
+    going: 1
+    as long as going is 1
+        room: cap - n
+        if room < 1
+            going: 0
+        if not
+            g: sys_read(rfd, buf + n, room)
+            if g < 1
+                going: 0
+            if not
+                n: n + g
     poke_byte(buf, n, 0)
     sys_close(rfd)
     sys_wait(pid)

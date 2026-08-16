@@ -43,6 +43,8 @@ jobs:
           for ($i = 0; $i -lt $b.Length - 1; $i++) { if ($b[$i] -eq 0x0F -and $b[$i+1] -eq 0x05) { $n++ } }
           "raw linux syscall instructions: $n"
           if ($n -ne 0) { throw "the exe contains raw linux syscalls, which do nothing on Windows" }
+          $global:LASTEXITCODE = 0
+          exit 0
 
       - name: sovren.exe starts
         shell: pwsh
@@ -55,6 +57,10 @@ jobs:
           "exit=$code"
           if ($code -lt 0) { throw "crashed on startup, exit $code" }
           if ($out -notmatch "Usage") { throw "did not print its usage line" }
+          # a pwsh step ends with whatever the last program returned,
+          # so clear it or this step reports failure despite passing
+          $global:LASTEXITCODE = 0
+          exit 0
 
       - name: hello.sov
         shell: pwsh
@@ -66,6 +72,8 @@ jobs:
           $o
           if ($LASTEXITCODE -ne 0) { throw "run failed, exit $LASTEXITCODE" }
           if ($o -notmatch "Hello from Sovren") { throw "wrong output" }
+          $global:LASTEXITCODE = 0
+          exit 0
 
       - name: the language itself
         shell: pwsh
@@ -93,6 +101,8 @@ jobs:
           Try-One "times"        "main:`n    print `"x`" 3 times" "x x x"
           Try-One "stop"         "main:`n    print 1`n    stop`n    print 2" "1"
           Try-One "as text int"  "main:`n    x: 65`n    print as text x" "65"
+          $global:LASTEXITCODE = 0
+          exit 0
 
       - name: errors are reported, not ignored
         shell: pwsh
@@ -108,6 +118,8 @@ jobs:
           Must-Fail "wrong arg count" "add a b:`n    return a + b`n`nmain:`n    print add(1)"
           Must-Fail "duplicate job"   "f:`n    return 1`n`nf:`n    return 2`n`nmain:`n    print f()"
           Must-Fail "old syntax"      "main:`n    set x to 3"
+          $global:LASTEXITCODE = 0
+          exit 0
 
       - name: libraries, all of them, built and run
         shell: pwsh
@@ -125,6 +137,8 @@ jobs:
           "tested $((Get-ChildItem library\*.sov).Count) libraries"
           if ($fail.Count -gt 0) { $fail | ForEach-Object { "  FAIL $_" }; throw "$($fail.Count) libraries failed" }
           "all passed"
+          $global:LASTEXITCODE = 0
+          exit 0
 
       - name: hashing matches known answers
         shell: pwsh
@@ -143,6 +157,8 @@ jobs:
           Try-One "hmac"   "use hmac`nmain:`n    print hmac_sha256(`"key`", `"The quick brown fox jumps over the lazy dog`")" "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8"
           Try-One "bigint" "use bigint`nmain:`n    print bi_text(bi_fact(20))" "2432902008176640000"
           Try-One "fixed"  "use fixed`nmain:`n    print fx_text(fx_sqrt(fx_from(2)))" "1.414213"
+          $global:LASTEXITCODE = 0
+          exit 0
 
       - name: files, folders, arguments
         shell: pwsh
@@ -164,6 +180,8 @@ jobs:
           $g = (.\t.exe one two | Out-String).Trim() -replace "`r`n", " "
           "arguments       : $g"
           if ($g -ne "3 one") { throw "arguments broken" }
+          $global:LASTEXITCODE = 0
+          exit 0
 
       - name: works from a different folder
         shell: pwsh
@@ -176,6 +194,8 @@ jobs:
           $g = (.\q.exe | Out-String).Trim()
           $g
           if ($g -ne "found its library") { throw "wrong output" }
+          $global:LASTEXITCODE = 0
+          exit 0
 
       - name: sovren.exe builds itself, byte for byte
         shell: pwsh
@@ -189,6 +209,8 @@ jobs:
           "gen2 $a"
           "gen3 $b"
           if ($a -ne $b) { throw "not a fixpoint: the compiler does not reproduce itself" }
+          $global:LASTEXITCODE = 0
+          exit 0
 
       - name: it can build for the other machines too
         shell: pwsh
@@ -198,6 +220,8 @@ jobs:
             "{0,-14} exit={1}" -f $t, $LASTEXITCODE
             if ($LASTEXITCODE -ne 0) { throw "$t failed from Windows" }
           }
+          $global:LASTEXITCODE = 0
+          exit 0
 
       - name: the example programs
         shell: pwsh
@@ -208,6 +232,8 @@ jobs:
             "{0,-14} exit={1}" -f $f, $LASTEXITCODE
             if ($LASTEXITCODE -ne 0) { throw "$f does not compile on Windows" }
           }
+          $global:LASTEXITCODE = 0
+          exit 0
 
   # ------------------------------------------------------------------
   macos:

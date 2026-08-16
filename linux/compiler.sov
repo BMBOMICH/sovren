@@ -925,6 +925,38 @@ bin L R op:
     cmp_rax_rcx()
     setcc(op)
 call_args name argc:
+    # cfunc(addr, a1..a6) calls a C function at a computed address.
+    # C wants its arguments in rdi rsi rdx rcx r8 r9 and the stack
+    # aligned to 16 bytes, and rax cleared for a variadic callee.
+    if same(name, "cfunc") is 1
+        emit(65)
+        emit(89)
+        emit(65)
+        emit(88)
+        emit(89)
+        emit(90)
+        emit(94)
+        emit(95)
+        emit(65)
+        emit(90)
+        emit(85)
+        emit(72)
+        emit(137)
+        emit(229)
+        emit(72)
+        emit(131)
+        emit(228)
+        emit(240)
+        emit(49)
+        emit(192)
+        emit(65)
+        emit(255)
+        emit(210)
+        emit(72)
+        emit(137)
+        emit(236)
+        emit(93)
+        return
     if same(name, "syscall") is 1
         emit(65)
         emit(89)
@@ -1156,6 +1188,15 @@ expr_body e0:
     if starts(e, "as text ") is 1
         expr(cut(e, 8, length(e)))
         return 1
+    # addr_of name -- where a job lives in memory, so a C library
+    # can be told to call back into Sovren
+    if starts(e, "addr_of ") is 1
+        emit(72)
+        emit(184)
+        aat: here()
+        emit8(0)
+        addp(aat, "fnaddr", strip(cut(e, 8, length(e))))
+        return 0
     if starts(e, "length of ") is 1
         expr(cut(e, 10, length(e)))
         mov_rdi_rax()
@@ -4001,6 +4042,14 @@ write_elf path:
                 print "Error: no such task"
                 _sov_print(val)
                 print _sov_list_get(patch_line, i)
+                had_err: 1
+        if same(kind, "fnaddr") is 1
+            fi: idx(fn_names, val)
+            if fi > 0 - 1
+                poke8(flat, HDR + at, BASE + HDR + _sov_list_get(fn_offs, fi))
+            if not
+                print "Error: no such task"
+                _sov_print(val)
                 had_err: 1
         if same(kind, "str") is 1
             poke8(flat, HDR + at, str_addr + val)

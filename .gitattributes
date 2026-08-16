@@ -1,11 +1,36 @@
 * text=auto eol=lf
 
 # Sovren source. This maps *.sov to the name Sovren.
-# GitHub only shows that name after Linguist has Sovren
-# in its list (same reason V can write linguist-language=V).
+# GitHub only shows that name once Linguist has Sovren in its list
+# (the same reason V had to write linguist-language=V).
 *.sov linguist-language=Sovren
 *.sov linguist-detectable
 
 # Not source
 *.md linguist-documentation
-compiler-good.sov linguist-generated
+*.txt linguist-documentation
+
+# Test tooling, not part of the language.
+#
+# These emulate other processors so a phone or Mac binary can be run
+# on this machine, and they check Sovren's own hashing with a second,
+# independent one. They are scaffolding around the project, not the
+# project, so they are not counted as its language.
+arm64/*.py linguist-vendored
+mac/*.py linguist-vendored
+windows/*.py linguist-vendored
+check/fuzz.py linguist-vendored
+check/fuzz_arm.py linguist-vendored
+arm64/*.sh linguist-vendored
+
+# Prebuilt binaries the tests run on real hardware
+mac/hello binary
+arm64/hello binary
+linux/compiler binary
+mac/compiler binary
+windows/compiler binary
+windows/sovren.exe binary
+windows/head.bin binary
+android/compiler binary
+android/compiler_so binary
+ios/compiler binary
