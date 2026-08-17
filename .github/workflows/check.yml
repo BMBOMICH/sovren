@@ -212,14 +212,15 @@ jobs:
           $global:LASTEXITCODE = 0
           exit 0
 
-      - name: it can build for the other machines too
+      - name: it can build bare metal too
         shell: pwsh
         run: |
-          foreach ($t in @("--mac", "--android", "--ios", "--android-so", "--bare")) {
-            .\windows\sovren.exe hello.sov $t -o out.bin 2>&1 | Out-Null
-            "{0,-14} exit={1}" -f $t, $LASTEXITCODE
-            if ($LASTEXITCODE -ne 0) { throw "$t failed from Windows" }
-          }
+          # windows\sovren.exe is the Windows back end. The target
+          # flags are the launcher's job, and the launcher is a Linux
+          # program, so only --bare applies here.
+          .\windows\sovren.exe hello.sov --bare -o out.bin 2>&1 | Out-Null
+          "--bare exit=$LASTEXITCODE"
+          if ($LASTEXITCODE -ne 0) { throw "--bare failed from Windows" }
           $global:LASTEXITCODE = 0
           exit 0
 
@@ -339,11 +340,261 @@ jobs:
           grep -m1 "model name" /proc/cpuinfo
           echo "avx512 present:"; grep -o avx512f /proc/cpuinfo | head -1 || echo "  no"
       - name: make things runnable
-        run: chmod +x sovren check/run linux/compiler mac/compiler windows/compiler android/compiler android/compiler_so ios/compiler arm64/test_arm64.sh
-      - name: tools for the emulated targets
-        run: pip install unicorn capstone lief keystone-engine
+        run: chmod +x sovren check/run linux/compiler mac/compiler windows/compiler android/compiler android/compiler_so ios/compiler
+      - name: a screen to draw on
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb x11-utils imagemagick python3-pil
       - name: the whole suite
         run: sh check/run
+      - name: long double, on the processor written in Sovren
+        run: |
+          # The old stack-based maths unit. A compiler only reaches
+          # for it when a program asks for long double, but then it
+          # does, so it has to be right.
+          cat > /tmp/ld.c <<'CEOF'
+          #include <stdio.h>
+          static long double f(long double a, long double b){ return a*b + a/b; }
+          int main(void){
+              long double x = 3.5L, y = 1.25L;
+              printf("%.10Lf\n", f(x, y));
+              printf("%.10Lf\n", x + y);
+              printf("%.10Lf\n", x * x * x);
+              return 0;
+          }
+          CEOF
+          gcc -static -O1 -o /tmp/ld /tmp/ld.c
+          ./sovren /tmp/runc.sov -o /tmp/runc 2>/dev/null || true
+          cat > /tmp/runc2.sov <<'SEOF'
+          use x86
+          use arg
+          main:
+              m: x86_new()
+              x86_load(m, arg_at(1))
+              x86_run(m)
+              write_out(x86_out(m))
+          SEOF
+          ./sovren /tmp/runc2.sov -o /tmp/runc2 && chmod +x /tmp/runc2
+          /tmp/ld > /tmp/ldnat.txt
+          /tmp/runc2 /tmp/ld > /tmp/ldemu.txt
+          echo "native:";   cat /tmp/ldnat.txt
+          echo "emulated:"; cat /tmp/ldemu.txt
+          diff /tmp/ldnat.txt /tmp/ldemu.txt
+          echo "the old maths unit agrees with the real thing"
+      - name: a real window, drawn on a real screen
+        run: |
+          # win.sov speaks to the X server itself, over a socket.
+          # No toolkit, no C library. This starts a screen with no
+          # monitor behind it, draws on it, and then looks at what
+          # actually landed there.
+          export DISPLAY=:95
+          Xvfb :95 -screen 0 640x480x24 -nolisten tcp &
+          xpid=$!
+          sleep 3
+          cat > /tmp/w.sov <<'WEOF'
+          use win
+          use time
+          main:
+              w: win_open(320, 240, "ciwindow")
+              if w is 0
+                  print "nodisplay"
+                  stop
+              i: 0
+              as long as i < 30
+                  win_fill(w, 0, 0, 320, 240, WIN_WHITE)
+                  win_fill(w, 20, 20, 80, 60, WIN_RED)
+                  win_box(w, 140, 20, 90, 60, WIN_BLUE)
+                  win_line(w, 10, 200, 300, 160, WIN_GREEN)
+                  win_text(w, 20, 120, "sovren", WIN_BLACK)
+                  win_flush(w)
+                  sleep_ms(100)
+                  i: i + 1
+              print "drew"
+          WEOF
+          ./sovren /tmp/w.sov -o /tmp/w && chmod +x /tmp/w
+          /tmp/w > /tmp/w.txt 2>&1 &
+          winpid=$!
+          sleep 2
+          xwininfo -root -children | grep ciwindow
+          import -window root /tmp/shot.png
+          python3 -c "
+          from PIL import Image
+          from collections import Counter
+          c = Counter(Image.open('/tmp/shot.png').convert('RGB').getdata())
+          print('colours on the screen:', len(c))
+          for col, n in c.most_common(6): print(' ', col, n)
+          assert len(c) >= 5, 'the drawing did not reach the screen'
+          assert (255,0,0) in c, 'the red rectangle is missing'
+          assert (0,0,255) in c, 'the blue box is missing'
+          assert (0,255,0) in c, 'the green line is missing'
+          "
+          # wait for the drawing program only. A bare wait would
+          # also wait for the screen, which never finishes.
+          wait $winpid
+          grep -q drew /tmp/w.txt
+          kill $xpid 2>/dev/null || true
+          echo "a window opened and the drawing reached the screen"
+      - name: the bot libraries, against a service we run
+        run: |
+          # The real services need the locked kind of connection,
+          # which is checked separately. What is checked here is
+          # everything else: building the request, reading the
+          # reply, and pulling the message out of the JSON.
+          python3 - <<'PYEOF' &
+          from http.server import BaseHTTPRequestHandler, HTTPServer
+          import json
+          class H(BaseHTTPRequestHandler):
+              def log_message(self, *a): pass
+              def _send(self, obj):
+                  b = json.dumps(obj).encode()
+                  self.send_response(200)
+                  self.send_header("Content-Type", "application/json")
+                  self.send_header("Content-Length", str(len(b)))
+                  self.end_headers(); self.wfile.write(b)
+              def do_GET(self):
+                  if "getMe" in self.path:
+                      self._send({"ok":True,"result":{"username":"sovren_test_bot"}})
+                  elif "getUpdates" in self.path:
+                      self._send({"ok":True,"result":[{"update_id":1,"message":{"message_id":7,"chat":{"id":999},"text":"hello bot","from":{"username":"elxan"}}}]})
+                  else:
+                      self._send({"ok":True})
+              def do_POST(self):
+                  n = int(self.headers.get("Content-Length", 0))
+                  self._send({"ok":True,"echo": self.rfile.read(n).decode() if n else ""})
+          HTTPServer(("127.0.0.1", 8877), H).serve_forever()
+          PYEOF
+          srv=$!
+          sleep 2
+          cat > /tmp/tg.sov <<'TEOF'
+          use telegram
+          use num
+          main:
+              t: tg_new("test:token")
+              tg_base(t, "http://127.0.0.1:8877")
+              print tg_me(t)
+              n: tg_poll(t)
+              print num_text(n)
+              print tg_text(t, 0)
+              print num_text(tg_chat(t, 0))
+              print num_text(tg_say(t, 999, "hi back"))
+          TEOF
+          ./sovren /tmp/tg.sov -o /tmp/tg && chmod +x /tmp/tg
+          /tmp/tg | tee /tmp/tg.txt
+          grep -q sovren_test_bot /tmp/tg.txt
+          grep -q "hello bot" /tmp/tg.txt
+          grep -q 999 /tmp/tg.txt
+          kill $srv 2>/dev/null || true
+          echo "the telegram library reads messages and sends replies"
+      - name: a Windows exe and a Mac binary, run here, in Sovren
+        run: |
+          # library/x86.sov is a processor written in Sovren. It runs
+          # the PE and the Mach-O this compiler emits, with no Wine,
+          # no Unicorn and no Python. It is strict where Wine is not.
+          ./sovren windows/run.sov -o /tmp/wrun && chmod +x /tmp/wrun
+          ./sovren mac/run.sov -o /tmp/mrun && chmod +x /tmp/mrun
+          ./sovren hello.sov --windows -o /tmp/h.exe
+          ./sovren hello.sov --mac -o /tmp/h.mac
+          /tmp/wrun /tmp/h.exe > /tmp/w.txt
+          /tmp/mrun /tmp/h.mac > /tmp/m.txt
+          cat /tmp/w.txt
+          head -1 /tmp/w.txt | grep -q "Hello from Sovren"
+          diff /tmp/w.txt /tmp/m.txt
+          echo "the exe and the Mac binary print the same thing"
+      - name: a real C program, on the processor written in Sovren
+        run: |
+          # The emulator is general purpose, not just enough to run
+          # what Sovren emits. glibc uses SSE, the string
+          # instructions, the full-width multiply and every flag
+          # rule, so a static C binary is a real test of all of it.
+          cat > /tmp/cp.c <<'CEOF'
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include <string.h>
+          static int cmp(const void *a, const void *b){return *(int*)a-*(int*)b;}
+          int main(void){
+              int *a = malloc(sizeof(int)*50);
+              for (int i=0;i<50;i++) a[i]=(i*7919)%1000;
+              qsort(a,50,sizeof(int),cmp);
+              printf("%d %d\n", a[0], a[49]);
+              char *s = malloc(256);
+              snprintf(s,256,"%s|%d|%x","fmt",42,255);
+              printf("%s %zu\n", s, strlen(s));
+              long long b=1; for(int i=0;i<20;i++) b*=3;
+              printf("%lld\n", b);
+              free(a); free(s); return 0;
+          }
+          CEOF
+          gcc -static -O2 -o /tmp/cp /tmp/cp.c
+          cat > /tmp/runc.sov <<'SEOF'
+          use x86
+          use arg
+          main:
+              m: x86_new()
+              x86_load(m, arg_at(1))
+              x86_run(m)
+              write_out(x86_out(m))
+          SEOF
+          ./sovren /tmp/runc.sov -o /tmp/runc && chmod +x /tmp/runc
+          /tmp/cp > /tmp/native.txt
+          /tmp/runc /tmp/cp > /tmp/emu.txt
+          echo "native:";   cat /tmp/native.txt
+          echo "emulated:"; cat /tmp/emu.txt
+          diff /tmp/native.txt /tmp/emu.txt
+          echo "a gcc binary gives the same answer on the Sovren cpu"
+      - name: decimals, on the processor written in Sovren
+        run: |
+          # Sovren has no decimal numbers. All of this is whole
+          # -number work underneath, and it has to give the same
+          # bits a real processor gives, or printf disagrees.
+          cat > /tmp/fp.c <<'CEOF'
+          #include <stdio.h>
+          int main(void){
+              double v[]={1.0,2.5,-3.75,0.1,1e10,1e-10,123456.789};
+              double s=0,p=1;
+              for(int i=0;i<7;i++){s+=v[i];p*=v[i];}
+              printf("sum=%.10f\nprod=%.10e\n",s,p);
+              for(int i=0;i<5;i++) printf("%d:%.4f ",i,(double)i/7.0);
+              printf("\n");
+              printf("big=%.3e small=%.3e\n",1e300*1e5,1e-300/1e5);
+              printf("cast=%d %d %lld\n",(int)3.99,(int)-3.99,(long long)1e15);
+              double a=0.1,b=0.2;
+              printf("tenths=%.17g exact=%d\n",a+b,(a+b)==0.3);
+              return 0;
+          }
+          CEOF
+          gcc -static -O2 -o /tmp/fp /tmp/fp.c
+          /tmp/fp > /tmp/fpnat.txt
+          /tmp/runc /tmp/fp > /tmp/fpemu.txt
+          echo "native:";   cat /tmp/fpnat.txt
+          echo "emulated:"; cat /tmp/fpemu.txt
+          diff /tmp/fpnat.txt /tmp/fpemu.txt
+          echo "decimals agree with the real thing, bit for bit"
+      - name: sovren.exe builds itself, inside the Sovren emulator
+        run: |
+          # The compiler for Windows, running on a processor written
+          # in Sovren, compiling itself. The answer must match the
+          # exe that is checked in, byte for byte.
+          cat > /tmp/self.sov <<'EOF'
+          use x86
+          use string
+          main:
+              m: x86_new()
+              if x86_load(m, "windows/sovren.exe") is 0
+                  print "cannot load sovren.exe"
+                  stop
+              x_set_cmdline(m, "sovren.exe windows/compiler.sov -o /tmp/self-emu.exe")
+              x86_run_for(m, 40000000000)
+              write_out(x86_out(m))
+              write_out(x86_err(m))
+              print x86_reason(m)
+          EOF
+          ./sovren /tmp/self.sov -o /tmp/self && chmod +x /tmp/self
+          time /tmp/self
+          a=$(sha256sum windows/sovren.exe | cut -d' ' -f1)
+          b=$(sha256sum /tmp/self-emu.exe | cut -d' ' -f1)
+          echo "shipped  $a"
+          echo "from emu $b"
+          test "$a" = "$b"
       - name: self host, byte for byte, three times
         run: |
           ./sovren linux/compiler.sov -o /tmp/g1 && chmod +x /tmp/g1

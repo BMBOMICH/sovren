@@ -13,6 +13,11 @@ time_now_ns:
     ns: peek_i64(ts, 8)
     return sec * 1000000000 + ns
 
+# the time now in thousandths of a second, which is what a game
+# loop counts in
+time_ms:
+    return time_now_ns() / 1000000
+
 sleep_sec n:
     ts: _sov_alloc(16)
     poke_i64(ts, 0, n)

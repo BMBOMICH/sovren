@@ -1,0 +1,125 @@
+# verify.sov — check Sovren's AArch64 encodings by running them.
+#
+#   ./sovren arm64/verify.sov -o /tmp/verify && /tmp/verify
+#
+# Each test hands a few instruction words to the emulator in
+# library/arm.sov and looks at what comes out. If an encoding is
+# wrong, the answer is wrong, and the test says so.
+#
+# Replaces arm64/verify.py, which did the same through Unicorn.
+
+use arm
+use num
+use string
+
+vf_pass: 0
+vf_fail: 0
+
+vf_ok name:
+    write_out("ok   ")
+    print as text name
+    vf_pass: vf_pass + 1
+    return 1
+
+vf_bad name got want:
+    write_out("FAIL ")
+    write_out(as text name)
+    write_out("  got ")
+    write_out(num_text(got))
+    write_out("  want ")
+    print num_text(want)
+    vf_fail: vf_fail + 1
+    return 0
+
+# movz xd, #imm
+vf_movz d imm:
+    return 3531603968 + (imm % 65536) * 32 + d
+
+# the exit sequence: movz x8, #93 then svc
+vf_exit m at:
+    at: arm_put(m, at, vf_movz(8, 93))
+    at: arm_put(m, at, 3556769793)
+    return at
+
+# run three setup words then check what x0 holds when it exits
+vf_run3 a b c:
+    m: arm_bare()
+    at: 65536
+    if a is not 0
+        at: arm_put(m, at, a)
+    if b is not 0
+        at: arm_put(m, at, b)
+    if c is not 0
+        at: arm_put(m, at, c)
+    vf_exit(m, at)
+    arm_run_for(m, 500000)
+    return arm_code(m)
+
+vf_run4 a b c d:
+    m: arm_bare()
+    at: 65536
+    at: arm_put(m, at, a)
+    if b is not 0
+        at: arm_put(m, at, b)
+    if c is not 0
+        at: arm_put(m, at, c)
+    if d is not 0
+        at: arm_put(m, at, d)
+    vf_exit(m, at)
+    arm_run_for(m, 500000)
+    return arm_code(m)
+
+vf_t3 name a b c want:
+    got: vf_run3(a, b, c)
+    if got is want
+        return vf_ok(name)
+    return vf_bad(name, got, want)
+
+vf_t4 name a b c d want:
+    got: vf_run4(a, b, c, d)
+    if got is want
+        return vf_ok(name)
+    return vf_bad(name, got, want)
+
+main:
+    print "checking the AArch64 encodings by running them"
+    print ""
+
+    # moving values in
+    vf_t3("movz", vf_movz(0, 42), 0, 0, 42)
+    vf_t3("movz then movk", vf_movz(0, 22136), 4070572032 + 4660 * 32, 0, 305419896)
+
+    # arithmetic, two registers into x0
+    vf_t3("add", vf_movz(0, 40), vf_movz(1, 2), 2332098560, 42)
+    vf_t3("sub", vf_movz(0, 50), vf_movz(1, 8), 3405840384, 42)
+    vf_t3("mul", vf_movz(0, 6), vf_movz(1, 7), 2600565760, 42)
+    vf_t3("sdiv", vf_movz(0, 84), vf_movz(1, 2), 2596342784, 42)
+    vf_t3("udiv", vf_movz(0, 84), vf_movz(1, 2), 2596341760, 42)
+
+    # the remainder pair: sdiv into x2, then msub
+    vf_t4("remainder", vf_movz(0, 7), vf_movz(1, 3), 2596342786, 2600566848, 1)
+
+    # comparing and setting
+    vf_t4("cset when equal", vf_movz(0, 5), vf_movz(1, 5), 3942711327, 2594117600, 1)
+    vf_t4("cset when not equal", vf_movz(0, 5), vf_movz(1, 6), 3942711327, 2594117600, 0)
+    vf_t4("cset less than", vf_movz(0, 3), vf_movz(1, 9), 3942711327, 2594154464, 1)
+    vf_t4("cset greater than", vf_movz(0, 9), vf_movz(1, 3), 3942711327, 2594166752, 1)
+    vf_t4("cset at least", vf_movz(0, 9), vf_movz(1, 9), 3942711327, 2594158560, 1)
+    vf_t4("cset at most", vf_movz(0, 2), vf_movz(1, 9), 3942711327, 2594162656, 1)
+
+    # moving between registers
+    vf_t3("mov x0 from x1", vf_movz(1, 42), 2852127712 + 65536, 0, 42)
+
+    # add and subtract an immediate
+    vf_t3("add immediate", vf_movz(0, 40), 2432696320 + 2 * 1024, 0, 42)
+    vf_t3("sub immediate", vf_movz(0, 50), 3506438144 + 8 * 1024, 0, 42)
+
+    print ""
+    write_out(num_text(vf_pass))
+    write_out(" passed, ")
+    write_out(num_text(vf_fail))
+    print " failed"
+    if vf_fail is 0
+        print "every encoding is right"
+        stop
+    print "some encodings are wrong"

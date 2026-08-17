@@ -1,0 +1,192 @@
+# window.sov — one window, whichever machine you are on.
+#
+# There are two window libraries underneath. win.sov speaks to the
+# X server, which is how Linux draws. winwin.sov calls user32 and
+# gdi32, which is how Windows draws. They are genuinely different
+# machines and there is no way round writing both.
+#
+# This picks whichever one works and gives them the same names, so
+# a program is written once:
+#
+#   use window
+#   main:
+#       w: window_open(400, 300, "Hello")
+#       if w is 0
+#           print "no screen here"
+#           stop
+#       as long as window_next(w) is 1
+#           window_fill(w, 0, 0, 400, 300, WHITE)
+#           window_text(w, 20, 30, "Hello from Sovren", BLACK)
+#           window_show(w)
+#       window_shut(w)
+#
+# window_open tries the X server first and then Windows, and hands
+# back nought when neither answers, so a program on a machine with
+# no screen at all says so rather than falling over.
+
+use win
+use winwin
+use num
+use mem
+
+# which one is in use
+WD_NONE: 0
+WD_X11: 1
+WD_WIN: 2
+
+# the block: 0 which kind, 8 the real window underneath
+window_open width height title:
+    w: win_open(width, height, title)
+    if w is not 0
+        h: mem_new(32)
+        poke_i64(h, 0, WD_X11)
+        poke_i64(h, 8, w)
+        return h
+    w: ww_open(width, height, title)
+    if w is not 0
+        h: mem_new(32)
+        poke_i64(h, 0, WD_WIN)
+        poke_i64(h, 8, w)
+        return h
+    return 0
+
+window_kind h:
+    if h is 0
+        return WD_NONE
+    return peek_i64(h, 0)
+
+# which sort of screen this is, in words
+window_which h:
+    k: window_kind(h)
+    if k is WD_X11
+        return "X11"
+    if k is WD_WIN
+        return "Windows"
+    return "none"
+
+# ---- the loop ----
+#
+# Hands back 1 while the window is still there and 0 once it has
+# been closed, so a program writes the same loop either way.
+
+window_next h:
+    if h is 0
+        return 0
+    if peek_i64(h, 0) is WD_X11
+        w: peek_i64(h, 8)
+        if win_alive(w) is 0
+            return 0
+        # take in whatever is waiting without stopping for more
+        n: 0
+        as long as n < 32
+            if win_pending(w) is 0
+                n: 32
+            if not
+                e: win_wait(w)
+                if e is WIN_CLOSE
+                    return 0
+                n: n + 1
+        return 1
+    return ww_next(peek_i64(h, 8))
+
+# ---- what the person did ----
+
+window_key h:
+    if h is 0
+        return 0
+    if peek_i64(h, 0) is WD_X11
+        return win_key(peek_i64(h, 8))
+    return ww_key(peek_i64(h, 8))
+
+window_x h:
+    if h is 0
+        return 0
+    if peek_i64(h, 0) is WD_X11
+        return win_x(peek_i64(h, 8))
+    return ww_x(peek_i64(h, 8))
+
+window_y h:
+    if h is 0
+        return 0
+    if peek_i64(h, 0) is WD_X11
+        return win_y(peek_i64(h, 8))
+    return ww_y(peek_i64(h, 8))
+
+window_width h:
+    if h is 0
+        return 0
+    if peek_i64(h, 0) is WD_X11
+        return win_width(peek_i64(h, 8))
+    return ww_width(peek_i64(h, 8))
+
+window_height h:
+    if h is 0
+        return 0
+    if peek_i64(h, 0) is WD_X11
+        return win_height(peek_i64(h, 8))
+    return ww_height(peek_i64(h, 8))
+
+# ---- drawing ----
+
+window_fill h x y width height rgb:
+    if h is 0
+        return 0
+    if peek_i64(h, 0) is WD_X11
+        return win_fill(peek_i64(h, 8), x, y, width, height, rgb)
+    return ww_fill(peek_i64(h, 8), x, y, width, height, rgb)
+
+window_box h x y width height rgb:
+    if h is 0
+        return 0
+    if peek_i64(h, 0) is WD_X11
+        return win_box(peek_i64(h, 8), x, y, width, height, rgb)
+    return ww_box(peek_i64(h, 8), x, y, width, height, rgb)
+
+window_line h x0 y0 x1 y1 rgb:
+    if h is 0
+        return 0
+    if peek_i64(h, 0) is WD_X11
+        return win_line(peek_i64(h, 8), x0, y0, x1, y1, rgb)
+    return ww_line(peek_i64(h, 8), x0, y0, x1, y1, rgb)
+
+window_circle h x y r rgb:
+    if h is 0
+        return 0
+    if peek_i64(h, 0) is WD_X11
+        return win_circle(peek_i64(h, 8), x, y, r, rgb)
+    return ww_circle(peek_i64(h, 8), x, y, r, rgb)
+
+window_dot h x y rgb:
+    return window_fill(h, x, y, 1, 1, rgb)
+
+window_text h x y words rgb:
+    if h is 0
+        return 0
+    if peek_i64(h, 0) is WD_X11
+        return win_text(peek_i64(h, 8), x, y, words, rgb)
+    return ww_text(peek_i64(h, 8), x, y, words, rgb)
+
+window_show h:
+    if h is 0
+        return 0
+    if peek_i64(h, 0) is WD_X11
+        return win_flush(peek_i64(h, 8))
+    return ww_show(peek_i64(h, 8))
+
+window_shut h:
+    if h is 0
+        return 0
+    if peek_i64(h, 0) is WD_X11
+        return win_shut(peek_i64(h, 8))
+    return ww_shut(peek_i64(h, 8))
+
+# the same colours on both
+BLACK: 0
+WHITE: 16777215
+RED: 16711680
+GREEN: 65280
+BLUE: 255
+GREY: 8421504
+
+rgb r g b:
+    return r * 65536 + g * 256 + b

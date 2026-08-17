@@ -1,0 +1,5783 @@
+# x86.sov — run x86-64 code on this machine, in Sovren.
+#
+# The companion to arm.sov. A processor is a loop: fetch a byte, work
+# out what it means, change some registers, move on. This one covers
+# the instructions Sovren's x86-64 back end emits, which is what the
+# checks need in order to run a Windows .exe or a Mac binary here
+# without Wine and without Python.
+#
+#   use x86
+#   main:
+#       m: x86_new()
+#       x86_load_pe(m, "app.exe")
+#       x86_run(m)
+#       print x86_out(m)
+#
+# It is deliberately strict. A Windows program that reaches a raw
+# `syscall` instruction is stopped, because real Windows has no Linux
+# kernel behind it. Wine hides that; this does not. A Mac program
+# that uses a Linux syscall number is stopped for the same reason.
+#
+# The machine is a block of memory:
+#     0 ..127   the sixteen registers, rax rcx rdx rbx rsp rbp rsi rdi r8..r15
+#   128         rip
+#   136         zero flag        144  sign flag
+#   152         carry flag       160  overflow flag
+#   168         how it stopped   176  where guest memory lives here
+#   184         how big that is  192  the collected output
+#   200         how much output  208  the exit code
+#   216         the lowest guest address   224  next free slab
+#   232         the word it could not read 240  which system it is
+#   248         the command line 256  the open files
+#   264         strict           272  it used a raw syscall
+#   280         where the stand-in library calls live
+#   288         their names      296  errors        304  how many errors
+#   312         how many stand-ins   320  the return sentinel
+#   328         the parity flag  336  the shifted base
+#   344         the adjust flag  352  the direction flag
+#   360 ..415   scratch for taking one instruction apart
+#   416         the repeat prefix    424  a lock prefix was seen
+#   432         a segment override   440  fs base   448  gs base
+#   456         the rotate carry     464  a fake clock
+#   472         a divide overflowed  480  the divide remainder
+#   488         where the sixteen vector registers live
+#   608         the old unit's control word   616  its top of stack
+#   624         where its eight registers live
+
+use mem
+use file
+use string
+use num
+use sys
+use list
+
+# How much memory a guest program gets. A program built on the C
+# library reserves large areas up front and then uses a little of
+# each, so this has to be roomy: half a gigabyte costs nothing here
+# until it is written to.
+X_MEM: 536870912
+X_OUT: 1048576
+
+# which system the program was built for
+X_LINUX: 0
+X_WIN: 1
+X_MAC: 2
+
+# why it stopped
+X_RUNNING: 0
+X_EXITED: 1
+X_BADOP: 2
+X_TOOLONG: 3
+X_RAWSYS: 4
+X_FAULT: 5
+X_OOB: 6
+
+x86_new:
+    m: mem_new(1024)
+    i: 0
+    as long as i < 1024
+        poke_byte(m, i, 0)
+        i: i + 1
+    # the sixteen vector registers, sixteen bytes each
+    poke_i64(m, 488, mem_new(256))
+    x: peek_i64(m, 488)
+    i: 0
+    as long as i < 256
+        poke_byte(x, i, 0)
+        i: i + 1
+    # the old unit's eight registers. Each is kept as an ordinary
+    # double here, which is eight bytes, plus a byte saying whether
+    # anything is in it at all.
+    poke_i64(m, 624, mem_new(128))
+    y: peek_i64(m, 624)
+    i: 0
+    as long as i < 128
+        poke_byte(y, i, 0)
+        i: i + 1
+    poke_i64(m, 608, X_FCW)
+    poke_i64(m, 616, 0)
+    poke_i64(m, 176, mem_new(X_MEM))
+    poke_i64(m, 184, X_MEM)
+    poke_i64(m, 192, mem_new(X_OUT))
+    poke_i64(m, 296, mem_new(X_OUT))
+    poke_i64(m, 256, list_new())
+    poke_i64(m, 288, list_new())
+    poke_i64(m, 320, 5583457307299373056)
+    return m
+
+# ---------------------------------------------------------------
+# sixty-four bit sums that wrap instead of stopping
+# ---------------------------------------------------------------
+#
+# Sovren stops the program when a sum runs off the end of a number,
+# which is the right thing for a program and the wrong thing for a
+# processor: a processor wraps. These do the sum in two halves so it
+# wraps the way the hardware does. Each has a quick path for the
+# ordinary case, because almost every sum here is an address.
+
+X_2_32: 4294967296
+X_2_31: 2147483648
+X_2_62: 4611686018427387904
+
+# the low thirty-two bits, always counted upwards
+x_lo v:
+    r: v % X_2_32
+    if r < 0
+        r: r + X_2_32
+    return r
+
+# the high thirty-two bits, always counted upwards
+x_hiu v:
+    l: x_lo(v)
+    h: (v - l) / X_2_32
+    if h < 0
+        h: h + X_2_32
+    return h
+
+# put two halves back together
+x_make hi lo:
+    h: hi % X_2_32
+    if h < 0
+        h: h + X_2_32
+    l: lo % X_2_32
+    if l < 0
+        l: l + X_2_32
+    if h >= X_2_31
+        h: h - X_2_32
+    return h * X_2_32 + l
+
+x_add a b:
+    if a > 0 - X_2_62
+        if a < X_2_62
+            if b > 0 - X_2_62
+                if b < X_2_62
+                    return a + b
+    l: x_lo(a) + x_lo(b)
+    h: x_hiu(a) + x_hiu(b) + l / X_2_32
+    return x_make(h, l)
+
+x_sub a b:
+    if a > 0 - X_2_62
+        if a < X_2_62
+            if b > 0 - X_2_62
+                if b < X_2_62
+                    return a - b
+    l: x_lo(a) - x_lo(b)
+    bor: 0
+    if l < 0
+        l: l + X_2_32
+        bor: 1
+    h: x_hiu(a) - x_hiu(b) - bor
+    return x_make(h, l)
+
+# the low sixty-four bits of a product, in sixteen bit pieces so no
+# single multiply can run off the end
+x_mul a b:
+    if a > 0 - X_2_31
+        if a < X_2_31
+            if b > 0 - X_2_31
+                if b < X_2_31
+                    return a * b
+    al: x_lo(a)
+    ah: x_hiu(a)
+    bl: x_lo(b)
+    bh: x_hiu(b)
+    a0: al % 65536
+    a1: al / 65536
+    a2: bl
+    b0: bl % 65536
+    b1: bl / 65536
+    a2: ah % 65536
+    a3: ah / 65536
+    b2: bh % 65536
+    b3: bh / 65536
+    p0: a0 * b0
+    p1: a0 * b1 + a1 * b0
+    p2: a0 * b2 + a1 * b1 + a2 * b0
+    p3: a0 * b3 + a1 * b2 + a2 * b1 + a3 * b0
+    c: p0
+    r0: c % 65536
+    c: p1 + c / 65536
+    r1: c % 65536
+    c: p2 + c / 65536
+    r2: c % 65536
+    c: p3 + c / 65536
+    r3: c % 65536
+    return x_make(r2 + r3 * 65536, r0 + r1 * 65536)
+
+# is a below b when both are read as counting upwards?
+x_ult a b:
+    if a < 0
+        if b < 0
+            if a < b
+                return 1
+            return 0
+        return 0
+    if b < 0
+        return 1
+    if a < b
+        return 1
+    return 0
+
+# shift one place right, counting upwards
+x_shr1 a:
+    if a >= 0
+        return a / 2
+    return (a + 9223372036854775807 + 1) / 2 + X_2_62
+
+# divide counting upwards
+x_udiv a b:
+    if b is 0
+        return 0
+    if a >= 0
+        if b > 0
+            return a / b
+    if b is 1
+        return a
+    if b < 0
+        if x_ult(a, b) is 1
+            return 0
+        return 1
+    q: x_shr1(a) / b
+    q: x_add(q, q)
+    r: x_sub(a, x_mul(q, b))
+    if x_ult(r, b) is 0
+        q: x_add(q, 1)
+    return q
+
+x_umod a b:
+    if b is 0
+        return 0
+    return x_sub(a, x_mul(x_udiv(a, b), b))
+
+# ---------------------------------------------------------------
+# shifting
+# ---------------------------------------------------------------
+#
+# Sovren has no shift operator, so these do it with multiply and
+# divide, in two halves, so a shift can never run off the end of a
+# number. Every shift on this processor is by 0..63.
+
+x_pow2 n:
+    if n <= 0
+        return 1
+    if n >= 63
+        return 0
+    r: 1
+    k: n
+    as long as k >= 8
+        r: r * 256
+        k: k - 8
+    as long as k > 0
+        r: r * 2
+        k: k - 1
+    return r
+
+# left, counting upwards, sixty-four bits wide
+x_shl64 v n:
+    if n <= 0
+        return v
+    if n >= 64
+        return 0
+    lo: x_lo(v)
+    hi: x_hiu(v)
+    if n < 32
+        k: x_pow2(n)
+        j: x_pow2(32 - n)
+        nh: (hi * k + lo / j) % X_2_32
+        nl: (lo * k) % X_2_32
+        return x_make(nh, nl)
+    k: x_pow2(n - 32)
+    return x_make((lo * k) % X_2_32, 0)
+
+# right, counting upwards
+x_shr64 v n:
+    if n <= 0
+        return v
+    if n >= 64
+        return 0
+    lo: x_lo(v)
+    hi: x_hiu(v)
+    if n < 32
+        k: x_pow2(n)
+        j: x_pow2(32 - n)
+        nl: (lo / k + (hi % k) * j) % X_2_32
+        return x_make(hi / k, nl)
+    k: x_pow2(n - 32)
+    return x_make(0, hi / k)
+
+# right, keeping the sign
+x_sar64 v n:
+    if n <= 0
+        return v
+    if v >= 0
+        return x_shr64(v, n)
+    if n >= 64
+        return 0 - 1
+    return x_not(x_shr64(x_not(v), n))
+
+# the same three at any width
+x_shl v n size:
+    if size is 8
+        return x_shl64(v, n)
+    return x_mask(x_shl64(x_mask(v, size), n), size)
+
+x_shr v n size:
+    if size is 8
+        return x_shr64(v, n)
+    return x_shr64(x_mask(v, size), n)
+
+x_sar v n size:
+    if size is 8
+        return x_sar64(v, n)
+    k: x_sval(v, size)
+    if k >= 0
+        return x_mask(x_shr64(k, n), size)
+    return x_mask(x_sar64(k, n), size)
+
+# how many bits wide, as a number
+x_bits size:
+    if size is 1
+        return 8
+    if size is 2
+        return 16
+    if size is 4
+        return 32
+    return 64
+
+# one bit out of a value
+x_bit v n:
+    if n < 0
+        return 0
+    if n > 63
+        return 0
+    # the remainder of a negative number is negative in Sovren, and
+    # a bit is only ever nought or one
+    r: x_shr64(v, n) % 2
+    if r < 0
+        return r + 2
+    return r
+
+# ---------------------------------------------------------------
+# and, or, xor: a bit at a time, in two halves
+# ---------------------------------------------------------------
+
+x_and32 a b:
+    r: 0
+    p: 1
+    i: 0
+    as long as i < 32
+        if a % 2 is 1
+            if b % 2 is 1
+                r: r + p
+        a: a / 2
+        b: b / 2
+        p: p * 2
+        i: i + 1
+    return r
+
+x_or32 a b:
+    r: 0
+    p: 1
+    i: 0
+    as long as i < 32
+        if a % 2 + b % 2 > 0
+            r: r + p
+        a: a / 2
+        b: b / 2
+        p: p * 2
+        i: i + 1
+    return r
+
+x_xor32 a b:
+    r: 0
+    p: 1
+    i: 0
+    as long as i < 32
+        if a % 2 is not b % 2
+            r: r + p
+        a: a / 2
+        b: b / 2
+        p: p * 2
+        i: i + 1
+    return r
+
+x_and a b:
+    if a is b
+        return a
+    if a is 0
+        return 0
+    if b is 0
+        return 0
+    if a is 0 - 1
+        return b
+    if b is 0 - 1
+        return a
+    return x_make(x_and32(x_hiu(a), x_hiu(b)), x_and32(x_lo(a), x_lo(b)))
+
+x_or a b:
+    if a is b
+        return a
+    if a is 0
+        return b
+    if b is 0
+        return a
+    return x_make(x_or32(x_hiu(a), x_hiu(b)), x_or32(x_lo(a), x_lo(b)))
+
+x_xor a b:
+    if a is b
+        return 0
+    if a is 0
+        return b
+    if b is 0
+        return a
+    return x_make(x_xor32(x_hiu(a), x_hiu(b)), x_xor32(x_lo(a), x_lo(b)))
+
+x_not a:
+    return x_xor(a, 0 - 1)
+
+# ---------------------------------------------------------------
+# widths: a byte, a half, a word, a whole register
+# ---------------------------------------------------------------
+
+x_mask v size:
+    if size is 8
+        return v
+    if size is 4
+        return x_lo(v)
+    if size is 1
+        r: v % 256
+        if r < 0
+            r: r + 256
+        return r
+    r: v % 65536
+    if r < 0
+        r: r + 65536
+    return r
+
+# is the top bit of this width set?
+x_neg_at v size:
+    if size is 8
+        if v < 0
+            return 1
+        return 0
+    if size is 4
+        if x_lo(v) >= X_2_31
+            return 1
+        return 0
+    if size is 1
+        if x_mask(v, 1) >= 128
+            return 1
+        return 0
+    if x_mask(v, 2) >= 32768
+        return 1
+    return 0
+
+# read this width as a number that can be below zero
+x_sval v size:
+    if size is 8
+        return v
+    k: x_mask(v, size)
+    if size is 4
+        if k >= X_2_31
+            return k - X_2_32
+        return k
+    if size is 1
+        if k >= 128
+            return k - 256
+        return k
+    if k >= 32768
+        return k - 65536
+    return k
+
+# ---------------------------------------------------------------
+# registers
+# ---------------------------------------------------------------
+
+x_reg m n:
+    return peek_i64(m, n * 8)
+
+x_setr m n v:
+    poke_i64(m, n * 8, v)
+    return 0
+
+# read a register at a given width
+x_rget m n size:
+    return x_mask(peek_i64(m, n * 8), size)
+
+# write a register at a given width. thirty-two bit writes clear the
+# top half, which is what the hardware does and a common surprise.
+x_rset m n size v:
+    if size is 8
+        poke_i64(m, n * 8, v)
+        return 0
+    if size is 4
+        poke_i64(m, n * 8, x_lo(v))
+        return 0
+    old: peek_i64(m, n * 8)
+    if size is 1
+        keep: x_sub(old, x_mask(old, 1))
+        poke_i64(m, n * 8, x_add(keep, x_mask(v, 1)))
+        return 0
+    keep: x_sub(old, x_mask(old, 2))
+    poke_i64(m, n * 8, x_add(keep, x_mask(v, 2)))
+    return 0
+
+# ---- the four odd byte registers ----
+#
+# Without a REX prefix, byte registers 4 to 7 are not the low bytes
+# of rsp, rbp, rsi and rdi. They are ah, ch, dh and bh: the SECOND
+# byte of rax, rcx, rdx and rbx. With any REX prefix at all they
+# become spl, bpl, sil and dil, the low bytes, instead. Getting this
+# wrong is silent: the value lands in a register nobody was reading.
+#
+# hasrex is 1 when the instruction carried a REX byte.
+
+x_b_get m n hasrex:
+    if hasrex is 0
+        if n >= 4
+            if n <= 7
+                return x_mask(x_shr64(peek_i64(m, (n - 4) * 8), 8), 1)
+    return x_mask(peek_i64(m, n * 8), 1)
+
+x_b_set m n hasrex v:
+    if hasrex is 0
+        if n >= 4
+            if n <= 7
+                r: n - 4
+                old: peek_i64(m, r * 8)
+                mid: x_mask(x_shr64(old, 8), 1)
+                keep: x_sub(old, x_shl64(mid, 8))
+                poke_i64(m, r * 8, x_add(keep, x_shl64(x_mask(v, 1), 8)))
+                return 0
+    old: peek_i64(m, n * 8)
+    keep: x_sub(old, x_mask(old, 1))
+    poke_i64(m, n * 8, x_add(keep, x_mask(v, 1)))
+    return 0
+
+x_rip m:
+    return peek_i64(m, 128)
+
+x_set_rip m v:
+    poke_i64(m, 128, v)
+    return 0
+
+x_sp m:
+    return peek_i64(m, 32)
+
+x_set_sp m v:
+    poke_i64(m, 32, v)
+    return 0
+
+x_base m:
+    return peek_i64(m, 176)
+
+x_low m:
+    return peek_i64(m, 216)
+
+# ---------------------------------------------------------------
+# guest memory. addresses are the real ones the program believes in,
+# so the lowest loaded address comes off first.
+# ---------------------------------------------------------------
+
+# Every access is checked. A program that runs off the end of its
+# memory must be reported, not allowed to reach past the block and
+# take the emulator down with it. The offset is folded back into
+# range so the read still has somewhere to go, and the fault is
+# recorded for the loop to notice.
+x_ck m off:
+    if off < 0
+        poke_i64(m, 168, X_FAULT)
+        poke_i64(m, 232, off)
+        return 0
+    if off >= X_MEM - 16
+        poke_i64(m, 168, X_FAULT)
+        poke_i64(m, 232, off)
+        return 0
+    return off
+
+# Slot 336 holds the block address with the lowest guest address
+# already taken off, so a guest address turns into a real one with a
+# single add. Working that out on every byte was the slowest part of
+# the whole emulator.
+x_rebase m:
+    poke_i64(m, 336, peek_i64(m, 176) - peek_i64(m, 216))
+    return 0
+
+# check a guest address and hand it straight back, so it can be used
+# as the index off the shifted base
+# Check a guest address and hand back one that is safe to use with
+# the shifted base. When the address is outside the block the fault
+# is recorded AND the address is folded to the bottom of the block,
+# so the read or write that follows lands somewhere harmless instead
+# of reaching past the end and taking the whole emulator down.
+x_ok m a:
+    lo: peek_i64(m, 216)
+    off: a - lo
+    if off < 0
+        poke_i64(m, 168, X_OOB)
+        poke_i64(m, 232, a)
+        return lo
+    if off >= X_MEM - 16
+        poke_i64(m, 168, X_OOB)
+        poke_i64(m, 232, a)
+        return lo
+    return a
+
+x_r8 m a:
+    return peek_byte(peek_i64(m, 336), x_ok(m, a))
+
+x_w8 m a v:
+    poke_byte(peek_i64(m, 336), x_ok(m, a), x_mask(v, 1))
+    return 0
+
+x_r16 m a:
+    return x_r8(m, a) + x_r8(m, a + 1) * 256
+
+x_r32 m a:
+    o: x_ok(m, a)
+    b: peek_i64(m, 336)
+    return peek_byte(b, o) + peek_byte(b, o + 1) * 256 + peek_byte(b, o + 2) * 65536 + peek_byte(b, o + 3) * 16777216
+
+x_r64 m a:
+    return peek_i64(peek_i64(m, 336) + x_ok(m, a), 0)
+
+x_w64 m a v:
+    poke_i64(peek_i64(m, 336) + x_ok(m, a), 0, v)
+    return 0
+
+x_w32 m a v:
+    u: x_lo(v)
+    o: x_ok(m, a)
+    b: peek_i64(m, 336)
+    poke_byte(b, o, u % 256)
+    poke_byte(b, o + 1, (u / 256) % 256)
+    poke_byte(b, o + 2, (u / 65536) % 256)
+    poke_byte(b, o + 3, (u / 16777216) % 256)
+    return 0
+
+x_w16 m a v:
+    u: x_mask(v, 2)
+    x_w8(m, a, u % 256)
+    x_w8(m, a + 1, u / 256)
+    return 0
+
+x_load m a size:
+    if size is 8
+        return x_r64(m, a)
+    if size is 4
+        return x_r32(m, a)
+    if size is 1
+        return x_r8(m, a)
+    return x_r16(m, a)
+
+x_store m a size v:
+    if size is 8
+        return x_w64(m, a, v)
+    if size is 4
+        return x_w32(m, a, v)
+    if size is 1
+        return x_w8(m, a, v)
+    return x_w16(m, a, v)
+
+# a signed byte, and a signed and unsigned four bytes, out of the code
+x_i8 m a:
+    v: x_r8(m, a)
+    if v >= 128
+        return v - 256
+    return v
+
+x_i32 m a:
+    v: x_r32(m, a)
+    if v >= X_2_31
+        return v - X_2_32
+    return v
+
+# ---------------------------------------------------------------
+# what the program printed
+# ---------------------------------------------------------------
+
+x_say m p n:
+    o: peek_i64(m, 192)
+    used: peek_i64(m, 200)
+    i: 0
+    as long as i < n
+        if used < X_OUT - 2
+            poke_byte(o, used, x_r8(m, p + i))
+            used: used + 1
+        i: i + 1
+    poke_byte(o, used, 0)
+    poke_i64(m, 200, used)
+    return 0
+
+x_grumble m p n:
+    o: peek_i64(m, 296)
+    used: peek_i64(m, 304)
+    i: 0
+    as long as i < n
+        if used < X_OUT - 2
+            poke_byte(o, used, x_r8(m, p + i))
+            used: used + 1
+        i: i + 1
+    poke_byte(o, used, 0)
+    poke_i64(m, 304, used)
+    return 0
+
+x86_out m:
+    return as text peek_i64(m, 192)
+
+x86_err m:
+    return as text peek_i64(m, 296)
+
+x86_code m:
+    return peek_i64(m, 208)
+
+x86_why m:
+    return peek_i64(m, 168)
+
+x86_bad m:
+    return peek_i64(m, 232)
+
+x86_used_syscall m:
+    return peek_i64(m, 272)
+
+# ---------------------------------------------------------------
+# the four flags
+# ---------------------------------------------------------------
+
+x_zf m:
+    return peek_i64(m, 136)
+
+x_sf m:
+    return peek_i64(m, 144)
+
+x_cf m:
+    return peek_i64(m, 152)
+
+x_of m:
+    return peek_i64(m, 160)
+
+x_pf m:
+    return peek_i64(m, 328)
+
+x_af m:
+    return peek_i64(m, 344)
+
+x_df m:
+    return peek_i64(m, 352)
+
+# The parity flag counts the one bits in the LOW BYTE only, whatever
+# the width of the sum, and is set when that count is even. Real
+# programs test it after comparing floating point numbers.
+x_parity v:
+    b: x_mask(v, 1)
+    n: 0
+    i: 0
+    as long as i < 8
+        if b % 2 is 1
+            n: n + 1
+        b: b / 2
+        i: i + 1
+    if n % 2 is 0
+        return 1
+    return 0
+
+x_set_zs m r size:
+    z: 0
+    if x_mask(r, size) is 0
+        z: 1
+    poke_i64(m, 136, z)
+    poke_i64(m, 144, x_neg_at(r, size))
+    poke_i64(m, 328, x_parity(r))
+    return 0
+
+# after a subtract or a compare
+x_flags_sub m a b size:
+    ua: x_mask(a, size)
+    ub: x_mask(b, size)
+    r: x_mask(x_sub(ua, ub), size)
+    x_set_zs(m, r, size)
+    c: 0
+    if size is 8
+        c: x_ult(ua, ub)
+    if not
+        if ua < ub
+            c: 1
+    poke_i64(m, 152, c)
+    na: x_neg_at(ua, size)
+    nb: x_neg_at(ub, size)
+    nr: x_neg_at(r, size)
+    o: 0
+    if na is not nb
+        if nr is not na
+            o: 1
+    poke_i64(m, 160, o)
+    # the adjust flag: a borrow out of the low four bits
+    af: 0
+    if ua % 16 < ub % 16
+        af: 1
+    poke_i64(m, 344, af)
+    return r
+
+# after an add
+x_flags_add m a b size:
+    ua: x_mask(a, size)
+    ub: x_mask(b, size)
+    r: x_mask(x_add(ua, ub), size)
+    x_set_zs(m, r, size)
+    c: 0
+    if size is 8
+        c: x_ult(r, ua)
+    if not
+        if ua + ub >= x_wide(size)
+            c: 1
+    poke_i64(m, 152, c)
+    na: x_neg_at(ua, size)
+    nb: x_neg_at(ub, size)
+    nr: x_neg_at(r, size)
+    o: 0
+    if na is nb
+        if nr is not na
+            o: 1
+    poke_i64(m, 160, o)
+    # the adjust flag: a carry out of the low four bits
+    af: 0
+    if ua % 16 + ub % 16 > 15
+        af: 1
+    poke_i64(m, 344, af)
+    return r
+
+# add with the carry joining in, and subtract with a borrow
+x_flags_adc m a b size cin:
+    ua: x_mask(a, size)
+    ub: x_mask(b, size)
+    r: x_mask(x_add(x_add(ua, ub), cin), size)
+    x_set_zs(m, r, size)
+    c: 0
+    if size is 8
+        # a carry happened if the answer did not get bigger
+        if cin is 1
+            if x_ult(r, ua) is 1
+                c: 1
+            if r is ua
+                c: 1
+        if not
+            c: x_ult(r, ua)
+    if not
+        if ua + ub + cin >= x_wide(size)
+            c: 1
+    poke_i64(m, 152, c)
+    na: x_neg_at(ua, size)
+    nb: x_neg_at(ub, size)
+    nr: x_neg_at(r, size)
+    o: 0
+    if na is nb
+        if nr is not na
+            o: 1
+    poke_i64(m, 160, o)
+    af: 0
+    if ua % 16 + ub % 16 + cin > 15
+        af: 1
+    poke_i64(m, 344, af)
+    return r
+
+x_flags_sbb m a b size cin:
+    ua: x_mask(a, size)
+    ub: x_mask(b, size)
+    r: x_mask(x_sub(x_sub(ua, ub), cin), size)
+    x_set_zs(m, r, size)
+    c: 0
+    if size is 8
+        if cin is 1
+            if x_ult(ua, ub) is 1
+                c: 1
+            if ua is ub
+                c: 1
+        if not
+            c: x_ult(ua, ub)
+    if not
+        if ua < ub + cin
+            c: 1
+    poke_i64(m, 152, c)
+    na: x_neg_at(ua, size)
+    nb: x_neg_at(ub, size)
+    nr: x_neg_at(r, size)
+    o: 0
+    if na is not nb
+        if nr is not na
+            o: 1
+    poke_i64(m, 160, o)
+    af: 0
+    if ua % 16 < ub % 16 + cin
+        af: 1
+    poke_i64(m, 344, af)
+    return r
+
+x_wide size:
+    if size is 1
+        return 256
+    if size is 2
+        return 65536
+    return X_2_32
+
+# after and, or, xor, test: no carry and no overflow
+x_flags_logic m r size:
+    x_set_zs(m, r, size)
+    poke_i64(m, 152, 0)
+    poke_i64(m, 160, 0)
+    return x_mask(r, size)
+
+# ---------------------------------------------------------------
+# the sixteen conditions, by their number in the opcode
+# ---------------------------------------------------------------
+
+x_cond m c:
+    if c is 0
+        return x_of(m)
+    if c is 1
+        return 1 - x_of(m)
+    if c is 2
+        return x_cf(m)
+    if c is 3
+        return 1 - x_cf(m)
+    if c is 4
+        return x_zf(m)
+    if c is 5
+        return 1 - x_zf(m)
+    if c is 6
+        if x_cf(m) is 1
+            return 1
+        return x_zf(m)
+    if c is 7
+        if x_cf(m) is 1
+            return 0
+        return 1 - x_zf(m)
+    if c is 8
+        return x_sf(m)
+    if c is 9
+        return 1 - x_sf(m)
+    if c is 10
+        return x_pf(m)
+    if c is 11
+        return 1 - x_pf(m)
+    if c is 12
+        if x_sf(m) is not x_of(m)
+            return 1
+        return 0
+    if c is 13
+        if x_sf(m) is x_of(m)
+            return 1
+        return 0
+    if c is 14
+        if x_zf(m) is 1
+            return 1
+        if x_sf(m) is not x_of(m)
+            return 1
+        return 0
+    if x_zf(m) is 0
+        if x_sf(m) is x_of(m)
+            return 1
+    return 0
+
+# ---------------------------------------------------------------
+# taking an instruction apart
+# ---------------------------------------------------------------
+#
+# The byte after the opcode says which registers, and may be followed
+# by another byte and up to four more for an offset. The answer goes
+# into the scratch slots because a job hands back one value.
+#
+#   360  is the second operand a register?
+#   368  which register the reg field names
+#   376  the register number, or the address
+#   384  where the next byte is
+
+x_md_isreg m:
+    return peek_i64(m, 360)
+
+x_md_reg m:
+    return peek_i64(m, 368)
+
+x_md_rm m:
+    return peek_i64(m, 376)
+
+x_md_next m:
+    return peek_i64(m, 384)
+
+# rex is the four low bits of the prefix, or zero when there was none.
+# immlen is how many bytes of number follow, which only matters for
+# the form that counts from the end of the instruction.
+x_modrm m at rex immlen:
+    b: x_r8(m, at)
+    mod: b / 64
+    reg: (b / 8) % 8 + ((rex / 4) % 2) * 8
+    rm: b % 8
+    p: at + 1
+    poke_i64(m, 368, reg)
+    if mod is 3
+        poke_i64(m, 360, 1)
+        poke_i64(m, 376, rm + (rex % 2) * 8)
+        poke_i64(m, 384, p)
+        return p
+    poke_i64(m, 360, 0)
+    ea: 0
+    if rm is 4
+        sib: x_r8(m, p)
+        p: p + 1
+        sc: sib / 64
+        ix: (sib / 8) % 8 + ((rex / 2) % 2) * 8
+        bs: sib % 8 + (rex % 2) * 8
+        if ix is not 4
+            ea: x_mul(x_reg(m, ix), x_scale(sc))
+        if bs % 8 is 5
+            if mod is 0
+                ea: x_add(ea, x_i32(m, p))
+                p: p + 4
+            if not
+                ea: x_add(ea, x_reg(m, bs))
+        if not
+            ea: x_add(ea, x_reg(m, bs))
+    if not
+        if rm is 5
+            if mod is 0
+                d: x_i32(m, p)
+                p: p + 4
+                poke_i64(m, 376, x_add(x_add(p, immlen), d))
+                poke_i64(m, 384, p)
+                return p
+        ea: x_reg(m, rm + (rex % 2) * 8)
+    if mod is 1
+        ea: x_add(ea, x_i8(m, p))
+        p: p + 1
+    if mod is 2
+        ea: x_add(ea, x_i32(m, p))
+        p: p + 4
+    # fs and gs move the whole address. Thread-local storage lives
+    # behind fs on Linux and gs on Windows and Mac.
+    sg: peek_i64(m, 432)
+    if sg is 1
+        ea: x_add(ea, peek_i64(m, 440))
+    if sg is 2
+        ea: x_add(ea, peek_i64(m, 448))
+    poke_i64(m, 376, ea)
+    poke_i64(m, 384, p)
+    return p
+
+x_scale sc:
+    if sc is 0
+        return 1
+    if sc is 1
+        return 2
+    if sc is 2
+        return 4
+    return 8
+
+# read the second operand, register or memory
+x_rm_get m size:
+    if peek_i64(m, 360) is 1
+        if size is 1
+            return x_b_get(m, peek_i64(m, 376), peek_i64(m, 392))
+        return x_rget(m, peek_i64(m, 376), size)
+    return x_load(m, peek_i64(m, 376), size)
+
+# write the second operand
+x_rm_set m size v:
+    if peek_i64(m, 360) is 1
+        if size is 1
+            return x_b_set(m, peek_i64(m, 376), peek_i64(m, 392), v)
+        return x_rset(m, peek_i64(m, 376), size, v)
+    return x_store(m, peek_i64(m, 376), size, v)
+
+# the register named by the reg field, at a width
+x_reg_get m size:
+    if size is 1
+        return x_b_get(m, peek_i64(m, 368), peek_i64(m, 392))
+    return x_rget(m, peek_i64(m, 368), size)
+
+x_reg_set m size v:
+    if size is 1
+        return x_b_set(m, peek_i64(m, 368), peek_i64(m, 392), v)
+    return x_rset(m, peek_i64(m, 368), size, v)
+
+# ---------------------------------------------------------------
+# the stack
+# ---------------------------------------------------------------
+
+x_push m v:
+    sp: x_sub(x_sp(m), 8)
+    x_set_sp(m, sp)
+    x_w64(m, sp, v)
+    return 0
+
+x_pop m:
+    sp: x_sp(m)
+    v: x_r64(m, sp)
+    x_set_sp(m, x_add(sp, 8))
+    return v
+
+# ---------------------------------------------------------------
+# one instruction
+# ---------------------------------------------------------------
+
+# returns 1 to keep going, 0 to stop
+x_step m:
+    pc: x_rip(m)
+    p: pc
+    rex: 0
+    hasrex: 0
+    size: 4
+    rep: 0
+    seg: 0
+    poke_i64(m, 424, 0)
+
+    # ---- the prefixes ----
+    # Almost every instruction has either no prefix at all or a
+    # single REX, so those two are settled first without going near
+    # the loop below. The loop is correct but it asks a dozen
+    # questions per instruction, and this is the hottest code here.
+    b: x_r8(m, p)
+    if b >= 64
+        if b <= 79
+            n2: x_r8(m, p + 1)
+            if x_is_prefix(n2) is 0
+                rex: b - 64
+                hasrex: 1
+                if rex >= 8
+                    size: 8
+                poke_i64(m, 392, 1)
+                poke_i64(m, 416, 0)
+                poke_i64(m, 432, 0)
+                return x_op(m, n2, p + 2, rex, size, 1)
+    if x_is_prefix(b) is 0
+        poke_i64(m, 392, 0)
+        poke_i64(m, 416, 0)
+        poke_i64(m, 432, 0)
+        return x_op(m, b, p + 1, 0, 4, 0)
+
+    # ---- the slow way, when there really are prefixes ----
+    # Any number, in any order, and REX must be the last one before
+    # the opcode. Anything else after a REX cancels it.
+    more: 1
+    as long as more is 1
+        b: x_r8(m, p)
+        if b is 102
+            size: 2
+            rex: 0
+            hasrex: 0
+            p: p + 1
+        if not
+            if b is 243
+                rep: 1
+                rex: 0
+                hasrex: 0
+                p: p + 1
+            if not
+                if b is 242
+                    rep: 2
+                    rex: 0
+                    hasrex: 0
+                    p: p + 1
+                if not
+                    if b is 240
+                        poke_i64(m, 424, 1)
+                        rex: 0
+                        hasrex: 0
+                        p: p + 1
+                    if not
+                        if b is 100
+                            seg: 1
+                            rex: 0
+                            hasrex: 0
+                            p: p + 1
+                        if not
+                            if b is 101
+                                seg: 2
+                                rex: 0
+                                hasrex: 0
+                                p: p + 1
+                            if not
+                                if b is 46
+                                    p: p + 1
+                                if not
+                                    if b is 62
+                                        p: p + 1
+                                    if not
+                                        if b is 54
+                                            p: p + 1
+                                        if not
+                                            if b is 38
+                                                p: p + 1
+                                            if not
+                                                if b is 103
+                                                    p: p + 1
+                                                if not
+                                                    if b >= 64
+                                                        if b <= 79
+                                                            rex: b - 64
+                                                            hasrex: 1
+                                                            p: p + 1
+                                                            if rex >= 8
+                                                                size: 8
+                                                        if not
+                                                            more: 0
+                                                    if not
+                                                        more: 0
+    b: x_r8(m, p)
+    poke_i64(m, 392, hasrex)
+    poke_i64(m, 416, rep)
+    poke_i64(m, 432, seg)
+    p: p + 1
+
+    # a string instruction with a repeat in front is its own thing
+    if rep is not 0
+        if x_is_string(b) is 1
+            return x_string(m, b, p, size, rep)
+    return x_op(m, b, p, rex, size, hasrex)
+
+# is this byte a prefix of any kind?
+x_is_prefix b:
+    if b is 102
+        return 1
+    if b is 243
+        return 1
+    if b is 242
+        return 1
+    if b is 240
+        return 1
+    if b is 100
+        return 1
+    if b is 101
+        return 1
+    if b is 46
+        return 1
+    if b is 62
+        return 1
+    if b is 54
+        return 1
+    if b is 38
+        return 1
+    if b is 103
+        return 1
+    if b >= 64
+        if b <= 79
+            return 1
+    return 0
+
+# the opcode itself, with the prefixes already dealt with
+x_op m b p rex size hasrex:
+
+    # mov r/m, r   and   mov r, r/m : more than half of all code
+    if b is 137
+        p: x_modrm(m, p, rex, 0)
+        x_rm_set(m, size, x_rget(m, x_md_reg(m), size))
+        return x_go(m, p)
+    if b is 139
+        p: x_modrm(m, p, rex, 0)
+        x_rset(m, x_md_reg(m), size, x_rm_get(m, size))
+        return x_go(m, p)
+    if b is 136
+        p: x_modrm(m, p, rex, 0)
+        x_rm_set(m, 1, x_reg_get(m, 1))
+        return x_go(m, p)
+    if b is 138
+        p: x_modrm(m, p, rex, 0)
+        x_reg_set(m, 1, x_rm_get(m, 1))
+        return x_go(m, p)
+
+    # push and pop a register
+    if b >= 80
+        if b <= 87
+            x_push(m, x_reg(m, b - 80 + (rex % 2) * 8))
+            return x_go(m, p)
+    if b >= 88
+        if b <= 95
+            x_setr(m, b - 88 + (rex % 2) * 8, x_pop(m))
+            return x_go(m, p)
+
+    # a number straight into a register
+    if b >= 184
+        if b <= 191
+            r: b - 184 + (rex % 2) * 8
+            if size is 8
+                x_setr(m, r, x_make(x_r32(m, p + 4), x_r32(m, p)))
+                return x_go(m, p + 8)
+            if size is 2
+                x_rset(m, r, 2, x_r16(m, p))
+                return x_go(m, p + 2)
+            x_rset(m, r, 4, x_r32(m, p))
+            return x_go(m, p + 4)
+    if b >= 176
+        if b <= 183
+            r: b - 176 + (rex % 2) * 8
+            x_b_set(m, r, hasrex, x_r8(m, p))
+            return x_go(m, p + 1)
+
+    # call, jump, return
+    if b is 232
+        d: x_i32(m, p)
+        nx: p + 4
+        x_push(m, nx)
+        return x_go(m, x_add(nx, d))
+    if b is 233
+        d: x_i32(m, p)
+        return x_go(m, x_add(p + 4, d))
+    if b is 235
+        d: x_i8(m, p)
+        return x_go(m, x_add(p + 1, d))
+    if b is 195
+        v: x_pop(m)
+        if v is peek_i64(m, 320)
+            poke_i64(m, 168, X_EXITED)
+            return 0
+        return x_go(m, v)
+    if b is 201
+        x_set_sp(m, x_reg(m, 5))
+        x_setr(m, 5, x_pop(m))
+        return x_go(m, p)
+
+    # the two byte opcodes
+    if b is 15
+        return x_two(m, p, rex, size)
+
+    # compare and test, the shapes the back end emits
+    if b is 57
+        p: x_modrm(m, p, rex, 0)
+        x_flags_sub(m, x_rm_get(m, size), x_rget(m, x_md_reg(m), size), size)
+        return x_go(m, p)
+    if b is 59
+        p: x_modrm(m, p, rex, 0)
+        x_flags_sub(m, x_rget(m, x_md_reg(m), size), x_rm_get(m, size), size)
+        return x_go(m, p)
+    if b is 56
+        p: x_modrm(m, p, rex, 0)
+        x_flags_sub(m, x_rm_get(m, 1), x_reg_get(m, 1), 1)
+        return x_go(m, p)
+    if b is 58
+        p: x_modrm(m, p, rex, 0)
+        x_flags_sub(m, x_reg_get(m, 1), x_rm_get(m, 1), 1)
+        return x_go(m, p)
+    if b is 61
+        x_flags_sub(m, x_rget(m, 0, size), x_imm(m, p, size), size)
+        return x_go(m, p + x_immlen(size))
+    if b is 60
+        x_flags_sub(m, x_rget(m, 0, 1), x_r8(m, p), 1)
+        return x_go(m, p + 1)
+    if b is 133
+        p: x_modrm(m, p, rex, 0)
+        x_flags_logic(m, x_and(x_rm_get(m, size), x_rget(m, x_md_reg(m), size)), size)
+        return x_go(m, p)
+    if b is 132
+        p: x_modrm(m, p, rex, 0)
+        x_flags_logic(m, x_and(x_rm_get(m, 1), x_reg_get(m, 1)), 1)
+        return x_go(m, p)
+
+    # a short jump on a condition
+    if b >= 112
+        if b <= 127
+            d: x_i8(m, p)
+            if x_cond(m, b - 112) is 1
+                return x_go(m, x_add(p + 1, d))
+            return x_go(m, p + 1)
+
+    return x_step2(m, b, p, rex, size)
+
+# move the instruction pointer on and say carry on
+x_go m to:
+    poke_i64(m, 128, to)
+    return 1
+
+# ---- the number written into an instruction ----
+#
+# An instruction that carries a number carries FOUR bytes at eight
+# and at thirty-two bits wide, but only TWO at sixteen. Reading four
+# every time walks past the end of the instruction and everything
+# after it decodes as rubbish. The 66 prefix is rare in code a
+# compiler emits, which is why this went unnoticed until a C library
+# turned up using it.
+x_imm m p size:
+    if size is 2
+        return x_r16(m, p)
+    return x_sext32(x_r32(m, p), size)
+
+# how many bytes that number took
+x_immlen size:
+    if size is 2
+        return 2
+    return 4
+
+# widen a four byte number to the width in use
+x_sext32 v size:
+    if size is 8
+        if v >= X_2_31
+            return v - X_2_32
+        return v
+    return v
+
+# ---------------------------------------------------------------
+# the rest of the instructions
+# ---------------------------------------------------------------
+
+x_step2 m b p rex size:
+    # ---- the eight sums, in all six shapes ----
+    #
+    # add or adc sbb and sub xor cmp are laid out in a block: the
+    # opcode is op*8 + shape, where shape 0..5 is
+    #   0  r/m8, r8      1  r/m, r      2  r8, r/m8
+    #   3  r, r/m        4  al, imm8    5  rax, imm32
+    # Doing this once as a table instead of forty-eight times by
+    # hand is shorter and cannot disagree with itself.
+    if b < 64
+        shape: b % 8
+        if shape < 6
+            op: b / 8
+            if shape is 4
+                x_rset(m, 0, 1, x_alu(m, op, x_rget(m, 0, 1), x_r8(m, p), 1))
+                return x_go(m, p + 1)
+            if shape is 5
+                x_rset(m, 0, size, x_alu(m, op, x_rget(m, 0, size), x_imm(m, p, size), size))
+                return x_go(m, p + x_immlen(size))
+            w: size
+            if shape % 2 is 0
+                w: 1
+            p: x_modrm(m, p, rex, 0)
+            if shape < 2
+                r: x_alu(m, op, x_rm_get(m, w), x_reg_get(m, w), w)
+                if op is not 7
+                    x_rm_set(m, w, r)
+                return x_go(m, p)
+            r: x_alu(m, op, x_reg_get(m, w), x_rm_get(m, w), w)
+            if op is not 7
+                x_reg_set(m, w, r)
+            return x_go(m, p)
+
+    # the group where the top bits of the second byte pick the sum
+    if b is 129
+        p: x_modrm(m, p, rex, x_immlen(size))
+        return x_group1(m, p, size, x_imm(m, p, size), x_immlen(size))
+    if b is 131
+        p: x_modrm(m, p, rex, 1)
+        return x_group1(m, p, size, x_i8(m, p), 1)
+    if b is 128
+        p: x_modrm(m, p, rex, 1)
+        return x_group1(m, p, 1, x_r8(m, p), 1)
+
+    # mov with the number written in
+    if b is 199
+        p: x_modrm(m, p, rex, x_immlen(size))
+        x_rm_set(m, size, x_imm(m, p, size))
+        return x_go(m, p + x_immlen(size))
+    if b is 198
+        p: x_modrm(m, p, rex, 1)
+        x_rm_set(m, 1, x_r8(m, p))
+        return x_go(m, p + 1)
+
+    # the address of something, without touching it
+    if b is 141
+        p: x_modrm(m, p, rex, 0)
+        x_rset(m, x_md_reg(m), size, x_md_rm(m))
+        return x_go(m, p)
+
+    # push a number
+    if b is 104
+        x_push(m, x_i32(m, p))
+        return x_go(m, p + 4)
+    if b is 106
+        x_push(m, x_i8(m, p))
+        return x_go(m, p + 1)
+
+    # swap rax with another register
+    if b >= 144
+        if b <= 151
+            r: b - 144 + (rex % 2) * 8
+            if r is 0
+                return x_go(m, p)
+            t: x_reg(m, 0)
+            x_setr(m, 0, x_reg(m, r))
+            x_setr(m, r, t)
+            return x_go(m, p)
+
+    # spread the sign of rax across rdx, ready for a divide
+    if b is 153
+        if size is 8
+            if x_reg(m, 0) < 0
+                x_setr(m, 2, 0 - 1)
+            if not
+                x_setr(m, 2, 0)
+            return x_go(m, p)
+        if x_rget(m, 0, 4) >= X_2_31
+            x_rset(m, 2, 4, X_2_32 - 1)
+        if not
+            x_rset(m, 2, 4, 0)
+        return x_go(m, p)
+
+    # widen four signed bytes into the whole register
+    if b is 99
+        p: x_modrm(m, p, rex, 0)
+        x_rset(m, x_md_reg(m), 8, x_sval(x_rm_get(m, 4), 4))
+        return x_go(m, p)
+
+    # multiply with the number written in
+    if b is 105
+        p: x_modrm(m, p, rex, x_immlen(size))
+        x_imul2(m, size, x_rm_get(m, size), x_imm(m, p, size))
+        return x_go(m, p + x_immlen(size))
+    if b is 107
+        p: x_modrm(m, p, rex, 1)
+        x_imul2(m, size, x_rm_get(m, size), x_i8(m, p))
+        return x_go(m, p + 1)
+
+    # rotate and shift
+    if b is 209
+        return x_group2(m, p, rex, size, 1, 0)
+    if b is 208
+        return x_group2(m, p, rex, 1, 1, 0)
+    if b is 211
+        return x_group2(m, p, rex, size, x_mask(x_reg(m, 1), 1), 0)
+    if b is 210
+        return x_group2(m, p, rex, 1, x_mask(x_reg(m, 1), 1), 0)
+    if b is 193
+        return x_group2(m, p, rex, size, 0 - 1, 1)
+    if b is 192
+        return x_group2(m, p, rex, 1, 0 - 1, 1)
+
+    # the string instructions, without a repeat in front
+    if x_is_string(b) is 1
+        return x_string(m, b, p, size, 0)
+
+    # test, not, negate, multiply, divide
+    if b is 247
+        return x_group3(m, p, rex, size)
+    if b is 246
+        return x_group3(m, p, rex, 1)
+
+    # step up, step down, call, jump, push, through a register
+    if b is 255
+        return x_group5(m, p, rex, size)
+    if b is 254
+        return x_group5(m, p, rex, 1)
+
+    # test with a number written in
+    if b is 169
+        x_flags_logic(m, x_and(x_rget(m, 0, size), x_imm(m, p, size)), size)
+        return x_go(m, p + x_immlen(size))
+    if b is 168
+        x_flags_logic(m, x_and(x_rget(m, 0, 1), x_r8(m, p)), 1)
+        return x_go(m, p + 1)
+
+    # swap two registers or a register and memory
+    if b is 135
+        p: x_modrm(m, p, rex, 0)
+        t: x_rm_get(m, size)
+        x_rm_set(m, size, x_reg_get(m, size))
+        x_reg_set(m, size, t)
+        return x_go(m, p)
+    if b is 134
+        p: x_modrm(m, p, rex, 0)
+        t: x_rm_get(m, 1)
+        x_rm_set(m, 1, x_reg_get(m, 1))
+        x_reg_set(m, 1, t)
+        return x_go(m, p)
+
+    # widen rax into itself: cbw, cwde, cdqe
+    if b is 152
+        if size is 8
+            x_setr(m, 0, x_sval(x_rget(m, 0, 4), 4))
+            return x_go(m, p)
+        if size is 2
+            x_rset(m, 0, 2, x_sval(x_rget(m, 0, 1), 1))
+            return x_go(m, p)
+        x_rset(m, 0, 4, x_sval(x_rget(m, 0, 2), 2))
+        return x_go(m, p)
+
+    # the flag instructions
+    if b is 248
+        poke_i64(m, 152, 0)
+        return x_go(m, p)
+    if b is 249
+        poke_i64(m, 152, 1)
+        return x_go(m, p)
+    if b is 245
+        poke_i64(m, 152, 1 - x_cf(m))
+        return x_go(m, p)
+    if b is 252
+        poke_i64(m, 352, 0)
+        return x_go(m, p)
+    if b is 253
+        poke_i64(m, 352, 1)
+        return x_go(m, p)
+    if b is 250
+        return x_go(m, p)
+    if b is 251
+        return x_go(m, p)
+
+    # push and pop the flags
+    if b is 156
+        x_push(m, x_flags_word(m))
+        return x_go(m, p)
+    if b is 157
+        x_set_flags_word(m, x_pop(m))
+        return x_go(m, p)
+
+    # sahf and lahf
+    if b is 158
+        x_set_flags_word(m, x_b_get(m, 0, 0))
+        return x_go(m, p)
+    if b is 159
+        x_b_set(m, 0, 0, x_add(x_flags_word(m) % 256, 2))
+        return x_go(m, p)
+
+    # return and drop some of the stack with it
+    if b is 194
+        n: x_r16(m, p)
+        v: x_pop(m)
+        x_set_sp(m, x_add(x_sp(m), n))
+        if v is peek_i64(m, 320)
+            poke_i64(m, 168, X_EXITED)
+            return 0
+        return x_go(m, v)
+
+    # a jump if rcx has run down to nothing
+    if b is 227
+        d: x_i8(m, p)
+        if x_reg(m, 1) is 0
+            return x_go(m, x_add(p + 1, d))
+        return x_go(m, p + 1)
+
+    # loop, loope, loopne
+    if b >= 224
+        if b <= 226
+            d: x_i8(m, p)
+            c: x_sub(x_reg(m, 1), 1)
+            x_setr(m, 1, c)
+            go: 0
+            if c is not 0
+                go: 1
+            if b is 225
+                if x_zf(m) is 0
+                    go: 0
+            if b is 224
+                if x_zf(m) is 1
+                    go: 0
+            if go is 1
+                return x_go(m, x_add(p + 1, d))
+            return x_go(m, p + 1)
+
+    # a call the program will never come back from, on purpose
+    if b is 204
+        poke_i64(m, 168, X_FAULT)
+        return 0
+
+    # ---- the old maths unit ----
+    #
+    # Before there were vector registers, decimals were done on a
+    # separate stack machine. A modern compiler does not use it for
+    # arithmetic any more, but the C library still reads and writes
+    # its control word to find out which way numbers are rounded.
+    # Answering that is enough; the rest of it is not needed.
+    if b >= 216
+        if b <= 223
+            return x_x87(m, p, rex)
+
+    # nothing to do
+    if b is 144
+        return x_go(m, p)
+
+    # halt. A program does not use this, but the instruction checker
+    # puts one after the bytes it is testing so the run ends cleanly.
+    if b is 244
+        poke_i64(m, 168, X_EXITED)
+        return 0
+
+    poke_i64(m, 168, X_BADOP)
+    poke_i64(m, 232, b)
+    return 0
+
+# ---------------------------------------------------------------
+# the groups, where the middle three bits of the second byte choose
+# ---------------------------------------------------------------
+
+# imul with two or three operands keeps only the low half, and sets
+# the carry and overflow when the answer did not fit in it.
+x_imul2 m size a b:
+    if size is 8
+        lo: x_mul(a, b)
+        hi: x_mulhi_sg(a, b)
+        c: 1
+        if hi is 0
+            if lo >= 0
+                c: 0
+        if hi is 0 - 1
+            if lo < 0
+                c: 0
+        x_reg_set(m, 8, lo)
+        x_set_zs(m, lo, 8)
+        poke_i64(m, 152, c)
+        poke_i64(m, 160, c)
+        return lo
+    r: x_sval(a, size) * x_sval(b, size)
+    half: x_wide(size) / 2
+    c: 1
+    if r >= 0 - half
+        if r < half
+            c: 0
+    lo: x_mask(r, size)
+    x_reg_set(m, size, lo)
+    x_set_zs(m, lo, size)
+    poke_i64(m, 152, c)
+    poke_i64(m, 160, c)
+    return lo
+
+# one of the eight sums, with the flags it leaves behind
+x_alu m op a b size:
+    if op is 0
+        return x_flags_add(m, a, b, size)
+    if op is 1
+        return x_flags_logic(m, x_or(a, b), size)
+    if op is 2
+        return x_flags_adc(m, a, b, size, x_cf(m))
+    if op is 3
+        return x_flags_sbb(m, a, b, size, x_cf(m))
+    if op is 4
+        return x_flags_logic(m, x_and(a, b), size)
+    if op is 5
+        return x_flags_sub(m, a, b, size)
+    if op is 6
+        return x_flags_logic(m, x_xor(a, b), size)
+    return x_flags_sub(m, a, b, size)
+
+x_group1 m p size imm ilen:
+    op: x_md_reg(m) % 8
+    r: x_alu(m, op, x_rm_get(m, size), imm, size)
+    if op is not 7
+        x_rm_set(m, size, r)
+    return x_go(m, p + ilen)
+
+# The old maths unit, as far as anything still uses it. The control
+# word says how to round: 0x037F is the usual setting, meaning round
+# to nearest with the full width.
+X_FCW: 895
+
+# ---------------------------------------------------------------
+# the old maths unit
+# ---------------------------------------------------------------
+#
+# Before there were vector registers, decimals were done on a stack
+# of eight registers. A modern compiler only reaches for it when a
+# program asks for `long double`, and for reading the rounding mode,
+# but both of those do happen, so it is here.
+#
+# The stack is a ring of eight with a pointer that counts DOWN as
+# things are pushed. st(0) is the top, st(1) the one below, and so
+# on. The real thing keeps eighty bits per register; this keeps
+# sixty-four. That is the same arithmetic to fifty-three places
+# rather than sixty-four, which is exactly what a program gets on
+# any machine where `long double` and `double` are the same size,
+# and is enough for everything short of deliberate precision games.
+
+# where a numbered register sits, going round the ring
+x_st_at m i:
+    return (peek_i64(m, 616) + i) % 8
+
+x_st_get m i:
+    return peek_i64(peek_i64(m, 624), x_st_at(m, i) * 8)
+
+x_st_put m i v:
+    poke_i64(peek_i64(m, 624), x_st_at(m, i) * 8, v)
+    poke_byte(peek_i64(m, 624) + 64, x_st_at(m, i), 1)
+    return 0
+
+# push a value on: the pointer steps back one, then the value goes
+# into the new top
+x_st_push m v:
+    poke_i64(m, 616, (peek_i64(m, 616) + 7) % 8)
+    return x_st_put(m, 0, v)
+
+# take the top off
+x_st_pop m:
+    v: x_st_get(m, 0)
+    poke_byte(peek_i64(m, 624) + 64, x_st_at(m, 0), 0)
+    poke_i64(m, 616, (peek_i64(m, 616) + 1) % 8)
+    return v
+
+# ---- eighty bit numbers ----
+#
+# The old unit stores a number in ten bytes: a sign and fifteen bits
+# of exponent, then sixty-four bits of fraction WITH the leading one
+# written out, which the sixty-four bit kind leaves implied. These
+# two turn one into the other.
+
+x_ld_to_d m at:
+    lo: x_r64(m, at)
+    se: x_r16(m, at + 8)
+    sign: 0
+    if se >= 32768
+        sign: 1
+        se: se - 32768
+    if se is 0
+        if lo is 0
+            return x_bits_of(sign, 0, 0)
+    if se is 32767
+        if lo is 0
+            return x_bits_of(sign, 2047, 0)
+        return X_QNAN
+    # The exponent is counted from 16383 rather than 1023, and the
+    # fraction has sixty-three places below the point rather than
+    # fifty-two.
+    #
+    # That fraction is a full sixty-four bits, so its top bit is the
+    # sign bit of an ordinary Sovren number. Everything downstream
+    # expects a fraction that fits in fifty-three, so it is brought
+    # down eleven places here, keeping what falls off for rounding.
+    e: se - 16383 - 63
+    guard: x_bit(lo, 10)
+    st: 0
+    if x_and(lo, 1023) is not 0
+        st: 1
+    f: x_shr64(lo, 11)
+    return x_pack_round(sign, e + 11, f, guard, st)
+
+x_d_to_ld m v at:
+    x_unpack(m, v)
+    k: x_up_kind(m)
+    sg: x_up_sign(m)
+    if k is X_F_ZERO
+        x_w64(m, at, 0)
+        x_w16(m, at + 8, x_shl64(sg, 15))
+        return 0
+    if k is X_F_INF
+        x_w64(m, at, 0 - 9223372036854775807 - 1)
+        x_w16(m, at + 8, x_or(x_shl64(sg, 15), 32767))
+        return 0
+    if k is X_F_NAN
+        x_w64(m, at, 0 - 4611686018427387904)
+        x_w16(m, at + 8, 32767)
+        return 0
+    e: x_up_exp(m)
+    f: x_up_frac(m)
+    # The fraction here has its top bit at the fifty-third place;
+    # the eighty bit shape wants it at the sixty-fourth, so it moves
+    # up eleven and the exponent comes down to match.
+    i: 0
+    as long as i < 11
+        f: x_add(f, f)
+        e: e - 1
+        i: i + 1
+    se: e + 63 + 16383
+    x_w64(m, at, f)
+    x_w16(m, at + 8, x_or(x_shl64(sg, 15), se))
+    return 0
+
+# ---- the status word ----
+#
+# Bits 8, 9, 10 and 14 say how the last comparison came out, and a
+# program reads them with fnstsw to work out which way to branch.
+x_st_status m:
+    v: peek_i64(m, 632)
+    return x_or(v, x_shl64(peek_i64(m, 616), 11))
+
+x_st_set_cc m c:
+    # c is 0 above, 1 below, 2 equal, 3 not comparable
+    v: 0
+    if c is 1
+        v: 256
+    if c is 2
+        v: 16384
+    if c is 3
+        v: 17664
+    poke_i64(m, 632, v)
+    return 0
+
+# ---- one instruction ----
+
+x_x87 m p rex:
+    b: x_r8(m, p - 1)
+    nxt: x_r8(m, p)
+    # The forms where the byte after the opcode is 0xC0 or more name
+    # a whole instruction and a register, rather than a place in
+    # memory. Those are taken apart by hand.
+    if nxt >= 192
+        return x_x87_reg(m, p, b, nxt)
+    q: x_modrm(m, p, rex, 0)
+    op: x_md_reg(m) % 8
+    at: peek_i64(m, 376)
+
+    # D9: load or store a four byte decimal, and the control word
+    if b is 217
+        if op is 0
+            x_st_push(m, x_f2d(m, x_r32(m, at)))
+            return x_go(m, q)
+        if op is 2
+            x_w32(m, at, x_d2f(m, x_st_get(m, 0)))
+            return x_go(m, q)
+        if op is 3
+            x_w32(m, at, x_d2f(m, x_st_pop(m)))
+            return x_go(m, q)
+        if op is 4
+            # load the whole state back. Nothing here keeps it, so
+            # only the control word is taken.
+            poke_i64(m, 608, x_r16(m, at + 4))
+            return x_go(m, q)
+        if op is 5
+            poke_i64(m, 608, x_r16(m, at))
+            return x_go(m, q)
+        if op is 6
+            # save the whole state: the control word, the status
+            # word, and twenty more bytes nothing here uses
+            i: 0
+            as long as i < 28
+                x_w8(m, at + i, 0)
+                i: i + 1
+            x_w16(m, at, peek_i64(m, 608))
+            x_w16(m, at + 4, x_st_status(m))
+            x_w16(m, at + 8, 65535)
+            return x_go(m, q)
+        if op is 7
+            x_w16(m, at, peek_i64(m, 608))
+            return x_go(m, q)
+
+    # D8: arithmetic with a four byte number from memory
+    if b is 216
+        v: x_f2d(m, x_r32(m, at))
+        return x_x87_do(m, q, op, x_st_get(m, 0), v, 0)
+
+    # DC: the same with an eight byte one
+    if b is 220
+        v: x_r64(m, at)
+        return x_x87_do(m, q, op, x_st_get(m, 0), v, 0)
+
+    # DD: load or store an eight byte decimal
+    if b is 221
+        if op is 0
+            x_st_push(m, x_r64(m, at))
+            return x_go(m, q)
+        if op is 2
+            x_w64(m, at, x_st_get(m, 0))
+            return x_go(m, q)
+        if op is 3
+            x_w64(m, at, x_st_pop(m))
+            return x_go(m, q)
+        if op is 7
+            x_w16(m, at, x_st_status(m))
+            return x_go(m, q)
+
+    # DB: whole numbers four bytes wide, and the ten byte kind
+    if b is 219
+        if op is 0
+            x_st_push(m, x_i2d(m, x_sval(x_r32(m, at), 4)))
+            return x_go(m, q)
+        if op is 2
+            x_w32(m, at, x_mask(x_d2i(m, x_st_get(m, 0)), 4))
+            return x_go(m, q)
+        if op is 3
+            x_w32(m, at, x_mask(x_d2i(m, x_st_pop(m)), 4))
+            return x_go(m, q)
+        if op is 5
+            x_st_push(m, x_ld_to_d(m, at))
+            return x_go(m, q)
+        if op is 7
+            x_d_to_ld(m, x_st_pop(m), at)
+            return x_go(m, q)
+
+    # DF: whole numbers two and eight bytes wide
+    if b is 223
+        if op is 0
+            x_st_push(m, x_i2d(m, x_sval(x_r16(m, at), 2)))
+            return x_go(m, q)
+        if op is 3
+            x_w16(m, at, x_mask(x_d2i(m, x_st_pop(m)), 2))
+            return x_go(m, q)
+        if op is 5
+            x_st_push(m, x_i2d(m, x_r64(m, at)))
+            return x_go(m, q)
+        if op is 7
+            x_w64(m, at, x_d2i(m, x_st_pop(m)))
+            return x_go(m, q)
+
+    # DA: whole numbers four bytes wide, as arithmetic
+    if b is 218
+        v: x_i2d(m, x_sval(x_r32(m, at), 4))
+        return x_x87_do(m, q, op, x_st_get(m, 0), v, 0)
+
+    poke_i64(m, 168, X_BADOP)
+    poke_i64(m, 232, b)
+    return 0
+
+# the eight sums the unit can do, by their number
+x_x87_do m q op a b popit:
+    r: 0
+    if op is 0
+        r: x_fadd(m, a, b)
+    if op is 1
+        r: x_fmul(m, a, b)
+    if op is 2
+        # compare, leaving the stack alone
+        x_st_set_cc(m, x_x87_cc(m, a, b))
+        return x_go(m, q)
+    if op is 3
+        x_st_set_cc(m, x_x87_cc(m, a, b))
+        x_st_pop(m)
+        return x_go(m, q)
+    if op is 4
+        r: x_fsub(m, a, b)
+    if op is 5
+        r: x_fsub(m, b, a)
+    if op is 6
+        r: x_fdiv(m, a, b)
+    if op is 7
+        r: x_fdiv(m, b, a)
+    x_st_put(m, 0, r)
+    if popit is 1
+        x_st_pop(m)
+    return x_go(m, q)
+
+# how two numbers compare, in the shape the status word wants
+x_x87_cc m a b:
+    c: x_fcmp(m, a, b)
+    if c is 3
+        return 3
+    if c is 2
+        return 0
+    if c is 0
+        return 1
+    return 2
+
+# ---- the register to register forms ----
+
+x_x87_reg m p b nxt:
+    q: p + 1
+    i: nxt % 8
+    top: nxt / 8 % 8
+
+    # D9: the odds and ends
+    if b is 217
+        if nxt >= 192
+            if nxt <= 199
+                # copy one of them to the top
+                x_st_push(m, x_st_get(m, i))
+                return x_go(m, q)
+        if nxt >= 200
+            if nxt <= 207
+                # swap the top with another
+                t: x_st_get(m, 0)
+                x_st_put(m, 0, x_st_get(m, i))
+                x_st_put(m, i, t)
+                return x_go(m, q)
+        if nxt is 224
+            # change the sign
+            x_st_put(m, 0, x_fneg(x_st_get(m, 0)))
+            return x_go(m, q)
+        if nxt is 225
+            # drop the sign
+            x_st_put(m, 0, x_and(x_st_get(m, 0), 9223372036854775807))
+            return x_go(m, q)
+        if nxt is 228
+            # what kind of number is on top
+            x_unpack(m, x_st_get(m, 0))
+            k: x_up_kind(m)
+            c: 0
+            if k is X_F_ZERO
+                c: 2
+            if k is X_F_NAN
+                c: 3
+            if k is X_F_INF
+                c: 1
+            x_st_set_cc(m, c)
+            return x_go(m, q)
+        if nxt is 232
+            x_st_push(m, 4607182418800017408)
+            return x_go(m, q)
+        if nxt is 238
+            x_st_push(m, 0)
+            return x_go(m, q)
+        if nxt is 233
+            # the logarithm of ten to base two
+            x_st_push(m, 4614022425160083056)
+            return x_go(m, q)
+        if nxt is 234
+            x_st_push(m, 4599094494223104511)
+            return x_go(m, q)
+        if nxt is 235
+            # the circle constant
+            x_st_push(m, 4614256656552045848)
+            return x_go(m, q)
+        if nxt is 236
+            x_st_push(m, 4599094494223104511)
+            return x_go(m, q)
+        if nxt is 237
+            x_st_push(m, 4604418534313441775)
+            return x_go(m, q)
+        if nxt is 250
+            x_st_put(m, 0, x_fsqrt(m, x_st_get(m, 0)))
+            return x_go(m, q)
+
+    # D8 and DC: arithmetic between two registers
+    if b is 216
+        return x_x87_do(m, q, top, x_st_get(m, 0), x_st_get(m, i), 0)
+    if b is 220
+        # the answer goes into the other one, not the top
+        r: x_x87_pair(m, top, x_st_get(m, i), x_st_get(m, 0))
+        x_st_put(m, i, r)
+        return x_go(m, q)
+    if b is 222
+        # the same, and then the top comes off
+        if nxt is 217
+            # multiply the two and pop
+            r: x_fmul(m, x_st_get(m, 1), x_st_get(m, 0))
+            x_st_pop(m)
+            x_st_put(m, 0, r)
+            return x_go(m, q)
+        r: x_x87_pair(m, top, x_st_get(m, i), x_st_get(m, 0))
+        x_st_put(m, i, r)
+        x_st_pop(m)
+        return x_go(m, q)
+
+    # DD: move and drop
+    if b is 221
+        if nxt >= 192
+            if nxt <= 199
+                x_st_put(m, i, x_st_get(m, 0))
+                return x_go(m, q)
+        if nxt >= 208
+            if nxt <= 215
+                x_st_put(m, i, x_st_get(m, 0))
+                return x_go(m, q)
+        if nxt >= 216
+            if nxt <= 223
+                x_st_put(m, i, x_st_get(m, 0))
+                x_st_pop(m)
+                return x_go(m, q)
+
+    # DB and DF: compare and put the answer in the ordinary flags
+    if b is 219
+        if nxt is 227
+            poke_i64(m, 608, X_FCW)
+            poke_i64(m, 616, 0)
+            poke_i64(m, 632, 0)
+            return x_go(m, q)
+        if nxt >= 232
+            if nxt <= 247
+                x_x87_flags(m, x_st_get(m, 0), x_st_get(m, i))
+                return x_go(m, q)
+    if b is 223
+        if nxt is 224
+            # the status word into ax
+            x_rset(m, 0, 2, x_st_status(m))
+            return x_go(m, q)
+        if nxt >= 232
+            if nxt <= 247
+                x_x87_flags(m, x_st_get(m, 0), x_st_get(m, i))
+                x_st_pop(m)
+                return x_go(m, q)
+
+    # DE: the pair forms that pop
+    if b is 218
+        if nxt >= 232
+            if nxt <= 239
+                x_x87_flags(m, x_st_get(m, 0), x_st_get(m, i))
+                return x_go(m, q)
+
+    poke_i64(m, 168, X_BADOP)
+    poke_i64(m, 232, 61440 + b)
+    return 0
+
+# one sum between two registers, without touching the stack
+x_x87_pair m op a b:
+    if op is 0
+        return x_fadd(m, a, b)
+    if op is 1
+        return x_fmul(m, a, b)
+    if op is 4
+        return x_fsub(m, a, b)
+    if op is 5
+        return x_fsub(m, b, a)
+    if op is 6
+        return x_fdiv(m, a, b)
+    if op is 7
+        return x_fdiv(m, b, a)
+    return a
+
+# compare and set the ORDINARY flags, which is what the newer
+# instructions do so a program can branch straight away
+x_x87_flags m a b:
+    c: x_fcmp(m, a, b)
+    poke_i64(m, 160, 0)
+    poke_i64(m, 344, 0)
+    if c is 3
+        poke_i64(m, 136, 1)
+        poke_i64(m, 328, 1)
+        poke_i64(m, 152, 1)
+        return 0
+    poke_i64(m, 328, 0)
+    if c is 1
+        poke_i64(m, 136, 1)
+        poke_i64(m, 152, 0)
+        return 0
+    if c is 0
+        poke_i64(m, 136, 0)
+        poke_i64(m, 152, 1)
+        return 0
+    poke_i64(m, 136, 0)
+    poke_i64(m, 152, 0)
+    return 0
+
+# ---- the shifts and rotates ----
+#
+# The count is masked to six bits at sixty-four wide and five bits
+# otherwise, and a count of nothing changes no flags at all. When
+# `imm` is 1 the count byte follows the address bytes.
+x_group2 m p rex size cnt imm:
+    q: x_modrm(m, p, rex, imm)
+    op: x_md_reg(m) % 8
+    n: cnt
+    if imm is 1
+        n: x_r8(m, q)
+        q: q + 1
+    w: x_bits(size)
+    if w is 64
+        n: n % 64
+    if not
+        n: n % 32
+    if n is 0
+        # no bits move and no flag changes, but a thirty-two bit
+        # instruction still clears the top half of the register
+        if size is 4
+            x_rm_set(m, 4, x_rm_get(m, 4))
+        return x_go(m, q)
+    v: x_rm_get(m, size)
+    r: v
+    cf: x_cf(m)
+    if op is 4
+        r: x_shl(v, n, size)
+        cf: x_bit(x_mask(v, size), w - n)
+    if op is 6
+        r: x_shl(v, n, size)
+        cf: x_bit(x_mask(v, size), w - n)
+    if op is 5
+        r: x_shr(v, n, size)
+        cf: x_bit(x_mask(v, size), n - 1)
+    if op is 7
+        r: x_sar(v, n, size)
+        cf: x_bit(x_mask(v, size), n - 1)
+    if op is 0
+        k: n % w
+        if k is 0
+            r: x_mask(v, size)
+        if not
+            r: x_or(x_shl(v, k, size), x_shr(v, w - k, size))
+        cf: x_bit(r, 0)
+    if op is 1
+        k: n % w
+        if k is 0
+            r: x_mask(v, size)
+        if not
+            r: x_or(x_shr(v, k, size), x_shl(v, w - k, size))
+        cf: x_bit(x_mask(r, size), w - 1)
+    if op is 2
+        r: x_rcl(m, v, n, size, w)
+        cf: peek_i64(m, 456)
+    if op is 3
+        r: x_rcr(m, v, n, size, w)
+        cf: peek_i64(m, 456)
+    r: x_mask(r, size)
+    if op < 2
+        # a rotate leaves the zero and sign flags alone
+        x_rm_set(m, size, r)
+        poke_i64(m, 152, cf)
+        of: 0
+        if n is 1
+            if op is 0
+                if x_bit(r, w - 1) is not cf
+                    of: 1
+            if op is 1
+                if x_bit(r, w - 1) is not x_bit(r, w - 2)
+                    of: 1
+        poke_i64(m, 160, of)
+        return x_go(m, q)
+    if op is 2
+        x_rm_set(m, size, r)
+        poke_i64(m, 152, cf)
+        return x_go(m, q)
+    if op is 3
+        x_rm_set(m, size, r)
+        poke_i64(m, 152, cf)
+        return x_go(m, q)
+    x_rm_set(m, size, r)
+    x_set_zs(m, r, size)
+    poke_i64(m, 152, cf)
+    of: 0
+    if n is 1
+        if op is 4
+            if x_bit(r, w - 1) is not cf
+                of: 1
+        if op is 6
+            if x_bit(r, w - 1) is not cf
+                of: 1
+        if op is 5
+            of: x_bit(x_mask(v, size), w - 1)
+        if op is 7
+            of: 0
+    poke_i64(m, 160, of)
+    return x_go(m, q)
+
+# rotate through the carry: one bit at a time, because the carry
+# joins the ring and makes it one bit wider than the value
+x_rcl m v n size w:
+    r: x_mask(v, size)
+    c: x_cf(m)
+    i: 0
+    as long as i < n % (w + 1)
+        top: x_bit(r, w - 1)
+        r: x_mask(x_add(x_shl(r, 1, size), c), size)
+        c: top
+        i: i + 1
+    poke_i64(m, 456, c)
+    return r
+
+x_rcr m v n size w:
+    r: x_mask(v, size)
+    c: x_cf(m)
+    i: 0
+    as long as i < n % (w + 1)
+        bot: r % 2
+        r: x_or(x_shr(r, 1, size), x_shl(c, w - 1, size))
+        c: bot
+        i: i + 1
+    poke_i64(m, 456, c)
+    return r
+
+# ---- the flags, as the one word push and pop use ----
+x_flags_word m:
+    v: 2
+    if x_cf(m) is 1
+        v: v + 1
+    if x_pf(m) is 1
+        v: v + 4
+    if x_af(m) is 1
+        v: v + 16
+    if x_zf(m) is 1
+        v: v + 64
+    if x_sf(m) is 1
+        v: v + 128
+    if x_df(m) is 1
+        v: v + 1024
+    if x_of(m) is 1
+        v: v + 2048
+    return v
+
+x_set_flags_word m v:
+    poke_i64(m, 152, v % 2)
+    poke_i64(m, 328, (v / 4) % 2)
+    poke_i64(m, 344, (v / 16) % 2)
+    poke_i64(m, 136, (v / 64) % 2)
+    poke_i64(m, 144, (v / 128) % 2)
+    poke_i64(m, 352, (v / 1024) % 2)
+    poke_i64(m, 160, (v / 2048) % 2)
+    return 0
+
+# ---- the string instructions ----
+#
+# movs stos lods scas cmps, each stepping rsi and rdi forward or
+# back depending on the direction flag, optionally repeating until
+# rcx runs out. This is how real code copies memory.
+
+x_is_string b:
+    if b >= 164
+        if b <= 175
+            if b is not 168
+                if b is not 169
+                    return 1
+    return 0
+
+x_string m b p size rep:
+    w: size
+    if b % 2 is 0
+        w: 1
+    step: w
+    if x_df(m) is 1
+        step: 0 - w
+    n: 1
+    if rep is not 0
+        n: x_reg(m, 1)
+        if n is 0
+            return x_go(m, p)
+    done: 0
+    stop: 0
+    as long as done < n
+        si: x_reg(m, 6)
+        di: x_reg(m, 7)
+        if b is 164
+            x_store(m, di, w, x_load(m, si, w))
+            x_setr(m, 6, x_add(si, step))
+            x_setr(m, 7, x_add(di, step))
+        if b is 165
+            x_store(m, di, w, x_load(m, si, w))
+            x_setr(m, 6, x_add(si, step))
+            x_setr(m, 7, x_add(di, step))
+        if b is 170
+            x_store(m, di, w, x_rget(m, 0, w))
+            x_setr(m, 7, x_add(di, step))
+        if b is 171
+            x_store(m, di, w, x_rget(m, 0, w))
+            x_setr(m, 7, x_add(di, step))
+        if b is 172
+            x_rset(m, 0, w, x_load(m, si, w))
+            x_setr(m, 6, x_add(si, step))
+        if b is 173
+            x_rset(m, 0, w, x_load(m, si, w))
+            x_setr(m, 6, x_add(si, step))
+        if b is 174
+            x_flags_sub(m, x_rget(m, 0, w), x_load(m, di, w), w)
+            x_setr(m, 7, x_add(di, step))
+        if b is 175
+            x_flags_sub(m, x_rget(m, 0, w), x_load(m, di, w), w)
+            x_setr(m, 7, x_add(di, step))
+        if b is 166
+            x_flags_sub(m, x_load(m, si, w), x_load(m, di, w), w)
+            x_setr(m, 6, x_add(si, step))
+            x_setr(m, 7, x_add(di, step))
+        if b is 167
+            x_flags_sub(m, x_load(m, si, w), x_load(m, di, w), w)
+            x_setr(m, 6, x_add(si, step))
+            x_setr(m, 7, x_add(di, step))
+        done: done + 1
+        if rep is not 0
+            x_setr(m, 1, x_sub(n, done))
+            # the two that compare stop early on the flag
+            if b >= 166
+                if x_test_rep(m, b, rep) is 1
+                    done: n
+        if peek_i64(m, 168) is not X_RUNNING
+            done: n
+            stop: 1
+    if stop is 1
+        return 0
+    return x_go(m, p)
+
+# repe stops when the compare fails, repne when it succeeds
+x_test_rep m b rep:
+    if b is 168
+        return 0
+    if b is 169
+        return 0
+    if b < 166
+        return 0
+    if b is 170
+        return 0
+    if b is 171
+        return 0
+    if b is 172
+        return 0
+    if b is 173
+        return 0
+    if rep is 1
+        if x_zf(m) is 0
+            return 1
+        return 0
+    if x_zf(m) is 1
+        return 1
+    return 0
+
+x_group3 m p rex size:
+    q: x_modrm(m, p, rex, 0)
+    op: x_md_reg(m) % 8
+    if op is 0
+        imm: 0
+        if size is 1
+            imm: x_r8(m, q)
+            q: q + 1
+        if not
+            imm: x_imm(m, q, size)
+            q: q + x_immlen(size)
+        x_flags_logic(m, x_and(x_rm_get(m, size), imm), size)
+        return x_go(m, q)
+    if op is 1
+        imm: 0
+        if size is 1
+            imm: x_r8(m, q)
+            q: q + 1
+        if not
+            imm: x_imm(m, q, size)
+            q: q + x_immlen(size)
+        x_flags_logic(m, x_and(x_rm_get(m, size), imm), size)
+        return x_go(m, q)
+    if op is 2
+        x_rm_set(m, size, x_not(x_rm_get(m, size)))
+        return x_go(m, q)
+    if op is 3
+        v: x_rm_get(m, size)
+        x_rm_set(m, size, x_flags_sub(m, 0, v, size))
+        # negate sets the carry unless the value was nothing
+        c: 1
+        if x_mask(v, size) is 0
+            c: 0
+        poke_i64(m, 152, c)
+        return x_go(m, q)
+    if op is 4
+        return x_mul_un(m, q, size)
+    if op is 5
+        return x_mul_sg(m, q, size)
+    if op is 6
+        return x_div_un(m, q, size)
+    if op is 7
+        return x_div_sg(m, q, size)
+    poke_i64(m, 168, X_BADOP)
+    poke_i64(m, 232, 247)
+    return 0
+
+# ---------------------------------------------------------------
+# multiply and divide, the full width
+# ---------------------------------------------------------------
+#
+# On this processor a multiply of two n-bit numbers makes a 2n-bit
+# answer, the top half in rdx and the bottom in rax, and a divide
+# takes a 2n-bit number from that same pair. Below sixty-four bits
+# both halves fit in one Sovren number and it is easy. At sixty-four
+# the pair is a hundred and twenty-eight bits wide, so the work is
+# done in thirty-two bit pieces, the way long multiplication is done
+# on paper.
+
+# The top half of an unsigned sixty-four by sixty-four multiply.
+#
+# Long multiplication in thirty-two bit digits. Every partial
+# product is at most (2^32-1)^2, which fits, and every running sum
+# is kept under 2^63 by carrying immediately, so nothing overflows.
+#
+#   a = ah:al   b = bh:bl
+#   a*b = ah*bh<<64 + (ah*bl + al*bh)<<32 + al*bl
+#
+# The answer wanted is everything from bit 64 up.
+# The top half of an unsigned sixty-four by sixty-four multiply.
+#
+# In SIXTEEN bit digits, not thirty-two. Two thirty-two bit digits
+# multiplied together reach almost 2^64, which is past what one
+# Sovren number holds; two sixteen bit digits reach only 2^32, and
+# a column of them with carries stays well under 2^63. This is the
+# same long multiplication anyone does on paper, in base 65536.
+X_16: 65536
+
+x_mulhi_un a b:
+    # a as four digits, lowest first
+    a0: x_lo(a) % X_16
+    a1: x_lo(a) / X_16
+    a2: x_hiu(a) % X_16
+    a3: x_hiu(a) / X_16
+    b0: x_lo(b) % X_16
+    b1: x_lo(b) / X_16
+    b2: x_hiu(b) % X_16
+    b3: x_hiu(b) / X_16
+    # columns 0 to 6. Column k holds every product ai*bj with i+j=k.
+    # The largest column has four products of at most (2^16-1)^2,
+    # plus a carry, which is nowhere near the limit.
+    c: a0 * b0
+    c: c / X_16 + a0 * b1 + a1 * b0
+    c: c / X_16 + a0 * b2 + a1 * b1 + a2 * b0
+    c: c / X_16 + a0 * b3 + a1 * b2 + a2 * b1 + a3 * b0
+    # everything above is the bottom half and is thrown away.
+    # column four is the first digit of the answer.
+    c: c / X_16 + a1 * b3 + a2 * b2 + a3 * b1
+    d4: c % X_16
+    c: c / X_16 + a2 * b3 + a3 * b2
+    d5: c % X_16
+    c: c / X_16 + a3 * b3
+    d6: c % X_16
+    d7: c / X_16
+    return x_make(d6 + d7 * X_16, d4 + d5 * X_16)
+
+x_mul_un m q size:
+    a: x_rget(m, 0, size)
+    b: x_rm_get(m, size)
+    if size is 8
+        lo: x_mul(a, b)
+        hi: x_mulhi_un(a, b)
+        x_setr(m, 0, lo)
+        x_setr(m, 2, hi)
+        c: 0
+        if hi is not 0
+            c: 1
+        poke_i64(m, 152, c)
+        poke_i64(m, 160, c)
+        return x_go(m, q)
+    if size is 1
+        r: a * b
+        x_rset(m, 0, 2, r)
+        c: 0
+        if r > 255
+            c: 1
+        poke_i64(m, 152, c)
+        poke_i64(m, 160, c)
+        return x_go(m, q)
+    r: a * b
+    w: x_wide(size)
+    lo: x_umod(r, w)
+    hi: x_udiv(r, w)
+    x_rset(m, 0, size, lo)
+    x_rset(m, 2, size, hi)
+    c: 0
+    if hi is not 0
+        c: 1
+    poke_i64(m, 152, c)
+    poke_i64(m, 160, c)
+    return x_go(m, q)
+
+# the top half of a signed multiply, worked out from the unsigned one
+x_mulhi_sg a b:
+    h: x_mulhi_un(a, b)
+    if a < 0
+        h: x_sub(h, b)
+    if b < 0
+        h: x_sub(h, a)
+    return h
+
+x_mul_sg m q size:
+    if size is 8
+        a: x_reg(m, 0)
+        b: x_rm_get(m, 8)
+        lo: x_mul(a, b)
+        hi: x_mulhi_sg(a, b)
+        x_setr(m, 0, lo)
+        x_setr(m, 2, hi)
+        # the carry says the top half was not just the sign
+        c: 1
+        if hi is 0
+            if lo >= 0
+                c: 0
+        if hi is 0 - 1
+            if lo < 0
+                c: 0
+        poke_i64(m, 152, c)
+        poke_i64(m, 160, c)
+        return x_go(m, q)
+    a: x_sval(x_rget(m, 0, size), size)
+    b: x_sval(x_rm_get(m, size), size)
+    r: a * b
+    if size is 1
+        x_rset(m, 0, 2, x_mask(r, 2))
+        c: 1
+        if r >= 0 - 128
+            if r <= 127
+                c: 0
+        poke_i64(m, 152, c)
+        poke_i64(m, 160, c)
+        return x_go(m, q)
+    w: x_wide(size)
+    x_rset(m, 0, size, x_mask(r, size))
+    x_rset(m, 2, size, x_mask(x_sar64(r, x_bits(size)), size))
+    c: 1
+    half: w / 2
+    if r >= 0 - half
+        if r < half
+            c: 0
+    poke_i64(m, 152, c)
+    poke_i64(m, 160, c)
+    return x_go(m, q)
+
+# a hundred and twenty-eight bit number divided by a sixty-four bit
+# one, done the way long division is done by hand: one bit at a
+# time, from the top. Slow, but it is only reached for the widest
+# case, and it is right.
+x_div128 m hi lo d:
+    if x_ult(hi, d) is 0
+        # the answer would not fit in sixty-four bits. Real hardware
+        # raises a fault rather than giving a wrong number.
+        poke_i64(m, 472, 1)
+        return 0
+    poke_i64(m, 472, 0)
+    # The top half is already known to be smaller than the divisor,
+    # so it is the running remainder to begin with. Then shift the
+    # low half in, one bit at a time, from the top.
+    r: hi
+    q: 0
+    i: 63
+    as long as i >= 0
+        # the remainder is below d, so doubling it cannot lose the
+        # top bit unless d itself is above half, which is handled by
+        # testing that top bit before the shift
+        topbit: x_bit(r, 63)
+        r: x_shl64(r, 1)
+        r: x_or(r, x_bit(lo, i))
+        if topbit is 1
+            # the doubled remainder needs a sixty-fifth bit, so it
+            # is certainly at least d
+            r: x_sub(r, d)
+            q: x_or(q, x_shl64(1, i))
+        if not
+            if x_ult(r, d) is 0
+                r: x_sub(r, d)
+                q: x_or(q, x_shl64(1, i))
+        i: i - 1
+    poke_i64(m, 480, r)
+    return q
+
+x_div_un m q size:
+    d: x_rm_get(m, size)
+    if x_mask(d, size) is 0
+        poke_i64(m, 168, X_FAULT)
+        return 0
+    if size is 8
+        hi: x_reg(m, 2)
+        lo: x_reg(m, 0)
+        if hi is 0
+            x_setr(m, 0, x_udiv(lo, d))
+            x_setr(m, 2, x_umod(lo, d))
+            return x_go(m, q)
+        quo: x_div128(m, hi, lo, d)
+        if peek_i64(m, 472) is 1
+            poke_i64(m, 168, X_FAULT)
+            return 0
+        x_setr(m, 0, quo)
+        x_setr(m, 2, peek_i64(m, 480))
+        return x_go(m, q)
+    if size is 1
+        n: x_rget(m, 0, 2)
+        dd: x_mask(d, 1)
+        if n / dd > 255
+            poke_i64(m, 168, X_FAULT)
+            return 0
+        x_b_set(m, 0, 1, n / dd)
+        x_b_set(m, 4, 0, n % dd)
+        return x_go(m, q)
+    w: x_wide(size)
+    n: x_rget(m, 2, size) * w + x_rget(m, 0, size)
+    dd: x_mask(d, size)
+    quo: x_udiv(n, dd)
+    if x_ult(quo, w) is 0
+        poke_i64(m, 168, X_FAULT)
+        return 0
+    x_rset(m, 0, size, quo)
+    x_rset(m, 2, size, x_umod(n, dd))
+    return x_go(m, q)
+
+x_div_sg m q size:
+    d: x_sval(x_rm_get(m, size), size)
+    if d is 0
+        poke_i64(m, 168, X_FAULT)
+        return 0
+    if size is 8
+        hi: x_reg(m, 2)
+        lo: x_reg(m, 0)
+        # when the top half is only the sign, one number is enough
+        ok: 0
+        if hi is 0
+            if lo >= 0
+                ok: 1
+        if hi is 0 - 1
+            if lo < 0
+                ok: 1
+        if ok is 1
+            if lo is 0 - 9223372036854775807 - 1
+                if d is 0 - 1
+                    poke_i64(m, 168, X_FAULT)
+                    return 0
+            x_setr(m, 0, lo / d)
+            x_setr(m, 2, lo % d)
+            return x_go(m, q)
+        # otherwise take the signs off, divide, and put them back
+        neg: 0
+        nh: hi
+        nl: lo
+        if hi < 0
+            neg: 1
+            nl: x_sub(0, lo)
+            nh: x_sub(x_not(hi), 0)
+            if lo is 0
+                nh: x_add(nh, 1)
+        dd: d
+        if d < 0
+            dd: 0 - d
+            if neg is 1
+                neg: 0
+            if not
+                neg: 1
+        quo: x_div128(m, nh, nl, dd)
+        if peek_i64(m, 472) is 1
+            poke_i64(m, 168, X_FAULT)
+            return 0
+        rem: peek_i64(m, 480)
+        if neg is 1
+            quo: x_sub(0, quo)
+        if hi < 0
+            rem: x_sub(0, rem)
+        x_setr(m, 0, quo)
+        x_setr(m, 2, rem)
+        return x_go(m, q)
+    if size is 1
+        n: x_sval(x_rget(m, 0, 2), 2)
+        r: n / d
+        if r > 127
+            poke_i64(m, 168, X_FAULT)
+            return 0
+        if r < 0 - 128
+            poke_i64(m, 168, X_FAULT)
+            return 0
+        x_b_set(m, 0, 1, x_mask(r, 1))
+        x_b_set(m, 4, 0, x_mask(n % d, 1))
+        return x_go(m, q)
+    w: x_wide(size)
+    n: x_sval(x_rget(m, 2, size), size) * w + x_rget(m, 0, size)
+    r: n / d
+    half: w / 2
+    if r >= half
+        poke_i64(m, 168, X_FAULT)
+        return 0
+    if r < 0 - half
+        poke_i64(m, 168, X_FAULT)
+        return 0
+    x_rset(m, 0, size, x_mask(r, size))
+    x_rset(m, 2, size, x_mask(n % d, size))
+    return x_go(m, q)
+
+x_group5 m p rex size:
+    q: x_modrm(m, p, rex, 0)
+    op: x_md_reg(m) % 8
+    if op is 0
+        v: x_rm_get(m, size)
+        c: x_cf(m)
+        x_rm_set(m, size, x_flags_add(m, v, 1, size))
+        poke_i64(m, 152, c)
+        return x_go(m, q)
+    if op is 1
+        v: x_rm_get(m, size)
+        c: x_cf(m)
+        x_rm_set(m, size, x_flags_sub(m, v, 1, size))
+        poke_i64(m, 152, c)
+        return x_go(m, q)
+    if op is 2
+        t: x_rm_get(m, 8)
+        x_push(m, q)
+        return x_go(m, t)
+    if op is 4
+        return x_go(m, x_rm_get(m, 8))
+    if op is 6
+        x_push(m, x_rm_get(m, 8))
+        return x_go(m, q)
+    poke_i64(m, 168, X_BADOP)
+    poke_i64(m, 232, 255)
+    return 0
+
+# ---------------------------------------------------------------
+# the two byte opcodes
+# ---------------------------------------------------------------
+
+x_two m p rex size:
+    b: x_r8(m, p)
+    p: p + 1
+
+    # a long jump on a condition
+    if b >= 128
+        if b <= 143
+            d: x_i32(m, p)
+            if x_cond(m, b - 128) is 1
+                return x_go(m, x_add(p + 4, d))
+            return x_go(m, p + 4)
+
+    # set a byte to one or zero on a condition
+    if b >= 144
+        if b <= 159
+            p: x_modrm(m, p, rex, 0)
+            x_rm_set(m, 1, x_cond(m, b - 144))
+            return x_go(m, p)
+
+    # widen a byte or a half, with and without a sign
+    if b is 182
+        p: x_modrm(m, p, rex, 0)
+        x_rset(m, x_md_reg(m), size, x_rm_get(m, 1))
+        return x_go(m, p)
+    if b is 183
+        p: x_modrm(m, p, rex, 0)
+        x_rset(m, x_md_reg(m), size, x_rm_get(m, 2))
+        return x_go(m, p)
+    if b is 190
+        p: x_modrm(m, p, rex, 0)
+        x_rset(m, x_md_reg(m), size, x_sval(x_rm_get(m, 1), 1))
+        return x_go(m, p)
+    if b is 191
+        p: x_modrm(m, p, rex, 0)
+        x_rset(m, x_md_reg(m), size, x_sval(x_rm_get(m, 2), 2))
+        return x_go(m, p)
+
+    # multiply, two operands
+    if b is 175
+        p: x_modrm(m, p, rex, 0)
+        x_imul2(m, size, x_reg_get(m, size), x_rm_get(m, size))
+        return x_go(m, p)
+
+    # move on a condition. When the condition fails the value is
+    # left alone, except that a thirty-two bit one still clears the
+    # top half of the register, which the hardware always does.
+    if b >= 64
+        if b <= 79
+            p: x_modrm(m, p, rex, 0)
+            if x_cond(m, b - 64) is 1
+                x_rset(m, x_md_reg(m), size, x_rm_get(m, size))
+            if not
+                if size is 4
+                    x_rset(m, x_md_reg(m), 4, x_rget(m, x_md_reg(m), 4))
+            return x_go(m, p)
+
+    # ---- the bit instructions ----
+    # bt tests one bit, bts sets it, btr clears it, btc flips it.
+    # When the value is in memory the bit number can run past the
+    # end of one word and pick a later one, which is why the address
+    # is adjusted rather than the number masked.
+    if b is 163
+        return x_bitop(m, p, rex, size, 0)
+    if b is 171
+        return x_bitop(m, p, rex, size, 1)
+    if b is 179
+        return x_bitop(m, p, rex, size, 2)
+    if b is 187
+        return x_bitop(m, p, rex, size, 3)
+    if b is 186
+        q: x_modrm(m, p, rex, 1)
+        op: x_md_reg(m) % 8
+        n: x_r8(m, q) % x_bits(size)
+        v: x_rm_get(m, size)
+        poke_i64(m, 152, x_bit(x_mask(v, size), n))
+        if op is 5
+            x_rm_set(m, size, x_or(v, x_shl(1, n, size)))
+        if op is 6
+            x_rm_set(m, size, x_and(v, x_not(x_shl(1, n, size))))
+        if op is 7
+            x_rm_set(m, size, x_xor(v, x_shl(1, n, size)))
+        return x_go(m, q + 1)
+
+    # find the lowest or the highest one bit
+    if b is 188
+        p: x_modrm(m, p, rex, 0)
+        v: x_mask(x_rm_get(m, size), size)
+        if v is 0
+            poke_i64(m, 136, 1)
+            return x_go(m, p)
+        poke_i64(m, 136, 0)
+        i: 0
+        as long as x_bit(v, i) is 0
+            i: i + 1
+        x_reg_set(m, size, i)
+        return x_go(m, p)
+    if b is 189
+        p: x_modrm(m, p, rex, 0)
+        v: x_mask(x_rm_get(m, size), size)
+        if v is 0
+            poke_i64(m, 136, 1)
+            return x_go(m, p)
+        poke_i64(m, 136, 0)
+        i: x_bits(size) - 1
+        as long as x_bit(v, i) is 0
+            i: i - 1
+        x_reg_set(m, size, i)
+        return x_go(m, p)
+
+    # count the low zero bits, and count the one bits
+    if b is 188 + 0
+        return x_go(m, p)
+    if b is 184
+        p: x_modrm(m, p, rex, 0)
+        v: x_mask(x_rm_get(m, size), size)
+        n: 0
+        i: 0
+        as long as i < x_bits(size)
+            if x_bit(v, i) is 1
+                n: n + 1
+            i: i + 1
+        x_reg_set(m, size, n)
+        x_set_zs(m, n, size)
+        poke_i64(m, 152, 0)
+        poke_i64(m, 160, 0)
+        return x_go(m, p)
+
+    # turn the bytes of a register back to front
+    if b >= 200
+        if b <= 207
+            r: b - 200 + (rex % 2) * 8
+            v: x_reg(m, r)
+            if size is 8
+                o: 0
+                i: 0
+                as long as i < 8
+                    o: x_or(x_shl64(o, 8), x_mask(x_shr64(v, i * 8), 1))
+                    i: i + 1
+                x_setr(m, r, o)
+                return x_go(m, p)
+            o: 0
+            i: 0
+            as long as i < 4
+                o: x_or(x_shl64(o, 8), x_mask(x_shr64(v, i * 8), 1))
+                i: i + 1
+            x_rset(m, r, 4, o)
+            return x_go(m, p)
+
+    # swap and add, the two instructions locks are usually for
+    if b is 193
+        p: x_modrm(m, p, rex, 0)
+        a: x_rm_get(m, size)
+        bb: x_reg_get(m, size)
+        x_reg_set(m, size, a)
+        x_rm_set(m, size, x_flags_add(m, a, bb, size))
+        return x_go(m, p)
+    if b is 192
+        p: x_modrm(m, p, rex, 0)
+        a: x_rm_get(m, 1)
+        bb: x_reg_get(m, 1)
+        x_reg_set(m, 1, a)
+        x_rm_set(m, 1, x_flags_add(m, a, bb, 1))
+        return x_go(m, p)
+
+    # compare and swap: the heart of every lock
+    if b is 177
+        return x_cmpxchg(m, p, rex, size)
+    if b is 176
+        return x_cmpxchg(m, p, rex, 1)
+
+    # shift one value into another
+    if b is 164
+        q: x_modrm(m, p, rex, 1)
+        n: x_r8(m, q) % x_bits(size)
+        return x_shiftd(m, q + 1, size, n, 1)
+    if b is 165
+        q: x_modrm(m, p, rex, 0)
+        n: x_mask(x_reg(m, 1), 1) % x_bits(size)
+        return x_shiftd(m, q, size, n, 1)
+    if b is 172
+        q: x_modrm(m, p, rex, 1)
+        n: x_r8(m, q) % x_bits(size)
+        return x_shiftd(m, q + 1, size, n, 0)
+    if b is 173
+        q: x_modrm(m, p, rex, 0)
+        n: x_mask(x_reg(m, 1), 1) % x_bits(size)
+        return x_shiftd(m, q, size, n, 0)
+
+    # ---- the vector instructions ----
+    # These all live in the two-byte space and are told apart by the
+    # 66 / F3 / F2 prefix in front of them.
+    if x_is_vec(b) is 1
+        return x_vec(m, b, p, rex, size)
+
+    # ask the system for something
+    if b is 5
+        return x_syscall(m, p)
+
+    # nothing to do, in several spellings
+    if b is 31
+        p: x_modrm(m, p, rex, 0)
+        return x_go(m, p)
+    if b is 11
+        poke_i64(m, 168, X_BADOP)
+        poke_i64(m, 232, 3851)
+        return 0
+    if b is 14
+        return x_go(m, p)
+    if b is 24
+        p: x_modrm(m, p, rex, 0)
+        return x_go(m, p)
+    if b >= 25
+        if b <= 30
+            p: x_modrm(m, p, rex, 0)
+            return x_go(m, p)
+    if b is 174
+        # the fence instructions, and endbr64 lives near here too
+        p: x_modrm(m, p, rex, 0)
+        return x_go(m, p)
+    if b is 1
+        p: x_modrm(m, p, rex, 0)
+        return x_go(m, p)
+    if b is 168 + 0
+        return x_go(m, p)
+    if b is 49
+        # read the timer. Programs seed randomness with it.
+        x_rset(m, 0, 4, peek_i64(m, 464) % X_2_32)
+        x_rset(m, 2, 4, 0)
+        poke_i64(m, 464, peek_i64(m, 464) + 1000)
+        return x_go(m, p)
+    if b is 162
+        # what kind of processor this is. Say almost nothing, so a
+        # program takes the plainest path it has.
+        x_setr(m, 0, 0)
+        x_setr(m, 3, 0)
+        x_setr(m, 1, 0)
+        x_setr(m, 2, 0)
+        return x_go(m, p)
+
+    poke_i64(m, 168, X_BADOP)
+    poke_i64(m, 232, 3840 + b)
+    return 0
+
+# ---- one bit, tested and maybe changed ----
+x_bitop m p rex size op:
+    q: x_modrm(m, p, rex, 0)
+    n: x_sval(x_reg_get(m, size), size)
+    w: x_bits(size)
+    if peek_i64(m, 360) is 1
+        n: n % w
+        if n < 0
+            n: n + w
+    if not
+        # a bit number past the end picks a later word
+        off: n / w
+        if n < 0
+            off: (n - w + 1) / w
+        poke_i64(m, 376, x_add(peek_i64(m, 376), off * size))
+        n: n - off * w
+    v: x_rm_get(m, size)
+    poke_i64(m, 152, x_bit(x_mask(v, size), n))
+    if op is 1
+        x_rm_set(m, size, x_or(v, x_shl(1, n, size)))
+    if op is 2
+        x_rm_set(m, size, x_and(v, x_not(x_shl(1, n, size))))
+    if op is 3
+        x_rm_set(m, size, x_xor(v, x_shl(1, n, size)))
+    return x_go(m, q)
+
+# ---- compare and swap ----
+x_cmpxchg m p rex size:
+    q: x_modrm(m, p, rex, 0)
+    d: x_rm_get(m, size)
+    a: x_rget(m, 0, size)
+    x_flags_sub(m, a, d, size)
+    if x_mask(a, size) is x_mask(d, size)
+        poke_i64(m, 136, 1)
+        x_rm_set(m, size, x_reg_get(m, size))
+    if not
+        poke_i64(m, 136, 0)
+        x_rset(m, 0, size, d)
+    return x_go(m, q)
+
+# ---- shift one value into another ----
+x_shiftd m q size n left:
+    if n is 0
+        return x_go(m, q)
+    w: x_bits(size)
+    v: x_mask(x_rm_get(m, size), size)
+    o: x_mask(x_reg_get(m, size), size)
+    if left is 1
+        r: x_or(x_shl(v, n, size), x_shr(o, w - n, size))
+        cf: x_bit(v, w - n)
+    if not
+        r: x_or(x_shr(v, n, size), x_shl(o, w - n, size))
+        cf: x_bit(v, n - 1)
+    r: x_mask(r, size)
+    x_rm_set(m, size, r)
+    x_set_zs(m, r, size)
+    poke_i64(m, 152, cf)
+    return x_go(m, q)
+
+# which two-byte opcodes are vector ones
+x_is_vec b:
+    if b is 16
+        return 1
+    if b is 17
+        return 1
+    if b is 40
+        return 1
+    if b is 41
+        return 1
+    if b is 110
+        return 1
+    if b is 111
+        return 1
+    if b is 126
+        return 1
+    if b is 127
+        return 1
+    if b is 115
+        return 1
+    if b is 116
+        return 1
+    if b is 117
+        return 1
+    if b is 118
+        return 1
+    if b is 100
+        return 1
+    if b is 101
+        return 1
+    if b is 102
+        return 1
+    if b is 219
+        return 1
+    if b is 223
+        return 1
+    if b is 235
+        return 1
+    if b is 239
+        return 1
+    if b is 218
+        return 1
+    if b is 222
+        return 1
+    if b is 215
+        return 1
+    if b is 96
+        return 1
+    if b is 97
+        return 1
+    if b is 98
+        return 1
+    if b is 108
+        return 1
+    if b is 109
+        return 1
+    if b is 106
+        return 1
+    if b is 112
+        return 1
+    if b is 87
+        return 1
+    if b is 84
+        return 1
+    if b is 86
+        return 1
+    if b is 85
+        return 1
+    if b is 46
+        return 1
+    if b is 47
+        return 1
+    if b is 43
+        return 1
+    if b is 231
+        return 1
+    if b is 214
+        return 1
+    if b is 88
+        return 1
+    if b is 92
+        return 1
+    if b is 89
+        return 1
+    if b is 94
+        return 1
+    if b is 81
+        return 1
+    if b is 95
+        return 1
+    if b is 93
+        return 1
+    if b is 42
+        return 1
+    if b is 44
+        return 1
+    if b is 45
+        return 1
+    if b is 90
+        return 1
+    if b is 91
+        return 1
+    if b is 194
+        return 1
+    if b is 20
+        return 1
+    if b is 21
+        return 1
+    if b is 80
+        return 1
+    if b is 56
+        return 1
+    if b is 58
+        return 1
+    if b is 113
+        return 1
+    if b is 114
+        return 1
+    if b is 208 + 36
+        return 1
+    if b is 252
+        return 1
+    if b is 253
+        return 1
+    if b is 254
+        return 1
+    if b is 248
+        return 1
+    if b is 249
+        return 1
+    if b is 250
+        return 1
+    if b is 251
+        return 1
+    if b is 18
+        return 1
+    if b is 19
+        return 1
+    if b is 22
+        return 1
+    if b is 23
+        return 1
+    return 0
+
+# one vector instruction
+x_vec m b p rex size:
+    # Which prefix came in front decides what the instruction means:
+    #   nothing  0  four narrow numbers side by side
+    #   66       1  two wide ones side by side
+    #   F2       2  one wide one on its own
+    #   F3       3  one narrow one on its own
+    # F3 is the repeat prefix and F2 the repeat-while-equal one, so
+    # they arrive here as 1 and 2 and have to be told apart with
+    # care: F2 is the WIDE one, which is the opposite way round from
+    # how the numbers fall out.
+    pre: 0
+    if size is 2
+        pre: 1
+    r: peek_i64(m, 416)
+    if r is 2
+        pre: 2
+    if r is 1
+        pre: 3
+    q: x_modrm(m, p, rex, 0)
+    n: x_md_reg(m)
+
+    # move sixteen bytes about, in all its spellings
+    if b is 16
+        # 10 with F2 or F3 in front is a SINGLE number, not sixteen
+        # bytes. From memory the rest of the register is cleared;
+        # from another register it is left alone. Copying all
+        # sixteen either way leaves rubbish in the top half, and a
+        # loop that adds up an array then reads it.
+        if pre is 2
+            if peek_i64(m, 360) is 1
+                _v0: x_xrm_lo(m)
+                _v1: x_xhi(m, n)
+                x_xset(m, n, _v0, _v1)
+                return x_go(m, q)
+            x_xset(m, n, x_xrm_lo(m), 0)
+            return x_go(m, q)
+        if pre is 3
+            v: x_mask(x_xrm_lo(m), 4)
+            if peek_i64(m, 360) is 1
+                keep: x_sub(x_xlo(m, n), x_mask(x_xlo(m, n), 4))
+                x_xset(m, n, x_add(keep, v), x_xhi(m, n))
+                return x_go(m, q)
+            x_xset(m, n, v, 0)
+            return x_go(m, q)
+        return x_vmov_in(m, q, n, pre)
+    if b is 111
+        return x_vmov_in(m, q, n, pre)
+    if b is 40
+        return x_vmov_in(m, q, n, pre)
+    if b is 18
+        # the low half only
+        _v0: x_xrm_lo(m)
+        _v1: x_xhi(m, n)
+        x_xset(m, n, _v0, _v1)
+        return x_go(m, q)
+    if b is 22
+        _v0: x_xlo(m, n)
+        _v1: x_xrm_lo(m)
+        x_xset(m, n, _v0, _v1)
+        return x_go(m, q)
+    if b is 17
+        if pre is 2
+            if peek_i64(m, 360) is 1
+                t: peek_i64(m, 376)
+                a: x_xlo(m, n)
+                b2: x_xhi(m, t)
+                x_xset(m, t, a, b2)
+                return x_go(m, q)
+            x_w64(m, peek_i64(m, 376), x_xlo(m, n))
+            return x_go(m, q)
+        if pre is 3
+            v: x_mask(x_xlo(m, n), 4)
+            if peek_i64(m, 360) is 1
+                t: peek_i64(m, 376)
+                keep: x_sub(x_xlo(m, t), x_mask(x_xlo(m, t), 4))
+                x_xset(m, t, x_add(keep, v), x_xhi(m, t))
+                return x_go(m, q)
+            x_w32(m, peek_i64(m, 376), v)
+            return x_go(m, q)
+        return x_vmov_out(m, q, n, pre)
+    if b is 127
+        # 7F with F3 in front is movdqu, a LOAD of sixteen bytes.
+        # With 66 in front it is movdqa, a STORE. F3 arrives here as
+        # pre 3, not pre 2: F2 is the wide-decimal prefix.
+        if pre is 3
+            return x_vmov_in(m, q, n, pre)
+        return x_vmov_out(m, q, n, pre)
+    if b is 41
+        return x_vmov_out(m, q, n, pre)
+    if b is 43
+        return x_vmov_out(m, q, n, pre)
+    if b is 231
+        return x_vmov_out(m, q, n, pre)
+    if b is 214
+        # the low eight bytes only, and the top cleared when the
+        # destination is a register
+        if peek_i64(m, 360) is 1
+            x_xset(m, peek_i64(m, 376), x_xlo(m, n), 0)
+            return x_go(m, q)
+        x_w64(m, peek_i64(m, 376), x_xlo(m, n))
+        return x_go(m, q)
+    if b is 19
+        _v0: x_xlo(m, n)
+        _v1: x_xrm_hi(m)
+        x_xrm_set(m, _v0, _v1)
+        return x_go(m, q)
+    if b is 23
+        _v0: x_xrm_lo(m)
+        _v1: x_xhi(m, n)
+        x_xrm_set(m, _v0, _v1)
+        return x_go(m, q)
+
+    # a plain register in or out of a vector one
+    if b is 110
+        if size is 8
+            x_xset(m, n, x_rm_get(m, 8), 0)
+            return x_go(m, q)
+        x_xset(m, n, x_rm_get(m, 4), 0)
+        return x_go(m, q)
+    if b is 126
+        # 6E/7E with F3 is movq, which takes the low eight bytes and
+        # clears the top. F3 is pre 3.
+        if pre is 3
+            _a: x_xrm_lo(m)
+            x_xset(m, n, _a, 0)
+            return x_go(m, q)
+        if size is 8
+            x_rm_set(m, 8, x_xlo(m, n))
+            return x_go(m, q)
+        x_rm_set(m, 4, x_mask(x_xlo(m, n), 4))
+        return x_go(m, q)
+
+    # gather the top bit of every byte
+    if b is 215
+        x_rset(m, n, 8, x_pmovmskb(m, peek_i64(m, 376)))
+        return x_go(m, q)
+
+    # the bit by bit ones
+    if b is 239
+        return x_vbit(m, q, n, 0)
+    if b is 87
+        return x_vbit(m, q, n, 0)
+    if b is 235
+        return x_vbit(m, q, n, 1)
+    if b is 86
+        return x_vbit(m, q, n, 1)
+    if b is 219
+        return x_vbit(m, q, n, 2)
+    if b is 84
+        return x_vbit(m, q, n, 2)
+    if b is 223
+        return x_vbit(m, q, n, 3)
+    if b is 85
+        return x_vbit(m, q, n, 3)
+
+    # compare every byte, or every four bytes
+    if b is 116
+        _v0: x_xlo(m, n)
+        _v1: x_xrm_lo(m)
+        _v2: x_xhi(m, n)
+        _v3: x_xrm_hi(m)
+        x_xset(m, n, x_pcmp_half(_v0, _v1, 0, 1), x_pcmp_half(_v2, _v3, 0, 1))
+        return x_go(m, q)
+    if b is 117
+        _v0: x_xlo(m, n)
+        _v1: x_xrm_lo(m)
+        _v2: x_xhi(m, n)
+        _v3: x_xrm_hi(m)
+        x_xset(m, n, x_pcmp_half(_v0, _v1, 0, 2), x_pcmp_half(_v2, _v3, 0, 2))
+        return x_go(m, q)
+    if b is 118
+        _v0: x_xlo(m, n)
+        _v1: x_xrm_lo(m)
+        _v2: x_xhi(m, n)
+        _v3: x_xrm_hi(m)
+        x_xset(m, n, x_pcmp_half(_v0, _v1, 0, 4), x_pcmp_half(_v2, _v3, 0, 4))
+        return x_go(m, q)
+    if b is 100
+        _v0: x_xlo(m, n)
+        _v1: x_xrm_lo(m)
+        _v2: x_xhi(m, n)
+        _v3: x_xrm_hi(m)
+        x_xset(m, n, x_pcmp_half(_v0, _v1, 1, 1), x_pcmp_half(_v2, _v3, 1, 1))
+        return x_go(m, q)
+    if b is 101
+        _v0: x_xlo(m, n)
+        _v1: x_xrm_lo(m)
+        _v2: x_xhi(m, n)
+        _v3: x_xrm_hi(m)
+        x_xset(m, n, x_pcmp_half(_v0, _v1, 1, 2), x_pcmp_half(_v2, _v3, 1, 2))
+        return x_go(m, q)
+    if b is 102
+        _v0: x_xlo(m, n)
+        _v1: x_xrm_lo(m)
+        _v2: x_xhi(m, n)
+        _v3: x_xrm_hi(m)
+        x_xset(m, n, x_pcmp_half(_v0, _v1, 1, 4), x_pcmp_half(_v2, _v3, 1, 4))
+        return x_go(m, q)
+
+    # add or take away, piece by piece
+    if b is 252
+        return x_padd(m, q, n, 1, 0)
+    if b is 253
+        return x_padd(m, q, n, 2, 0)
+    if b is 254
+        return x_padd(m, q, n, 4, 0)
+    if b is 244
+        return x_padd(m, q, n, 8, 0)
+    if b is 248
+        return x_padd(m, q, n, 1, 1)
+    if b is 249
+        return x_padd(m, q, n, 2, 1)
+    if b is 250
+        return x_padd(m, q, n, 4, 1)
+    if b is 251
+        return x_padd(m, q, n, 8, 1)
+
+    # shift each piece by a number written in
+    if b is 113
+        return x_pshift_imm(m, q, n, 2)
+    if b is 114
+        return x_pshift_imm(m, q, n, 4)
+
+    # the three-byte families. Only the handful glibc reaches for.
+    if b is 56
+        return x_vec38(m, q, n)
+    if b is 58
+        return x_vec3a(m, q, n)
+
+    # the smallest or largest of each byte
+    if b is 218
+        _v0: x_xlo(m, n)
+        _v1: x_xrm_lo(m)
+        _v2: x_xhi(m, n)
+        _v3: x_xrm_hi(m)
+        x_xset(m, n, x_pminmax_half(_v0, _v1, 0), x_pminmax_half(_v2, _v3, 0))
+        return x_go(m, q)
+    if b is 222
+        _v0: x_xlo(m, n)
+        _v1: x_xrm_lo(m)
+        _v2: x_xhi(m, n)
+        _v3: x_xrm_hi(m)
+        x_xset(m, n, x_pminmax_half(_v0, _v1, 1), x_pminmax_half(_v2, _v3, 1))
+        return x_go(m, q)
+
+    # shift the whole sixteen bytes by a number written in
+    if b is 115
+        op: n % 8
+        by: x_r8(m, q)
+        t: peek_i64(m, 376)
+        if op is 7
+            x_pslldq(m, t, by)
+            return x_go(m, q + 1)
+        if op is 3
+            x_psrldq(m, t, by)
+            return x_go(m, q + 1)
+        if op is 6
+            _v0: x_xlo(m, t)
+            _v1: x_xhi(m, t)
+            x_xset(m, t, x_shl64(_v0, by), x_shl64(_v1, by))
+            return x_go(m, q + 1)
+        if op is 2
+            _v0: x_xlo(m, t)
+            _v1: x_xhi(m, t)
+            x_xset(m, t, x_shr64(_v0, by), x_shr64(_v1, by))
+            return x_go(m, q + 1)
+        return x_go(m, q + 1)
+
+    # interleave the low or high halves
+    if b is 108
+        _v0: x_xlo(m, n)
+        _v1: x_xrm_lo(m)
+        x_xset(m, n, _v0, _v1)
+        return x_go(m, q)
+    if b is 109
+        _v0: x_xhi(m, n)
+        _v1: x_xrm_hi(m)
+        x_xset(m, n, _v0, _v1)
+        return x_go(m, q)
+    if b is 96
+        return x_punpck(m, q, n, 1, 0)
+    if b is 97
+        return x_punpck(m, q, n, 2, 0)
+    if b is 98
+        return x_punpck(m, q, n, 4, 0)
+    if b is 106
+        return x_punpck(m, q, n, 4, 1)
+
+    # shuffle four-byte pieces around
+    if b is 112
+        by: x_r8(m, q)
+        return x_pshufd(m, q + 1, n, by)
+
+    # ---- decimal arithmetic ----
+    # pre says which kind: 2 is one double, 3 is one single, 0 and 1
+    # are the packed forms which do the same to each piece.
+    if b is 88
+        return x_farith(m, q, n, pre, 0)
+    if b is 92
+        return x_farith(m, q, n, pre, 1)
+    if b is 89
+        return x_farith(m, q, n, pre, 2)
+    if b is 94
+        return x_farith(m, q, n, pre, 3)
+    if b is 95
+        return x_farith(m, q, n, pre, 4)
+    if b is 93
+        return x_farith(m, q, n, pre, 5)
+    if b is 81
+        return x_farith(m, q, n, pre, 6)
+
+    # a whole number into a decimal one
+    if b is 42
+        return x_cvt_i2f(m, q, n, pre, size)
+    # a decimal one back to a whole number, throwing the rest away
+    if b is 44
+        return x_cvt_f2i(m, q, n, pre, size)
+    # the same, but rounding rather than throwing away. The rounding
+    # mode is nearest unless a program has changed it, and nothing
+    # here changes it.
+    if b is 45
+        return x_cvt_f2i(m, q, n, pre, size)
+    # between the two widths
+    if b is 90
+        return x_cvt_ff(m, q, n, pre)
+    # a decimal one to a whole number, the packed way
+    if b is 91
+        return x_cvt_f2i(m, q, n, pre, size)
+
+    # compare, leaving the answer as a mask rather than in the flags
+    if b is 194
+        return x_fcmp_mask(m, q, n, pre)
+
+    # lace two together, which is how a program builds a pair
+    if b is 20
+        lo1: x_xlo(m, n)
+        lo2: x_xrm_lo(m)
+        x_xset(m, n, lo1, lo2)
+        return x_go(m, q)
+    if b is 21
+        h1: x_xhi(m, n)
+        h2: x_xrm_hi(m)
+        x_xset(m, n, h1, h2)
+        return x_go(m, q)
+
+    # gather the sign bits
+    if b is 80
+        t: peek_i64(m, 376)
+        r: 0
+        if pre is 1
+            if x_xlo(m, t) < 0
+                r: 1
+            if x_xhi(m, t) < 0
+                r: r + 2
+        if not
+            if x_bit(x_xlo(m, t), 31) is 1
+                r: 1
+            if x_bit(x_xlo(m, t), 63) is 1
+                r: r + 2
+            if x_bit(x_xhi(m, t), 31) is 1
+                r: r + 4
+            if x_bit(x_xhi(m, t), 63) is 1
+                r: r + 8
+        x_rset(m, n, 8, r)
+        return x_go(m, q)
+
+    # compare two numbers and set the ordinary flags
+    if b is 46
+        return x_ucomis(m, q, n, pre)
+    if b is 47
+        return x_ucomis(m, q, n, pre)
+
+    poke_i64(m, 168, X_BADOP)
+    poke_i64(m, 232, 3840 + b)
+    return 0
+
+# add or take away each piece on its own, with no carry between
+x_padd m q n w sub:
+    al: x_xlo(m, n)
+    ah: x_xhi(m, n)
+    bl: x_xrm_lo(m)
+    bh: x_xrm_hi(m)
+    lo: x_padd_half(al, bl, w, sub)
+    hi: x_padd_half(ah, bh, w, sub)
+    x_xset(m, n, lo, hi)
+    return x_go(m, q)
+
+x_padd_half a b w sub:
+    r: 0
+    i: 0
+    as long as i < 8 / w
+        pa: x_mask(x_shr64(a, i * w * 8), w)
+        pb: x_mask(x_shr64(b, i * w * 8), w)
+        k: pa + pb
+        if sub is 1
+            k: pa - pb
+        r: x_or(r, x_shl64(x_mask(k, w), i * w * 8))
+        i: i + 1
+    return r
+
+# shift each piece, left or right, by a number written in
+x_pshift_imm m q n w:
+    op: x_md_reg(m) % 8
+    by: x_r8(m, q)
+    t: peek_i64(m, 376)
+    lo: x_xlo(m, t)
+    hi: x_xhi(m, t)
+    if op is 6
+        x_xset(m, t, x_pshift_half(lo, by, w, 0), x_pshift_half(hi, by, w, 0))
+        return x_go(m, q + 1)
+    if op is 2
+        x_xset(m, t, x_pshift_half(lo, by, w, 1), x_pshift_half(hi, by, w, 1))
+        return x_go(m, q + 1)
+    if op is 4
+        x_xset(m, t, x_pshift_half(lo, by, w, 2), x_pshift_half(hi, by, w, 2))
+        return x_go(m, q + 1)
+    return x_go(m, q + 1)
+
+x_pshift_half a by w way:
+    r: 0
+    i: 0
+    as long as i < 8 / w
+        pa: x_mask(x_shr64(a, i * w * 8), w)
+        k: 0
+        if by < w * 8
+            if way is 0
+                k: x_mask(x_shl64(pa, by), w)
+            if way is 1
+                k: x_shr64(pa, by)
+            if way is 2
+                k: x_mask(x_sar64(x_sval(pa, w), by), w)
+        if not
+            if way is 2
+                k: 0
+                if x_sval(pa, w) < 0
+                    k: x_ones(w)
+        r: x_or(r, x_shl64(k, i * w * 8))
+        i: i + 1
+    return r
+
+# the 0F 38 family
+x_vec38 m q n:
+    b: x_r8(m, q - 1)
+    # the modrm was already read against the wrong byte, so redo it
+    op: x_r8(m, q)
+    poke_i64(m, 168, X_BADOP)
+    poke_i64(m, 232, 14336 + op)
+    return 0
+
+# the 0F 3A family
+x_vec3a m q n:
+    op: x_r8(m, q)
+    poke_i64(m, 168, X_BADOP)
+    poke_i64(m, 232, 14848 + op)
+    return 0
+
+# ---- the two-operand vector workers ----
+#
+# Each reads BOTH halves of the second operand into names before
+# writing anything. Calling two jobs inside the arguments of a third
+# leaves them fighting over the same scratch and the first answer is
+# quietly lost. That bug corrupted memory a long way from here.
+
+x_vbit m q n op:
+    al: x_xlo(m, n)
+    ah: x_xhi(m, n)
+    bl: x_xrm_lo(m)
+    bh: x_xrm_hi(m)
+    if op is 0
+        x_xset(m, n, x_xor(al, bl), x_xor(ah, bh))
+        return x_go(m, q)
+    if op is 1
+        x_xset(m, n, x_or(al, bl), x_or(ah, bh))
+        return x_go(m, q)
+    if op is 2
+        x_xset(m, n, x_and(al, bl), x_and(ah, bh))
+        return x_go(m, q)
+    x_xset(m, n, x_and(x_not(al), bl), x_and(x_not(ah), bh))
+    return x_go(m, q)
+
+x_vcmp m q n mode w:
+    al: x_xlo(m, n)
+    ah: x_xhi(m, n)
+    bl: x_xrm_lo(m)
+    bh: x_xrm_hi(m)
+    lo: x_pcmp_half(al, bl, mode, w)
+    hi: x_pcmp_half(ah, bh, mode, w)
+    x_xset(m, n, lo, hi)
+    return x_go(m, q)
+
+x_vminmax m q n big:
+    al: x_xlo(m, n)
+    ah: x_xhi(m, n)
+    bl: x_xrm_lo(m)
+    bh: x_xrm_hi(m)
+    lo: x_pminmax_half(al, bl, big)
+    hi: x_pminmax_half(ah, bh, big)
+    x_xset(m, n, lo, hi)
+    return x_go(m, q)
+
+# a move into a vector register
+x_vmov_in m q n pre:
+    # read both halves into names first. Calling two jobs inside the
+    # arguments of a third leaves them fighting over the same
+    # scratch, and the first answer is lost.
+    a: x_xrm_lo(m)
+    b: x_xrm_hi(m)
+    x_xset(m, n, a, b)
+    return x_go(m, q)
+
+# a move out of one
+x_vmov_out m q n pre:
+    _v0: x_xlo(m, n)
+    _v1: x_xhi(m, n)
+    x_xrm_set(m, _v0, _v1)
+    return x_go(m, q)
+
+# take the low halves of both and lace them together
+x_punpck m q n w high:
+    al: x_xlo(m, n)
+    bl: x_xrm_lo(m)
+    if high is 1
+        al: x_xhi(m, n)
+        bl: x_xrm_hi(m)
+    lo: 0
+    hi: 0
+    per: 8 / w
+    i: 0
+    as long as i < per
+        pa: x_mask(x_shr64(al, i * w * 8), w)
+        pb: x_mask(x_shr64(bl, i * w * 8), w)
+        at: i * 2 * w * 8
+        if at < 64
+            lo: x_or(lo, x_shl64(pa, at))
+            lo: x_or(lo, x_shl64(pb, at + w * 8))
+        if not
+            hi: x_or(hi, x_shl64(pa, at - 64))
+            hi: x_or(hi, x_shl64(pb, at - 64 + w * 8))
+        i: i + 1
+    x_xset(m, n, lo, hi)
+    return x_go(m, q)
+
+# rearrange the four four-byte pieces, as the byte says
+x_pshufd m q n by:
+    s0: x_vpiece(m, by % 4)
+    s1: x_vpiece(m, (by / 4) % 4)
+    s2: x_vpiece(m, (by / 16) % 4)
+    s3: x_vpiece(m, (by / 64) % 4)
+    x_xset(m, n, x_or(s0, x_shl64(s1, 32)), x_or(s2, x_shl64(s3, 32)))
+    return x_go(m, q)
+
+# one four-byte piece of the second operand
+x_vpiece m i:
+    if i < 2
+        return x_mask(x_shr64(x_xrm_lo(m), i * 32), 4)
+    return x_mask(x_shr64(x_xrm_hi(m), (i - 2) * 32), 4)
+
+# ---- one decimal sum, at whichever width the prefix asked for ----
+#
+# pre 2 means a single double in the bottom of the register and the
+# rest untouched. pre 3 means a single of the narrow kind. pre 1
+# means two doubles side by side, pre 0 four of the narrow kind.
+
+x_farith m q n pre op:
+    if pre is 2
+        a: x_xlo(m, n)
+        b: x_xrm_lo(m)
+        x_xset(m, n, x_fdo(m, op, a, b), x_xhi(m, n))
+        return x_go(m, q)
+    if pre is 3
+        a: x_f2d(m, x_mask(x_xlo(m, n), 4))
+        b: x_f2d(m, x_mask(x_xrm_lo(m), 4))
+        r: x_d2f(m, x_fdo(m, op, a, b))
+        keep: x_sub(x_xlo(m, n), x_mask(x_xlo(m, n), 4))
+        x_xset(m, n, x_add(keep, r), x_xhi(m, n))
+        return x_go(m, q)
+    if pre is 1
+        l: x_fdo(m, op, x_xlo(m, n), x_xrm_lo(m))
+        h: x_fdo(m, op, x_xhi(m, n), x_xrm_hi(m))
+        x_xset(m, n, l, h)
+        return x_go(m, q)
+    # four of the narrow kind
+    l: x_pair32(m, op, x_xlo(m, n), x_xrm_lo(m))
+    h: x_pair32(m, op, x_xhi(m, n), x_xrm_hi(m))
+    x_xset(m, n, l, h)
+    return x_go(m, q)
+
+# two narrow ones held in one sixty-four bit half
+x_pair32 m op a b:
+    lo: x_d2f(m, x_fdo(m, op, x_f2d(m, x_mask(a, 4)), x_f2d(m, x_mask(b, 4))))
+    hi: x_d2f(m, x_fdo(m, op, x_f2d(m, x_shr64(a, 32)), x_f2d(m, x_shr64(b, 32))))
+    return x_or(lo, x_shl64(hi, 32))
+
+x_fdo m op a b:
+    if op is 0
+        return x_fadd(m, a, b)
+    if op is 1
+        return x_fsub(m, a, b)
+    if op is 2
+        return x_fmul(m, a, b)
+    if op is 3
+        return x_fdiv(m, a, b)
+    if op is 4
+        return x_fmax(m, a, b)
+    if op is 5
+        return x_fmin(m, a, b)
+    return x_fsqrt(m, b)
+
+# the larger of two, and the smaller. When they cannot be compared
+# the hardware hands back the second one, whatever it is.
+x_fmax m a b:
+    c: x_fcmp(m, a, b)
+    if c is 2
+        return a
+    return b
+
+x_fmin m a b:
+    c: x_fcmp(m, a, b)
+    if c is 0
+        return a
+    return b
+
+# ---- moving between whole and decimal numbers ----
+
+x_cvt_i2f m q n pre size:
+    v: 0
+    if size is 8
+        v: x_rm_get(m, 8)
+    if not
+        v: x_sval(x_rm_get(m, 4), 4)
+    d: x_i2d(m, v)
+    if pre is 3
+        keep: x_sub(x_xlo(m, n), x_mask(x_xlo(m, n), 4))
+        x_xset(m, n, x_add(keep, x_d2f(m, d)), x_xhi(m, n))
+        return x_go(m, q)
+    x_xset(m, n, d, x_xhi(m, n))
+    return x_go(m, q)
+
+x_cvt_f2i m q n pre size:
+    d: 0
+    if pre is 3
+        d: x_f2d(m, x_mask(x_xrm_lo(m), 4))
+    if not
+        d: x_xrm_lo(m)
+    v: x_d2i(m, d)
+    if size is 8
+        x_rset(m, n, 8, v)
+        return x_go(m, q)
+    x_rset(m, n, 4, x_mask(v, 4))
+    return x_go(m, q)
+
+x_cvt_ff m q n pre:
+    if pre is 3
+        # narrow to wide
+        _v0: x_xrm_lo(m)
+        _v1: x_xhi(m, n)
+        x_xset(m, n, x_f2d(m, x_mask(_v0, 4)), _v1)
+        return x_go(m, q)
+    if pre is 2
+        # wide to narrow
+        keep: x_sub(x_xlo(m, n), x_mask(x_xlo(m, n), 4))
+        _v0: x_xrm_lo(m)
+        _v1: x_xhi(m, n)
+        x_xset(m, n, x_add(keep, x_d2f(m, _v0)), _v1)
+        return x_go(m, q)
+    if pre is 1
+        # two wide ones into two narrow ones
+        a: x_d2f(m, x_xrm_lo(m))
+        b: x_d2f(m, x_xrm_hi(m))
+        x_xset(m, n, x_or(a, x_shl64(b, 32)), 0)
+        return x_go(m, q)
+    # two narrow ones into two wide ones
+    lo: x_xrm_lo(m)
+    x_xset(m, n, x_f2d(m, x_mask(lo, 4)), x_f2d(m, x_shr64(lo, 32)))
+    return x_go(m, q)
+
+# ---- comparing, the two ways ----
+
+# the answer goes in the ordinary flags, the way a branch wants it.
+# Unordered means all three of zero, parity and carry are set, which
+# is how a program spots a not-a-number.
+x_ucomis m q n pre:
+    a: 0
+    b: 0
+    if pre is 1
+        a: x_xlo(m, n)
+        b: x_xrm_lo(m)
+    if not
+        a: x_f2d(m, x_mask(x_xlo(m, n), 4))
+        b: x_f2d(m, x_mask(x_xrm_lo(m), 4))
+    c: x_fcmp(m, a, b)
+    poke_i64(m, 160, 0)
+    poke_i64(m, 344, 0)
+    if c is 3
+        poke_i64(m, 136, 1)
+        poke_i64(m, 328, 1)
+        poke_i64(m, 152, 1)
+        return x_go(m, q)
+    poke_i64(m, 328, 0)
+    if c is 1
+        poke_i64(m, 136, 1)
+        poke_i64(m, 152, 0)
+        return x_go(m, q)
+    if c is 0
+        poke_i64(m, 136, 0)
+        poke_i64(m, 152, 1)
+        return x_go(m, q)
+    poke_i64(m, 136, 0)
+    poke_i64(m, 152, 0)
+    return x_go(m, q)
+
+# the answer goes in the register as all ones or all noughts
+x_fcmp_mask m q n pre:
+    which: x_r8(m, q)
+    a: 0
+    b: 0
+    if pre is 2
+        a: x_xlo(m, n)
+        b: x_xrm_lo(m)
+    if not
+        a: x_f2d(m, x_mask(x_xlo(m, n), 4))
+        b: x_f2d(m, x_mask(x_xrm_lo(m), 4))
+    c: x_fcmp(m, a, b)
+    hit: x_cmp_kind(c, which % 8)
+    r: 0
+    if hit is 1
+        r: 0 - 1
+    if pre is 2
+        x_xset(m, n, r, x_xhi(m, n))
+        return x_go(m, q + 1)
+    keep: x_sub(x_xlo(m, n), x_mask(x_xlo(m, n), 4))
+    x_xset(m, n, x_add(keep, x_mask(r, 4)), x_xhi(m, n))
+    return x_go(m, q + 1)
+
+# the eight questions a compare can ask
+x_cmp_kind c which:
+    if which is 0
+        if c is 1
+            return 1
+        return 0
+    if which is 1
+        if c is 0
+            return 1
+        return 0
+    if which is 2
+        if c is 0
+            return 1
+        if c is 1
+            return 1
+        return 0
+    if which is 3
+        if c is 3
+            return 1
+        return 0
+    if which is 4
+        if c is 1
+            return 0
+        return 1
+    if which is 5
+        if c is 0
+            return 0
+        return 1
+    if which is 6
+        if c is 2
+            return 1
+        if c is 3
+            return 1
+        return 0
+    if c is 3
+        return 0
+    return 1
+
+# ---------------------------------------------------------------
+# decimal numbers, the way the hardware keeps them
+# ---------------------------------------------------------------
+#
+# A double is sixty-four bits: one for the sign, eleven for the
+# exponent, fifty-two for the fraction. The value is
+#
+#     sign * 1.fraction * 2^(exponent - 1023)
+#
+# except when the exponent is nought, which means a very small
+# number with no leading one, or all ones, which means infinity or
+# not-a-number.
+#
+# Sovren has no decimals, so all of this is done with whole numbers.
+# The fraction is carried as a fifty-three bit integer and the
+# exponent separately, which is exactly what the hardware does
+# underneath.
+#
+# The pieces are handed back through slots because a job returns one
+# value: 576 sign, 584 exponent, 592 the fraction, 600 what kind.
+
+X_F_ZERO: 0
+X_F_NUM: 1
+X_F_INF: 2
+X_F_NAN: 3
+
+X_BIAS: 1023
+X_HIDDEN: 4503599627370496
+
+# take a double apart
+x_unpack m v:
+    sign: 0
+    if v < 0
+        sign: 1
+    ex: x_mask(x_shr64(v, 52), 2) % 2048
+    fr: x_and(v, 4503599627370495)
+    poke_i64(m, 576, sign)
+    if ex is 2047
+        if fr is 0
+            poke_i64(m, 600, X_F_INF)
+            return 0
+        poke_i64(m, 600, X_F_NAN)
+        return 0
+    if ex is 0
+        if fr is 0
+            poke_i64(m, 600, X_F_ZERO)
+            poke_i64(m, 584, 0)
+            poke_i64(m, 592, 0)
+            return 0
+        # A very small number: no hidden one. Bring it up until the
+        # top bit is where a normal number keeps it, so everything
+        # after this can treat all numbers the same way.
+        poke_i64(m, 600, X_F_NUM)
+        e2: 1 - X_BIAS - 52
+        f2: fr
+        as long as f2 < X_HIDDEN
+            f2: x_add(f2, f2)
+            e2: e2 - 1
+        poke_i64(m, 584, e2)
+        poke_i64(m, 592, f2)
+        return 0
+    poke_i64(m, 600, X_F_NUM)
+    poke_i64(m, 584, ex - X_BIAS - 52)
+    poke_i64(m, 592, fr + X_HIDDEN)
+    return 0
+
+x_up_sign m:
+    return peek_i64(m, 576)
+
+x_up_exp m:
+    return peek_i64(m, 584)
+
+x_up_frac m:
+    return peek_i64(m, 592)
+
+x_up_kind m:
+    return peek_i64(m, 600)
+
+# put one back together, rounding to nearest and settling ties by
+# whichever way leaves the last bit even, which is what the hardware
+# does and what makes sums repeatable.
+x_pack sign ex fr:
+    if fr is 0
+        if sign is 1
+            return 0 - 9223372036854775807 - 1
+        return 0
+    e: ex
+    f: fr
+    # bring it up until the hidden one is in place
+    as long as f < X_HIDDEN
+        f: x_add(f, f)
+        e: e - 1
+    # and down if it went past, keeping what falls off for rounding
+    lost: 0
+    half: 0
+    as long as f >= X_HIDDEN + X_HIDDEN
+        if f % 2 is 1
+            lost: 1
+        half: 0
+        if f % 2 is 1
+            half: 1
+        f: x_shr64(f, 1)
+        e: e + 1
+    return x_finish(sign, e, f, 0, 0)
+
+# the same, told exactly what fell off the bottom
+x_pack_round sign ex fr guard sticky:
+    if fr is 0
+        if guard is 0
+            if sticky is 0
+                if sign is 1
+                    return 0 - 9223372036854775807 - 1
+                return 0
+    e: ex
+    f: fr
+    g: guard
+    st: sticky
+    as long as f < X_HIDDEN
+        f: x_add(f, f)
+        e: e - 1
+        f: f + g
+        g: st
+        st: 0
+    as long as f >= X_HIDDEN + X_HIDDEN
+        if g is 1
+            st: 1
+        g: f % 2
+        f: x_shr64(f, 1)
+        e: e + 1
+    return x_finish(sign, e, f, g, st)
+
+# round, then lay the three pieces out as sixty-four bits
+x_finish sign e f guard sticky:
+    ee: e
+    ff: f
+    if guard is 1
+        up: 0
+        if sticky is 1
+            up: 1
+        if not
+            # a tie: round to the even one
+            if ff % 2 is 1
+                up: 1
+        if up is 1
+            ff: ff + 1
+            if ff >= X_HIDDEN + X_HIDDEN
+                ff: x_shr64(ff, 1)
+                ee: ee + 1
+    # what the exponent field will hold
+    be: ee + X_BIAS + 52
+    if be >= 2047
+        # too big to say: infinity
+        return x_bits_of(sign, 2047, 0)
+    if be <= 0
+        # too small to say with a hidden one: shift it down instead
+        sh: 1 - be
+        if sh > 63
+            if sign is 1
+                return 0 - 9223372036854775807 - 1
+            return 0
+        g: 0
+        if sh >= 1
+            g: x_bit(ff, sh - 1)
+        rest: 0
+        if sh > 1
+            if x_and(ff, x_sub(x_shl64(1, sh - 1), 1)) is not 0
+                rest: 1
+        sub: x_shr64(ff, sh)
+        if g is 1
+            if rest is 1
+                sub: sub + 1
+            if not
+                if sub % 2 is 1
+                    sub: sub + 1
+        if sub >= X_HIDDEN
+            return x_bits_of(sign, 1, sub - X_HIDDEN)
+        return x_bits_of(sign, 0, sub)
+    return x_bits_of(sign, be, ff - X_HIDDEN)
+
+x_bits_of sign be fr:
+    v: x_or(x_shl64(be, 52), fr)
+    if sign is 1
+        return x_or(v, 0 - 9223372036854775807 - 1)
+    return v
+
+X_QNAN: 9221120237041090560
+
+# ---- adding two of them ----
+x_fadd m a b:
+    x_unpack(m, a)
+    ka: x_up_kind(m)
+    sa: x_up_sign(m)
+    ea: x_up_exp(m)
+    fa: x_up_frac(m)
+    x_unpack(m, b)
+    kb: x_up_kind(m)
+    sb: x_up_sign(m)
+    eb: x_up_exp(m)
+    fb: x_up_frac(m)
+    if ka is X_F_NAN
+        return X_QNAN
+    if kb is X_F_NAN
+        return X_QNAN
+    if ka is X_F_INF
+        if kb is X_F_INF
+            if sa is not sb
+                return X_QNAN
+            return a
+        return a
+    if kb is X_F_INF
+        return b
+    if ka is X_F_ZERO
+        if kb is X_F_ZERO
+            if sa is 1
+                if sb is 1
+                    return a
+            return 0
+        return b
+    if kb is X_F_ZERO
+        return a
+    # line the two up on the same exponent, keeping what falls off
+    return x_add_aligned(m, sa, ea, fa, sb, eb, fb)
+
+# Both numbers scaled up three bits, so the bits that would fall off
+# the bottom stay in the sum where the rounding can see them. That is
+# simpler than carrying guard bits alongside, and it is right: three
+# spare bits are exactly what round-to-nearest needs.
+x_add_aligned m sa ea fa sb eb fb:
+    s1: sa
+    e1: ea
+    f1: fa
+    s2: sb
+    e2: eb
+    f2: fb
+    # the one with the bigger exponent goes first; on a tie, the
+    # bigger fraction, so the subtraction below cannot go negative
+    swap: 0
+    if e2 > e1
+        swap: 1
+    if e2 is e1
+        if f2 > f1
+            swap: 1
+    if swap is 1
+        s1: sb
+        e1: eb
+        f1: fb
+        s2: sa
+        e2: ea
+        f2: fa
+    d: e1 - e2
+    big: x_shl64(f1, 3)
+    small: 0
+    if d > 60
+        # too far apart to matter, but not nothing
+        if f2 is not 0
+            small: 1
+    if not
+        wide: x_shl64(f2, 3)
+        small: x_shr64(wide, d)
+        if d > 0
+            if x_and(wide, x_sub(x_shl64(1, d), 1)) is not 0
+                small: x_or(small, 1)
+    r: 0
+    sg: s1
+    if s1 is s2
+        r: x_add(big, small)
+    if not
+        r: x_sub(big, small)
+    if r is 0
+        return 0
+    if r < 0
+        r: x_sub(0, r)
+        sg: 1 - s1
+    guard: x_bit(r, 2)
+    st: 0
+    if x_and(r, 3) is not 0
+        st: 1
+    return x_pack_round(sg, e1, x_shr64(r, 3), guard, st)
+
+x_fsub m a b:
+    return x_fadd(m, a, x_fneg(b))
+
+x_fneg v:
+    return x_xor(v, 0 - 9223372036854775807 - 1)
+
+# ---- multiplying ----
+x_fmul m a b:
+    x_unpack(m, a)
+    ka: x_up_kind(m)
+    sa: x_up_sign(m)
+    ea: x_up_exp(m)
+    fa: x_up_frac(m)
+    x_unpack(m, b)
+    kb: x_up_kind(m)
+    sb: x_up_sign(m)
+    eb: x_up_exp(m)
+    fb: x_up_frac(m)
+    sg: 0
+    if sa is not sb
+        sg: 1
+    if ka is X_F_NAN
+        return X_QNAN
+    if kb is X_F_NAN
+        return X_QNAN
+    if ka is X_F_INF
+        if kb is X_F_ZERO
+            return X_QNAN
+        return x_bits_of(sg, 2047, 0)
+    if kb is X_F_INF
+        if ka is X_F_ZERO
+            return X_QNAN
+        return x_bits_of(sg, 2047, 0)
+    if ka is X_F_ZERO
+        return x_bits_of(sg, 0, 0)
+    if kb is X_F_ZERO
+        return x_bits_of(sg, 0, 0)
+    # two fifty-three bit numbers make a hundred and six bit answer,
+    # so the top half comes from the wide multiply and the bottom
+    # half decides the rounding
+    hi: x_mulhi_un(fa, fb)
+    lo: x_mul(fa, fb)
+    e: ea + eb
+    # bring the answer down to fifty-three bits
+    return x_norm106(m, sg, e, hi, lo)
+
+# a hundred and six bit answer, squeezed back into fifty-three
+x_norm106 m sg e hi lo:
+    h: hi
+    l: lo
+    ex: e
+    # find the top bit
+    n: 0
+    if h is not 0
+        n: 64
+        as long as x_bit(h, n - 64 + 63) is 0
+            n: n - 1
+        n: n + 63 - 63
+        n: 0
+        i: 63
+        as long as i >= 0
+            if x_bit(h, i) is 1
+                n: i + 65
+                i: 0 - 1
+            if not
+                i: i - 1
+    if not
+        i: 63
+        as long as i >= 0
+            if x_bit(l, i) is 1
+                n: i + 1
+                i: 0 - 1
+            if not
+                i: i - 1
+    if n is 0
+        return x_bits_of(sg, 0, 0)
+    # we want the top fifty-three bits of those n
+    sh: n - 53
+    if sh <= 0
+        return x_pack_round(sg, ex - sh, l, 0, 0)
+    return x_shift_down(m, sg, ex + sh, h, l, sh)
+
+# take the top fifty-three bits out of a hundred and twenty-eight
+x_shift_down m sg ex h l sh:
+    f: 0
+    guard: 0
+    sticky: 0
+    if sh < 64
+        f: x_or(x_shr64(l, sh), x_shl64(h, 64 - sh))
+        guard: x_bit(l, sh - 1)
+        if sh > 1
+            if x_and(l, x_sub(x_shl64(1, sh - 1), 1)) is not 0
+                sticky: 1
+    if not
+        f: x_shr64(h, sh - 64)
+        if sh is 64
+            guard: x_bit(l, 63)
+            if x_and(l, 9223372036854775807) is not 0
+                sticky: 1
+        if not
+            guard: x_bit(h, sh - 65)
+            if l is not 0
+                sticky: 1
+            if sh > 65
+                if x_and(h, x_sub(x_shl64(1, sh - 65), 1)) is not 0
+                    sticky: 1
+    return x_pack_round(sg, ex, f, guard, sticky)
+
+# ---- dividing ----
+x_fdiv m a b:
+    x_unpack(m, a)
+    ka: x_up_kind(m)
+    sa: x_up_sign(m)
+    ea: x_up_exp(m)
+    fa: x_up_frac(m)
+    x_unpack(m, b)
+    kb: x_up_kind(m)
+    sb: x_up_sign(m)
+    eb: x_up_exp(m)
+    fb: x_up_frac(m)
+    sg: 0
+    if sa is not sb
+        sg: 1
+    if ka is X_F_NAN
+        return X_QNAN
+    if kb is X_F_NAN
+        return X_QNAN
+    if ka is X_F_INF
+        if kb is X_F_INF
+            return X_QNAN
+        return x_bits_of(sg, 2047, 0)
+    if kb is X_F_INF
+        return x_bits_of(sg, 0, 0)
+    if kb is X_F_ZERO
+        if ka is X_F_ZERO
+            return X_QNAN
+        return x_bits_of(sg, 2047, 0)
+    if ka is X_F_ZERO
+        return x_bits_of(sg, 0, 0)
+    # Long division in binary, fifty-five bits of answer: fifty-three
+    # to keep, then a guard bit and a sticky bit for the rounding.
+    #
+    # The running remainder is doubled each round. It is always below
+    # the divisor, and the divisor is at most fifty-three bits, so
+    # after doubling it needs fifty-four — comfortably inside a
+    # number. Doubling the remainder AND the top bit together, which
+    # is what the obvious loop does, is what overflows.
+    # Long division in binary. Each round doubles the remainder and
+    # asks whether the divisor fits. The remainder has to stay below
+    # the divisor for that to work, so when the dividend starts out
+    # the larger of the two, the divisor comes off first and that
+    # counts as the leading bit of the answer.
+    q: 0
+    r: fa
+    lead: 0
+    if r >= fb
+        r: r - fb
+        lead: 1
+    i: 0
+    as long as i < 54
+        r: x_add(r, r)
+        q: x_add(q, q)
+        if r >= fb
+            r: r - fb
+            q: q + 1
+        i: i + 1
+    st: 0
+    if r is not 0
+        st: 1
+    # the whole answer is the leading bit followed by those fifty-four
+    full: x_or(x_shl64(lead, 54), q)
+    guard: full % 2
+    f: x_shr64(full, 1)
+    e: ea - eb - 53
+    return x_pack_round(sg, e, f, guard, st)
+
+# ---- comparing ----
+# returns 0 below, 1 equal, 2 above, 3 not comparable
+x_fcmp m a b:
+    x_unpack(m, a)
+    ka: x_up_kind(m)
+    x_unpack(m, b)
+    kb: x_up_kind(m)
+    if ka is X_F_NAN
+        return 3
+    if kb is X_F_NAN
+        return 3
+    # nought and minus nought are the same number
+    if ka is X_F_ZERO
+        if kb is X_F_ZERO
+            return 1
+    sa: 0
+    if a < 0
+        sa: 1
+    sb: 0
+    if b < 0
+        sb: 1
+    if sa is not sb
+        if sa is 1
+            return 0
+        return 2
+    # same sign: the bits happen to sort the right way round
+    ua: x_and(a, 9223372036854775807)
+    ub: x_and(b, 9223372036854775807)
+    if ua is ub
+        return 1
+    below: 0
+    if x_ult(ua, ub) is 1
+        below: 1
+    if sa is 1
+        below: 1 - below
+    if below is 1
+        return 0
+    return 2
+
+# ---- whole numbers to and from ----
+x_i2d m n:
+    if n is 0
+        return 0
+    sg: 0
+    v: n
+    if v < 0
+        sg: 1
+        if v is 0 - 9223372036854775807 - 1
+            # no positive twin: this one is exactly -2^63
+            return x_bits_of(1, 1086, 0)
+        v: 0 - v
+    return x_pack_round(sg, 0, v, 0, 0)
+
+# a double back to a whole number, throwing away the fraction, which
+# is what the hardware does when a program writes (int)x
+x_d2i m v:
+    x_unpack(m, v)
+    k: x_up_kind(m)
+    if k is X_F_ZERO
+        return 0
+    if k is X_F_NAN
+        return 0 - 9223372036854775807 - 1
+    if k is X_F_INF
+        return 0 - 9223372036854775807 - 1
+    sg: x_up_sign(m)
+    e: x_up_exp(m)
+    f: x_up_frac(m)
+    if e >= 0
+        # the fraction is fifty-three bits, so anything shifted up
+        # more than ten places will not fit in sixty-three
+        if e > 10
+            return 0 - 9223372036854775807 - 1
+        r: x_shl64(f, e)
+        if r < 0
+            return 0 - 9223372036854775807 - 1
+        if sg is 1
+            return x_sub(0, r)
+        return r
+    sh: 0 - e
+    if sh > 63
+        return 0
+    r: x_shr64(f, sh)
+    if sg is 1
+        return x_sub(0, r)
+    return r
+
+# ---- the single-width kind, which is the same idea in thirty-two
+#      bits. Converting to a double and back is exact both ways, so
+#      the work is only in the laying out. ----
+x_f2d m v:
+    u: x_lo(v)
+    sign: x_bit(u, 31)
+    ex: x_shr64(x_and(u, 2139095040), 23)
+    fr: x_and(u, 8388607)
+    if ex is 255
+        if fr is 0
+            return x_bits_of(sign, 2047, 0)
+        return X_QNAN
+    if ex is 0
+        if fr is 0
+            return x_bits_of(sign, 0, 0)
+        return x_pack_round(sign, 0 - 149, fr, 0, 0)
+    return x_bits_of(sign, ex - 127 + X_BIAS, x_shl64(fr, 29))
+
+x_d2f m v:
+    x_unpack(m, v)
+    k: x_up_kind(m)
+    sg: x_up_sign(m)
+    if k is X_F_ZERO
+        return x_shl64(sg, 31)
+    if k is X_F_NAN
+        return 2143289344
+    if k is X_F_INF
+        return x_or(x_shl64(sg, 31), 2139095040)
+    e: x_up_exp(m)
+    f: x_up_frac(m)
+    # a single keeps twenty-four bits, a double fifty-three
+    guard: x_bit(f, 28)
+    st: 0
+    if x_and(f, 268435455) is not 0
+        st: 1
+    ff: x_shr64(f, 29)
+    ee: e + 29
+    if guard is 1
+        up: 0
+        if st is 1
+            up: 1
+        if not
+            if ff % 2 is 1
+                up: 1
+        if up is 1
+            ff: ff + 1
+            if ff >= 16777216
+                ff: x_shr64(ff, 1)
+                ee: ee + 1
+    be: ee + 127 + 23
+    if be >= 255
+        return x_or(x_shl64(sg, 31), 2139095040)
+    if be <= 0
+        sh: 1 - be
+        if sh > 31
+            return x_shl64(sg, 31)
+        return x_or(x_shl64(sg, 31), x_shr64(ff, sh))
+    return x_or(x_shl64(sg, 31), x_or(x_shl64(be, 23), ff - 8388608))
+
+# ---- the square root ----
+#
+# Long division in binary, the way it is done on paper but in base
+# four: two bits of the number come in, one bit of the answer goes
+# out. Fifty-four rounds give fifty-four bits, which is one more
+# than a double keeps, so the last one decides the rounding.
+#
+# The number is scaled to a hundred and eight bits, held as two
+# halves, because a fifty-three bit fraction squared needs that
+# much. The running remainder never passes twice the root, so it
+# stays comfortably inside one number.
+x_fsqrt m v:
+    x_unpack(m, v)
+    k: x_up_kind(m)
+    if k is X_F_ZERO
+        return v
+    if k is X_F_NAN
+        return X_QNAN
+    sg: x_up_sign(m)
+    if sg is 1
+        # the square root of a number below nothing is not a number
+        return X_QNAN
+    if k is X_F_INF
+        return v
+    e: x_up_exp(m)
+    f: x_up_frac(m)
+    # the exponent has to be even to halve exactly
+    if e % 2 is not 0
+        f: x_add(f, f)
+        e: e - 1
+    return x_sqrt_bits(m, e, f)
+
+x_sqrt_bits m e f:
+    # how many bits the fraction has
+    nb: 0
+    i: 63
+    as long as i >= 0
+        if x_bit(f, i) is 1
+            nb: i + 1
+            i: 0 - 1
+        if not
+            i: i - 1
+    sh: 108 - nb
+    if sh % 2 is not 0
+        sh: sh - 1
+    # the value shifted up, as two halves
+    hi: 0
+    lo: 0
+    if sh >= 64
+        hi: x_shl64(f, sh - 64)
+    if not
+        if sh > 0
+            hi: x_shr64(f, 64 - sh)
+        lo: x_shl64(f, sh)
+    ee: (e - sh) / 2
+    return x_sqrt_loop(m, ee, hi, lo)
+
+x_sqrt_loop m ee hi lo:
+    r: 0
+    rem: 0
+    i: 0
+    as long as i < 54
+        pos: 106 - 2 * i
+        two: 0
+        if pos >= 64
+            two: x_and(x_shr64(hi, pos - 64), 3)
+        if not
+            two: x_and(x_shr64(lo, pos), 3)
+        rem: x_add(x_shl64(rem, 2), two)
+        t: x_add(x_shl64(r, 2), 1)
+        r: x_add(r, r)
+        if x_ult(rem, t) is 0
+            rem: x_sub(rem, t)
+            r: r + 1
+        i: i + 1
+    st: 0
+    if rem is not 0
+        st: 1
+    return x_pack_round(0, ee, r, 0, st)
+
+# ---------------------------------------------------------------
+# the vector registers
+# ---------------------------------------------------------------
+#
+# Sixteen registers of sixteen bytes each, held as two halves so an
+# ordinary Sovren number can carry each one. Real programs reach for
+# these constantly: glibc searches and copies memory sixteen bytes
+# at a time, so a general-purpose emulator cannot skip them.
+#
+# Only the whole-number instructions are here. The floating point
+# ones are a different job, and nothing in a normal program's
+# start-up path needs them.
+
+# peek_i64 and poke_i64 count in BYTES, not in whole numbers, so a
+# register sixteen bytes wide starts at n * 16 and its top half is
+# eight bytes further on. Getting this wrong made every vector
+# register overlap the next one.
+x_xlo m n:
+    return peek_i64(peek_i64(m, 488), n * 16)
+
+x_xhi m n:
+    return peek_i64(peek_i64(m, 488), n * 16 + 8)
+
+x_xset m n lo hi:
+    x: peek_i64(m, 488)
+    poke_i64(x, n * 16, lo)
+    poke_i64(x, n * 16 + 8, hi)
+    return 0
+
+# one byte out of a vector register, counted from the bottom
+x_xbyte m n i:
+    if i < 8
+        return x_mask(x_shr64(x_xlo(m, n), i * 8), 1)
+    return x_mask(x_shr64(x_xhi(m, n), (i - 8) * 8), 1)
+
+# the second operand of a vector instruction, as two halves. The
+# answer goes in the two scratch slots so a job can hand back a pair.
+x_xrm_lo m:
+    if peek_i64(m, 360) is 1
+        return x_xlo(m, peek_i64(m, 376))
+    return x_r64(m, peek_i64(m, 376))
+
+x_xrm_hi m:
+    if peek_i64(m, 360) is 1
+        return x_xhi(m, peek_i64(m, 376))
+    return x_r64(m, x_add(peek_i64(m, 376), 8))
+
+x_xrm_set m lo hi:
+    if peek_i64(m, 360) is 1
+        return x_xset(m, peek_i64(m, 376), lo, hi)
+    x_w64(m, peek_i64(m, 376), lo)
+    x_w64(m, x_add(peek_i64(m, 376), 8), hi)
+    return 0
+
+# compare sixteen pairs of bytes, one half at a time. `mode` is 0
+# for equal and 1 for greater, and `w` is how wide each piece is.
+x_pcmp_half a b mode w:
+    r: 0
+    i: 0
+    as long as i < 8 / w
+        pa: x_mask(x_shr64(a, i * w * 8), w)
+        pb: x_mask(x_shr64(b, i * w * 8), w)
+        hit: 0
+        if mode is 0
+            if pa is pb
+                hit: 1
+        if not
+            if x_sval(pa, w) > x_sval(pb, w)
+                hit: 1
+        if hit is 1
+            r: x_or(r, x_shl64(x_ones(w), i * w * 8))
+        i: i + 1
+    return r
+
+# a run of one bits, w bytes wide
+x_ones w:
+    if w is 1
+        return 255
+    if w is 2
+        return 65535
+    if w is 4
+        return 4294967295
+    return 0 - 1
+
+# the smaller or larger of each byte, counting upwards
+x_pminmax_half a b big:
+    r: 0
+    i: 0
+    as long as i < 8
+        pa: x_mask(x_shr64(a, i * 8), 1)
+        pb: x_mask(x_shr64(b, i * 8), 1)
+        k: pa
+        if big is 1
+            if pb > pa
+                k: pb
+        if not
+            if pb < pa
+                k: pb
+        r: x_or(r, x_shl64(k, i * 8))
+        i: i + 1
+    return r
+
+# gather the top bit of all sixteen bytes into one number. This is
+# how a program turns a vector compare into something it can branch
+# on, and it is everywhere in glibc.
+x_pmovmskb m n:
+    r: 0
+    i: 0
+    as long as i < 16
+        if x_xbyte(m, n, i) >= 128
+            r: x_or(r, x_shl64(1, i))
+        i: i + 1
+    return r
+
+# shift the whole sixteen bytes left or right by whole bytes
+x_pslldq m n by:
+    if by >= 16
+        return x_xset(m, n, 0, 0)
+    lo: x_xlo(m, n)
+    hi: x_xhi(m, n)
+    if by is 0
+        return 0
+    if by < 8
+        nh: x_or(x_shl64(hi, by * 8), x_shr64(lo, (8 - by) * 8))
+        return x_xset(m, n, x_shl64(lo, by * 8), nh)
+    return x_xset(m, n, 0, x_shl64(lo, (by - 8) * 8))
+
+x_psrldq m n by:
+    if by >= 16
+        return x_xset(m, n, 0, 0)
+    lo: x_xlo(m, n)
+    hi: x_xhi(m, n)
+    if by is 0
+        return 0
+    if by < 8
+        nl: x_or(x_shr64(lo, by * 8), x_shl64(hi, (8 - by) * 8))
+        return x_xset(m, n, nl, x_shr64(hi, by * 8))
+    return x_xset(m, n, x_shr64(hi, (by - 8) * 8), 0)
+
+# ---------------------------------------------------------------
+# what the program asks the system for
+# ---------------------------------------------------------------
+
+# Hand out a slab well past the program itself.
+#
+# The Sovren runtime asks for a gigabyte of heap up front and then
+# uses a sliver of it. Handing back nothing because a gigabyte will
+# not fit turns into a write to address zero, so the reservation is
+# capped: the program gets a real address, and the parts of that
+# gigabyte it never touches cost nothing.
+X_SLAB: 33554432
+
+# Where things sit inside the block, counted from the bottom:
+#   0                the program itself
+#   X_BRK_TOP        as far as brk may grow
+#   X_STACK_AT       the stack, growing down from here
+#   X_SLABS          everything mmap hands out, growing up
+X_BRK_TOP: 67108864
+X_STACK_AT: 100663296
+X_SLABS: 134217728
+
+# The heap that brk grows and the slabs that mmap hands out must not
+# land on each other. brk starts just above the program and grows
+# upwards; mmap starts a long way above that and also grows up.
+# Hand out a piece of memory.
+#
+# A program often RESERVES far more than it will ever touch: the
+# Sovren runtime asks for a gigabyte and uses a sliver. Refusing
+# that would stop it dead, so a reservation larger than the slab
+# area is trimmed to what is left. A program that then writes past
+# the trimmed end is caught by the range check, which is the honest
+# answer: this machine did not have the room.
+x_give m n:
+    lo: peek_i64(m, 216)
+    floor: lo + X_SLABS
+    top: peek_i64(m, 224)
+    if top < floor
+        top: floor
+    want: n
+    if want < 4096
+        want: 4096
+    want: (want / 4096) * 4096 + 4096
+    room: lo + X_MEM - 4096 - top
+    if want > room
+        if room < 1048576
+            # genuinely nothing left
+            return 0 - 12
+        want: room
+    poke_i64(m, 224, top + want)
+    return top
+
+# a guest address as an address here
+x_here m a:
+    return peek_i64(m, 176) + a - peek_i64(m, 216)
+
+x_syscall m nx:
+    poke_i64(m, 272, 1)
+    os: peek_i64(m, 240)
+    if os is X_WIN
+        # real Windows has no Linux kernel behind it. Wine hides this
+        # because Wine runs on Linux. This does not hide it.
+        poke_i64(m, 168, X_RAWSYS)
+        return 0
+    nr: x_reg(m, 0)
+    if os is X_MAC
+        if nr < 33554432
+            # a Linux number on a Mac. It would fail on real hardware.
+            poke_i64(m, 168, X_RAWSYS)
+            poke_i64(m, 232, nr)
+            return 0
+        nr: x_mac_to_linux(nr - 33554432)
+    return x_do_call(m, nx, nr)
+
+# macOS counts its calls differently. Turn the Mac number into the
+# Linux one this emulator already knows how to answer.
+x_mac_to_linux n:
+    if n is 1
+        return 60
+    if n is 3
+        return 0
+    if n is 4
+        return 1
+    if n is 5
+        return 257
+    if n is 6
+        return 3
+    if n is 199
+        return 8
+    if n is 197
+        return 9
+    if n is 20
+        return 39
+    if n is 10
+        return 87
+    if n is 136
+        return 83
+    if n is 12
+        return 80
+    if n is 73
+        return 11
+    if n is 33
+        return 21
+    if n is 54
+        return 16
+    return 0 - 1
+
+x_do_call m nx nr:
+    a0: x_reg(m, 7)
+    a1: x_reg(m, 6)
+    a2: x_reg(m, 2)
+    a3: x_reg(m, 10)
+    if nr is 1
+        if a0 is 1
+            x_say(m, a1, a2)
+            x_setr(m, 0, a2)
+            return x_go(m, nx)
+        if a0 is 2
+            x_grumble(m, a1, a2)
+            x_setr(m, 0, a2)
+            return x_go(m, nx)
+        x_setr(m, 0, sys_write(a0, x_here(m, a1), a2))
+        return x_go(m, nx)
+    if nr is 0
+        x_setr(m, 0, sys_read(a0, x_here(m, a1), a2))
+        return x_go(m, nx)
+    if nr is 257
+        x_setr(m, 0, sys_open(x_here(m, a1), a2))
+        return x_go(m, nx)
+    if nr is 2
+        x_setr(m, 0, sys_open(x_here(m, a0), a1))
+        return x_go(m, nx)
+    if nr is 3
+        x_setr(m, 0, sys_close(a0))
+        return x_go(m, nx)
+    if nr is 8
+        x_setr(m, 0, sys_seek(a0, a1, a2))
+        return x_go(m, nx)
+    if nr is 9
+        # A fresh piece of memory from the system always arrives
+        # blank. malloc keeps its bookkeeping in the first bytes and
+        # goes wrong in confusing ways if they hold rubbish.
+        got: x_give(m, a1)
+        if got is not 0
+            k: 0
+            n: a1
+            if n > X_SLAB
+                n: X_SLAB
+            as long as k < n
+                x_w8(m, got + k, 0)
+                k: k + 1
+        x_setr(m, 0, got)
+        return x_go(m, nx)
+    if nr is 11
+        x_setr(m, 0, 0)
+        return x_go(m, nx)
+    if nr is 10
+        x_setr(m, 0, 0)
+        return x_go(m, nx)
+    if nr is 60
+        poke_i64(m, 208, x_mask(a0, 1))
+        poke_i64(m, 168, X_EXITED)
+        return 0
+    if nr is 231
+        poke_i64(m, 208, x_mask(a0, 1))
+        poke_i64(m, 168, X_EXITED)
+        return 0
+    # ---- the calls a C library makes before it will start ----
+    if nr is 158
+        # set or read the thread pointer. glibc asks for this early.
+        if a0 is 4098
+            poke_i64(m, 440, a1)
+            x_setr(m, 0, 0)
+            return x_go(m, nx)
+        if a0 is 4097
+            x_setr(m, 0, peek_i64(m, 440))
+            return x_go(m, nx)
+        x_setr(m, 0, 0)
+        return x_go(m, nx)
+    if nr is 12
+        # move the top of the heap. Nought asks where it is.
+        # This is its own area, kept well clear of the slabs mmap
+        # hands out, so the two can never tread on each other.
+        cur: peek_i64(m, 520)
+        if cur is 0
+            cur: peek_i64(m, 568)
+            poke_i64(m, 520, cur)
+        if a0 is 0
+            x_setr(m, 0, cur)
+            return x_go(m, nx)
+        if a0 > cur
+            lo: peek_i64(m, 216)
+            if a0 - lo > X_BRK_TOP - 65536
+                x_setr(m, 0, cur)
+                return x_go(m, nx)
+            # the new part must start blank
+            k: cur
+            as long as k < a0
+                x_w8(m, k, 0)
+                k: k + 1
+        poke_i64(m, 520, a0)
+        x_setr(m, 0, a0)
+        return x_go(m, nx)
+    if nr is 218
+        x_setr(m, 0, 1)
+        return x_go(m, nx)
+    if nr is 39
+        x_setr(m, 0, 1)
+        return x_go(m, nx)
+    if nr is 20
+        # writing several pieces at once
+        cnt: a2
+        total: 0
+        i: 0
+        as long as i < cnt
+            base: x_add(a1, i * 16)
+            buf: x_r64(m, base)
+            len: x_r64(m, base + 8)
+            if len > 0
+                if a0 is 1
+                    x_say(m, buf, len)
+                if not
+                    if a0 is 2
+                        x_grumble(m, buf, len)
+                    if not
+                        sys_write(a0, x_here(m, buf), len)
+                total: total + len
+            i: i + 1
+        x_setr(m, 0, total)
+        return x_go(m, nx)
+    if nr is 16
+        # asking a device a question. Say it is a terminal.
+        x_setr(m, 0, 0)
+        return x_go(m, nx)
+    if nr is 5
+        # what kind of thing this file is. The C library asks before
+        # it decides how to buffer, and reads the answer whatever it
+        # is told, so the block must be filled in.
+        if a1 is 0
+            x_setr(m, 0, 0 - 14)
+            return x_go(m, nx)
+        i: 0
+        as long as i < 144
+            x_w8(m, a1 + i, 0)
+            i: i + 1
+        # a character device, readable and writable by everyone
+        x_w32(m, a1 + 24, 8630)
+        x_w64(m, a1 + 48, 4096)
+        x_setr(m, 0, 0)
+        return x_go(m, nx)
+    if nr is 262
+        if a2 is not 0
+            i: 0
+            as long as i < 144
+                x_w8(m, a2 + i, 0)
+                i: i + 1
+            x_w32(m, a2 + 24, 8630)
+            x_w64(m, a2 + 48, 4096)
+        x_setr(m, 0, 0)
+        return x_go(m, nx)
+
+    # anything else: say it worked and carry on
+    x_setr(m, 0, 0)
+    return x_go(m, nx)
+
+# ---------------------------------------------------------------
+# the stand-in Windows library
+# ---------------------------------------------------------------
+#
+# A Windows program does not talk to the kernel directly; it calls
+# kernel32. The loader points every imported name at an address here.
+# When the instruction pointer lands on one, this answers it and
+# returns, the same way the real library would.
+
+# Windows hands out handles, not file numbers. Ten, eleven and twelve
+# are the three standard ones; everything the program opens gets a
+# number well clear of those, so a file can never be mistaken for the
+# console no matter how many are open at once.
+X_HBASE: 1000
+
+x_fd h:
+    if h >= X_HBASE
+        return h - X_HBASE
+    if h is 10
+        return 0
+    if h is 11
+        return 1
+    if h is 12
+        return 2
+    return h
+
+x_win_call m which:
+    nm: list_get(peek_i64(m, 288), which)
+    a1: x_reg(m, 1)
+    a2: x_reg(m, 2)
+    a3: x_reg(m, 8)
+    a4: x_reg(m, 9)
+    sp: x_sp(m)
+    a5: x_r64(m, x_add(sp, 40))
+    if str_eq(nm, "GetStdHandle") is 1
+        h: x_lo(a1)
+        if h is 4294967286
+            x_setr(m, 0, 10)
+        if not
+            if h is 4294967284
+                x_setr(m, 0, 12)
+            if not
+                x_setr(m, 0, 11)
+        return 1
+    if str_eq(nm, "WriteFile") is 1
+        if a1 is 11
+            x_say(m, a2, a3)
+        if not
+            if a1 is 12
+                x_grumble(m, a2, a3)
+            if not
+                sys_write(x_fd(a1), x_here(m, a2), a3)
+        if a4 is not 0
+            x_w32(m, a4, a3)
+        x_setr(m, 0, 1)
+        return 1
+    if str_eq(nm, "ReadFile") is 1
+        n: 0
+        if a1 is 10
+            n: sys_read(0, x_here(m, a2), a3)
+        if not
+            if a1 > 12
+                n: sys_read(x_fd(a1), x_here(m, a2), a3)
+        if n < 0
+            n: 0
+        if a4 is not 0
+            x_w32(m, a4, n)
+        x_setr(m, 0, 1)
+        return 1
+    if str_eq(nm, "CreateFileA") is 1
+        flags: 0
+        if x_lo(a2) is 1073741824
+            flags: 577
+        if x_lo(a5) is 2
+            flags: 577
+        fd: sys_open(x_here(m, a1), flags)
+        if fd < 0
+            x_setr(m, 0, 0 - 1)
+            return 1
+        x_setr(m, 0, X_HBASE + fd)
+        return 1
+    if str_eq(nm, "CloseHandle") is 1
+        if a1 > 12
+            sys_close(x_fd(a1))
+        x_setr(m, 0, 1)
+        return 1
+    if str_eq(nm, "VirtualAlloc") is 1
+        # Windows says no with nought, not with a number
+        got: x_give(m, a2)
+        if got < 0
+            got: 0
+        x_setr(m, 0, got)
+        return 1
+    if str_eq(nm, "ExitProcess") is 1
+        poke_i64(m, 208, x_mask(a1, 1))
+        poke_i64(m, 168, X_EXITED)
+        return 0
+    if str_eq(nm, "GetCommandLineA") is 1
+        x_setr(m, 0, peek_i64(m, 248))
+        return 1
+    if str_eq(nm, "SetFilePointerEx") is 1
+        w: x_lo(a4)
+        r: sys_seek(x_fd(a1), a2, w)
+        if a3 is not 0
+            x_w64(m, a3, r)
+        x_setr(m, 0, 1)
+        return 1
+    if str_eq(nm, "GetConsoleMode") is 1
+        if a2 is not 0
+            x_w32(m, a2, 3)
+        x_setr(m, 0, 1)
+        return 1
+    if str_eq(nm, "SetConsoleMode") is 1
+        x_setr(m, 0, 1)
+        return 1
+    if str_eq(nm, "GetFileSizeEx") is 1
+        f: x_fd(a1)
+        here: sys_seek(f, 0, 1)
+        end: sys_seek(f, 0, 2)
+        sys_seek(f, here, 0)
+        if a2 is not 0
+            x_w64(m, a2, end)
+        x_setr(m, 0, 1)
+        return 1
+    if str_eq(nm, "LoadLibraryA") is 1
+        # Opening another Windows library. Nothing here can really
+        # load user32 or gdi32 — those are Windows itself — so a
+        # made-up handle comes back and any function asked for
+        # inside it is answered with nought. A program checks for
+        # that and says it cannot draw, which is the truth here.
+        x_setr(m, 0, 305419896)
+        return 1
+    if str_eq(nm, "GetProcAddress") is 1
+        x_setr(m, 0, 0)
+        return 1
+    if str_eq(nm, "DeleteFileA") is 1
+        x_setr(m, 0, 1)
+        return 1
+    if str_eq(nm, "CreateDirectoryA") is 1
+        x_setr(m, 0, 1)
+        return 1
+    # a name nobody taught it: say nothing happened, note it, carry on
+    x_note_missing(m, nm)
+    x_setr(m, 0, 0)
+    return 1
+
+x_note_missing m nm:
+    o: peek_i64(m, 296)
+    used: peek_i64(m, 304)
+    t: str_cat("no stand-in for ", nm)
+    t: str_cat(t, "\n")
+    n: str_len(t)
+    i: 0
+    as long as i < n
+        if used < X_OUT - 2
+            poke_byte(o, used, peek_byte(t, i))
+            used: used + 1
+        i: i + 1
+    poke_byte(o, used, 0)
+    poke_i64(m, 304, used)
+    return 0
+
+# ---------------------------------------------------------------
+# the loop
+# ---------------------------------------------------------------
+
+x86_run m:
+    return x86_run_for(m, 400000000)
+
+x86_run_for m limit:
+    n: 0
+    going: 1
+    tb: peek_i64(m, 280)
+    nt: peek_i64(m, 312)
+    as long as going is 1
+        if n >= limit
+            poke_i64(m, 168, X_TOOLONG)
+            going: 0
+        if not
+            pc: peek_i64(m, 128)
+            hit: 0
+            if nt > 0
+                if pc >= tb
+                    if pc < tb + nt * 16
+                        hit: 1
+            if hit is 1
+                going: x_win_call(m, (pc - tb) / 16)
+                if going is 1
+                    x_set_rip(m, x_pop(m))
+            if not
+                going: x_step(m)
+            # a read or write outside the block is a fault, and the
+            # step that caused it must not be allowed to continue
+            if peek_i64(m, 168) is not X_RUNNING
+                going: 0
+            n: n + 1
+    return peek_i64(m, 168)
+
+x86_steps m:
+    return peek_i64(m, 328)
+
+# ---------------------------------------------------------------
+# loading an ELF, the Linux shape
+# ---------------------------------------------------------------
+
+x86_load_elf m path:
+    d: file_read_all(path)
+    if d is 0
+        return 0
+    poke_i64(m, 240, X_LINUX)
+    entry: peek_i64(d, 24)
+    phoff: peek_i64(d, 32)
+    phnum: peek_byte(d, 56) + peek_byte(d, 57) * 256
+    phsz: peek_byte(d, 54) + peek_byte(d, 55) * 256
+    # the lowest address any piece wants to sit at
+    lo: 0
+    i: 0
+    as long as i < phnum
+        o: phoff + i * phsz
+        t: peek_byte(d, o) + peek_byte(d, o + 1) * 256
+        if t is 1
+            va: peek_i64(d, o + 16)
+            if lo is 0
+                lo: va
+            if va < lo
+                lo: va
+        i: i + 1
+    if lo is 0
+        lo: 4194304
+    poke_i64(m, 216, lo)
+    x_rebase(m)
+    # copy each piece in, and zero whatever it asked for beyond what
+    # the file holds. That tail is the program's blank workspace and
+    # a program that finds rubbish there goes wrong in odd ways.
+    top: lo
+    i: 0
+    as long as i < phnum
+        o: phoff + i * phsz
+        t: peek_byte(d, o) + peek_byte(d, o + 1) * 256
+        if t is 1
+            off: peek_i64(d, o + 8)
+            va: peek_i64(d, o + 16)
+            fsz: peek_i64(d, o + 32)
+            msz: peek_i64(d, o + 40)
+            k: 0
+            as long as k < fsz
+                x_w8(m, va + k, peek_byte(d, off + k))
+                k: k + 1
+            as long as k < msz
+                x_w8(m, va + k, 0)
+                k: k + 1
+            if va + msz > top
+                top: va + msz
+        # the thread-local piece, which is copied fresh per thread
+        if t is 7
+            poke_i64(m, 496, peek_i64(d, o + 8))
+            poke_i64(m, 504, peek_i64(d, o + 32))
+            poke_i64(m, 512, peek_i64(d, o + 40))
+        i: i + 1
+    # the heap starts above everything the file asked for
+    poke_i64(m, 568, (top / 4096) * 4096 + 65536)
+    poke_i64(m, 520, peek_i64(m, 568))
+    # what the auxiliary table needs to say about this program
+    poke_i64(m, 528, lo + phoff)
+    poke_i64(m, 536, phnum)
+    poke_i64(m, 544, entry)
+    x_setup_tls_elf(m, d)
+    x_set_rip(m, entry)
+    x_start_stack(m, path)
+    return 1
+
+# ---- thread-local storage ----
+#
+# A real program keeps per-thread things behind the fs register:
+# the stack guard, the thread pointer, errno. glibc reads fs:[0x10]
+# before it does anything else. Give it a block, with the thread
+# pointer at nought pointing back at itself, which is the shape the
+# system sets up.
+# For an ELF that carries a thread-local piece, the block sits just
+# BELOW the thread pointer and the pointer itself is at the top. The
+# program reaches its own variables with a negative offset from fs,
+# which is why there has to be room underneath.
+x_setup_tls_elf m d:
+    lo: peek_i64(m, 216)
+    room: peek_i64(m, 512)
+    if room < 512
+        room: 512
+    room: (room / 64) * 64 + 128
+    base: lo + X_STACK_AT + 1048576
+    tp: base + room
+    poke_i64(m, 440, tp)
+    poke_i64(m, 448, tp)
+    i: 0
+    as long as i < room + 2048
+        x_w8(m, base + i, 0)
+        i: i + 1
+    # the program's own starting values go right below the pointer
+    fsz: peek_i64(m, 504)
+    off: peek_i64(m, 496)
+    k: 0
+    as long as k < fsz
+        x_w8(m, tp - room + k, peek_byte(d, off + k))
+        k: k + 1
+    x_w64(m, tp, tp)
+    x_w64(m, tp + 16, tp)
+    x_w64(m, tp + 40, 5089731888844279321)
+    return 0
+
+x_setup_tls m:
+    lo: peek_i64(m, 216)
+    tls: lo + X_STACK_AT + 1048576
+    poke_i64(m, 440, tls)
+    poke_i64(m, 448, tls)
+    i: 0
+    as long as i < 2048
+        x_w8(m, tls + i, 0)
+        i: i + 1
+    # the thread pointer, which points at itself
+    x_w64(m, tls, tls)
+    # the pointer to this thread's own block
+    x_w64(m, tls + 16, tls)
+    # a stack guard value that is not zero
+    x_w64(m, tls + 40, 5089731888844279321)
+    return 0
+
+# argc, argv and an empty environment, the way Linux leaves them
+# The stack the way Linux hands it over: the count of arguments, the
+# arguments, a nought, the environment, a nought, and then the
+# auxiliary table. A small program ignores all but the first few. A
+# program built on the C library reads the auxiliary table before it
+# does anything else, and gives up in confusing ways if it is not
+# there, so it is worth setting out properly.
+x_start_stack m path:
+    lo: peek_i64(m, 216)
+    sp: lo + X_STACK_AT
+    # the program name and a couple of environment lines sit above
+    np: lo + X_STACK_AT + 131072
+    n: str_len(path)
+    i: 0
+    as long as i < n
+        x_w8(m, np + i, peek_byte(path, i))
+        i: i + 1
+    x_w8(m, np + n, 0)
+    # sixteen bytes of something for the random slot in the table
+    rnd: np + 256
+    i: 0
+    as long as i < 16
+        x_w8(m, rnd + i, i * 37 + 11)
+        i: i + 1
+    # an empty name, for the slots that want a piece of text
+    empty: np + 320
+    x_w8(m, empty, 0)
+    x_set_sp(m, sp)
+    a: sp
+    x_w64(m, a, 1)
+    a: a + 8
+    x_w64(m, a, np)
+    a: a + 8
+    x_w64(m, a, 0)
+    a: a + 8
+    # no environment
+    x_w64(m, a, 0)
+    a: a + 8
+    # the auxiliary table, in pairs
+    a: x_aux(m, a, 6, 4096)
+    a: x_aux(m, a, 17, 100)
+    a: x_aux(m, a, 11, 1000)
+    a: x_aux(m, a, 12, 1000)
+    a: x_aux(m, a, 13, 1000)
+    a: x_aux(m, a, 14, 1000)
+    a: x_aux(m, a, 23, 0)
+    a: x_aux(m, a, 25, rnd)
+    a: x_aux(m, a, 31, np)
+    a: x_aux(m, a, 15, empty)
+    a: x_aux(m, a, 16, 0)
+    a: x_aux(m, a, 3, peek_i64(m, 528))
+    a: x_aux(m, a, 4, 56)
+    a: x_aux(m, a, 5, peek_i64(m, 536))
+    a: x_aux(m, a, 9, peek_i64(m, 544))
+    a: x_aux(m, a, 7, 0)
+    a: x_aux(m, a, 8, 0)
+    a: x_aux(m, a, 0, 0)
+    return 0
+
+# one pair of the auxiliary table
+x_aux m a k v:
+    x_w64(m, a, k)
+    x_w64(m, a + 8, v)
+    return a + 16
+
+# ---------------------------------------------------------------
+# loading a Mach-O, the Mac shape
+# ---------------------------------------------------------------
+
+x86_load_macho m path:
+    d: file_read_all(path)
+    if d is 0
+        return 0
+    magic: peek_byte(d, 0) + peek_byte(d, 1) * 256 + peek_byte(d, 2) * 65536 + peek_byte(d, 3) * 16777216
+    if magic is not 4277009103
+        return 0
+    poke_i64(m, 240, X_MAC)
+    ncmds: peek_byte(d, 16) + peek_byte(d, 17) * 256 + peek_byte(d, 18) * 65536 + peek_byte(d, 19) * 16777216
+    entry: 0
+    lo: 0
+    off: 32
+    i: 0
+    as long as i < ncmds
+        cmd: peek_byte(d, off) + peek_byte(d, off + 1) * 256 + peek_byte(d, off + 2) * 65536 + peek_byte(d, off + 3) * 16777216
+        sz: peek_byte(d, off + 4) + peek_byte(d, off + 5) * 256 + peek_byte(d, off + 6) * 65536 + peek_byte(d, off + 7) * 16777216
+        if cmd is 25
+            vmaddr: peek_i64(d, off + 24)
+            filesz: peek_i64(d, off + 48)
+            if filesz > 0
+                if lo is 0
+                    lo: vmaddr
+                if vmaddr < lo
+                    lo: vmaddr
+        off: off + sz
+        i: i + 1
+    if lo is 0
+        lo: 4294967296
+    poke_i64(m, 216, lo)
+    x_rebase(m)
+    off: 32
+    i: 0
+    as long as i < ncmds
+        cmd: peek_byte(d, off) + peek_byte(d, off + 1) * 256 + peek_byte(d, off + 2) * 65536 + peek_byte(d, off + 3) * 16777216
+        sz: peek_byte(d, off + 4) + peek_byte(d, off + 5) * 256 + peek_byte(d, off + 6) * 65536 + peek_byte(d, off + 7) * 16777216
+        if cmd is 25
+            vmaddr: peek_i64(d, off + 24)
+            fileoff: peek_i64(d, off + 40)
+            filesz: peek_i64(d, off + 48)
+            k: 0
+            as long as k < filesz
+                x_w8(m, vmaddr + k, peek_byte(d, fileoff + k))
+                k: k + 1
+        if cmd is 5
+            entry: peek_i64(d, off + 144)
+        if cmd is 2147483688
+            entry: x_add(lo, peek_i64(d, off + 8))
+        off: off + sz
+        i: i + 1
+    if entry is 0
+        return 0
+    x_setup_tls(m)
+    x_set_rip(m, entry)
+    x_start_stack(m, path)
+    return 1
+
+# ---------------------------------------------------------------
+# loading a PE, the Windows shape
+# ---------------------------------------------------------------
+
+x86_load_pe m path:
+    d: file_read_all(path)
+    if d is 0
+        return 0
+    if peek_byte(d, 0) is not 77
+        return 0
+    if peek_byte(d, 1) is not 90
+        return 0
+    poke_i64(m, 240, X_WIN)
+    pe: peek_byte(d, 60) + peek_byte(d, 61) * 256 + peek_byte(d, 62) * 65536 + peek_byte(d, 63) * 16777216
+    nsec: peek_byte(d, pe + 6) + peek_byte(d, pe + 7) * 256
+    opt: pe + 24
+    entry_rva: x_u32d(d, opt + 16)
+    base: peek_i64(d, opt + 24)
+    imp_rva: x_u32d(d, opt + 112 + 8)
+    poke_i64(m, 216, base)
+    x_rebase(m)
+    # Real Windows maps the headers at the load address as well as
+    # the sections. A program that wants to look at its own import
+    # table reads them from there, and found nothing but zeroes
+    # while only the sections were being copied.
+    hsz: x_u32d(d, opt + 60)
+    if hsz < 1024
+        hsz: 1024
+    k: 0
+    as long as k < hsz
+        x_w8(m, base + k, peek_byte(d, k))
+        k: k + 1
+    i: 0
+    as long as i < nsec
+        o: pe + 24 + 240 + i * 40
+        va: x_u32d(d, o + 12)
+        rs: x_u32d(d, o + 16)
+        ra: x_u32d(d, o + 20)
+        k: 0
+        as long as k < rs
+            x_w8(m, base + va + k, peek_byte(d, ra + k))
+            k: k + 1
+        i: i + 1
+    x86_bind_imports(m, base, imp_rva)
+    # the command line, and a return address that means "all done"
+    cmd: base + X_MEM - 65536
+    n: str_len(path)
+    i: 0
+    as long as i < n
+        x_w8(m, cmd + i, peek_byte(path, i))
+        i: i + 1
+    x_w8(m, cmd + n, 0)
+    poke_i64(m, 248, cmd)
+    x_setup_tls(m)
+    x_set_sp(m, base + X_MEM - 262144)
+    x_push(m, peek_i64(m, 320))
+    x_set_rip(m, base + entry_rva)
+    return 1
+
+# Hand the program its command line, the way Windows does. Must be
+# called after loading, because the loader chooses where it goes.
+x_set_cmdline m line:
+    p: peek_i64(m, 248)
+    if p is 0
+        return 0
+    n: str_len(line)
+    if n > 4000
+        n: 4000
+    i: 0
+    as long as i < n
+        x_w8(m, p + i, peek_byte(line, i))
+        i: i + 1
+    x_w8(m, p + n, 0)
+    return 1
+
+x_u32d d a:
+    return peek_byte(d, a) + peek_byte(d, a + 1) * 256 + peek_byte(d, a + 2) * 65536 + peek_byte(d, a + 3) * 16777216
+
+# Point every imported name at an address of our own. When the code
+# calls it, the loop notices and answers instead.
+x86_bind_imports m base imp_rva:
+    if imp_rva is 0
+        return 0
+    tb: base + 201326592
+    poke_i64(m, 280, tb)
+    names: peek_i64(m, 288)
+    count: 0
+    k: 0
+    going: 1
+    as long as going is 1
+        desc: base + imp_rva + k * 20
+        iat: x_r32(m, desc + 16)
+        nm: x_r32(m, desc + 12)
+        if nm is 0
+            going: 0
+        if not
+            j: 0
+            more: 1
+            as long as more is 1
+                slot: base + iat + j * 8
+                v: x_r64(m, slot)
+                if v is 0
+                    more: 0
+                if not
+                    fname: x_cstr(m, base + x_lo(v) + 2)
+                    names: list_add(names, fname)
+                    x_w64(m, slot, tb + count * 16)
+                    count: count + 1
+                    j: j + 1
+            k: k + 1
+    poke_i64(m, 288, names)
+    poke_i64(m, 312, count)
+    return count
+
+# a run of bytes in guest memory, up to the zero, as text
+x_cstr m a:
+    n: 0
+    as long as x_r8(m, a + n) is not 0
+        n: n + 1
+        if n > 250
+            n: 250
+            return as text x_grab(m, a, n)
+    return as text x_grab(m, a, n)
+
+x_grab m a n:
+    s: mem_new(n + 1)
+    i: 0
+    as long as i < n
+        poke_byte(s, i, x_r8(m, a + i))
+        i: i + 1
+    poke_byte(s, i, 0)
+    return s
+
+# ---------------------------------------------------------------
+# a whole run, start to finish
+# ---------------------------------------------------------------
+#
+# Work out what kind of file it is, load it, run it, and hand back
+# what it printed. Returns "" when the file cannot be run.
+
+x86_load m path:
+    d: file_read_all(path)
+    if d is 0
+        return 0
+    b0: peek_byte(d, 0)
+    b1: peek_byte(d, 1)
+    if b0 is 77
+        if b1 is 90
+            return x86_load_pe(m, path)
+    if b0 is 127
+        if b1 is 69
+            return x86_load_elf(m, path)
+    return x86_load_macho(m, path)
+
+# a short word for why it stopped
+x86_reason m:
+    w: peek_i64(m, 168)
+    if w is X_EXITED
+        return "done"
+    if w is X_BADOP
+        return "an instruction it does not know"
+    if w is X_TOOLONG
+        return "it ran too long"
+    if w is X_RAWSYS
+        return "a raw syscall, which does not work there"
+    if w is X_FAULT
+        return "it divided by nothing"
+    if w is X_OOB
+        return "it reached outside its own memory"
+    return "still running"

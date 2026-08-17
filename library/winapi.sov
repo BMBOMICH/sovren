@@ -1,0 +1,113 @@
+# winapi.sov — reaching the rest of Windows.
+#
+# A Sovren program built for Windows brings thirteen names with it,
+# and two of those are the keys to everything else: LoadLibraryA
+# opens any library on the machine, and GetProcAddress finds a
+# function inside it. So the program does not need every name it
+# might ever want written into it at build time. It asks for them
+# when it runs.
+#
+#   use winapi
+#   main:
+#       u: dll_open("user32.dll")
+#       f: dll_find(u, "MessageBoxA")
+#       wincall(f, 0, "hello", "Sovren", 0)
+#
+# This only works in a program built with --windows. Everywhere
+# else dll_open hands back nought, which is the honest answer.
+
+use sys
+use string
+use mem
+use num
+
+# The two names the loader brought with it live in the import
+# table. Their addresses are found by walking that table, which is
+# at a fixed place in every program this compiler writes.
+wa_loadlib: 0
+wa_getproc: 0
+wa_ready: 0
+
+# Find the import table and pull out the two entries wanted. The
+# table sits in .rdata, which begins one page after the code, and
+# the entries are in the order the compiler writes them: the
+# twelfth is LoadLibraryA and the thirteenth is GetProcAddress.
+wa_init:
+    if wa_ready is 1
+        return 1
+    wa_ready: 1
+    base: wa_image_base()
+    if base is 0
+        return 0
+    # the PE header says where .rdata starts
+    pe: peek_u32(base, 60)
+    if pe < 64
+        return 0
+    nsec: peek_u16(base, pe + 6)
+    if nsec < 2
+        return 0
+    # the second section is .rdata
+    so: pe + 24 + 240 + 40
+    rva: peek_u32(base, so + 12)
+    if rva is 0
+        return 0
+    iat: base + rva
+    wa_loadlib: peek_raw64(iat, 88)
+    wa_getproc: peek_raw64(iat, 96)
+    if wa_loadlib is 0
+        return 0
+    return 1
+
+# Where this program was loaded. The compiler always asks for the
+# same address and the exe says it cannot be moved, so this is
+# known rather than looked up.
+wa_image_base:
+    return 4194304
+
+# These read the program's own memory at a fixed address, which is
+# not the same as reading inside a piece of memory it was given.
+# peek_byte counts from a block; peek_raw8 goes anywhere.
+peek_u32 p off:
+    return peek_raw8(p, off) + peek_raw8(p, off + 1) * 256 + peek_raw8(p, off + 2) * 65536 + peek_raw8(p, off + 3) * 16777216
+
+peek_u16 p off:
+    return peek_raw8(p, off) + peek_raw8(p, off + 1) * 256
+
+# is any of this available?
+dll_ok:
+    return wa_init()
+
+# open a library by name, or nought when it is not there
+dll_open name:
+    if wa_init() is 0
+        return 0
+    return cfunc(wa_loadlib, name, 0, 0, 0, 0, 0)
+
+# find something inside one
+dll_find lib name:
+    if lib is 0
+        return 0
+    if wa_init() is 0
+        return 0
+    return cfunc(wa_getproc, lib, name, 0, 0, 0, 0)
+
+# call it, with up to six values
+wincall f a b c d e:
+    if f is 0
+        return 0
+    return cfunc(f, a, b, c, d, e, 0)
+
+wincall0 f:
+    return cfunc(f, 0, 0, 0, 0, 0, 0)
+
+wincall1 f a:
+    return cfunc(f, a, 0, 0, 0, 0, 0)
+
+wincall2 f a b:
+    return cfunc(f, a, b, 0, 0, 0, 0)
+
+wincall3 f a b c:
+    return cfunc(f, a, b, c, 0, 0, 0)
+
+wincall4 f a b c d:
+    return cfunc(f, a, b, c, d, 0, 0)

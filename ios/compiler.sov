@@ -587,6 +587,18 @@ call_args name argc:
         used_sl: 1
     if same(name, "_sov_str_eq") is 1
         used_eq: 1
+    if same(name, "cfunc") is 1
+        # x0 holds the address, x1..x6 the arguments. C wants the
+        # arguments in x0..x5, so shift them down and call.
+        mov_reg(9, 0)
+        mov_reg(0, 1)
+        mov_reg(1, 2)
+        mov_reg(2, 3)
+        mov_reg(3, 4)
+        mov_reg(4, 5)
+        mov_reg(5, 6)
+        emitw(3594453280)
+        return
     if same(name, "syscall") is 1
         mov_reg(8, 0)
         mov_reg(0, 1)
@@ -668,6 +680,15 @@ expr_body e0:
     if starts(e, "as text ") is 1
         expr(cut(e, 8, length(e)))
         return 1
+    # addr_of name -- where a job lives, so a C library can call back
+    if starts(e, "addr_of ") is 1
+        aat: here()
+        movz_x(0, 0, 0)
+        movk_x(0, 0, 1)
+        movk_x(0, 0, 2)
+        movk_x(0, 0, 3)
+        addp(aat, "fnaddr64", strip(cut(e, 8, length(e))))
+        return 0
     if starts(e, "length of ") is 1
         expr(cut(e, 10, length(e)))
         mov_rdi_rax()
@@ -1630,6 +1651,14 @@ compile source:
                                                 pre_na: pre_na + 1
                                                 pre_in: 1
                                         pre_k: pre_k + 1
+                                    # seven values is the most a job can
+                                    # take. more used to compile and then
+                                    # go wrong while running.
+                                    if pre_na > 7
+                                        print "Error: a job takes at most seven values"
+                                        _sov_print(pre_cur)
+                                        print pre_na
+                                        had_err: 1
                                     ar_names: _sov_list_add(ar_names, pre_cur)
                                     ar_cnt: _sov_list_add(ar_cnt, pre_na)
                                 if not
@@ -1972,6 +2001,18 @@ write_elf path:
             poke4(flat, hdr + at, 3531603968 + (ga % 65536) * 32 + 9)
             poke4(flat, hdr + at + 4, 4070572032 + ((ga / 65536) % 65536) * 32 + 9)
             poke4(flat, hdr + at + 8, 4072669184 + ((ga / 4294967296) % 65536) * 32 + 9)
+        if same(kind, "fnaddr64") is 1
+            fi: idx(fn_names, val)
+            if fi > 0 - 1
+                fa: 4294967296 + hdr + _sov_list_get(fn_offs, fi)
+                poke4(flat, hdr + at, 3531603968 + (fa % 65536) * 32)
+                poke4(flat, hdr + at + 4, 4070572032 + ((fa / 65536) % 65536) * 32)
+                poke4(flat, hdr + at + 8, 4072669184 + ((fa / 4294967296) % 65536) * 32)
+                poke4(flat, hdr + at + 12, 4074766336 + ((fa / 281474976710656) % 65536) * 32)
+            if not
+                print "Error: no such task"
+                _sov_print(val)
+                had_err: 1
         if same(kind, "str64x0") is 1
             sa: str_addr + val
             poke4(flat, hdr + at, 3531603968 + (sa % 65536) * 32)

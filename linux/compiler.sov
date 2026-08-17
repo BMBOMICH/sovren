@@ -3722,6 +3722,14 @@ compile source:
                                                 pre_na: pre_na + 1
                                                 pre_in: 1
                                         pre_k: pre_k + 1
+                                    # seven values is the most a job can
+                                    # take. more used to compile and then
+                                    # go wrong while running.
+                                    if pre_na > 7
+                                        print "Error: a job takes at most seven values"
+                                        _sov_print(pre_cur)
+                                        print pre_na
+                                        had_err: 1
                                     ar_names: _sov_list_add(ar_names, pre_cur)
                                     ar_cnt: _sov_list_add(ar_cnt, pre_na)
                                 if not

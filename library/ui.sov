@@ -1,0 +1,320 @@
+# ui.sov — buttons, labels and boxes to type in.
+#
+# This is the tkinter-shaped library: you make a window, put some
+# things in it, and ask which one the person used. It is built on
+# win.sov, which speaks to the screen directly, so there is no
+# toolkit underneath and nothing to install.
+#
+#   use ui
+#   main:
+#       u: ui_new(300, 200, "Sign in")
+#       name: ui_entry(u, 20, 40, 260, 28)
+#       go: ui_button(u, 20, 90, 100, 32, "Go")
+#       ui_label(u, 20, 20, "Your name:")
+#       as long as ui_next(u) is not UI_CLOSED
+#           if ui_clicked(u, go) is 1
+#               print ui_text(u, name)
+#
+# Every thing you add gets a number, and you use that number to ask
+# about it later. There are at most sixty-four things in a window,
+# which is more than a sensible one has.
+
+use win
+use string
+use num
+use mem
+use list
+
+# what ui_next hands back
+UI_NOTHING: 0
+UI_CLICKED: 1
+UI_TYPED: 2
+UI_CLOSED: 3
+
+# what kind of thing a widget is
+UI_LABEL: 1
+UI_BUTTON: 2
+UI_ENTRY: 3
+UI_BOX: 4
+UI_CHECK: 5
+
+UI_MAX: 64
+
+# One widget takes eleven slots of eight bytes:
+#   0 kind  1 x  2 y  3 width  4 height  5 the words  6 was it hit
+#   7 is it ticked  8 colour  9 the colour behind  10 spare
+UI_SLOT: 88
+
+# The window block:
+#     0 the window from win.sov     8 how many things are in it
+#    16 where the things are       24 which one is being typed into
+#    32 what just happened         40 which one it happened to
+#    48 the colour behind it all
+
+ui_new width height title:
+    w: win_open(width, height, title)
+    if w is 0
+        return 0
+    u: mem_new(64)
+    i: 0
+    as long as i < 64
+        poke_byte(u, i, 0)
+        i: i + 1
+    poke_i64(u, 0, w)
+    poke_i64(u, 8, 0)
+    poke_i64(u, 16, mem_new(UI_MAX * UI_SLOT))
+    poke_i64(u, 24, 0 - 1)
+    poke_i64(u, 48, 15132390)
+    return u
+
+ui_ok u:
+    if u is 0
+        return 0
+    return 1
+
+ui_win u:
+    return peek_i64(u, 0)
+
+# where one widget's slots begin
+ui_at u i:
+    return peek_i64(u, 16) + i * UI_SLOT
+
+ui_field u i n:
+    return peek_i64(ui_at(u, i), n * 8)
+
+ui_set u i n v:
+    poke_i64(ui_at(u, i), n * 8, v)
+    return 0
+
+ui_count u:
+    return peek_i64(u, 8)
+
+# make a new widget and hand back its number
+ui_add u kind x y width height words:
+    n: peek_i64(u, 8)
+    if n >= UI_MAX
+        return 0 - 1
+    poke_i64(u, 8, n + 1)
+    ui_set(u, n, 0, kind)
+    ui_set(u, n, 1, x)
+    ui_set(u, n, 2, y)
+    ui_set(u, n, 3, width)
+    ui_set(u, n, 4, height)
+    ui_set(u, n, 5, words)
+    ui_set(u, n, 6, 0)
+    ui_set(u, n, 7, 0)
+    ui_set(u, n, 8, 0)
+    ui_set(u, n, 9, 14211288)
+    return n
+
+# ---- the things you can put in ----
+
+ui_label u x y words:
+    return ui_add(u, UI_LABEL, x, y, str_len(words) * 7, 16, words)
+
+ui_button u x y width height words:
+    return ui_add(u, UI_BUTTON, x, y, width, height, words)
+
+ui_entry u x y width height:
+    n: ui_add(u, UI_ENTRY, x, y, width, height, "")
+    ui_set(u, n, 9, WIN_WHITE)
+    return n
+
+ui_box u x y width height:
+    return ui_add(u, UI_BOX, x, y, width, height, "")
+
+ui_check u x y words:
+    return ui_add(u, UI_CHECK, x, y, 16, 16, words)
+
+# ---- reading and writing what is in them ----
+
+ui_text u i:
+    return as text ui_field(u, i, 5)
+
+ui_set_text u i words:
+    ui_set(u, i, 5, words)
+    return 0
+
+ui_ticked u i:
+    return ui_field(u, i, 7)
+
+ui_tick u i on:
+    ui_set(u, i, 7, on)
+    return 0
+
+ui_colour u i c:
+    ui_set(u, i, 8, c)
+    return 0
+
+ui_back u i c:
+    ui_set(u, i, 9, c)
+    return 0
+
+# ---- drawing ----
+
+ui_draw u:
+    w: peek_i64(u, 0)
+    win_fill(w, 0, 0, win_width(w), win_height(w), peek_i64(u, 48))
+    n: peek_i64(u, 8)
+    i: 0
+    as long as i < n
+        ui_draw_one(u, w, i)
+        i: i + 1
+    win_flush(w)
+    return 0
+
+ui_draw_one u w i:
+    kind: ui_field(u, i, 0)
+    x: ui_field(u, i, 1)
+    y: ui_field(u, i, 2)
+    width: ui_field(u, i, 3)
+    height: ui_field(u, i, 4)
+    words: as text ui_field(u, i, 5)
+    fg: ui_field(u, i, 8)
+    bg: ui_field(u, i, 9)
+
+    if kind is UI_LABEL
+        win_text(w, x, y + 12, words, fg)
+        return 0
+
+    if kind is UI_BUTTON
+        # a pressed button is drawn darker
+        c: bg
+        if ui_field(u, i, 6) is 2
+            c: 10066329
+        win_fill(w, x, y, width, height, c)
+        win_box(w, x, y, width, height, WIN_BLACK)
+        tx: x + (width - str_len(words) * 6) / 2
+        if tx < x + 2
+            tx: x + 2
+        win_text(w, tx, y + height / 2 + 5, words, fg)
+        return 0
+
+    if kind is UI_ENTRY
+        win_fill(w, x, y, width, height, bg)
+        win_box(w, x, y, width, height, WIN_BLACK)
+        win_text(w, x + 4, y + height / 2 + 5, words, fg)
+        # the line that shows where the next letter goes
+        if peek_i64(u, 24) is i
+            cx: x + 5 + str_len(words) * 6
+            win_fill(w, cx, y + 4, 1, height - 8, WIN_BLACK)
+        return 0
+
+    if kind is UI_CHECK
+        win_fill(w, x, y, 16, 16, WIN_WHITE)
+        win_box(w, x, y, 16, 16, WIN_BLACK)
+        if ui_field(u, i, 7) is 1
+            win_line(w, x + 3, y + 8, x + 7, y + 12, WIN_BLACK)
+            win_line(w, x + 7, y + 12, x + 13, y + 3, WIN_BLACK)
+        win_text(w, x + 22, y + 12, words, fg)
+        return 0
+
+    win_box(w, x, y, width, height, WIN_BLACK)
+    return 0
+
+# ---- what the person did ----
+
+# is this point inside that widget?
+ui_inside u i x y:
+    if x < ui_field(u, i, 1)
+        return 0
+    if y < ui_field(u, i, 2)
+        return 0
+    if x > ui_field(u, i, 1) + ui_field(u, i, 3)
+        return 0
+    if y > ui_field(u, i, 2) + ui_field(u, i, 4)
+        return 0
+    return 1
+
+# Wait for the person to do something, deal with it, redraw, and
+# say what happened. This is the whole of a program's main loop.
+ui_next u:
+    w: peek_i64(u, 0)
+    if win_alive(w) is 0
+        poke_i64(u, 32, UI_CLOSED)
+        return UI_CLOSED
+    ui_draw(u)
+    ev: win_wait(w)
+    poke_i64(u, 32, UI_NOTHING)
+    poke_i64(u, 40, 0 - 1)
+
+    if ev is WIN_CLOSE
+        poke_i64(u, 32, UI_CLOSED)
+        return UI_CLOSED
+
+    if ev is WIN_CLICK
+        x: win_x(w)
+        y: win_y(w)
+        n: peek_i64(u, 8)
+        i: 0
+        as long as i < n
+            if ui_inside(u, i, x, y) is 1
+                k: ui_field(u, i, 0)
+                if k is UI_BUTTON
+                    ui_set(u, i, 6, 1)
+                    poke_i64(u, 32, UI_CLICKED)
+                    poke_i64(u, 40, i)
+                if k is UI_ENTRY
+                    poke_i64(u, 24, i)
+                if k is UI_CHECK
+                    ui_set(u, i, 7, 1 - ui_field(u, i, 7))
+                    poke_i64(u, 32, UI_CLICKED)
+                    poke_i64(u, 40, i)
+            i: i + 1
+        return peek_i64(u, 32)
+
+    if ev is WIN_KEY
+        f: peek_i64(u, 24)
+        if f >= 0
+            c: win_key(w)
+            if c is 22
+                # rubbing out
+                t: as text ui_field(u, f, 5)
+                if str_len(t) > 0
+                    ui_set(u, f, 5, str_cut(t, 0, str_len(t) - 1))
+                poke_i64(u, 32, UI_TYPED)
+                poke_i64(u, 40, f)
+                return UI_TYPED
+            ch: win_key_text(c)
+            if str_len(ch) > 0
+                t: as text ui_field(u, f, 5)
+                ui_set(u, f, 5, str_cat(t, ch))
+                poke_i64(u, 32, UI_TYPED)
+                poke_i64(u, 40, f)
+                return UI_TYPED
+        poke_i64(u, 32, UI_NOTHING)
+        return UI_NOTHING
+
+    return UI_NOTHING
+
+# was this button the one just pressed?
+ui_clicked u i:
+    if peek_i64(u, 32) is not UI_CLICKED
+        return 0
+    if peek_i64(u, 40) is not i
+        return 0
+    # a button only counts once
+    ui_set(u, i, 6, 0)
+    return 1
+
+# which widget the last thing happened to
+ui_which u:
+    return peek_i64(u, 40)
+
+ui_what u:
+    return peek_i64(u, 32)
+
+# put the typing line into this box
+ui_focus u i:
+    poke_i64(u, 24, i)
+    return 0
+
+# the socket underneath, for a program that wants to wait itself
+ui_socket u:
+    return peek_i64(peek_i64(u, 0), 0)
+
+ui_shut u:
+    if u is 0
+        return 0
+    win_shut(peek_i64(u, 0))
+    return 0

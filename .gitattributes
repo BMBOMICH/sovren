@@ -10,18 +10,23 @@
 *.md linguist-documentation
 *.txt linguist-documentation
 
+# The workflow is meant to be seen: it is how the project is tested.
+# It stays counted.
+
 # Test tooling, not part of the language.
 #
-# These emulate other processors so a phone or Mac binary can be run
-# on this machine, and they check Sovren's own hashing with a second,
-# independent one. They are scaffolding around the project, not the
-# project, so they are not counted as its language.
-arm64/*.py linguist-vendored
-mac/*.py linguist-vendored
-windows/*.py linguist-vendored
+# Only two of these are left. Both are deliberate: a checker written
+# in the language it checks agrees with its own bugs, so the fuzzer
+# and the signature check keep a second, independent opinion. The
+# processor emulators that used to live here are gone, replaced by
+# library/x86.sov and library/arm.sov, which are Sovren.
+arm64/check_sig.py linguist-vendored
 check/fuzz.py linguist-vendored
-check/fuzz_arm.py linguist-vendored
-arm64/*.sh linguist-vendored
+
+# Editor colour files. These are not Sovren and cannot be: Vim reads
+# vimscript, Zed reads tree-sitter queries. They describe Sovren to
+# other programs, so they are not counted as the project's language.
+syntax/** linguist-vendored
 
 # Prebuilt binaries the tests run on real hardware
 mac/hello binary

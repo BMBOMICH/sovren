@@ -1,0 +1,209 @@
+# discord.sov — a Discord bot.
+#
+# Make an application at discord.com/developers, add a bot to it,
+# and copy the token. That token is what this needs.
+#
+#   use discord
+#   main:
+#       d: dc_new("your-bot-token")
+#       print dc_me(d)
+#       dc_say(d, "1234567890", "hello from Sovren")
+#
+# ---- what this does and does not do ----
+#
+# Discord has two halves. One is an ordinary request-and-answer
+# service: send a message, make a channel, list the people. That
+# half is here and works.
+#
+# The other half is a permanent connection that tells a bot things
+# as they happen, and it is built on websockets over the locked kind
+# of connection. That needs machinery Sovren does not have yet, so
+# instead this library reads new messages by asking, every so often,
+# the way a simpler bot does. It is slower to notice things but it
+# works, and nothing about the program changes when the permanent
+# connection is added later.
+#
+# Discord insists on the locked kind, so web_secure_ready() must be
+# true. dc_new says so plainly when it is not.
+#
+# The block:
+#    0 the token    8 how many messages    16 the last reply
+#   24 where the messages are   32 the last message seen
+#   40 a different address, for testing
+
+use web
+use jsonp
+use string
+use num
+use mem
+use list
+use tool
+use file
+
+DC_MAX: 32
+DC_API: "https://discord.com/api/v10"
+
+dc_new token:
+    d: mem_new(64)
+    i: 0
+    as long as i < 64
+        poke_byte(d, i, 0)
+        i: i + 1
+    poke_i64(d, 0, token)
+    poke_i64(d, 24, mem_new(DC_MAX * 8))
+    return d
+
+dc_ready:
+    return web_secure_ready()
+
+# for testing against something other than the real service
+dc_base d url:
+    poke_i64(d, 40, url)
+    return 0
+
+dc_url d path:
+    b: peek_i64(d, 40)
+    if b is 0
+        return as text str_cat(DC_API, path)
+    return as text str_cat(as text b, path)
+
+# ---------------------------------------------------------------
+# Discord wants the token in a header, which needs the helper
+# ---------------------------------------------------------------
+#
+# Everything here goes through one place so the token is written out
+# once and nothing else has to think about it.
+
+dc_call d method path body:
+    if web_secure_ready() is 0
+        poke_i64(d, 16, 0)
+        return blank
+    a: list_new()
+    a: list_add(a, "-s")
+    a: list_add(a, "-X")
+    a: list_add(a, method)
+    a: list_add(a, "-H")
+    a: list_add(a, as text str_cat("Authorization: Bot ", as text peek_i64(d, 0)))
+    if str_len(body) > 0
+        file_write_all("/tmp/sov-dc-body", body)
+        a: list_add(a, "-H")
+        a: list_add(a, "Content-Type: application/json")
+        a: list_add(a, "--data-binary")
+        a: list_add(a, "@/tmp/sov-dc-body")
+    a: list_add(a, dc_url(d, path))
+    r: tool_outv("/usr/bin/curl", a)
+    poke_i64(d, 16, r)
+    return as text r
+
+# ---------------------------------------------------------------
+# what a program calls
+# ---------------------------------------------------------------
+
+# who am I?
+dc_me d:
+    r: dc_call(d, "GET", "/users/@me", "")
+    if str_len(r) is 0
+        return blank
+    return as text jp_get(r, "username")
+
+# say something in a channel
+dc_say d channel words:
+    body: "{\"content\":"
+    body: str_cat(body, web_quote(words))
+    body: str_cat(body, "}")
+    path: str_cat("/channels/", channel)
+    path: str_cat(path, "/messages")
+    r: dc_call(d, "POST", as text path, as text body)
+    if str_len(r) is 0
+        return 0
+    return 1
+
+# say something as a reply to a particular message
+dc_reply d channel to words:
+    body: "{\"content\":"
+    body: str_cat(body, web_quote(words))
+    body: str_cat(body, ",\"message_reference\":{\"message_id\":\"")
+    body: str_cat(body, to)
+    body: str_cat(body, "\"}}")
+    path: str_cat("/channels/", channel)
+    path: str_cat(path, "/messages")
+    r: dc_call(d, "POST", as text path, as text body)
+    if str_len(r) is 0
+        return 0
+    return 1
+
+# The newest messages in a channel. Returns how many were found;
+# read them with dc_text and the rest.
+dc_read d channel:
+    path: str_cat("/channels/", channel)
+    path: str_cat(path, "/messages?limit=10")
+    r: dc_call(d, "GET", as text path, "")
+    poke_i64(d, 8, 0)
+    if str_len(r) is 0
+        return 0
+    return dc_split(d, r)
+
+# Pull the separate messages out of a list, by walking the brackets
+# and keeping each thing between a matching pair.
+dc_split d r:
+    n: 0
+    i: 0
+    # find the opening bracket of the list
+    as long as i < str_len(r)
+        if peek_byte(r, i) is 91
+            i: i + 1
+            i: i - 1
+            i: i + 1
+            slots: peek_i64(d, 24)
+            depth: 0
+            start: 0 - 1
+            as long as i < str_len(r)
+                c: peek_byte(r, i)
+                if c is 123
+                    if depth is 0
+                        start: i
+                    depth: depth + 1
+                if c is 125
+                    depth: depth - 1
+                    if depth is 0
+                        if n < DC_MAX
+                            poke_i64(slots, n * 8, str_cut(r, start, i + 1))
+                            n: n + 1
+                i: i + 1
+            poke_i64(d, 8, n)
+            return n
+        i: i + 1
+    return 0
+
+dc_count d:
+    return peek_i64(d, 8)
+
+dc_raw d i:
+    if i < 0
+        return blank
+    if i >= peek_i64(d, 8)
+        return blank
+    return as text peek_i64(peek_i64(d, 24), i * 8)
+
+dc_text d i:
+    return as text jp_get(dc_raw(d, i), "content")
+
+dc_id d i:
+    return as text jp_get(dc_raw(d, i), "id")
+
+# who wrote it
+dc_from d i:
+    return as text jp_get(dc_raw(d, i), "username")
+
+# a channel's details
+dc_channel d channel:
+    path: str_cat("/channels/", channel)
+    return dc_call(d, "GET", as text path, "")
+
+# the whole of the last thing Discord said, for when something is
+# wrong and you want to see it
+dc_last d:
+    v: peek_i64(d, 16)
+    if v is 0
+        return blank
+    return as text v

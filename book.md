@@ -368,6 +368,214 @@ again with your own Apple name.
 
 ---
 
+## Running another machine's program here
+
+Sovren can build for six machines, and it can also run what it built. Two of the
+libraries are processors, written in Sovren:
+
+```
+use x86     a 64-bit Intel or AMD processor
+use arm     a 64-bit ARM processor, the kind in a phone
+```
+
+`x86` is a general-purpose 64-bit Intel and AMD processor, not just enough of one to
+run what Sovren emits. It runs all three shapes of file — a Linux ELF, a Windows
+`.exe`, and a Mac binary — and works out which by looking at the first bytes.
+
+It runs programs from other compilers too. A C program built with gcc and linked
+statically against the C library runs and prints exactly what it prints natively,
+including `malloc`, `qsort` with a callback, `printf`, and the string functions,
+which glibc writes with vector instructions.
+
+```
+use x86
+main:
+    m: x86_new()
+    x86_load(m, "app.exe")
+    x86_run(m)
+    print x86_out(m)
+```
+
+Two ready-made tools use it:
+
+```
+./sovren windows/run.sov -o run     then    ./run app.exe
+./sovren mac/run.sov -o run         then    ./run app
+```
+
+Both are strict on purpose. A Windows program that reaches a raw `syscall` is stopped,
+because real Windows has no Linux kernel behind it — Wine lets that through and the
+program then dies on a real machine. A Mac program using a Linux syscall number is
+stopped for the same reason. Each exits `3` when it refuses.
+
+`x86_why` says why it stopped and `x86_reason` says it in words. `x86_code` is the
+exit code the program asked for, and `x86_err` is anything it wrote to the error
+channel.
+
+What it covers: every whole-number instruction, in all four widths; the flags,
+including parity and direction; the full-width multiply and divide, where the
+answer is twice as wide as what went in; the string instructions with `rep`; the
+bit instructions; the locked ones; the vector registers; and decimal arithmetic.
+
+Decimals are worth a word. Sovren has no decimal numbers, so add, take away,
+multiply, divide, compare and square root are all done with whole numbers, the
+way the hardware does it underneath: a number is a sign, an exponent and a
+fraction, and the work is in lining those up and rounding correctly. Rounding is
+to nearest, ties to even, which is what makes a sum give the same answer twice.
+Infinity, not-a-number and the very small numbers below the normal range are all
+handled. The answers are the same bit patterns a real processor gives — checked
+against one, several thousand times over.
+
+It also covers the old stack-based maths unit, the one a compiler reaches for when
+a program asks for `long double`. That is a stack of eight registers rather than
+sixteen named ones, and it is checked the same way: a C program using `long double`
+prints exactly what it prints natively.
+
+Every instruction was checked against a real processor, one at a time, by feeding
+both the same bytes and comparing all sixteen registers and every flag afterwards.
+`check/x86ins.sov` keeps that check in the suite.
+
+---
+
+## A window
+
+`win` opens a real window and draws in it. On Linux it speaks to the X server
+directly, over a socket, so there is no toolkit underneath and nothing to install.
+
+```
+use win
+main:
+    w: win_open(400, 300, "Hello")
+    win_fill(w, 0, 0, 400, 300, WIN_WHITE)
+    win_fill(w, 50, 50, 100, 80, WIN_RED)
+    win_text(w, 30, 30, "Hello from Sovren", WIN_BLACK)
+    win_flush(w)
+    as long as win_wait(w) is not WIN_CLOSE
+        win_flush(w)
+```
+
+`win_open` hands back nought when there is no screen, so a program can say so
+politely instead of falling over. Nothing appears until `win_flush`.
+
+That one is Linux. On Windows the drawing is done by `user32` and `gdi32`, which
+is a different machine entirely, and `winwin` does that. To write a program once
+for both, use `window`, which picks whichever works:
+
+```
+use window
+main:
+    w: window_open(400, 300, "Hello")
+    if w is 0
+        print "no screen here"
+        stop
+    print window_which(w)
+    as long as window_next(w) is 1
+        window_fill(w, 0, 0, 400, 300, WHITE)
+        window_text(w, 20, 30, "Hello from Sovren", BLACK)
+        window_show(w)
+    window_shut(w)
+```
+
+`window_which` says `X11` or `Windows`. Everything else — `window_fill`,
+`window_box`, `window_line`, `window_circle`, `window_text` — is the same on
+both.
+
+A Windows program reaches `user32` and `gdi32` through `winapi`, which uses the
+two names every Sovren Windows program carries: `LoadLibraryA` opens any library
+on the machine and `GetProcAddress` finds a function inside it. So a program can
+call anything Windows offers without it being decided at build time:
+
+```
+use winapi
+main:
+    u: dll_open("user32.dll")
+    f: dll_find(u, "MessageBoxA")
+    wincall4(f, 0, "hello", "Sovren", 0)
+```
+
+There are `win_fill`, `win_box`, `win_line`, `win_circle`, `win_dot` and
+`win_text`, and colours are made with `win_rgb r g b` or taken from `WIN_RED`,
+`WIN_BLUE` and the rest. `win_wait` hands back `WIN_KEY`, `WIN_CLICK`, `WIN_MOVE`,
+`WIN_DRAW` or `WIN_CLOSE`, and `win_key`, `win_x` and `win_y` say what happened.
+
+---
+
+## Buttons and boxes to type in
+
+`ui` puts the usual things in a window and tells you which one the person used.
+
+```
+use ui
+main:
+    u: ui_new(300, 200, "Sign in")
+    ui_label(u, 20, 16, "Your name:")
+    name: ui_entry(u, 20, 40, 260, 28)
+    go: ui_button(u, 20, 90, 100, 32, "Go")
+    as long as ui_next(u) is not UI_CLOSED
+        if ui_clicked(u, go) is 1
+            print ui_text(u, name)
+```
+
+`ui_next` deals with everything the person did, redraws, and says what happened.
+There are labels, buttons, boxes to type in, tick boxes and plain boxes.
+
+---
+
+## A game
+
+`game` is a window with a loop that keeps proper time, and things that move.
+
+```
+use game
+main:
+    g: game_new(400, 300, "Bounce")
+    game_speed(g, 60)
+    ball: sprite_new(60, 60, 20, 20, WIN_RED)
+    sprite_speed(ball, 4, 3)
+    as long as game_running(g) is 1
+        game_step(g)
+        sprite_move(ball)
+        sprite_bounce(g, ball)
+        game_clear(g, WIN_BLACK)
+        sprite_draw(g, ball)
+        game_show(g)
+```
+
+`game_step` takes in everything the person did and then waits just long enough
+that the loop runs at the speed you asked for. Without that a game runs at a
+different speed on every machine. `game_held` says whether a key is down right
+now, which is what a game wants, rather than whether it was just pressed.
+
+A sprite knows where it is, where it is going and how big it is.
+`sprite_bounce` turns it round at the edge, `sprite_clamp` keeps it inside, and
+`sprite_hit` says whether two are touching.
+
+---
+
+## Bots
+
+`telegram` and `discord` talk to those two services.
+
+```
+use telegram
+main:
+    t: tg_new("123456:your-token-from-BotFather")
+    as long as 1 is 1
+        n: tg_poll(t)
+        i: 0
+        as long as i < n
+            tg_say(t, tg_chat(t, i), tg_text(t, i))
+            i: i + 1
+```
+
+Both services insist on the locked kind of connection, which needs a great deal
+of cryptography Sovren does not have yet. Rather than pretend, these libraries
+hand the locking to a helper the machine already has, and `tg_ready` and
+`dc_ready` say plainly whether one is there. Everything else — building the
+request, reading the reply, pulling the message out — is Sovren.
+
+---
+
 ## Close to the machine
 
 These do no checking at all. They are for writing an operating system.

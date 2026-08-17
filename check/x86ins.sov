@@ -1,0 +1,1244 @@
+# check/x86ins.sov — every instruction the emulator knows, checked.
+#
+# library/x86.sov is a processor written in Sovren. This feeds it
+# instruction bytes with known starting registers and checks the
+# answer, the same way arm64/verify.sov does for the ARM one.
+#
+# The answers here were taken from a real processor, by running the
+# same bytes under a differential checker. They are not guesses.
+#
+#   ./sovren check/x86ins.sov -o /tmp/x86ins && /tmp/x86ins
+
+use x86
+use num
+use string
+use sys
+
+X_AT: 4194304
+
+pass: 0
+fail: 0
+
+# start a bare machine with registers set, run some bytes, stop
+new_at:
+    m: x86_new()
+    poke_i64(m, 216, X_AT)
+    x_rebase(m)
+    poke_i64(m, 240, X_LINUX)
+    x_set_sp(m, X_AT + 1048576)
+    return m
+
+# write one byte of program
+put m i v:
+    x_w8(m, X_AT + i, v)
+    return 0
+
+# run what was written
+go m n:
+    put(m, n, 244)
+    x_set_rip(m, X_AT)
+    x86_run_for(m, 500)
+    return 0
+
+ok name:
+    write_out("ok ")
+    print as text name
+    pass: pass + 1
+    return 0
+
+bad name got want:
+    write_out("FAIL ")
+    print as text name
+    write_out("  got  ")
+    print num_text(got)
+    write_out("  want ")
+    print num_text(want)
+    fail: fail + 1
+    return 0
+
+is_eq name got want:
+    if got is want
+        return ok(name)
+    return bad(name, got, want)
+
+# ---- two bytes, a register each ----
+
+t_add:
+    m: new_at()
+    x_setr(m, 0, 40)
+    x_setr(m, 3, 2)
+    # add rax, rbx
+    put(m, 0, 72)
+    put(m, 1, 1)
+    put(m, 2, 216)
+    go(m, 3)
+    return is_eq("add", x_reg(m, 0), 42)
+
+t_sub:
+    m: new_at()
+    x_setr(m, 0, 50)
+    x_setr(m, 3, 8)
+    put(m, 0, 72)
+    put(m, 1, 41)
+    put(m, 2, 216)
+    go(m, 3)
+    return is_eq("sub", x_reg(m, 0), 42)
+
+t_adc:
+    m: new_at()
+    x_setr(m, 0, 40)
+    x_setr(m, 3, 1)
+    poke_i64(m, 152, 1)
+    # adc rax, rbx  (11 /r)
+    put(m, 0, 72)
+    put(m, 1, 17)
+    put(m, 2, 216)
+    go(m, 3)
+    return is_eq("adc with the carry in", x_reg(m, 0), 42)
+
+t_sbb:
+    m: new_at()
+    x_setr(m, 0, 50)
+    x_setr(m, 3, 7)
+    poke_i64(m, 152, 1)
+    put(m, 0, 72)
+    put(m, 1, 25)
+    put(m, 2, 216)
+    go(m, 3)
+    return is_eq("sbb with the borrow in", x_reg(m, 0), 42)
+
+t_and:
+    m: new_at()
+    x_setr(m, 0, 60)
+    x_setr(m, 3, 43)
+    put(m, 0, 72)
+    put(m, 1, 33)
+    put(m, 2, 216)
+    go(m, 3)
+    return is_eq("and", x_reg(m, 0), 40)
+
+t_or:
+    m: new_at()
+    x_setr(m, 0, 40)
+    x_setr(m, 3, 2)
+    put(m, 0, 72)
+    put(m, 1, 9)
+    put(m, 2, 216)
+    go(m, 3)
+    return is_eq("or", x_reg(m, 0), 42)
+
+t_xor:
+    m: new_at()
+    x_setr(m, 0, 60)
+    x_setr(m, 3, 22)
+    put(m, 0, 72)
+    put(m, 1, 49)
+    put(m, 2, 216)
+    go(m, 3)
+    return is_eq("xor", x_reg(m, 0), 42)
+
+# ---- shifting ----
+
+t_shl:
+    m: new_at()
+    x_setr(m, 0, 21)
+    # shl rax, 1   (D1 /4)
+    put(m, 0, 72)
+    put(m, 1, 209)
+    put(m, 2, 224)
+    go(m, 3)
+    return is_eq("shift left by one", x_reg(m, 0), 42)
+
+t_shl_many:
+    m: new_at()
+    x_setr(m, 0, 1)
+    # shl rax, 40  (C1 /4 ib)
+    put(m, 0, 72)
+    put(m, 1, 193)
+    put(m, 2, 224)
+    put(m, 3, 40)
+    go(m, 4)
+    return is_eq("shift left by forty", x_reg(m, 0), 1099511627776)
+
+t_shr:
+    m: new_at()
+    x_setr(m, 0, 84)
+    put(m, 0, 72)
+    put(m, 1, 209)
+    put(m, 2, 232)
+    go(m, 3)
+    return is_eq("shift right by one", x_reg(m, 0), 42)
+
+t_sar:
+    m: new_at()
+    x_setr(m, 0, 0 - 84)
+    put(m, 0, 72)
+    put(m, 1, 209)
+    put(m, 2, 248)
+    go(m, 3)
+    return is_eq("shift right keeping the sign", x_reg(m, 0), 0 - 42)
+
+t_shr_sign:
+    m: new_at()
+    x_setr(m, 0, 0 - 1)
+    # shr rax, 1 : the sign must NOT come along
+    put(m, 0, 72)
+    put(m, 1, 209)
+    put(m, 2, 232)
+    go(m, 3)
+    return is_eq("shift right does not keep the sign", x_reg(m, 0), 9223372036854775807)
+
+t_rol:
+    m: new_at()
+    x_setr(m, 0, 0 - 9223372036854775807 - 1)
+    # rol rax, 1 : the top bit comes round to the bottom
+    put(m, 0, 72)
+    put(m, 1, 209)
+    put(m, 2, 192)
+    go(m, 3)
+    return is_eq("rotate left", x_reg(m, 0), 1)
+
+t_ror:
+    m: new_at()
+    x_setr(m, 0, 1)
+    put(m, 0, 72)
+    put(m, 1, 209)
+    put(m, 2, 200)
+    go(m, 3)
+    return is_eq("rotate right", x_reg(m, 0), 0 - 9223372036854775807 - 1)
+
+t_shl_by_cl:
+    m: new_at()
+    x_setr(m, 0, 21)
+    x_setr(m, 1, 1)
+    # shl rax, cl  (D3 /4)
+    put(m, 0, 72)
+    put(m, 1, 211)
+    put(m, 2, 224)
+    go(m, 3)
+    return is_eq("shift left by cl", x_reg(m, 0), 42)
+
+# ---- multiply and divide, the full width ----
+
+t_mul_hi:
+    m: new_at()
+    x_setr(m, 0, 0 - 1)
+    x_setr(m, 3, 0 - 1)
+    # mul rbx : the answer is 128 bits, rdx gets the top
+    put(m, 0, 72)
+    put(m, 1, 247)
+    put(m, 2, 227)
+    go(m, 3)
+    if x_reg(m, 0) is not 1
+        return bad("multiply, the low half", x_reg(m, 0), 1)
+    return is_eq("multiply, the top half", x_reg(m, 2), 0 - 2)
+
+t_imul_neg:
+    m: new_at()
+    x_setr(m, 0, 0 - 6)
+    x_setr(m, 3, 7)
+    # imul rbx
+    put(m, 0, 72)
+    put(m, 1, 247)
+    put(m, 2, 235)
+    go(m, 3)
+    if x_reg(m, 0) is not 0 - 42
+        return bad("signed multiply, low", x_reg(m, 0), 0 - 42)
+    return is_eq("signed multiply, top", x_reg(m, 2), 0 - 1)
+
+t_div:
+    m: new_at()
+    x_setr(m, 0, 85)
+    x_setr(m, 2, 0)
+    x_setr(m, 3, 2)
+    # div rbx
+    put(m, 0, 72)
+    put(m, 1, 247)
+    put(m, 2, 243)
+    go(m, 3)
+    if x_reg(m, 0) is not 42
+        return bad("divide", x_reg(m, 0), 42)
+    return is_eq("the remainder", x_reg(m, 2), 1)
+
+t_div_128:
+    m: new_at()
+    # a hundred and twenty-eight bit number over a small one
+    x_setr(m, 2, 1)
+    x_setr(m, 0, 0)
+    x_setr(m, 3, 4)
+    put(m, 0, 72)
+    put(m, 1, 247)
+    put(m, 2, 243)
+    go(m, 3)
+    return is_eq("divide a 128 bit number", x_reg(m, 0), 4611686018427387904)
+
+t_idiv_neg:
+    m: new_at()
+    x_setr(m, 0, 0 - 85)
+    x_setr(m, 2, 0 - 1)
+    x_setr(m, 3, 2)
+    put(m, 0, 72)
+    put(m, 1, 247)
+    put(m, 2, 251)
+    go(m, 3)
+    return is_eq("signed divide", x_reg(m, 0), 0 - 42)
+
+t_imul2:
+    m: new_at()
+    x_setr(m, 0, 6)
+    x_setr(m, 3, 7)
+    # imul rax, rbx  (0F AF /r)
+    put(m, 0, 72)
+    put(m, 1, 15)
+    put(m, 2, 175)
+    put(m, 3, 195)
+    go(m, 4)
+    return is_eq("multiply, two operands", x_reg(m, 0), 42)
+
+# ---- the bit instructions ----
+
+t_bt:
+    m: new_at()
+    x_setr(m, 0, 256)
+    x_setr(m, 3, 8)
+    # bt rax, rbx  (0F A3 /r)
+    put(m, 0, 72)
+    put(m, 1, 15)
+    put(m, 2, 163)
+    put(m, 3, 216)
+    go(m, 4)
+    return is_eq("test one bit", x_cf(m), 1)
+
+t_bts:
+    m: new_at()
+    x_setr(m, 0, 0)
+    x_setr(m, 3, 5)
+    put(m, 0, 72)
+    put(m, 1, 15)
+    put(m, 2, 171)
+    put(m, 3, 216)
+    go(m, 4)
+    return is_eq("set one bit", x_reg(m, 0), 32)
+
+t_btr:
+    m: new_at()
+    x_setr(m, 0, 42)
+    x_setr(m, 3, 1)
+    put(m, 0, 72)
+    put(m, 1, 15)
+    put(m, 2, 179)
+    put(m, 3, 216)
+    go(m, 4)
+    return is_eq("clear one bit", x_reg(m, 0), 40)
+
+t_bsf:
+    m: new_at()
+    x_setr(m, 3, 40)
+    # bsf rax, rbx  (0F BC /r)
+    put(m, 0, 72)
+    put(m, 1, 15)
+    put(m, 2, 188)
+    put(m, 3, 195)
+    go(m, 4)
+    return is_eq("find the lowest bit", x_reg(m, 0), 3)
+
+t_bsr:
+    m: new_at()
+    x_setr(m, 3, 40)
+    put(m, 0, 72)
+    put(m, 1, 15)
+    put(m, 2, 189)
+    put(m, 3, 195)
+    go(m, 4)
+    return is_eq("find the highest bit", x_reg(m, 0), 5)
+
+t_bswap:
+    m: new_at()
+    x_setr(m, 0, 1)
+    # bswap rax  (0F C8)
+    put(m, 0, 72)
+    put(m, 1, 15)
+    put(m, 2, 200)
+    go(m, 3)
+    return is_eq("turn the bytes round", x_reg(m, 0), 72057594037927936)
+
+# ---- the odd byte registers ----
+
+t_ah:
+    m: new_at()
+    x_setr(m, 0, 0)
+    # mov ah, 42  (B4 ib) with no REX: this is the SECOND byte of rax
+    put(m, 0, 180)
+    put(m, 1, 42)
+    go(m, 2)
+    return is_eq("ah is the second byte of rax", x_reg(m, 0), 10752)
+
+t_sil:
+    m: new_at()
+    x_setr(m, 6, 0)
+    # with a REX prefix the same number means sil, the LOW byte of rsi
+    put(m, 0, 64)
+    put(m, 1, 182)
+    put(m, 2, 42)
+    go(m, 3)
+    return is_eq("with rex it is sil instead", x_reg(m, 6), 42)
+
+# ---- widening, and the thirty-two bit rule ----
+
+t_movzx:
+    m: new_at()
+    x_setr(m, 3, 0 - 1)
+    # movzx rax, bl  (0F B6 /r)
+    put(m, 0, 72)
+    put(m, 1, 15)
+    put(m, 2, 182)
+    put(m, 3, 195)
+    go(m, 4)
+    return is_eq("widen with no sign", x_reg(m, 0), 255)
+
+t_movsx:
+    m: new_at()
+    x_setr(m, 3, 255)
+    # movsx rax, bl  (0F BE /r)
+    put(m, 0, 72)
+    put(m, 1, 15)
+    put(m, 2, 190)
+    put(m, 3, 195)
+    go(m, 4)
+    return is_eq("widen keeping the sign", x_reg(m, 0), 0 - 1)
+
+t_32clear:
+    m: new_at()
+    x_setr(m, 0, 0 - 1)
+    # mov eax, 5 : a thirty-two bit write clears the top half
+    put(m, 0, 184)
+    put(m, 1, 5)
+    put(m, 2, 0)
+    put(m, 3, 0)
+    put(m, 4, 0)
+    go(m, 5)
+    return is_eq("a 32 bit write clears the top", x_reg(m, 0), 5)
+
+t_cqo:
+    m: new_at()
+    x_setr(m, 0, 0 - 1)
+    put(m, 0, 72)
+    put(m, 1, 153)
+    go(m, 2)
+    return is_eq("spread the sign into rdx", x_reg(m, 2), 0 - 1)
+
+# ---- memory, and the string instructions ----
+
+t_store_load:
+    m: new_at()
+    x_setr(m, 0, 42)
+    x_setr(m, 3, X_AT + 4096)
+    # mov [rbx], rax  then  mov rcx, [rbx]
+    put(m, 0, 72)
+    put(m, 1, 137)
+    put(m, 2, 3)
+    put(m, 3, 72)
+    put(m, 4, 139)
+    put(m, 5, 11)
+    go(m, 6)
+    return is_eq("store then load", x_reg(m, 1), 42)
+
+t_movs:
+    m: new_at()
+    src: X_AT + 4096
+    dst: X_AT + 8192
+    x_w64(m, src, 42)
+    x_setr(m, 6, src)
+    x_setr(m, 7, dst)
+    x_setr(m, 1, 1)
+    # rep movsq
+    put(m, 0, 243)
+    put(m, 1, 72)
+    put(m, 2, 165)
+    go(m, 3)
+    return is_eq("copy memory", x_r64(m, dst), 42)
+
+t_stos:
+    m: new_at()
+    dst: X_AT + 8192
+    x_setr(m, 0, 7)
+    x_setr(m, 7, dst)
+    x_setr(m, 1, 3)
+    # rep stosq
+    put(m, 0, 243)
+    put(m, 1, 72)
+    put(m, 2, 171)
+    go(m, 3)
+    if x_r64(m, dst + 16) is not 7
+        return bad("fill memory", x_r64(m, dst + 16), 7)
+    return is_eq("fill memory leaves rcx empty", x_reg(m, 1), 0)
+
+t_scas:
+    m: new_at()
+    dst: X_AT + 8192
+    x_w8(m, dst, 1)
+    x_w8(m, dst + 1, 2)
+    x_w8(m, dst + 2, 42)
+    x_setr(m, 0, 42)
+    x_setr(m, 7, dst)
+    x_setr(m, 1, 8)
+    # repne scasb : stop when it finds the byte
+    put(m, 0, 242)
+    put(m, 1, 174)
+    go(m, 2)
+    return is_eq("search memory", x_reg(m, 7), dst + 3)
+
+t_df:
+    m: new_at()
+    dst: X_AT + 8192
+    x_setr(m, 7, dst)
+    x_setr(m, 0, 1)
+    x_setr(m, 1, 1)
+    # std then stosq : the direction flag makes it step backwards
+    put(m, 0, 253)
+    put(m, 1, 243)
+    put(m, 2, 72)
+    put(m, 3, 171)
+    go(m, 4)
+    return is_eq("the direction flag steps back", x_reg(m, 7), dst - 8)
+
+# ---- the flags ----
+
+t_parity:
+    m: new_at()
+    x_setr(m, 0, 3)
+    x_setr(m, 3, 0)
+    # add rax, rbx : three has two one-bits, so parity is even
+    put(m, 0, 72)
+    put(m, 1, 1)
+    put(m, 2, 216)
+    go(m, 3)
+    return is_eq("the parity flag", x_pf(m), 1)
+
+t_overflow:
+    m: new_at()
+    x_setr(m, 0, 9223372036854775807)
+    x_setr(m, 3, 1)
+    put(m, 0, 72)
+    put(m, 1, 1)
+    put(m, 2, 216)
+    go(m, 3)
+    return is_eq("the overflow flag", x_of(m), 1)
+
+t_carry:
+    m: new_at()
+    x_setr(m, 0, 0 - 1)
+    x_setr(m, 3, 1)
+    put(m, 0, 72)
+    put(m, 1, 1)
+    put(m, 2, 216)
+    go(m, 3)
+    return is_eq("the carry flag", x_cf(m), 1)
+
+t_pushf:
+    m: new_at()
+    poke_i64(m, 152, 1)
+    poke_i64(m, 136, 1)
+    # pushfq then popfq into rax by way of the stack
+    put(m, 0, 156)
+    put(m, 1, 88)
+    go(m, 2)
+    v: x_reg(m, 0)
+    if v % 2 is not 1
+        return bad("push the flags: carry", v % 2, 1)
+    return is_eq("push the flags: zero", (v / 64) % 2, 1)
+
+# ---- jumps and calls ----
+
+t_call_ret:
+    m: new_at()
+    # call past the halt, then the called part sets rax and returns
+    put(m, 0, 232)
+    put(m, 1, 1)
+    put(m, 2, 0)
+    put(m, 3, 0)
+    put(m, 4, 0)
+    put(m, 5, 244)
+    put(m, 6, 72)
+    put(m, 7, 199)
+    put(m, 8, 192)
+    put(m, 9, 42)
+    put(m, 10, 0)
+    put(m, 11, 0)
+    put(m, 12, 0)
+    put(m, 13, 195)
+    x_set_rip(m, X_AT)
+    x86_run_for(m, 100)
+    return is_eq("call and come back", x_reg(m, 0), 42)
+
+t_loop:
+    m: new_at()
+    x_setr(m, 0, 0)
+    x_setr(m, 1, 5)
+    # inc rax ; loop back to it
+    put(m, 0, 72)
+    put(m, 1, 255)
+    put(m, 2, 192)
+    put(m, 3, 226)
+    put(m, 4, 251)
+    go(m, 5)
+    return is_eq("loop until rcx runs out", x_reg(m, 0), 5)
+
+t_cmov:
+    m: new_at()
+    x_setr(m, 0, 1)
+    x_setr(m, 3, 42)
+    poke_i64(m, 136, 1)
+    # cmove rax, rbx  (0F 44 /r)
+    put(m, 0, 72)
+    put(m, 1, 15)
+    put(m, 2, 68)
+    put(m, 3, 195)
+    go(m, 4)
+    return is_eq("move on a condition", x_reg(m, 0), 42)
+
+t_setcc:
+    m: new_at()
+    poke_i64(m, 136, 1)
+    x_setr(m, 0, 0)
+    # sete al  (0F 94 /r)
+    put(m, 0, 15)
+    put(m, 1, 148)
+    put(m, 2, 192)
+    go(m, 3)
+    return is_eq("set a byte on a condition", x_reg(m, 0), 1)
+
+# ---- swap and compare-and-swap ----
+
+t_xchg:
+    m: new_at()
+    x_setr(m, 0, 1)
+    x_setr(m, 3, 42)
+    put(m, 0, 72)
+    put(m, 1, 135)
+    put(m, 2, 216)
+    go(m, 3)
+    if x_reg(m, 0) is not 42
+        return bad("swap two registers", x_reg(m, 0), 42)
+    return is_eq("swap two registers, the other way", x_reg(m, 3), 1)
+
+t_cmpxchg:
+    m: new_at()
+    x_setr(m, 0, 5)
+    x_setr(m, 3, 5)
+    x_setr(m, 1, 42)
+    # cmpxchg rbx, rcx : rbx matches rax, so rcx goes in
+    put(m, 0, 72)
+    put(m, 1, 15)
+    put(m, 2, 177)
+    put(m, 3, 203)
+    go(m, 4)
+    return is_eq("compare and swap", x_reg(m, 3), 42)
+
+t_xadd:
+    m: new_at()
+    x_setr(m, 0, 40)
+    x_setr(m, 3, 2)
+    # xadd rbx, rax : rbx gets the sum, rax gets the old rbx
+    put(m, 0, 72)
+    put(m, 1, 15)
+    put(m, 2, 193)
+    put(m, 3, 195)
+    go(m, 4)
+    if x_reg(m, 3) is not 42
+        return bad("swap and add", x_reg(m, 3), 42)
+    return is_eq("swap and add, the old value", x_reg(m, 0), 2)
+
+# ---- the vector registers ----
+
+t_vec_xor:
+    m: new_at()
+    x_xset(m, 0, 12345, 6789)
+    # pxor xmm0, xmm0  (66 0F EF /r)
+    put(m, 0, 102)
+    put(m, 1, 15)
+    put(m, 2, 239)
+    put(m, 3, 192)
+    go(m, 4)
+    if x_xlo(m, 0) is not 0
+        return bad("clear a vector register", x_xlo(m, 0), 0)
+    return is_eq("clear a vector register, top half", x_xhi(m, 0), 0)
+
+t_vec_move:
+    m: new_at()
+    at: X_AT + 4096
+    x_w64(m, at, 42)
+    x_w64(m, at + 8, 99)
+    x_setr(m, 3, at)
+    # movdqu xmm0, [rbx]  (F3 0F 6F /r)
+    put(m, 0, 243)
+    put(m, 1, 15)
+    put(m, 2, 111)
+    put(m, 3, 3)
+    go(m, 4)
+    if x_xlo(m, 0) is not 42
+        return bad("load sixteen bytes", x_xlo(m, 0), 42)
+    return is_eq("load sixteen bytes, top half", x_xhi(m, 0), 99)
+
+t_vec_cmpeq:
+    m: new_at()
+    x_xset(m, 0, 72340172838076673, 0)
+    x_xset(m, 1, 72340172838076673, 0)
+    # pcmpeqb xmm0, xmm1  (66 0F 74 /r)
+    put(m, 0, 102)
+    put(m, 1, 15)
+    put(m, 2, 116)
+    put(m, 3, 193)
+    go(m, 4)
+    return is_eq("compare sixteen bytes", x_xlo(m, 0), 0 - 1)
+
+t_vec_mask:
+    m: new_at()
+    # every byte with its top bit set
+    x_xset(m, 1, 0 - 1, 0 - 1)
+    # pmovmskb eax, xmm1  (66 0F D7 /r)
+    put(m, 0, 102)
+    put(m, 1, 15)
+    put(m, 2, 215)
+    put(m, 3, 193)
+    go(m, 4)
+    return is_eq("gather the top bits", x_reg(m, 0), 65535)
+
+t_vec_movd:
+    m: new_at()
+    x_setr(m, 3, 42)
+    # movq xmm0, rbx  (66 48 0F 6E /r)
+    put(m, 0, 102)
+    put(m, 1, 72)
+    put(m, 2, 15)
+    put(m, 3, 110)
+    put(m, 4, 195)
+    go(m, 5)
+    return is_eq("a plain register into a vector one", x_xlo(m, 0), 42)
+
+# ---- decimal numbers ----
+#
+# Sovren has no decimals, so all of this is whole-number work
+# underneath. The answers below are the bit patterns a real
+# processor gives, checked against one.
+#
+#   1.0   is 4607182418800017408
+#   2.0   is 4611686018427387904
+#   3.5   is 4615063718147915776
+#   1.25  is 4609434218613702656
+#   4.75  is 4617034042984890368   (3.5 + 1.25)
+#   2.25  is 4612248968380809216   (3.5 - 1.25)
+#   4.375 is 4616611830519824384   (3.5 * 1.25)
+#   2.8   is 4613487458278336102   (3.5 / 1.25)
+
+D_ONE: 4607182418800017408
+D_TWO: 4611686018427387904
+D_HALF: 4602678819172646912
+D_35: 4615063718147915776
+D_125: 4608308318706860032
+
+t_fadd:
+    m: new_at()
+    return is_eq("add two decimals", x_fadd(m, D_35, D_125), 4617034042984890368)
+
+t_fsub:
+    m: new_at()
+    return is_eq("take one decimal from another", x_fsub(m, D_35, D_125), 4612248968380809216)
+
+t_fmul:
+    m: new_at()
+    return is_eq("multiply two decimals", x_fmul(m, D_35, D_125), 4616611830519824384)
+
+t_fdiv:
+    m: new_at()
+    return is_eq("divide two decimals", x_fdiv(m, D_35, D_125), 4613487458278336102)
+
+t_fdiv_third:
+    m: new_at()
+    # one third, which never comes out exactly
+    return is_eq("a third", x_fdiv(m, D_ONE, 4613937818241073152), 4599676419421066581)
+
+t_fadd_tenths:
+    m: new_at()
+    # the famous one: a tenth plus a fifth is not exactly three tenths
+    tenth: 4591870180066957722
+    fifth: 4596373779694328218
+    r: x_fadd(m, tenth, fifth)
+    if r is 4599075939470750516
+        return ok("a tenth and a fifth")
+    return bad("a tenth and a fifth", r, 4599075939470750516)
+
+t_fsqrt:
+    m: new_at()
+    return is_eq("the square root of two", x_fsqrt(m, D_TWO), 4609047870845172685)
+
+t_i2d:
+    m: new_at()
+    return is_eq("a whole number to a decimal", x_i2d(m, 7), 4619567317775286272)
+
+t_d2i:
+    m: new_at()
+    return is_eq("a decimal back to a whole one", x_d2i(m, D_35), 3)
+
+t_d2i_big:
+    m: new_at()
+    # a thousand million million, which needs the wide path
+    return is_eq("a big decimal to a whole one", x_d2i(m, 4831355200913801216), 1000000000000000)
+
+t_fcmp:
+    m: new_at()
+    if x_fcmp(m, D_125, D_35) is not 0
+        return bad("comparing decimals: below", x_fcmp(m, D_125, D_35), 0)
+    if x_fcmp(m, D_35, D_35) is not 1
+        return bad("comparing decimals: same", x_fcmp(m, D_35, D_35), 1)
+    return is_eq("comparing decimals", x_fcmp(m, D_35, D_125), 2)
+
+t_fnan:
+    m: new_at()
+    # nothing compares to a not-a-number, not even itself
+    nan: 9221120237041090560
+    return is_eq("not-a-number compares to nothing", x_fcmp(m, nan, nan), 3)
+
+t_finf:
+    m: new_at()
+    inf: 9218868437227405312
+    # one over nothing is infinity
+    return is_eq("one over nothing", x_fdiv(m, D_ONE, 0), inf)
+
+t_fzero:
+    m: new_at()
+    return is_eq("nothing times something", x_fmul(m, 0, D_35), 0)
+
+t_fsmall:
+    m: new_at()
+    # the smallest number there is, halved, is nothing
+    tiny: 1
+    return is_eq("the smallest number, halved", x_fdiv(m, tiny, D_TWO), 0)
+
+t_f2d:
+    m: new_at()
+    # the narrow kind of 1.0 is 1065353216
+    return is_eq("narrow to wide", x_f2d(m, 1065353216), D_ONE)
+
+t_d2f:
+    m: new_at()
+    return is_eq("wide to narrow", x_d2f(m, D_ONE), 1065353216)
+
+# ---- the instructions that use them ----
+
+t_addsd:
+    m: new_at()
+    x_xset(m, 0, D_35, 0)
+    x_xset(m, 1, D_125, 0)
+    # addsd xmm0, xmm1  (F2 0F 58 /r)
+    put(m, 0, 242)
+    put(m, 1, 15)
+    put(m, 2, 88)
+    put(m, 3, 193)
+    go(m, 4)
+    return is_eq("the add instruction", x_xlo(m, 0), 4617034042984890368)
+
+t_mulsd:
+    m: new_at()
+    x_xset(m, 0, D_35, 0)
+    x_xset(m, 1, D_125, 0)
+    put(m, 0, 242)
+    put(m, 1, 15)
+    put(m, 2, 89)
+    put(m, 3, 193)
+    go(m, 4)
+    return is_eq("the multiply instruction", x_xlo(m, 0), 4616611830519824384)
+
+t_divsd:
+    m: new_at()
+    x_xset(m, 0, D_35, 0)
+    x_xset(m, 1, D_125, 0)
+    put(m, 0, 242)
+    put(m, 1, 15)
+    put(m, 2, 94)
+    put(m, 3, 193)
+    go(m, 4)
+    return is_eq("the divide instruction", x_xlo(m, 0), 4613487458278336102)
+
+t_movsd_clears:
+    m: new_at()
+    at: X_AT + 4096
+    x_w64(m, at, D_35)
+    x_setr(m, 3, at)
+    x_xset(m, 0, 999, 888)
+    # movsd xmm0, [rbx] : loading from memory clears the top half
+    put(m, 0, 242)
+    put(m, 1, 15)
+    put(m, 2, 16)
+    put(m, 3, 3)
+    go(m, 4)
+    if x_xlo(m, 0) is not D_35
+        return bad("a single decimal load", x_xlo(m, 0), D_35)
+    return is_eq("a single decimal load clears the top", x_xhi(m, 0), 0)
+
+t_ucomisd:
+    m: new_at()
+    x_xset(m, 0, D_35, 0)
+    x_xset(m, 1, D_125, 0)
+    # ucomisd xmm0, xmm1  (66 0F 2E /r) : 3.5 is above 1.25
+    put(m, 0, 102)
+    put(m, 1, 15)
+    put(m, 2, 46)
+    put(m, 3, 193)
+    go(m, 4)
+    if x_zf(m) is not 0
+        return bad("comparing sets the flags: zero", x_zf(m), 0)
+    return is_eq("comparing sets the flags: carry", x_cf(m), 0)
+
+t_ucomisd_nan:
+    m: new_at()
+    nan: 9221120237041090560
+    x_xset(m, 0, nan, 0)
+    x_xset(m, 1, D_125, 0)
+    put(m, 0, 102)
+    put(m, 1, 15)
+    put(m, 2, 46)
+    put(m, 3, 193)
+    go(m, 4)
+    # not-a-number sets all three, which is how a program spots it
+    if x_zf(m) is not 1
+        return bad("not-a-number sets zero", x_zf(m), 1)
+    if x_pf(m) is not 1
+        return bad("not-a-number sets parity", x_pf(m), 1)
+    return is_eq("not-a-number sets carry", x_cf(m), 1)
+
+t_cvtsi2sd:
+    m: new_at()
+    x_setr(m, 3, 7)
+    # cvtsi2sd xmm0, rbx  (F2 48 0F 2A /r)
+    put(m, 0, 242)
+    put(m, 1, 72)
+    put(m, 2, 15)
+    put(m, 3, 42)
+    put(m, 4, 195)
+    go(m, 5)
+    return is_eq("a whole number in", x_xlo(m, 0), 4619567317775286272)
+
+t_cvttsd2si:
+    m: new_at()
+    x_xset(m, 1, D_35, 0)
+    # cvttsd2si rax, xmm1  (F2 48 0F 2C /r)
+    put(m, 0, 242)
+    put(m, 1, 72)
+    put(m, 2, 15)
+    put(m, 3, 44)
+    put(m, 4, 193)
+    go(m, 5)
+    return is_eq("a whole number back out", x_reg(m, 0), 3)
+
+t_sqrtsd:
+    m: new_at()
+    x_xset(m, 1, D_TWO, 0)
+    # sqrtsd xmm0, xmm1  (F2 0F 51 /r)
+    put(m, 0, 242)
+    put(m, 1, 15)
+    put(m, 2, 81)
+    put(m, 3, 193)
+    go(m, 4)
+    return is_eq("the square root instruction", x_xlo(m, 0), 4609047870845172685)
+
+t_fcw:
+    m: new_at()
+    at: X_AT + 4096
+    x_setr(m, 3, at)
+    # fnstcw [rbx]  (D9 /7) : the old unit's control word
+    put(m, 0, 217)
+    put(m, 1, 59)
+    go(m, 2)
+    return is_eq("the old unit's control word", x_r16(m, at), 895)
+
+# ---- the old stack-based maths unit ----
+#
+# A program only reaches for this when it asks for `long double`,
+# but gcc does emit it then, so it has to work.
+
+t_x87_push:
+    m: new_at()
+    at: X_AT + 4096
+    x_w64(m, at, D_35)
+    x_setr(m, 3, at)
+    # fld qword [rbx]  (DD /0)
+    put(m, 0, 221)
+    put(m, 1, 3)
+    go(m, 2)
+    return is_eq("put a number on the old stack", x_st_get(m, 0), D_35)
+
+t_x87_add:
+    m: new_at()
+    at: X_AT + 4096
+    x_w64(m, at, D_35)
+    x_w64(m, at + 8, D_125)
+    x_setr(m, 3, at)
+    # fld [rbx] ; fld [rbx+8] ; faddp
+    put(m, 0, 221)
+    put(m, 1, 3)
+    put(m, 2, 221)
+    put(m, 3, 67)
+    put(m, 4, 8)
+    put(m, 5, 222)
+    put(m, 6, 193)
+    go(m, 7)
+    return is_eq("add on the old stack", x_st_get(m, 0), 4617034042984890368)
+
+t_x87_mul:
+    m: new_at()
+    at: X_AT + 4096
+    x_w64(m, at, D_35)
+    x_w64(m, at + 8, D_125)
+    x_setr(m, 3, at)
+    put(m, 0, 221)
+    put(m, 1, 3)
+    put(m, 2, 221)
+    put(m, 3, 67)
+    put(m, 4, 8)
+    put(m, 5, 222)
+    put(m, 6, 201)
+    go(m, 7)
+    return is_eq("multiply on the old stack", x_st_get(m, 0), 4616611830519824384)
+
+t_x87_order:
+    m: new_at()
+    at: X_AT + 4096
+    x_w64(m, at, D_35)
+    x_w64(m, at + 8, D_125)
+    x_setr(m, 3, at)
+    # the second one loaded ends up on top
+    put(m, 0, 221)
+    put(m, 1, 3)
+    put(m, 2, 221)
+    put(m, 3, 67)
+    put(m, 4, 8)
+    go(m, 5)
+    if x_st_get(m, 0) is not D_125
+        return bad("the stack keeps its order", x_st_get(m, 0), D_125)
+    return is_eq("the one below it", x_st_get(m, 1), D_35)
+
+t_x87_pop:
+    m: new_at()
+    at: X_AT + 4096
+    x_w64(m, at, D_35)
+    x_setr(m, 3, at)
+    # fld then fstp to another place
+    put(m, 0, 221)
+    put(m, 1, 3)
+    put(m, 2, 221)
+    put(m, 3, 91)
+    put(m, 4, 16)
+    go(m, 5)
+    return is_eq("store and take off", x_r64(m, at + 16), D_35)
+
+t_x87_ld:
+    m: new_at()
+    at: X_AT + 4096
+    # write 3.5 out as a ten byte number, then read it back
+    x_d_to_ld(m, D_35, at)
+    return is_eq("the ten byte kind round trips", x_ld_to_d(m, at), D_35)
+
+t_x87_chs:
+    m: new_at()
+    at: X_AT + 4096
+    x_w64(m, at, D_35)
+    x_setr(m, 3, at)
+    # fld [rbx] ; fchs
+    put(m, 0, 221)
+    put(m, 1, 3)
+    put(m, 2, 217)
+    put(m, 3, 224)
+    go(m, 4)
+    return is_eq("change the sign", x_st_get(m, 0), x_fneg(D_35))
+
+t_x87_sqrt:
+    m: new_at()
+    at: X_AT + 4096
+    x_w64(m, at, D_TWO)
+    x_setr(m, 3, at)
+    put(m, 0, 221)
+    put(m, 1, 3)
+    put(m, 2, 217)
+    put(m, 3, 250)
+    go(m, 4)
+    return is_eq("square root on the old stack", x_st_get(m, 0), 4609047870845172685)
+
+t_x87_one:
+    m: new_at()
+    # fld1
+    put(m, 0, 217)
+    put(m, 1, 232)
+    go(m, 2)
+    return is_eq("the built-in one", x_st_get(m, 0), D_ONE)
+
+t_x87_cmp:
+    m: new_at()
+    at: X_AT + 4096
+    x_w64(m, at, D_125)
+    x_w64(m, at + 8, D_35)
+    x_setr(m, 3, at)
+    # fld 1.25 ; fld 3.5 ; fucomi st(1) -> 3.5 is above 1.25
+    put(m, 0, 221)
+    put(m, 1, 3)
+    put(m, 2, 221)
+    put(m, 3, 67)
+    put(m, 4, 8)
+    put(m, 5, 219)
+    put(m, 6, 233)
+    go(m, 7)
+    if x_zf(m) is not 0
+        return bad("comparing on the old stack: zero", x_zf(m), 0)
+    return is_eq("comparing on the old stack: carry", x_cf(m), 0)
+
+# ---- what the emulator must refuse ----
+
+t_badop:
+    m: new_at()
+    # a byte that means nothing
+    put(m, 0, 6)
+    go(m, 1)
+    return is_eq("an unknown instruction stops it", x86_why(m), 2)
+
+t_oob:
+    m: new_at()
+    x_setr(m, 3, 0)
+    # mov rax, [rbx] with rbx nowhere near the block
+    put(m, 0, 72)
+    put(m, 1, 139)
+    put(m, 2, 3)
+    go(m, 3)
+    return is_eq("reaching outside memory stops it", x86_why(m), 6)
+
+t_divzero:
+    m: new_at()
+    x_setr(m, 0, 1)
+    x_setr(m, 2, 0)
+    x_setr(m, 3, 0)
+    put(m, 0, 72)
+    put(m, 1, 247)
+    put(m, 2, 243)
+    go(m, 3)
+    return is_eq("dividing by nothing stops it", x86_why(m), 5)
+
+main:
+    print "the x86-64 emulator, instruction by instruction"
+    print ""
+
+    t_add()
+    t_sub()
+    t_adc()
+    t_sbb()
+    t_and()
+    t_or()
+    t_xor()
+
+    t_shl()
+    t_shl_many()
+    t_shr()
+    t_sar()
+    t_shr_sign()
+    t_rol()
+    t_ror()
+    t_shl_by_cl()
+
+    t_mul_hi()
+    t_imul_neg()
+    t_div()
+    t_div_128()
+    t_idiv_neg()
+    t_imul2()
+
+    t_bt()
+    t_bts()
+    t_btr()
+    t_bsf()
+    t_bsr()
+    t_bswap()
+
+    t_ah()
+    t_sil()
+    t_movzx()
+    t_movsx()
+    t_32clear()
+    t_cqo()
+
+    t_store_load()
+    t_movs()
+    t_stos()
+    t_scas()
+    t_df()
+
+    t_parity()
+    t_overflow()
+    t_carry()
+    t_pushf()
+
+    t_call_ret()
+    t_loop()
+    t_cmov()
+    t_setcc()
+
+    t_xchg()
+    t_cmpxchg()
+    t_xadd()
+
+    t_vec_xor()
+    t_vec_move()
+    t_vec_cmpeq()
+    t_vec_mask()
+    t_vec_movd()
+
+    t_fadd()
+    t_fsub()
+    t_fmul()
+    t_fdiv()
+    t_fdiv_third()
+    t_fadd_tenths()
+    t_fsqrt()
+    t_i2d()
+    t_d2i()
+    t_d2i_big()
+    t_fcmp()
+    t_fnan()
+    t_finf()
+    t_fzero()
+    t_fsmall()
+    t_f2d()
+    t_d2f()
+
+    t_addsd()
+    t_mulsd()
+    t_divsd()
+    t_movsd_clears()
+    t_ucomisd()
+    t_ucomisd_nan()
+    t_cvtsi2sd()
+    t_cvttsd2si()
+    t_sqrtsd()
+    t_fcw()
+
+    t_x87_push()
+    t_x87_add()
+    t_x87_mul()
+    t_x87_order()
+    t_x87_pop()
+    t_x87_ld()
+    t_x87_chs()
+    t_x87_sqrt()
+    t_x87_one()
+    t_x87_cmp()
+
+    t_badop()
+    t_oob()
+    t_divzero()
+
+    print ""
+    write_out(num_text(pass))
+    write_out(" passed, ")
+    write_out(num_text(fail))
+    print " failed"
+    if fail is 0
+        print "every instruction is right"
+        sys_exit(0)
+    sys_exit(1)

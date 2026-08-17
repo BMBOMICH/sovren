@@ -1,0 +1,208 @@
+# telegram.sov — a Telegram bot.
+#
+# Talk to @BotFather on Telegram, make a bot, and it gives you a
+# token. That token is the whole of what this needs.
+#
+#   use telegram
+#   main:
+#       t: tg_new("123456:AAF-your-token-here")
+#       print tg_me(t)
+#       as long as 1 is 1
+#           n: tg_poll(t)
+#           i: 0
+#           as long as i < n
+#               tg_say(t, tg_chat(t, i), str_cat("you said: ", tg_text(t, i)))
+#               i: i + 1
+#
+# Telegram insists on the locked kind of connection, so this needs
+# web_secure_ready() to be true. tg_new says so plainly if it is
+# not, rather than failing later in a confusing way.
+#
+# The block:
+#    0 the token   8 the last update seen   16 how many messages
+#   24 the last reply         32 where the messages start
+
+use web
+use jsonp
+use string
+use num
+use mem
+use list
+
+TG_MAX: 32
+
+tg_new token:
+    t: mem_new(64)
+    i: 0
+    as long as i < 64
+        poke_byte(t, i, 0)
+        i: i + 1
+    poke_i64(t, 0, token)
+    poke_i64(t, 8, 0)
+    poke_i64(t, 16, 0)
+    poke_i64(t, 32, mem_new(TG_MAX * 8))
+    return t
+
+# is this machine able to reach Telegram at all?
+tg_ready:
+    return web_secure_ready()
+
+# the beginning of every address, with the token in it
+tg_url t method:
+    u: "https://api.telegram.org/bot"
+    u: str_cat(u, as text peek_i64(t, 0))
+    u: str_cat(u, "/")
+    return as text str_cat(u, method)
+
+# for testing against something other than the real service
+tg_base t url:
+    poke_i64(t, 40, url)
+    return 0
+
+tg_url_of t method:
+    b: peek_i64(t, 40)
+    if b is 0
+        return tg_url(t, method)
+    u: str_cat(as text b, "/bot")
+    u: str_cat(u, as text peek_i64(t, 0))
+    u: str_cat(u, "/")
+    return as text str_cat(u, method)
+
+# ---------------------------------------------------------------
+# asking Telegram things
+# ---------------------------------------------------------------
+
+# who am I? Hands back the bot's name, or nothing if it did not work.
+tg_me t:
+    r: web_get(tg_url_of(t, "getMe"))
+    poke_i64(t, 24, r)
+    if str_len(r) is 0
+        return blank
+    return as text jp_get(r, "username")
+
+# The messages waiting. Returns how many there are; the ones after
+# that are read with tg_text and tg_chat.
+#
+# Telegram hands back everything since the last one acknowledged, so
+# the highest number seen is remembered and sent back next time.
+tg_poll t:
+    u: tg_url_of(t, "getUpdates")
+    u: str_cat(u, "?timeout=0&offset=")
+    u: str_cat(u, num_text(peek_i64(t, 8) + 1))
+    r: web_get(as text u)
+    poke_i64(t, 24, r)
+    poke_i64(t, 16, 0)
+    if str_len(r) is 0
+        return 0
+    return tg_split(t, r)
+
+# Pull the separate messages out of the reply. They arrive as a list
+# inside the JSON, and each one is found by walking the brackets.
+tg_split t r:
+    n: 0
+    at: jp_find(r, "result")
+    if at < 0
+        return 0
+    # step past the opening bracket
+    i: at
+    as long as i < str_len(r)
+        if peek_byte(r, i) is 91
+            i: i + 1
+            i: str_len(r)
+        if not
+            i: i + 1
+    i: at
+    as long as peek_byte(r, i) is not 91
+        i: i + 1
+        if i >= str_len(r)
+            return 0
+    i: i + 1
+    slots: peek_i64(t, 32)
+    depth: 0
+    start: 0 - 1
+    as long as i < str_len(r)
+        c: peek_byte(r, i)
+        if c is 123
+            if depth is 0
+                start: i
+            depth: depth + 1
+        if c is 125
+            depth: depth - 1
+            if depth is 0
+                if n < TG_MAX
+                    piece: str_cut(r, start, i + 1)
+                    poke_i64(slots, n * 8, piece)
+                    n: n + 1
+                    id: jp_num(piece, "update_id")
+                    if id > peek_i64(t, 8)
+                        poke_i64(t, 8, id)
+        if c is 93
+            if depth is 0
+                i: str_len(r)
+        i: i + 1
+    poke_i64(t, 16, n)
+    return n
+
+tg_count t:
+    return peek_i64(t, 16)
+
+tg_raw t i:
+    if i < 0
+        return blank
+    if i >= peek_i64(t, 16)
+        return blank
+    return as text peek_i64(peek_i64(t, 32), i * 8)
+
+# what the person wrote
+tg_text t i:
+    return as text jp_get(tg_raw(t, i), "text")
+
+# which conversation it came from, which is what a reply is sent to
+tg_chat t i:
+    return jp_num(tg_raw(t, i), "id")
+
+# who wrote it
+tg_from t i:
+    return as text jp_get(tg_raw(t, i), "username")
+
+tg_message_id t i:
+    return jp_num(tg_raw(t, i), "message_id")
+
+# ---------------------------------------------------------------
+# saying things
+# ---------------------------------------------------------------
+
+tg_say t chat words:
+    body: "{\"chat_id\":"
+    body: str_cat(body, num_text(chat))
+    body: str_cat(body, ",\"text\":")
+    body: str_cat(body, web_quote(words))
+    body: str_cat(body, "}")
+    r: web_post(tg_url_of(t, "sendMessage"), as text body)
+    poke_i64(t, 24, r)
+    if str_len(r) is 0
+        return 0
+    return 1
+
+# say something as a reply to a particular message
+tg_reply t chat to words:
+    body: "{\"chat_id\":"
+    body: str_cat(body, num_text(chat))
+    body: str_cat(body, ",\"reply_to_message_id\":")
+    body: str_cat(body, num_text(to))
+    body: str_cat(body, ",\"text\":")
+    body: str_cat(body, web_quote(words))
+    body: str_cat(body, "}")
+    r: web_post(tg_url_of(t, "sendMessage"), as text body)
+    poke_i64(t, 24, r)
+    if str_len(r) is 0
+        return 0
+    return 1
+
+# the whole of the last thing Telegram said, for when something is
+# wrong and you want to see it
+tg_last t:
+    v: peek_i64(t, 24)
+    if v is 0
+        return blank
+    return as text v

@@ -4,6 +4,12 @@
 num_text n:
     if n is 0
         return "0"
+    # The most negative number has no positive twin: negating it
+    # gives back itself, so the digit loop below would never run and
+    # the answer came out as a bare minus sign. Take the last digit
+    # off first, which makes what is left small enough to negate.
+    if n is 0 - 9223372036854775807 - 1
+        return "-9223372036854775808"
     neg: 0
     x: n
     if x < 0

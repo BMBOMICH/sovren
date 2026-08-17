@@ -5,6 +5,56 @@
 # needs _sov_list
 use sys
 use pipe
+use list
+
+# Run a program with several separate arguments and collect what it
+# prints. tool_out takes exactly one argument, which is no good for
+# anything that needs a handful, because passing them as one string
+# hands the program a single argument with spaces in it.
+#
+# The arguments come in as a list, and there may be up to seven,
+# which is as many as any of these needs.
+tool_outv path args:
+    fds: pipe_new()
+    if fds is 0
+        return blank
+    rfd: pipe_read_fd(fds)
+    wfd: pipe_write_fd(fds)
+    pid: sys_fork()
+    if pid is 0
+        sys_close(rfd)
+        sys_dup2(wfd, 1)
+        sys_close(wfd)
+        n: list_len(args)
+        argv: _sov_alloc((n + 2) * 8)
+        poke_i64(argv, 0, path)
+        i: 0
+        as long as i < n
+            poke_i64(argv, (i + 1) * 8, list_get(args, i))
+            i: i + 1
+        poke_i64(argv, (n + 1) * 8, 0)
+        syscall(59, path, argv, 0, 0, 0, 0)
+        sys_exit(127)
+    if pid < 0
+        pipe_close(fds)
+        return blank
+    sys_close(wfd)
+    cap: 262144
+    buf: _sov_alloc(cap + 1)
+    n: 0
+    going: 1
+    as long as going is 1
+        r: sys_read(rfd, buf + n, 65536)
+        if r <= 0
+            going: 0
+        if not
+            n: n + r
+            if n > cap - 65536
+                going: 0
+    sys_close(rfd)
+    sys_wait(pid)
+    poke_byte(buf, n, 0)
+    return as text buf
 
 tool_out path arg:
     fds: pipe_new()

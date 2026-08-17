@@ -1,0 +1,398 @@
+# web.sov — asking a web service for something, and reading the answer.
+#
+# The bot libraries both need the same thing: send a request to a
+# service, get a reply, pull the interesting bits out of the JSON.
+# That is all here, in one place.
+#
+# ---- about the locked kind ----
+#
+# Nearly every real service now refuses plain requests and insists
+# on the locked kind, which needs a great deal of cryptography that
+# Sovren does not yet have. Rather than pretend, this library asks
+# an outside helper to do the locking when one is available, and
+# says plainly when it is not.
+#
+#   web_secure_ready()   is the locked kind available on this machine
+#   web_get(url)         fetch a page
+#   web_post(url, body)  send something
+#
+# For a plain http:// address nothing outside is needed and it all
+# happens in Sovren. For https:// the helper is used. If there is no
+# helper, the call hands back an empty answer and web_why says why,
+# so a program can tell the person something useful instead of
+# failing in a confusing way.
+
+use sock
+use string
+use num
+use sys
+use mem
+use file
+use tool
+use jsonp
+use list
+
+WEB_OK: 0
+WEB_NO_HOST: 1
+WEB_NO_CONNECT: 2
+WEB_NO_SECURE: 3
+WEB_BAD_REPLY: 4
+
+web_last: 0
+web_status: 0
+
+web_why:
+    return web_last
+
+web_code:
+    return web_status
+
+# ---------------------------------------------------------------
+# picking a web address apart
+# ---------------------------------------------------------------
+
+# is this the locked kind?
+web_is_secure url:
+    if str_starts(url, "https://") is 1
+        return 1
+    return 0
+
+# the machine name out of an address
+web_host url:
+    s: url
+    if str_starts(s, "https://") is 1
+        s: str_cut(s, 8, str_len(s))
+    if not
+        if str_starts(s, "http://") is 1
+            s: str_cut(s, 7, str_len(s))
+    i: 0
+    as long as i < str_len(s)
+        c: peek_byte(s, i)
+        if c is 47
+            return as text str_cut(s, 0, i)
+        if c is 58
+            return as text str_cut(s, 0, i)
+        i: i + 1
+    return as text s
+
+# the part after the machine name
+web_path url:
+    s: url
+    if str_starts(s, "https://") is 1
+        s: str_cut(s, 8, str_len(s))
+    if not
+        if str_starts(s, "http://") is 1
+            s: str_cut(s, 7, str_len(s))
+    i: 0
+    as long as i < str_len(s)
+        if peek_byte(s, i) is 47
+            return as text str_cut(s, i, str_len(s))
+        i: i + 1
+    return "/"
+
+# The number after a colon in the address, when there is one, or
+# the usual number for that kind of address when there is not.
+web_port url:
+    s: url
+    if str_starts(s, "https://") is 1
+        s: str_cut(s, 8, str_len(s))
+    if not
+        if str_starts(s, "http://") is 1
+            s: str_cut(s, 7, str_len(s))
+    i: 0
+    as long as i < str_len(s)
+        c: peek_byte(s, i)
+        if c is 47
+            i: str_len(s)
+        if not
+            if c is 58
+                v: 0
+                j: i + 1
+                as long as j < str_len(s)
+                    d: peek_byte(s, j)
+                    if d < 48
+                        j: str_len(s)
+                    if not
+                        if d > 57
+                            j: str_len(s)
+                        if not
+                            v: v * 10 + d - 48
+                            j: j + 1
+                if v > 0
+                    return v
+                i: str_len(s)
+            if not
+                i: i + 1
+    if web_is_secure(url) is 1
+        return 443
+    return 80
+
+# ---------------------------------------------------------------
+# is there a way to do the locked kind here?
+# ---------------------------------------------------------------
+#
+# Sovren cannot do it itself yet. It looks for one of the two
+# programs almost every machine already has. This is honest about
+# what it is doing: the request is handed to a helper, and if there
+# is no helper the answer says so.
+
+web_helper: 0
+web_looked: 0
+
+web_find_helper:
+    if web_looked is 1
+        return web_helper
+    web_looked: 1
+    if file_exists("/usr/bin/curl") is 1
+        web_helper: 1
+        return 1
+    if file_exists("/bin/curl") is 1
+        web_helper: 1
+        return 1
+    if file_exists("/usr/bin/openssl") is 1
+        web_helper: 2
+        return 2
+    web_helper: 0
+    return 0
+
+web_secure_ready:
+    if web_find_helper() is 0
+        return 0
+    return 1
+
+# ---------------------------------------------------------------
+# the plain kind, all in Sovren
+# ---------------------------------------------------------------
+
+# look a name up. Only the plainest sort of answer is understood,
+# which is enough for a name that points straight at a machine.
+web_lookup host:
+    # a name written as four numbers needs no looking up
+    if web_is_numeric(host) is 1
+        return host
+    out: tool_out("/usr/bin/getent", str_cat("hosts ", host))
+    if str_len(out) < 7
+        return blank
+    i: 0
+    as long as i < str_len(out)
+        c: peek_byte(out, i)
+        if c is 32
+            return as text str_cut(out, 0, i)
+        if c is 9
+            return as text str_cut(out, 0, i)
+        i: i + 1
+    return as text str_trim(out)
+
+web_is_numeric s:
+    dots: 0
+    i: 0
+    as long as i < str_len(s)
+        c: peek_byte(s, i)
+        if c is 46
+            dots: dots + 1
+        if not
+            if c < 48
+                return 0
+            if c > 57
+                return 0
+        i: i + 1
+    if dots is 3
+        return 1
+    return 0
+
+# the four parts of a numeric address
+web_part s n:
+    at: 0
+    k: 0
+    as long as k < n
+        as long as peek_byte(s, at) is not 46
+            at: at + 1
+            if at >= str_len(s)
+                return 0
+        at: at + 1
+        k: k + 1
+    v: 0
+    as long as at < str_len(s)
+        c: peek_byte(s, at)
+        if c < 48
+            return v
+        if c > 57
+            return v
+        v: v * 10 + c - 48
+        at: at + 1
+    return v
+
+# send a plain request and read the whole answer
+web_plain host port req:
+    ip: web_lookup(host)
+    if str_len(ip) is 0
+        web_last: WEB_NO_HOST
+        return blank
+    fd: sock_connect(web_part(ip, 0), web_part(ip, 1), web_part(ip, 2), web_part(ip, 3), port)
+    if fd < 0
+        web_last: WEB_NO_CONNECT
+        return blank
+    sys_write(fd, req, str_len(req))
+    buf: mem_new(262144)
+    got: 0
+    going: 1
+    as long as going is 1
+        r: sys_read(fd, buf + got, 65536)
+        if r <= 0
+            going: 0
+        if not
+            got: got + r
+            if got > 190000
+                going: 0
+    sys_close(fd)
+    poke_byte(buf, got, 0)
+    web_last: WEB_OK
+    return as text buf
+
+# ---------------------------------------------------------------
+# the locked kind, through the helper
+# ---------------------------------------------------------------
+
+web_secure url method body:
+    h: web_find_helper()
+    if h is 0
+        web_last: WEB_NO_SECURE
+        return blank
+    a: list_new()
+    a: list_add(a, "-s")
+    a: list_add(a, "-X")
+    a: list_add(a, method)
+    if str_len(body) > 0
+        # the body goes in a file so no quoting can go wrong
+        file_write_all("/tmp/sov-web-body", body)
+        a: list_add(a, "-H")
+        a: list_add(a, "Content-Type: application/json")
+        a: list_add(a, "--data-binary")
+        a: list_add(a, "@/tmp/sov-web-body")
+    a: list_add(a, url)
+    out: tool_outv("/usr/bin/curl", a)
+    web_last: WEB_OK
+    return as text out
+
+# ---------------------------------------------------------------
+# what a program calls
+# ---------------------------------------------------------------
+
+web_get url:
+    if web_is_secure(url) is 1
+        return web_secure(url, "GET", "")
+    host: web_host(url)
+    req: str_cat("GET ", web_path(url))
+    req: str_cat(req, " HTTP/1.0\r\nHost: ")
+    req: str_cat(req, host)
+    req: str_cat(req, "\r\nConnection: close\r\n\r\n")
+    raw: web_plain(host, web_port(url), req)
+    return web_body(raw)
+
+web_post url body:
+    if web_is_secure(url) is 1
+        return web_secure(url, "POST", body)
+    host: web_host(url)
+    req: str_cat("POST ", web_path(url))
+    req: str_cat(req, " HTTP/1.0\r\nHost: ")
+    req: str_cat(req, host)
+    req: str_cat(req, "\r\nContent-Type: application/json\r\nContent-Length: ")
+    req: str_cat(req, num_text(str_len(body)))
+    req: str_cat(req, "\r\nConnection: close\r\n\r\n")
+    req: str_cat(req, body)
+    raw: web_plain(host, web_port(url), req)
+    return web_body(raw)
+
+# everything after the blank line that ends the headers
+web_body raw:
+    n: str_len(raw)
+    if n is 0
+        return blank
+    # remember what the service said before throwing the headers away
+    web_status: web_read_code(raw)
+    i: 0
+    as long as i < n - 3
+        if peek_byte(raw, i) is 13
+            if peek_byte(raw, i + 1) is 10
+                if peek_byte(raw, i + 2) is 13
+                    if peek_byte(raw, i + 3) is 10
+                        return as text str_cut(raw, i + 4, n)
+        if peek_byte(raw, i) is 10
+            if peek_byte(raw, i + 1) is 10
+                return as text str_cut(raw, i + 2, n)
+        i: i + 1
+    return raw
+
+# the three figures after "HTTP/1.x "
+web_read_code raw:
+    if str_len(raw) < 12
+        return 0
+    return (peek_byte(raw, 9) - 48) * 100 + (peek_byte(raw, 10) - 48) * 10 + peek_byte(raw, 11) - 48
+
+# ---------------------------------------------------------------
+# small helpers for building requests
+# ---------------------------------------------------------------
+
+# make a piece of text safe to put in a web address
+web_escape s:
+    out: ""
+    i: 0
+    as long as i < str_len(s)
+        c: peek_byte(s, i)
+        ok: 0
+        if c >= 48
+            if c <= 57
+                ok: 1
+        if c >= 65
+            if c <= 90
+                ok: 1
+        if c >= 97
+            if c <= 122
+                ok: 1
+        if c is 45
+            ok: 1
+        if c is 46
+            ok: 1
+        if c is 95
+            ok: 1
+        if c is 126
+            ok: 1
+        if ok is 1
+            out: str_cat(out, str_cut(s, i, i + 1))
+        if not
+            out: str_cat(out, "%")
+            out: str_cat(out, web_hex(c / 16))
+            out: str_cat(out, web_hex(c % 16))
+        i: i + 1
+    return as text out
+
+web_hex v:
+    if v < 10
+        return as text str_cut("0123456789", v, v + 1)
+    return as text str_cut("ABCDEF", v - 10, v - 9)
+
+# make a piece of text safe to put inside JSON
+web_quote s:
+    out: "\""
+    i: 0
+    as long as i < str_len(s)
+        c: peek_byte(s, i)
+        if c is 34
+            out: str_cat(out, "\\\"")
+        if not
+            if c is 92
+                out: str_cat(out, "\\\\")
+            if not
+                if c is 10
+                    out: str_cat(out, "\\n")
+                if not
+                    if c is 13
+                        out: str_cat(out, "\\r")
+                    if not
+                        if c is 9
+                            out: str_cat(out, "\\t")
+                        if not
+                            if c >= 32
+                                out: str_cat(out, str_cut(s, i, i + 1))
+        i: i + 1
+    return as text str_cat(out, "\"")

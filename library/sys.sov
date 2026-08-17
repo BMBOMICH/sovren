@@ -81,6 +81,38 @@ sys_accept fd addr lenp:
 sys_connect fd addr len:
     return syscall(42, fd, addr, len, 0, 0, 0)
 
+# a socket that talks to another program on this machine rather
+# than over a network. AF_UNIX is 1.
+sys_socket_unix:
+    return syscall(41, 1, 1, 0, 0, 0, 0)
+
+# look at some sockets and say which have anything waiting. A
+# timeout of nought means answer at once.
+sys_poll fds n ms:
+    return syscall(7, fds, n, ms, 0, 0, 0)
+
+# Stop the system killing this program when it writes to something
+# that has gone away.
+#
+# By default a write to a closed connection kills the program on the
+# spot, with no chance to notice or say anything. That is right for
+# a shell pipeline and quite wrong for a program with a window: when
+# the screen goes, the program should tidy up and say so, not
+# vanish. This asks for the write to fail with an error instead,
+# which the caller can then see.
+#
+# The block passed in is a sigaction: the handler first, then the
+# flags, then the restorer and the mask. Handler 1 means ignore.
+sys_ignore_broken_pipe:
+    act: _sov_alloc(64)
+    i: 0
+    as long as i < 64
+        poke_byte(act, i, 0)
+        i: i + 1
+    poke_i64(act, 0, 1)
+    poke_i64(act, 8, 67108864)
+    return syscall(13, 13, act, 0, 8, 0, 0)
+
 sys_send fd buf n:
     return syscall(44, fd, buf, n, 0, 0, 0)
 

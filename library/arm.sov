@@ -1,0 +1,840 @@
+# arm.sov — run AArch64 code on this machine, in Sovren.
+#
+# A processor is a loop: fetch four bytes, work out what they mean,
+# change some registers, move on. That is all this is. It covers the
+# instructions Sovren's ARM back end emits, which is what the checks
+# need in order to run a phone binary on a desktop.
+#
+#   use arm
+#   main:
+#       m: arm_new()
+#       arm_load(m, "myprogram")
+#       arm_run(m)
+#       print arm_out(m)
+#
+# The machine is a block of memory:
+#   0    .. 255   registers x0..x30 and sp
+#   256          pc
+#   264          the compare flags
+#   272          how it stopped
+#   280          where the guest memory starts
+#   288          how big the guest memory is
+#   296          the collected output
+#   304          how much output
+#   312          the exit code
+
+use mem
+use file
+use string
+use num
+
+ARM_MEM: 268435456
+ARM_OUT: 1048576
+
+arm_new:
+    m: mem_new(512)
+    i: 0
+    as long as i < 512
+        poke_byte(m, i, 0)
+        i: i + 1
+    poke_i64(m, 280, mem_new(ARM_MEM))
+    poke_i64(m, 288, ARM_MEM)
+    poke_i64(m, 296, mem_new(ARM_OUT))
+    poke_i64(m, 304, 0)
+    return m
+
+# --- registers ---
+
+arm_reg m n:
+    if n is 31
+        return peek_i64(m, 248)
+    return peek_i64(m, n * 8)
+
+arm_set m n v:
+    if n is 31
+        poke_i64(m, 248, v)
+        return 0
+    if n > 30
+        return 0
+    poke_i64(m, n * 8, v)
+    return 0
+
+# x31 reads as zero in most instructions, but is sp in a few
+arm_rz m n:
+    if n is 31
+        return 0
+    return peek_i64(m, n * 8)
+
+arm_pc m:
+    return peek_i64(m, 256)
+
+arm_set_pc m v:
+    poke_i64(m, 256, v)
+    return 0
+
+arm_sp m:
+    return peek_i64(m, 248)
+
+arm_set_sp m v:
+    poke_i64(m, 248, v)
+    return 0
+
+arm_base m:
+    return peek_i64(m, 280)
+
+# --- guest memory ---
+
+# guest addresses are real ones, so take the load point off first
+arm_r8 m a:
+    return peek_byte(arm_base(m), a - peek_i64(m, 328))
+
+arm_w8 m a v:
+    poke_byte(arm_base(m), a - peek_i64(m, 328), v)
+    return 0
+
+arm_r64 m a:
+    return peek_i64(arm_base(m) + a - peek_i64(m, 328), 0)
+
+arm_w64 m a v:
+    poke_i64(arm_base(m) + a - peek_i64(m, 328), 0, v)
+    return 0
+
+arm_r32 m a:
+    b: arm_base(m) - peek_i64(m, 328)
+    v: peek_byte(b, a)
+    v: v + peek_byte(b, a + 1) * 256
+    v: v + peek_byte(b, a + 2) * 65536
+    v: v + peek_byte(b, a + 3) * 16777216
+    return v
+
+# --- output the guest wrote ---
+
+arm_say m p n:
+    o: peek_i64(m, 296)
+    used: peek_i64(m, 304)
+    i: 0
+    as long as i < n
+        if used < ARM_OUT - 2
+            poke_byte(o, used, arm_r8(m, p + i))
+            used: used + 1
+        i: i + 1
+    poke_byte(o, used, 0)
+    poke_i64(m, 304, used)
+    return 0
+
+arm_out m:
+    return as text peek_i64(m, 296)
+
+arm_code m:
+    return peek_i64(m, 312)
+
+arm_why m:
+    return peek_i64(m, 272)
+
+# --- signed and unsigned helpers ---
+
+arm_signed v:
+    if v > 9223372036854775807
+        return v - 18446744073709551616
+    return v
+
+# values stay within one turn of the wheel, so a single test does
+# what a loop was doing
+arm_wrap v:
+    if v < 0
+        return v + 18446744073709551616
+    if v > 18446744073709551615
+        return v - 18446744073709551616
+    return v
+
+# sign extend a field of n bits
+# only three field widths ever reach this
+arm_sx v n:
+    half: 0
+    if n is 26
+        half: 33554432
+    if n is 19
+        half: 262144
+    if n is 9
+        half: 256
+    if n is 7
+        half: 64
+    if half is 0
+        half: 1
+        i: 0
+        as long as i < n - 1
+            half: half * 2
+            i: i + 1
+    if v >= half
+        return v - half * 2
+    return v
+
+# --- the compare flags ---
+# kept as the two values last compared, so each branch can decide
+
+arm_cmp m a b:
+    poke_i64(m, 264, a)
+    poke_i64(m, 272 - 0, peek_i64(m, 272))
+    poke_i64(m, 320, b)
+    return 0
+
+arm_flag_a m:
+    return peek_i64(m, 264)
+
+arm_flag_b m:
+    return peek_i64(m, 320)
+
+arm_cond m c:
+    a: arm_signed(arm_flag_a(m))
+    b: arm_signed(arm_flag_b(m))
+    if c is 0
+        if a is b
+            return 1
+        return 0
+    if c is 1
+        if a is not b
+            return 1
+        return 0
+    if c is 2
+        if arm_flag_a(m) >= arm_flag_b(m)
+            return 1
+        return 0
+    if c is 3
+        if arm_flag_a(m) < arm_flag_b(m)
+            return 1
+        return 0
+    if c is 10
+        if a >= b
+            return 1
+        return 0
+    if c is 11
+        if a < b
+            return 1
+        return 0
+    if c is 12
+        if a > b
+            return 1
+        return 0
+    if c is 13
+        if a <= b
+            return 1
+        return 0
+    if c is 14
+        return 1
+    return 0
+
+# --- loading a program ---
+
+# read an ELF and put its one loadable piece where it belongs
+arm_load m path:
+    d: file_read_all(path)
+    if d is 0
+        return 0
+    entry: peek_i64(d, 24)
+    phoff: peek_i64(d, 32)
+    phnum: peek_byte(d, 56) + peek_byte(d, 57) * 256
+    phsz: peek_byte(d, 54) + peek_byte(d, 55) * 256
+    lo: 0
+    i: 0
+    as long as i < phnum
+        o: phoff + i * phsz
+        t: peek_byte(d, o) + peek_byte(d, o + 1) * 256
+        if t is 1
+            off: peek_i64(d, o + 8)
+            va: peek_i64(d, o + 16)
+            fsz: peek_i64(d, o + 32)
+            if lo is 0
+                lo: va
+                # remember it now: every memory access takes it off
+                poke_i64(m, 328, lo)
+            k: 0
+            as long as k < fsz
+                arm_w8(m, va + k, peek_byte(d, off + k))
+                k: k + 1
+        i: i + 1
+    poke_i64(m, 328, lo)
+    arm_set_pc(m, entry)
+    arm_set_sp(m, lo + ARM_MEM - 65536)
+    # argc = 1 on the stack
+    arm_w64(m, arm_sp(m), 1)
+    return 1
+
+arm_low m:
+    return peek_i64(m, 328)
+
+# --- the loop that runs the code ---
+
+# take one instruction apart and do it. returns 1 to keep going.
+arm_step m:
+    pc: arm_pc(m)
+    w: arm_r32(m, pc)
+    nx: pc + 4
+
+    top: w / 16777216
+    rd: w % 32
+    rn: (w / 32) % 32
+    rm: (w / 65536) % 32
+
+    # ret
+    if w is 3596551104
+        arm_set_pc(m, arm_reg(m, 30))
+        if arm_reg(m, 30) is 0
+            poke_i64(m, 272, 1)
+            return 0
+        return 1
+
+    # svc: the guest asks the system for something
+    if w is 3556769793
+        return arm_svc(m, nx)
+
+    # movz / movn / movk
+    if top is 210
+        sh: ((w / 2097152) % 4) * 16
+        im: (w / 32) % 65536
+        arm_set(m, rd, arm_shl(im, sh))
+        arm_set_pc(m, nx)
+        return 1
+    if top is 146
+        if (w / 8388608) % 2 is 1
+            sh: ((w / 2097152) % 4) * 16
+            im: (w / 32) % 65536
+            arm_set(m, rd, arm_wrap(0 - arm_shl(im, sh) - 1))
+            arm_set_pc(m, nx)
+            return 1
+    if top is 242
+        sh: ((w / 2097152) % 4) * 16
+        im: (w / 32) % 65536
+        old: arm_reg(m, rd)
+        keep: arm_clear_field(old, sh)
+        arm_set(m, rd, arm_wrap(keep + arm_shl(im, sh)))
+        arm_set_pc(m, nx)
+        return 1
+
+    # orr xd, xzr, xm  -- the usual mov between registers
+    if top is 170
+        arm_set(m, rd, arm_rz(m, rm))
+        arm_set_pc(m, nx)
+        return 1
+
+    # add / sub, register
+    if top is 139
+        arm_set(m, rd, arm_wrap(arm_rz(m, rn) + arm_rz(m, rm)))
+        arm_set_pc(m, nx)
+        return 1
+    if top is 203
+        arm_set(m, rd, arm_wrap(arm_rz(m, rn) - arm_rz(m, rm)))
+        arm_set_pc(m, nx)
+        return 1
+
+    # add / sub, immediate. sp is register 31 here.
+    if top is 145
+        im: (w / 1024) % 4096
+        if (w / 4194304) % 2 is 1
+            im: im * 4096
+        arm_set(m, rd, arm_wrap(arm_reg(m, rn) + im))
+        arm_set_pc(m, nx)
+        return 1
+    if top is 209
+        im: (w / 1024) % 4096
+        if (w / 4194304) % 2 is 1
+            im: im * 4096
+        arm_set(m, rd, arm_wrap(arm_reg(m, rn) - im))
+        arm_set_pc(m, nx)
+        return 1
+
+    # cmp, register and immediate, in both widths.
+    # the 32 bit forms compare only the low half.
+    if top is 235
+        arm_cmp(m, arm_rz(m, rn), arm_rz(m, rm))
+        arm_set_pc(m, nx)
+        return 1
+    if top is 241
+        im: (w / 1024) % 4096
+        arm_cmp(m, arm_reg(m, rn), im)
+        arm_set_pc(m, nx)
+        return 1
+    if top is 107
+        arm_cmp(m, arm_rz(m, rn) % 4294967296, arm_rz(m, rm) % 4294967296)
+        arm_set_pc(m, nx)
+        return 1
+    if top is 113
+        im: (w / 1024) % 4096
+        arm_cmp(m, arm_reg(m, rn) % 4294967296, im)
+        arm_set_pc(m, nx)
+        return 1
+
+    # mul, sdiv, udiv, msub all share a top byte
+    if top is 155
+        if (w / 32768) % 2 is 1
+            # msub: rd = ra - rn * rm
+            ra: (w / 1024) % 32
+            arm_set(m, rd, arm_wrap(arm_rz(m, ra) - arm_rz(m, rn) * arm_rz(m, rm)))
+            arm_set_pc(m, nx)
+            return 1
+        ra: (w / 1024) % 32
+        arm_set(m, rd, arm_wrap(arm_rz(m, ra) + arm_rz(m, rn) * arm_rz(m, rm)))
+        arm_set_pc(m, nx)
+        return 1
+    if top is 154
+        op: (w / 1024) % 64
+        a: arm_signed(arm_rz(m, rn))
+        b: arm_signed(arm_rz(m, rm))
+        if op is 3
+            if b is 0
+                arm_set(m, rd, 0)
+            if not
+                arm_set(m, rd, arm_wrap(a / b))
+            arm_set_pc(m, nx)
+            return 1
+        if op is 2
+            if b is 0
+                arm_set(m, rd, 0)
+            if not
+                arm_set(m, rd, arm_wrap(arm_rz(m, rn) / arm_rz(m, rm)))
+            arm_set_pc(m, nx)
+            return 1
+        # cset
+        c: (w / 4096) % 16
+        inv: c
+        if inv % 2 is 1
+            inv: inv - 1
+        if not
+            inv: inv + 1
+        if arm_cond(m, inv) is 1
+            arm_set(m, rd, 1)
+        if not
+            arm_set(m, rd, 0)
+        arm_set_pc(m, nx)
+        return 1
+
+    # and with an immediate, only the mask forms the back end emits
+    if top is 146
+        arm_set(m, rd, arm_and_imm(arm_rz(m, rn), w))
+        arm_set_pc(m, nx)
+        return 1
+
+    # b and bl. only the top six bits name these, and a branch that
+    # goes backwards fills the rest of the word, so test those bits
+    # rather than the whole top byte.
+    six: w / 67108864
+    if six is 5
+        off: arm_sx(w % 67108864, 26) * 4
+        arm_set_pc(m, pc + off)
+        return 1
+    if six is 37
+        off: arm_sx(w % 67108864, 26) * 4
+        arm_set(m, 30, nx)
+        arm_set_pc(m, pc + off)
+        return 1
+
+    # blr
+    if top is 214
+        if (w / 4096) % 4096 is 1023
+            tgt: arm_rz(m, rn)
+            arm_set(m, 30, nx)
+            arm_set_pc(m, tgt)
+            return 1
+
+    # conditional branch
+    if top is 84
+        c: w % 16
+        off: arm_sx((w / 32) % 524288, 19) * 4
+        if arm_cond(m, c) is 1
+            arm_set_pc(m, pc + off)
+            return 1
+        arm_set_pc(m, nx)
+        return 1
+
+    # cbz
+    if top is 180
+        off: arm_sx((w / 32) % 524288, 19) * 4
+        if arm_rz(m, rd) is 0
+            arm_set_pc(m, pc + off)
+            return 1
+        arm_set_pc(m, nx)
+        return 1
+
+    return arm_step2(m, w, nx)
+
+# the loads and stores, kept apart so no one job gets too long
+arm_step2 m w nx:
+    top: w / 16777216
+    rd: w % 32
+    rn: (w / 32) % 32
+    rm: (w / 65536) % 32
+    # ldrb / strb, register offset
+    if top is 56
+        opc: (w / 4194304) % 4
+        if opc is 1
+            arm_set(m, rd, arm_r8(m, arm_reg(m, rn) + arm_rz(m, rm)))
+            arm_set_pc(m, nx)
+            return 1
+        arm_w8(m, arm_reg(m, rn) + arm_rz(m, rm), arm_rz(m, rd) % 256)
+        arm_set_pc(m, nx)
+        return 1
+
+    # ldr / str, several shapes share these two top bytes
+    if top is 248
+        kind: (w / 1024) % 4
+        opc: (w / 4194304) % 4
+        # register offset form: bit 21 set and option bits present
+        if (w / 2097152) % 2 is 1
+            if opc is 1
+                arm_set(m, rd, arm_r64(m, arm_reg(m, rn) + arm_rz(m, rm)))
+                arm_set_pc(m, nx)
+                return 1
+            arm_w64(m, arm_reg(m, rn) + arm_rz(m, rm), arm_rz(m, rd))
+            arm_set_pc(m, nx)
+            return 1
+        off: arm_sx((w / 4096) % 512, 9)
+        if kind is 3
+            # pre index: adjust first
+            a: arm_reg(m, rn) + off
+            arm_set(m, rn, a)
+            if opc is 1
+                arm_set(m, rd, arm_r64(m, a))
+            if not
+                arm_w64(m, a, arm_rz(m, rd))
+            arm_set_pc(m, nx)
+            return 1
+        if kind is 1
+            # post index: use it, then adjust
+            a: arm_reg(m, rn)
+            if opc is 1
+                arm_set(m, rd, arm_r64(m, a))
+            if not
+                arm_w64(m, a, arm_rz(m, rd))
+            arm_set(m, rn, a + off)
+            arm_set_pc(m, nx)
+            return 1
+        # unscaled, no writeback
+        a: arm_reg(m, rn) + off
+        if opc is 1
+            arm_set(m, rd, arm_r64(m, a))
+        if not
+            arm_w64(m, a, arm_rz(m, rd))
+        arm_set_pc(m, nx)
+        return 1
+
+    # ldrb / strb with a scaled twelve bit offset
+    if top is 57
+        im: (w / 1024) % 4096
+        opc: (w / 4194304) % 4
+        a: arm_reg(m, rn) + im
+        if opc is 1
+            arm_set(m, rd, arm_r8(m, a))
+        if not
+            arm_w8(m, a, arm_rz(m, rd) % 256)
+        arm_set_pc(m, nx)
+        return 1
+
+    # ldr / str with a scaled twelve bit offset
+    if top is 249
+        im: ((w / 1024) % 4096) * 8
+        opc: (w / 4194304) % 4
+        a: arm_reg(m, rn) + im
+        if opc is 1
+            arm_set(m, rd, arm_r64(m, a))
+        if not
+            arm_w64(m, a, arm_rz(m, rd))
+        arm_set_pc(m, nx)
+        return 1
+
+    # stp / ldp, the pair forms
+    if top is 169
+        return arm_pair(m, w, nx, 1)
+    if top is 168
+        return arm_pair(m, w, nx, 0)
+
+    # wfi and the interrupt words: nothing to do here
+    if w is 3573751935
+        arm_set_pc(m, nx)
+        return 1
+    if top is 213
+        arm_set_pc(m, nx)
+        return 1
+
+    # anything else stops the machine and says so
+    poke_i64(m, 272, 2)
+    poke_i64(m, 336, w)
+    return 0
+
+arm_bad m:
+    return peek_i64(m, 336)
+
+# stp and ldp
+arm_pair m w nx pre:
+    rt: w % 32
+    rn: (w / 32) % 32
+    rt2: (w / 1024) % 32
+    off: arm_sx((w / 32768) % 128, 7) * 8
+    load: (w / 4194304) % 2
+    if pre is 1
+        # pre index or plain offset
+        if (w / 8388608) % 2 is 1
+            a: arm_reg(m, rn) + off
+            arm_set(m, rn, a)
+        if not
+            a: arm_reg(m, rn) + off
+        if load is 1
+            arm_set(m, rt, arm_r64(m, a))
+            arm_set(m, rt2, arm_r64(m, a + 8))
+        if not
+            arm_w64(m, a, arm_rz(m, rt))
+            arm_w64(m, a + 8, arm_rz(m, rt2))
+        arm_set_pc(m, nx)
+        return 1
+    # post index
+    a: arm_reg(m, rn)
+    if load is 1
+        arm_set(m, rt, arm_r64(m, a))
+        arm_set(m, rt2, arm_r64(m, a + 8))
+    if not
+        arm_w64(m, a, arm_rz(m, rt))
+        arm_w64(m, a + 8, arm_rz(m, rt2))
+    arm_set(m, rn, a + off)
+    arm_set_pc(m, nx)
+    return 1
+
+# --- small helpers ---
+
+# movz and movk only ever shift by 0, 16, 32 or 48, so multiply
+# straight away instead of doubling in a loop
+arm_shl v n:
+    if n is 0
+        return v
+    if n is 16
+        return arm_wrap(v * 65536)
+    if n is 32
+        return arm_wrap(v * 4294967296)
+    if n is 48
+        return arm_wrap(v * 281474976710656)
+    x: v
+    i: 0
+    as long as i < n
+        x: x * 2
+        i: i + 1
+    return arm_wrap(x)
+
+# clear the sixteen bits movk is about to replace
+arm_clear_field v sh:
+    lowmask: 1
+    if sh is 16
+        lowmask: 65536
+    if sh is 32
+        lowmask: 4294967296
+    if sh is 48
+        lowmask: 281474976710656
+    if sh > 48
+        i: 0
+        as long as i < sh
+            lowmask: lowmask * 2
+            i: i + 1
+    low: v % lowmask
+    highstart: lowmask * 65536
+    high: 0
+    if v >= highstart
+        high: (v / highstart) * highstart
+    return low + high
+
+# the only immediate masks the back end emits are small low masks
+arm_and_imm v w:
+    imms: (w / 1024) % 64
+    immr: (w / 65536) % 64
+    n: 1
+    i: 0
+    as long as i <= imms
+        n: n * 2
+        i: i + 1
+    keep: n - 1
+    if immr is 0
+        return v % n
+    # a rotated mask: clear the low bits instead
+    drop: 1
+    i: 0
+    as long as i < 64 - immr
+        drop: drop * 2
+        i: i + 1
+    return v - (v % drop)
+
+# --- what the guest asks the system for ---
+
+# hand out a slab of the block, well past the program itself
+arm_give m:
+    top: peek_i64(m, 344)
+    if top is 0
+        top: peek_i64(m, 328) + 134217728
+    poke_i64(m, 344, top + 16777216)
+    return top
+
+arm_svc m nx:
+    nr: arm_reg(m, 8)
+    a0: arm_reg(m, 0)
+    a1: arm_reg(m, 1)
+    a2: arm_reg(m, 2)
+    if nr is 64
+        arm_say(m, a1, a2)
+        arm_set(m, 0, a2)
+        arm_set_pc(m, nx)
+        return 1
+    if nr is 93
+        poke_i64(m, 312, a0)
+        poke_i64(m, 272, 1)
+        return 0
+    if nr is 222
+        # mmap: hand back a slab well above the program
+        arm_set(m, 0, arm_give(m))
+        arm_set_pc(m, nx)
+        return 1
+    if nr is 214
+        arm_set(m, 0, arm_give(m))
+        arm_set_pc(m, nx)
+        return 1
+    # anything else: say it worked and carry on
+    arm_set(m, 0, 0)
+    arm_set_pc(m, nx)
+    return 1
+
+# --- run until it stops ---
+
+arm_run m:
+    return arm_run_for(m, 20000000)
+
+arm_run_for m limit:
+    n: 0
+    going: 1
+    as long as going is 1
+        if n >= limit
+            poke_i64(m, 272, 3)
+            going: 0
+        if not
+            going: arm_step(m)
+            n: n + 1
+    return peek_i64(m, 272)
+
+
+# --- running raw instructions, for checking encodings ---
+#
+# verify.py builds a few words of ARM by hand and runs them. This
+# does the same without an ELF: put the words somewhere, start there.
+
+ARM_RAW: 65536
+
+# start a machine with no program, ready to be fed words
+arm_bare:
+    m: arm_new()
+    poke_i64(m, 328, 0)
+    arm_set_pc(m, ARM_RAW)
+    arm_set_sp(m, 1048576)
+    return m
+
+# write one instruction word and step the write point on
+arm_put m at w:
+    b: arm_base(m)
+    poke_byte(b, at, w % 256)
+    poke_byte(b, at + 1, (w / 256) % 256)
+    poke_byte(b, at + 2, (w / 65536) % 256)
+    poke_byte(b, at + 3, (w / 16777216) % 256)
+    return at + 4
+
+# run what was written and hand back x0
+arm_result m:
+    arm_run_for(m, 500000)
+    return arm_reg(m, 0)
+
+
+# --- running one function out of a shared library ---
+#
+# A Sovren .so gives out names like sovren_main. This finds the name
+# in the symbol table and starts there, so the checks can prove the
+# exports really work.
+
+# load a .so flat and return the machine, or 0
+arm_load_so m path:
+    d: file_read_all(path)
+    if d is 0
+        return 0
+    base: 4194304
+    poke_i64(m, 328, base)
+    n: _sov_strlen(d)
+    sz: file_size(path)
+    if sz < 1
+        sz: n
+    k: 0
+    as long as k < sz
+        arm_w8(m, base + k, peek_byte(d, k))
+        k: k + 1
+    poke_i64(m, 352, base)
+    arm_set_sp(m, base + 16777216)
+    arm_w64(m, arm_sp(m), 1)
+    return 1
+
+# where a name lives inside the loaded .so, or 0
+arm_symbol m name:
+    base: peek_i64(m, 352)
+    if base is 0
+        return 0
+    phoff: arm_r64(m, base + 32)
+    phnum: arm_r8(m, base + 56) + arm_r8(m, base + 57) * 256
+    phsz: arm_r8(m, base + 54) + arm_r8(m, base + 55) * 256
+    dynva: 0
+    dynsz: 0
+    i: 0
+    as long as i < phnum
+        o: base + phoff + i * phsz
+        t: arm_r8(m, o) + arm_r8(m, o + 1) * 256
+        if t is 2
+            dynva: arm_r64(m, o + 16)
+            dynsz: arm_r64(m, o + 40)
+        i: i + 1
+    if dynva is 0
+        return 0
+    symtab: 0
+    strtab: 0
+    syment: 24
+    k: 0
+    as long as k < dynsz
+        tag: arm_r64(m, dynva + k)
+        val: arm_r64(m, dynva + k + 8)
+        if tag is 5
+            strtab: val
+        if tag is 6
+            symtab: val
+        if tag is 11
+            syment: val
+        if tag is 0
+            k: dynsz
+        if not
+            k: k + 16
+    if symtab is 0
+        return 0
+    want: _sov_strlen(name)
+    i: 1
+    as long as i < 64
+        sp: symtab + i * syment
+        nameoff: arm_r8(m, sp) + arm_r8(m, sp + 1) * 256 + arm_r8(m, sp + 2) * 65536 + arm_r8(m, sp + 3) * 16777216
+        value: arm_r64(m, sp + 8)
+        if value > 0
+            if arm_name_is(m, strtab + nameoff, name, want) is 1
+                return value
+        i: i + 1
+    return 0
+
+# does the text in guest memory match this name?
+arm_name_is m at name n:
+    i: 0
+    as long as i < n
+        if arm_r8(m, at + i) is not peek_byte(name, i)
+            return 0
+        i: i + 1
+    if arm_r8(m, at + n) is not 0
+        return 0
+    return 1
+
+# start at a named export and run
+arm_run_symbol m name:
+    a: arm_symbol(m, name)
+    if a is 0
+        return 0 - 1
+    arm_set_pc(m, a)
+    return arm_run(m)

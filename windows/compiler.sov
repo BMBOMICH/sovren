@@ -930,6 +930,12 @@ call_args name argc:
     # C wants its arguments in rdi rsi rdx rcx r8 r9 and the stack
     # aligned to 16 bytes, and rax cleared for a variadic callee.
     if same(name, "cfunc") is 1
+        # Windows hands arguments over differently from Linux: the
+        # first four go in rcx, rdx, r8 and r9, the rest on the
+        # stack, and the caller must leave thirty-two bytes of room
+        # above them that the called code is allowed to scribble in.
+        # Calling a Windows library the Linux way puts every
+        # argument in the wrong place.
         emit(65)
         emit(89)
         emit(65)
@@ -939,7 +945,7 @@ call_args name argc:
         emit(94)
         emit(95)
         emit(65)
-        emit(90)
+        emit(91)
         emit(85)
         emit(72)
         emit(137)
@@ -948,11 +954,38 @@ call_args name argc:
         emit(131)
         emit(228)
         emit(240)
+        emit(72)
+        emit(131)
+        emit(236)
+        emit(64)
+        emit(76)
+        emit(137)
+        emit(68)
+        emit(36)
+        emit(32)
+        emit(76)
+        emit(137)
+        emit(76)
+        emit(36)
+        emit(40)
+        emit(73)
+        emit(137)
+        emit(201)
+        emit(73)
+        emit(137)
+        emit(208)
+        emit(72)
+        emit(137)
+        emit(242)
+        emit(72)
+        emit(137)
+        emit(249)
+        emit(72)
         emit(49)
         emit(192)
         emit(65)
         emit(255)
-        emit(210)
+        emit(211)
         emit(72)
         emit(137)
         emit(236)
@@ -4423,6 +4456,14 @@ compile source:
                                                 pre_na: pre_na + 1
                                                 pre_in: 1
                                         pre_k: pre_k + 1
+                                    # seven values is the most a job can
+                                    # take. more used to compile and then
+                                    # go wrong while running.
+                                    if pre_na > 7
+                                        print "Error: a job takes at most seven values"
+                                        _sov_print(pre_cur)
+                                        print pre_na
+                                        had_err: 1
                                     ar_names: _sov_list_add(ar_names, pre_cur)
                                     ar_cnt: _sov_list_add(ar_cnt, pre_na)
                                 if not
@@ -4671,20 +4712,28 @@ poke8 p off v:
         dummy: _sov_set_byte(p, off + i, b)
         x: x / 256
         i: i + 1
+# Where each imported name sits inside .rdata.
+#
+# There are thirteen now. The last two, LoadLibraryA and
+# GetProcAddress, are what let a program reach any other library on
+# the machine at run time — user32 for windows, gdi32 for drawing —
+# without every one of those names having to be listed here.
 nametab: 0
 build_nametab:
-    nametab: _sov_alloc(96)
-    poke_i64(nametab, 0, 248)
-    poke_i64(nametab, 8, 264)
-    poke_i64(nametab, 16, 276)
-    poke_i64(nametab, 24, 288)
-    poke_i64(nametab, 32, 302)
-    poke_i64(nametab, 40, 316)
-    poke_i64(nametab, 48, 332)
-    poke_i64(nametab, 56, 346)
-    poke_i64(nametab, 64, 364)
-    poke_i64(nametab, 72, 384)
-    poke_i64(nametab, 80, 402)
+    nametab: _sov_alloc(128)
+    poke_i64(nametab, 0, 280)
+    poke_i64(nametab, 8, 296)
+    poke_i64(nametab, 16, 308)
+    poke_i64(nametab, 24, 320)
+    poke_i64(nametab, 32, 334)
+    poke_i64(nametab, 40, 348)
+    poke_i64(nametab, 48, 364)
+    poke_i64(nametab, 56, 378)
+    poke_i64(nametab, 64, 396)
+    poke_i64(nametab, 72, 416)
+    poke_i64(nametab, 80, 434)
+    poke_i64(nametab, 88, 452)
+    poke_i64(nametab, 96, 468)
     return 1
 write_elf path:
     if had_err is 1
@@ -4739,7 +4788,7 @@ write_elf path:
     poke4(flat, 444, rva_rdata)
     poke4(flat, 208, rva_rdata + 4096)
     # the data directories point into .rdata too
-    poke4(flat, 272, rva_rdata + 192)
+    poke4(flat, 272, rva_rdata + 224)
     poke4(flat, 276, 40)
     poke4(flat, 360, rva_rdata)
     poke4(flat, 364, 72)
@@ -4763,15 +4812,15 @@ write_elf path:
         ri: ri + 1
     # IAT and ILT both point at the hint/name entries
     ni: 0
-    as long as ni < 11
+    as long as ni < 13
         na: rva_rdata + peek_i64(nametab, ni * 8)
         poke8(flat, roff + ni * 8, na)
-        poke8(flat, roff + 96 + ni * 8, na)
+        poke8(flat, roff + 112 + ni * 8, na)
         ni: ni + 1
     # the one import descriptor: ILT, then the dll name, then the IAT
-    poke4(flat, roff + 192, rva_rdata + 96)
-    poke4(flat, roff + 204, rva_rdata + 232)
-    poke4(flat, roff + 208, rva_rdata)
+    poke4(flat, roff + 224, rva_rdata + 112)
+    poke4(flat, roff + 236, rva_rdata + 264)
+    poke4(flat, roff + 240, rva_rdata)
     i: 0
     as long as i < clen
         dummy: _sov_set_byte(flat, 512 + i, _sov_list_get(oc, i))

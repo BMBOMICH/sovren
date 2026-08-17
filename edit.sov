@@ -138,6 +138,11 @@ main:
     as long as going is 1
         draw()
         c: key_read()
+        # No more keys ever: the terminal was closed, or the input
+        # was a file that has run out. Without this the loop spins
+        # on nothing, forever, and then falls over.
+        if c < 0
+            going: 0
         if c is 17
             going: 0
         if c is 19
@@ -151,8 +156,22 @@ main:
         if c is 8
             backspace()
         if c is 27
-            k1: key_read()
-            k2: key_read()
+            # An arrow key arrives as escape, then two more bytes.
+            # A bare escape arrives as one byte and nothing follows,
+            # so reading two more sat here forever. Both reads are
+            # now checked, and a lone escape simply does nothing.
+            # The two bytes of an arrow key are already waiting
+            # when the escape arrives. A bare escape has nothing
+            # behind it, so asking rather than waiting is what
+            # stops this sitting here forever.
+            k1: key_read_soon(50)
+            k2: 0 - 2
+            if k1 >= 0
+                k2: key_read_soon(50)
+            if k1 is 0 - 1
+                going: 0
+            if k2 is 0 - 1
+                going: 0
             if k2 is 65
                 if cy > 1
                     cy: cy - 1

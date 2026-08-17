@@ -356,6 +356,19 @@ _sov_argv_get i:
         return blank
     return peek_ptr(g_argv, i)
 
+# The environment sits on the stack right after the arguments: the
+# list of arguments, then a nought, then the environment lines, then
+# another nought. Reading it from there works everywhere, including
+# where /proc is not readable.
+_sov_env_at i:
+    if i < 0
+        return blank
+    base: g_argv + (g_argc + 1) * 8
+    p: peek_ptr(base, i)
+    if p is 0
+        return blank
+    return p
+
 _sov_memcpy dst src n:
     k: 0
     as long as k < n

@@ -1,0 +1,326 @@
+# winwin.sov — a real window on Windows.
+#
+# The companion to win.sov, which does the same on Linux. That one
+# speaks to the X server over a socket; this one calls user32 and
+# gdi32, which is how Windows does it.
+#
+# Neither needs anything installed. win.sov needs no library at all
+# because X11 is a protocol; this one needs user32 and gdi32, which
+# are part of Windows and always there.
+#
+#   use winwin
+#   main:
+#       w: ww_open(400, 300, "Hello")
+#       if w is 0
+#           print "no windows here"
+#           stop
+#       as long as ww_next(w) is 1
+#           ww_fill(w, 0, 0, 400, 300, 16777215)
+#           ww_text(w, 20, 20, "Hello from Sovren", 0)
+#           ww_show(w)
+#
+# Only a program built with --windows can use this. Anywhere else
+# ww_open hands back nought.
+#
+# The block:
+#    0 the window handle    8 the drawing handle
+#   16 how wide            24 how tall
+#   32 still going         40 the last key
+#   48 the mouse x         56 the mouse y
+#   64 the message block   72 the paint block
+#   80 the brush in use   88 the last brush colour
+
+use winapi
+use sys
+use string
+use mem
+use num
+# poke_u32 and peek_u32 come from num and winapi
+
+# the pieces of Windows this needs
+ww_user: 0
+ww_gdi: 0
+ww_f_reg: 0
+ww_f_create: 0
+ww_f_defproc: 0
+ww_f_show: 0
+ww_f_update: 0
+ww_f_peek: 0
+ww_f_translate: 0
+ww_f_dispatch: 0
+ww_f_getdc: 0
+ww_f_releasedc: 0
+ww_f_invalidate: 0
+ww_f_destroy: 0
+ww_f_brush: 0
+ww_f_fillrect: 0
+ww_f_delete: 0
+ww_f_textout: 0
+ww_f_settextcolor: 0
+ww_f_setbkmode: 0
+ww_f_moveto: 0
+ww_f_lineto: 0
+ww_f_pen: 0
+ww_f_select: 0
+ww_f_ellipse: 0
+ww_f_getmodule: 0
+ww_loaded: 0
+
+# Find everything, once. Hands back nought when this is not
+# Windows, or when the libraries are not there.
+ww_load:
+    if ww_loaded is 1
+        return 1
+    if ww_loaded is 0 - 1
+        return 0
+    ww_loaded: 0 - 1
+    if dll_ok() is 0
+        return 0
+    ww_user: dll_open("user32.dll")
+    ww_gdi: dll_open("gdi32.dll")
+    if ww_user is 0
+        return 0
+    if ww_gdi is 0
+        return 0
+    ww_f_reg: dll_find(ww_user, "RegisterClassExA")
+    ww_f_create: dll_find(ww_user, "CreateWindowExA")
+    ww_f_defproc: dll_find(ww_user, "DefWindowProcA")
+    ww_f_show: dll_find(ww_user, "ShowWindow")
+    ww_f_update: dll_find(ww_user, "UpdateWindow")
+    ww_f_peek: dll_find(ww_user, "PeekMessageA")
+    ww_f_translate: dll_find(ww_user, "TranslateMessage")
+    ww_f_dispatch: dll_find(ww_user, "DispatchMessageA")
+    ww_f_getdc: dll_find(ww_user, "GetDC")
+    ww_f_releasedc: dll_find(ww_user, "ReleaseDC")
+    ww_f_invalidate: dll_find(ww_user, "InvalidateRect")
+    ww_f_destroy: dll_find(ww_user, "DestroyWindow")
+    ww_f_brush: dll_find(ww_gdi, "CreateSolidBrush")
+    ww_f_fillrect: dll_find(ww_user, "FillRect")
+    ww_f_delete: dll_find(ww_gdi, "DeleteObject")
+    ww_f_textout: dll_find(ww_gdi, "TextOutA")
+    ww_f_settextcolor: dll_find(ww_gdi, "SetTextColor")
+    ww_f_setbkmode: dll_find(ww_gdi, "SetBkMode")
+    ww_f_moveto: dll_find(ww_gdi, "MoveToEx")
+    ww_f_lineto: dll_find(ww_gdi, "LineTo")
+    ww_f_pen: dll_find(ww_gdi, "CreatePen")
+    ww_f_select: dll_find(ww_gdi, "SelectObject")
+    ww_f_ellipse: dll_find(ww_gdi, "Ellipse")
+    if ww_f_create is 0
+        return 0
+    if ww_f_fillrect is 0
+        return 0
+    ww_loaded: 1
+    return 1
+
+ww_ready:
+    if ww_load() is 1
+        return 1
+    return 0
+
+# ---------------------------------------------------------------
+# opening one
+# ---------------------------------------------------------------
+#
+# Windows wants a window class registered first, which says what
+# the window looks like and which job answers its messages. The
+# answering job here is DefWindowProcA, the one Windows itself
+# provides, so nothing has to be handed back into Sovren. Messages
+# are then collected by asking rather than being pushed, which is
+# what lets a Sovren loop stay in charge.
+
+WW_CLASS: "SovrenWindow"
+
+ww_open width height title:
+    if ww_load() is 0
+        return 0
+    # the class block: sixteen fields, eighty bytes
+    wc: mem_new(96)
+    i: 0
+    as long as i < 96
+        poke_byte(wc, i, 0)
+        i: i + 1
+    poke_u32(wc, 0, 80)
+    poke_u32(wc, 4, 3)
+    poke_i64(wc, 8, ww_f_defproc)
+    poke_i64(wc, 40, 0)
+    poke_i64(wc, 48, 6)
+    poke_i64(wc, 56, WW_CLASS)
+    if wincall1(ww_f_reg, wc) is 0
+        return 0
+    # a plain window with a title bar
+    h: cfunc(ww_f_create, 0, WW_CLASS, title, 13565952, 100, 100, 0)
+    if h is 0
+        return 0
+    # the size and the two extra values go on the stack, so a
+    # second call sets the size instead
+    w: mem_new(128)
+    i: 0
+    as long as i < 128
+        poke_byte(w, i, 0)
+        i: i + 1
+    poke_i64(w, 0, h)
+    poke_i64(w, 16, width)
+    poke_i64(w, 24, height)
+    poke_i64(w, 32, 1)
+    poke_i64(w, 64, mem_new(64))
+    wincall2(ww_f_show, h, 5)
+    wincall1(ww_f_update, h)
+    poke_i64(w, 8, wincall1(ww_f_getdc, h))
+    return w
+
+ww_ok w:
+    if w is 0
+        return 0
+    return 1
+
+ww_going w:
+    return peek_i64(w, 32)
+
+ww_stop w:
+    poke_i64(w, 32, 0)
+    return 0
+
+# ---------------------------------------------------------------
+# the message loop
+# ---------------------------------------------------------------
+#
+# Everything waiting is taken in, without stopping to wait for
+# more, so a program can draw between messages. Hands back nought
+# when the window has been closed.
+
+ww_next w:
+    if peek_i64(w, 32) is 0
+        return 0
+    msg: peek_i64(w, 64)
+    n: 0
+    as long as n < 64
+        # PM_REMOVE is 1: take the message rather than peek at it
+        if cfunc(ww_f_peek, msg, 0, 0, 0, 1, 0) is 0
+            n: 64
+        if not
+            kind: peek_u32(msg, 8)
+            if kind is 2
+                poke_i64(w, 32, 0)
+                n: 64
+            if not
+                if kind is 18
+                    poke_i64(w, 32, 0)
+                    n: 64
+                if not
+                    if kind is 256
+                        poke_i64(w, 40, peek_i64(msg, 16))
+                    if kind is 512
+                        p: peek_i64(msg, 24)
+                        poke_i64(w, 48, p % 65536)
+                        poke_i64(w, 56, (p / 65536) % 65536)
+                    wincall1(ww_f_translate, msg)
+                    wincall1(ww_f_dispatch, msg)
+                    n: n + 1
+    return peek_i64(w, 32)
+
+ww_key w:
+    return peek_i64(w, 40)
+
+ww_x w:
+    return peek_i64(w, 48)
+
+ww_y w:
+    return peek_i64(w, 56)
+
+ww_width w:
+    return peek_i64(w, 16)
+
+ww_height w:
+    return peek_i64(w, 24)
+
+# ---------------------------------------------------------------
+# drawing
+# ---------------------------------------------------------------
+#
+# Windows counts colour the other way round from everyone else:
+# blue first, then green, then red. This turns the usual sort into
+# the sort Windows wants, so a program writes the same number on
+# both machines.
+
+ww_colour rgb:
+    r: (rgb / 65536) % 256
+    g: (rgb / 256) % 256
+    b: rgb % 256
+    return b * 65536 + g * 256 + r
+
+# a solid block
+ww_fill w x y width height rgb:
+    dc: peek_i64(w, 8)
+    if dc is 0
+        return 0
+    rect: mem_new(32)
+    poke_u32(rect, 0, x)
+    poke_u32(rect, 4, y)
+    poke_u32(rect, 8, x + width)
+    poke_u32(rect, 12, y + height)
+    br: wincall1(ww_f_brush, ww_colour(rgb))
+    wincall3(ww_f_fillrect, dc, rect, br)
+    wincall1(ww_f_delete, br)
+    return 0
+
+ww_box w x y width height rgb:
+    ww_fill(w, x, y, width, 1, rgb)
+    ww_fill(w, x, y + height - 1, width, 1, rgb)
+    ww_fill(w, x, y, 1, height, rgb)
+    ww_fill(w, x + width - 1, y, 1, height, rgb)
+    return 0
+
+ww_dot w x y rgb:
+    return ww_fill(w, x, y, 1, 1, rgb)
+
+ww_line w x0 y0 x1 y1 rgb:
+    dc: peek_i64(w, 8)
+    if dc is 0
+        return 0
+    pen: wincall3(ww_f_pen, 0, 1, ww_colour(rgb))
+    old: wincall2(ww_f_select, dc, pen)
+    cfunc(ww_f_moveto, dc, x0, y0, 0, 0, 0)
+    wincall3(ww_f_lineto, dc, x1, y1)
+    wincall2(ww_f_select, dc, old)
+    wincall1(ww_f_delete, pen)
+    return 0
+
+ww_circle w x y r rgb:
+    dc: peek_i64(w, 8)
+    if dc is 0
+        return 0
+    br: wincall1(ww_f_brush, ww_colour(rgb))
+    old: wincall2(ww_f_select, dc, br)
+    cfunc(ww_f_ellipse, dc, x - r, y - r, x + r, y + r, 0)
+    wincall2(ww_f_select, dc, old)
+    wincall1(ww_f_delete, br)
+    return 0
+
+# y is the top of the letters here, not the bottom, which is the
+# other way round from the X11 one. This follows X11 so a program
+# written for one looks the same on the other.
+ww_text w x y words rgb:
+    dc: peek_i64(w, 8)
+    if dc is 0
+        return 0
+    wincall2(ww_f_setbkmode, dc, 1)
+    wincall2(ww_f_settextcolor, dc, ww_colour(rgb))
+    cfunc(ww_f_textout, dc, x, y - 12, words, str_len(words), 0)
+    return 0
+
+# Windows draws as it goes, so there is nothing held back, but a
+# program written for both should call this anyway.
+ww_show w:
+    return 0
+
+ww_shut w:
+    if w is 0
+        return 0
+    h: peek_i64(w, 0)
+    dc: peek_i64(w, 8)
+    if dc is not 0
+        wincall2(ww_f_releasedc, h, dc)
+    if h is not 0
+        wincall1(ww_f_destroy, h)
+    poke_i64(w, 32, 0)
+    return 0

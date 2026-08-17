@@ -1,0 +1,673 @@
+# win.sov — a real window, with pixels and a keyboard and a mouse.
+#
+# This is the answer to "can Sovren draw a window". It can, and this
+# is how: it opens a socket to the X server and speaks the X11 wire
+# protocol directly. No toolkit, no C library, no bindings. The
+# protocol is a stream of little request packets and reply packets,
+# and that is all a window ever was.
+#
+#   use win
+#   main:
+#       w: win_open(400, 300, "Hello")
+#       win_fill(w, 0, 0, 400, 300, 16777215)
+#       win_text(w, 20, 40, "Hello from Sovren", 0)
+#       win_flush(w)
+#       as long as win_wait(w) is not WIN_CLOSE
+#           win_flush(w)
+#       win_shut(w)
+#
+# On Linux this talks to the X server that is already running. On a
+# machine with no X server, win_open hands back 0 and the program
+# can say so politely rather than falling over.
+#
+# The window is a block of memory:
+#     0  the socket        8  the window id     16  the drawing id
+#    24  the root window  32  how ids are made  40  the next free id
+#    48  the width        56  the height        64  the screen depth
+#    72  the last key     80  the last button   88  the mouse x
+#    96  the mouse y     104  what happened    112  the read buffer
+#   120  how much is in it 128 where we have read up to
+#   136  the black pixel  144  the white pixel  152  the font id
+#   160  the visual id
+
+use sys
+use mem
+use string
+use num
+use file
+use env
+
+# what came back from win_wait
+WIN_NOTHING: 0
+WIN_KEY: 1
+WIN_CLICK: 2
+WIN_MOVE: 3
+WIN_DRAW: 4
+WIN_CLOSE: 5
+WIN_KEYUP: 6
+WIN_UNCLICK: 7
+
+WIN_BUF: 65536
+
+# ---------------------------------------------------------------
+# talking to the server
+# ---------------------------------------------------------------
+
+# The socket lives at /tmp/.X11-unix/X<n> where n comes from the
+# DISPLAY setting, which looks like ":0" or ":99".
+win_socket_path:
+    d: env_get("DISPLAY")
+    n: "0"
+    if str_len(d) > 1
+        # everything after the colon, up to any full stop
+        i: 0
+        as long as i < str_len(d)
+            if peek_byte(d, i) is 58
+                n: str_cut(d, i + 1, str_len(d))
+                i: str_len(d)
+            if not
+                i: i + 1
+        # drop the screen number after a full stop
+        j: 0
+        as long as j < str_len(n)
+            if peek_byte(n, j) is 46
+                n: str_cut(n, 0, j)
+                j: str_len(n)
+            if not
+                j: j + 1
+    return str_cat("/tmp/.X11-unix/X", n)
+
+# connect to it. AF_UNIX addresses are a two byte family then the
+# path, laid out in one block.
+win_connect:
+    # A write to a screen that has gone away must fail, not kill the
+    # program where it stands.
+    sys_ignore_broken_pipe()
+    path: win_socket_path()
+    fd: sys_socket_unix()
+    if fd < 0
+        return 0 - 1
+    a: mem_new(112)
+    i: 0
+    as long as i < 112
+        poke_byte(a, i, 0)
+        i: i + 1
+    poke_u16(a, 0, 1)
+    n: str_len(path)
+    if n > 100
+        n: 100
+    i: 0
+    as long as i < n
+        poke_byte(a, 2 + i, peek_byte(path, i))
+        i: i + 1
+    if sys_connect(fd, a, 110) < 0
+        sys_close(fd)
+        return 0 - 1
+    return fd
+
+# read exactly this many bytes, however many goes it takes
+win_read_exact fd buf n:
+    got: 0
+    as long as got < n
+        r: sys_read(fd, buf + got, n - got)
+        if r <= 0
+            return got
+        got: got + r
+    return got
+
+win_send w buf n:
+    return sys_write(peek_i64(w, 0), buf, n)
+
+# ---------------------------------------------------------------
+# opening a window
+# ---------------------------------------------------------------
+
+# The first thing a client sends is a setup packet. The server
+# answers with a long block describing the screen, out of which the
+# only parts needed are the root window, the range of ids this
+# client may use, and the two plain colours.
+win_open width height title:
+    fd: win_connect()
+    if fd < 0
+        return 0
+    w: mem_new(256)
+    i: 0
+    as long as i < 256
+        poke_byte(w, i, 0)
+        i: i + 1
+    poke_i64(w, 0, fd)
+    poke_i64(w, 48, width)
+    poke_i64(w, 56, height)
+    poke_i64(w, 112, mem_new(WIN_BUF))
+
+    # the setup request: 'l' for least significant byte first,
+    # then the protocol version, then no authorisation
+    s: mem_new(12)
+    poke_byte(s, 0, 108)
+    poke_byte(s, 1, 0)
+    poke_u16(s, 2, 11)
+    poke_u16(s, 4, 0)
+    poke_u16(s, 6, 0)
+    poke_u16(s, 8, 0)
+    poke_u16(s, 10, 0)
+    if sys_write(fd, s, 12) < 12
+        sys_close(fd)
+        return 0
+
+    # the answer starts with eight bytes saying how long the rest is
+    head: mem_new(16)
+    if win_read_exact(fd, head, 8) < 8
+        sys_close(fd)
+        return 0
+    if peek_byte(head, 0) is not 1
+        # the server refused us, usually because of authorisation
+        sys_close(fd)
+        return 0
+    extra: peek_byte(head, 6) + peek_byte(head, 7) * 256
+    body: mem_new(extra * 4 + 64)
+    if win_read_exact(fd, body, extra * 4) < extra * 4
+        sys_close(fd)
+        return 0
+
+    # out of that block: where this client's ids start, and how they
+    # are shaped; then the first screen, past the lists of formats
+    base: u32_at(body, 4)
+    mask: u32_at(body, 8)
+    nvendor: peek_byte(body, 16) + peek_byte(body, 17) * 256
+    nformats: peek_byte(body, 21)
+    # the vendor name is padded out to a multiple of four
+    pad: nvendor
+    as long as pad % 4 is not 0
+        pad: pad + 1
+    scr: 32 + pad + nformats * 8
+    root: u32_at(body, scr)
+    white: u32_at(body, scr + 8)
+    black: u32_at(body, scr + 12)
+    visual: u32_at(body, scr + 32)
+    depth: peek_byte(body, scr + 38)
+
+    poke_i64(w, 24, root)
+    poke_i64(w, 32, mask)
+    poke_i64(w, 40, base)
+    poke_i64(w, 64, depth)
+    poke_i64(w, 136, black)
+    poke_i64(w, 144, white)
+    poke_i64(w, 160, visual)
+
+    wid: win_new_id(w)
+    gc: win_new_id(w)
+    poke_i64(w, 8, wid)
+    poke_i64(w, 16, gc)
+
+    poke_i64(w, 168, win_req_create(w, wid, root, width, height, white))
+    poke_i64(w, 176, win_req_gc(w, gc, wid, black))
+    poke_i64(w, 184, win_set_title(w, title))
+    poke_i64(w, 192, win_req_map(w, wid))
+    win_flush(w)
+    return w
+
+# ids are handed out by the server as a base plus a bit pattern
+win_new_id w:
+    n: peek_i64(w, 40)
+    poke_i64(w, 40, n + 1)
+    return peek_i64(w, 40) - 1
+
+win_is_open w:
+    if w is 0
+        return 0
+    return 1
+
+# ---------------------------------------------------------------
+# the requests
+# ---------------------------------------------------------------
+
+# CreateWindow. The value list at the end says which colour the
+# background is and which happenings we want told about.
+win_req_create w wid parent width height bg:
+    b: mem_new(48)
+    i: 0
+    as long as i < 48
+        poke_byte(b, i, 0)
+        i: i + 1
+    poke_byte(b, 0, 1)
+    poke_byte(b, 1, 0)
+    poke_u16(b, 2, 10)
+    poke_u32(b, 4, wid)
+    poke_u32(b, 8, parent)
+    poke_u16(b, 12, 0)
+    poke_u16(b, 14, 0)
+    poke_u16(b, 16, width)
+    poke_u16(b, 18, height)
+    poke_u16(b, 20, 0)
+    poke_u16(b, 22, 1)
+    poke_u32(b, 24, 0)
+    # background pixel, and the list of happenings
+    poke_u32(b, 28, 2050)
+    poke_u32(b, 32, bg)
+    # key presses and releases, button presses and releases,
+    # pointer movement, and being asked to draw ourselves again
+    poke_u32(b, 36, 32839)
+    return win_send(w, b, 40)
+
+# a graphics context: the pen colour, and no rubber-banding
+win_req_gc w gc draw fg:
+    b: mem_new(32)
+    i: 0
+    as long as i < 32
+        poke_byte(b, i, 0)
+        i: i + 1
+    poke_byte(b, 0, 55)
+    # four words of fixed part plus one for each value asked for.
+    # Saying five here rather than six made the server refuse the
+    # whole request with a length complaint, and then every drawing
+    # request failed too because there was no pen to draw with.
+    poke_u16(b, 2, 6)
+    poke_u32(b, 4, gc)
+    poke_u32(b, 8, draw)
+    poke_u32(b, 12, 12)
+    poke_u32(b, 16, fg)
+    poke_u32(b, 20, peek_i64(w, 144))
+    return win_send(w, b, 24)
+
+win_req_map w wid:
+    b: mem_new(8)
+    poke_byte(b, 0, 8)
+    poke_byte(b, 1, 0)
+    poke_u16(b, 2, 2)
+    poke_u32(b, 4, wid)
+    return win_send(w, b, 8)
+
+# the name in the title bar. Property 39 is WM_NAME, type 31 is
+# STRING, and the text goes on the end padded out to four bytes.
+win_set_title w title:
+    n: str_len(title)
+    pad: n
+    as long as pad % 4 is not 0
+        pad: pad + 1
+    b: mem_new(24 + pad + 4)
+    i: 0
+    as long as i < 24 + pad
+        poke_byte(b, i, 0)
+        i: i + 1
+    poke_byte(b, 0, 18)
+    poke_byte(b, 1, 0)
+    poke_u16(b, 2, (24 + pad) / 4)
+    poke_u32(b, 4, peek_i64(w, 8))
+    poke_u32(b, 8, 39)
+    poke_u32(b, 12, 31)
+    poke_byte(b, 16, 8)
+    poke_u32(b, 20, n)
+    i: 0
+    as long as i < n
+        poke_byte(b, 24 + i, peek_byte(title, i))
+        i: i + 1
+    return win_send(w, b, 24 + pad)
+
+# change the pen colour before drawing
+win_colour w rgb:
+    b: mem_new(20)
+    i: 0
+    as long as i < 20
+        poke_byte(b, i, 0)
+        i: i + 1
+    poke_byte(b, 0, 56)
+    poke_u16(b, 2, 4)
+    poke_u32(b, 4, peek_i64(w, 16))
+    poke_u32(b, 8, 4)
+    poke_u32(b, 12, rgb)
+    return win_send(w, b, 16)
+
+# ---------------------------------------------------------------
+# drawing
+# ---------------------------------------------------------------
+
+# a solid block of colour
+win_fill w x y width height rgb:
+    win_colour(w, rgb)
+    b: mem_new(24)
+    i: 0
+    as long as i < 24
+        poke_byte(b, i, 0)
+        i: i + 1
+    poke_byte(b, 0, 70)
+    poke_u16(b, 2, 5)
+    poke_u32(b, 4, peek_i64(w, 8))
+    poke_u32(b, 8, peek_i64(w, 16))
+    poke_u16(b, 12, x)
+    poke_u16(b, 14, y)
+    poke_u16(b, 16, width)
+    poke_u16(b, 18, height)
+    return win_send(w, b, 20)
+
+# the outline of a box
+win_box w x y width height rgb:
+    win_fill(w, x, y, width, 1, rgb)
+    win_fill(w, x, y + height - 1, width, 1, rgb)
+    win_fill(w, x, y, 1, height, rgb)
+    win_fill(w, x + width - 1, y, 1, height, rgb)
+    return 0
+
+# one dot
+win_dot w x y rgb:
+    return win_fill(w, x, y, 1, 1, rgb)
+
+# a straight line between two points, by stepping the longer way
+win_line w x0 y0 x1 y1 rgb:
+    dx: x1 - x0
+    dy: y1 - y0
+    if dx < 0
+        dx: 0 - dx
+    if dy < 0
+        dy: 0 - dy
+    steps: dx
+    if dy > dx
+        steps: dy
+    if steps is 0
+        return win_dot(w, x0, y0, rgb)
+    win_colour(w, rgb)
+    i: 0
+    as long as i <= steps
+        x: x0 + (x1 - x0) * i / steps
+        y: y0 + (y1 - y0) * i / steps
+        win_raw_dot(w, x, y)
+        i: i + 1
+    return 0
+
+# a dot with the colour already set, so a line does not send the
+# colour again for every point
+win_raw_dot w x y:
+    b: mem_new(24)
+    i: 0
+    as long as i < 24
+        poke_byte(b, i, 0)
+        i: i + 1
+    poke_byte(b, 0, 70)
+    poke_u16(b, 2, 5)
+    poke_u32(b, 4, peek_i64(w, 8))
+    poke_u32(b, 8, peek_i64(w, 16))
+    poke_u16(b, 12, x)
+    poke_u16(b, 14, y)
+    poke_u16(b, 16, 1)
+    poke_u16(b, 18, 1)
+    return win_send(w, b, 20)
+
+# a circle, drawn as an arc all the way round. The numbers are in
+# sixty-fourths of a degree, so a full turn is 360 * 64.
+win_circle w x y r rgb:
+    win_colour(w, rgb)
+    b: mem_new(32)
+    i: 0
+    as long as i < 32
+        poke_byte(b, i, 0)
+        i: i + 1
+    poke_byte(b, 0, 71)
+    poke_u16(b, 2, 6)
+    poke_u32(b, 4, peek_i64(w, 8))
+    poke_u32(b, 8, peek_i64(w, 16))
+    poke_u16(b, 12, x - r)
+    poke_u16(b, 14, y - r)
+    poke_u16(b, 16, r * 2)
+    poke_u16(b, 18, r * 2)
+    poke_u16(b, 20, 0)
+    poke_u16(b, 22, 23040)
+    return win_send(w, b, 24)
+
+# ---------------------------------------------------------------
+# letters
+# ---------------------------------------------------------------
+
+# Ask the server for a font, once, the first time text is drawn.
+win_font w:
+    f: peek_i64(w, 152)
+    if f is not 0
+        return f
+    id: win_new_id(w)
+    name: "fixed"
+    n: str_len(name)
+    pad: n
+    as long as pad % 4 is not 0
+        pad: pad + 1
+    b: mem_new(16 + pad)
+    i: 0
+    as long as i < 16 + pad
+        poke_byte(b, i, 0)
+        i: i + 1
+    poke_byte(b, 0, 45)
+    poke_u16(b, 2, (12 + pad) / 4)
+    poke_u32(b, 4, id)
+    poke_u16(b, 8, n)
+    i: 0
+    as long as i < n
+        poke_byte(b, 12 + i, peek_byte(name, i))
+        i: i + 1
+    win_send(w, b, 12 + pad)
+    # point the pen at it
+    g: mem_new(20)
+    i: 0
+    as long as i < 20
+        poke_byte(g, i, 0)
+        i: i + 1
+    poke_byte(g, 0, 56)
+    poke_u16(g, 2, 4)
+    poke_u32(g, 4, peek_i64(w, 16))
+    poke_u32(g, 8, 16384)
+    poke_u32(g, 12, id)
+    win_send(w, g, 16)
+    poke_i64(w, 152, id)
+    return id
+
+# write some words. y is the bottom of the letters, not the top.
+win_text w x y s rgb:
+    win_font(w)
+    win_colour(w, rgb)
+    n: str_len(s)
+    if n > 200
+        n: 200
+    # After the sixteen byte header come "text items". One item is a
+    # count byte, then a nudge byte saying how far to move first,
+    # then that many letters. Writing the count into the header
+    # instead, with no nudge byte, made the server refuse it.
+    total: 16 + 2 + n
+    pad: total
+    as long as pad % 4 is not 0
+        pad: pad + 1
+    b: mem_new(pad + 8)
+    i: 0
+    as long as i < pad
+        poke_byte(b, i, 0)
+        i: i + 1
+    poke_byte(b, 0, 74)
+    poke_byte(b, 1, 0)
+    poke_u16(b, 2, pad / 4)
+    poke_u32(b, 4, peek_i64(w, 8))
+    poke_u32(b, 8, peek_i64(w, 16))
+    poke_u16(b, 12, x)
+    poke_u16(b, 14, y)
+    poke_byte(b, 16, n)
+    poke_byte(b, 17, 0)
+    i: 0
+    as long as i < n
+        poke_byte(b, 18 + i, peek_byte(s, i))
+        i: i + 1
+    return win_send(w, b, pad)
+
+# ---------------------------------------------------------------
+# what the person did
+# ---------------------------------------------------------------
+
+# Wait for something to happen and say what it was. Every packet
+# from the server is thirty-two bytes.
+win_wait w:
+    if peek_i64(w, 200) is 1
+        return WIN_CLOSE
+    b: mem_new(64)
+    if win_read_exact(peek_i64(w, 0), b, 32) < 32
+        poke_i64(w, 200, 1)
+        poke_i64(w, 104, WIN_CLOSE)
+        return WIN_CLOSE
+    return win_sort(w, b)
+
+win_sort w b:
+    kind: peek_byte(b, 0) % 128
+    if kind is 2
+        # a key went down. The code is which key on the board, not
+        # which letter; win_key_text turns the plain ones into text.
+        poke_i64(w, 72, peek_byte(b, 1))
+        poke_i64(w, 88, peek_byte(b, 24) + peek_byte(b, 25) * 256)
+        poke_i64(w, 96, peek_byte(b, 26) + peek_byte(b, 27) * 256)
+        poke_i64(w, 104, WIN_KEY)
+        return WIN_KEY
+    if kind is 3
+        poke_i64(w, 72, peek_byte(b, 1))
+        poke_i64(w, 104, WIN_KEYUP)
+        return WIN_KEYUP
+    if kind is 5
+        poke_i64(w, 80, peek_byte(b, 1))
+        poke_i64(w, 104, WIN_UNCLICK)
+        return WIN_UNCLICK
+    if kind is 4
+        poke_i64(w, 80, peek_byte(b, 1))
+        poke_i64(w, 88, peek_byte(b, 24) + peek_byte(b, 25) * 256)
+        poke_i64(w, 96, peek_byte(b, 26) + peek_byte(b, 27) * 256)
+        poke_i64(w, 104, WIN_CLICK)
+        return WIN_CLICK
+    if kind is 6
+        poke_i64(w, 88, peek_byte(b, 24) + peek_byte(b, 25) * 256)
+        poke_i64(w, 96, peek_byte(b, 26) + peek_byte(b, 27) * 256)
+        poke_i64(w, 104, WIN_MOVE)
+        return WIN_MOVE
+    if kind is 12
+        poke_i64(w, 104, WIN_DRAW)
+        return WIN_DRAW
+    if kind is 0
+        # the server is complaining about something we sent
+        poke_i64(w, 104, WIN_NOTHING)
+        return WIN_NOTHING
+    poke_i64(w, 104, WIN_NOTHING)
+    return WIN_NOTHING
+
+# Is there anything waiting? A game loop must not stop and wait, so
+# it asks first. This uses poll, which looks at the socket and
+# answers straight away.
+win_pending w:
+    if peek_i64(w, 200) is 1
+        return 0
+    p: mem_new(16)
+    poke_u32(p, 0, peek_i64(w, 0))
+    poke_u16(p, 4, 1)
+    poke_u16(p, 6, 0)
+    r: sys_poll(p, 1, 0)
+    if r < 1
+        return 0
+    return 1
+
+win_key w:
+    return peek_i64(w, 72)
+
+win_button w:
+    return peek_i64(w, 80)
+
+win_x w:
+    return peek_i64(w, 88)
+
+win_y w:
+    return peek_i64(w, 96)
+
+# The plain letter a key code stands for, or an empty word for the
+# ones that are not letters. This is the usual arrangement; a
+# machine set up for another alphabet will differ.
+win_key_text c:
+    if c >= 10
+        if c <= 18
+            return str_cut("123456789", c - 10, c - 9)
+    if c is 19
+        return "0"
+    if c >= 24
+        if c <= 33
+            return str_cut("qwertyuiop", c - 24, c - 23)
+    if c >= 38
+        if c <= 46
+            return str_cut("asdfghjkl", c - 38, c - 37)
+    if c >= 52
+        if c <= 58
+            return str_cut("zxcvbnm", c - 52, c - 51)
+    if c is 65
+        return " "
+    if c is 36
+        return "\n"
+    return ""
+
+# the four keys people expect to work
+WIN_UP: 111
+WIN_DOWN: 116
+WIN_LEFT: 113
+WIN_RIGHT: 114
+WIN_ESC: 9
+WIN_ENTER: 36
+WIN_SPACE: 65
+
+# ---------------------------------------------------------------
+# finishing
+# ---------------------------------------------------------------
+
+# Nothing is drawn until this is called: the requests sit in the
+# socket's own buffer until the server gets round to them, and this
+# makes sure they have gone.
+# Nothing is drawn until this is called. It asks the server a
+# question it must answer, and waits for the answer, which means
+# everything sent before it has certainly been dealt with.
+#
+# The question is GetInputFocus, which is four bytes and takes no
+# arguments at all. Sending eight, with a window on the end, made
+# the server refuse it and the drawing never appeared.
+win_flush w:
+    if peek_i64(w, 200) is 1
+        return 0
+    b: mem_new(8)
+    poke_byte(b, 0, 43)
+    poke_byte(b, 1, 0)
+    poke_u16(b, 2, 1)
+    if win_send(w, b, 4) < 4
+        poke_i64(w, 200, 1)
+        return 0
+    r: mem_new(64)
+    # A short answer means the server has gone: the screen was shut
+    # down, or it crashed. Carrying on would leave the program
+    # waiting for a reply that will never come, which looks exactly
+    # like a hang. Notice it once and remember.
+    if win_read_exact(peek_i64(w, 0), r, 32) < 32
+        poke_i64(w, 200, 1)
+    return 0
+
+# has the screen gone away? A program with its own loop should ask
+# this, so it stops rather than spinning against a dead socket.
+win_alive w:
+    if w is 0
+        return 0
+    if peek_i64(w, 200) is 1
+        return 0
+    return 1
+
+win_shut w:
+    if w is 0
+        return 0
+    sys_close(peek_i64(w, 0))
+    poke_i64(w, 200, 1)
+    return 0
+
+win_width w:
+    return peek_i64(w, 48)
+
+win_height w:
+    return peek_i64(w, 56)
+
+# a colour out of its three parts
+win_rgb r g b:
+    return r * 65536 + g * 256 + b
+
+WIN_BLACK: 0
+WIN_WHITE: 16777215
+WIN_RED: 16711680
+WIN_GREEN: 65280
+WIN_BLUE: 255
+WIN_GREY: 8421504

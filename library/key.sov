@@ -1,6 +1,7 @@
 # key.sov — read keys from the keyboard
 
 use sys
+use num
 key_raw_on:
     t: _sov_alloc(64)
     sys_ioctl(0, 21505, t)
@@ -16,6 +17,45 @@ key_read:
     if n < 1
         return 0 - 1
     return peek_byte(b, 0)
+
+# Is a key already waiting? Asks and answers straight away rather
+# than stopping to wait.
+#
+# This matters for the escape key. An arrow arrives as escape and
+# then two more bytes, all at once; a bare escape arrives on its
+# own with nothing behind it. A program that reads two more
+# regardless sits there forever the moment someone presses escape.
+key_waiting:
+    return key_waiting_for(0)
+
+# The same, but willing to wait this many thousandths of a second.
+# A short wait is what tells an arrow key apart from a bare escape:
+# the rest of an arrow is right behind it, within a blink, while
+# after a bare escape nothing comes at all.
+key_waiting_for ms:
+    p: _sov_alloc(16)
+    poke_u32(p, 0, 0)
+    poke_u16(p, 4, 1)
+    poke_u16(p, 6, 0)
+    if sys_poll(p, 1, ms) < 1
+        return 0
+    return 1
+
+# Read a key only if one is already there, otherwise say so at once.
+# Hands back minus one when the input has ended and minus two when
+# nothing is waiting yet.
+key_read_now:
+    if key_waiting() is 0
+        return 0 - 2
+    return key_read()
+
+# Read a key, but give up after a short wait rather than sitting
+# there. Hands back minus one when the input has ended and minus
+# two when nothing turned up in time.
+key_read_soon ms:
+    if key_waiting_for(ms) is 0
+        return 0 - 2
+    return key_read()
 
 key_line cap:
     buf: _sov_alloc(cap + 1)

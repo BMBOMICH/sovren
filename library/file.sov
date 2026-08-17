@@ -50,6 +50,18 @@ file_write_all path data:
         return 1
     return 0
 
+# Write exactly this many bytes, zeros and all. file_write_all stops
+# at the first zero because it takes text; a binary needs this.
+file_write_bytes path data n:
+    fd: file_open_write(path)
+    if fd < 0
+        return 0
+    w: sys_write(fd, data, n)
+    sys_close(fd)
+    if w is n
+        return 1
+    return 0
+
 file_append path data:
     fd: sys_open(path, 1089)
     if fd < 0

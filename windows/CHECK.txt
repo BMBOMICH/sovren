@@ -53,12 +53,14 @@ Nothing prints and the exit code is 0
 
 
 A file is written but is not a valid program
-    Check the header:
+    Run it here, on the emulator:
 
-        python3 windows/run_pe.py yourfile.exe
+        ./sovren windows/run.sov -o run
+        ./run yourfile.exe
 
-    That is a strict emulator. Unlike Wine it refuses raw Linux
-    syscalls, so it catches the mistake Wine hides.
+    That is a strict emulator, written in Sovren. Unlike Wine it
+    refuses raw Linux syscalls, so it catches the mistake Wine
+    hides. It exits 3 when it refuses.
 
 
 Keys do nothing in a full screen program

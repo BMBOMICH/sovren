@@ -6,6 +6,145 @@
 # compile it, run it, compare the answer.
 
 use testrun
+use file
+use bit32
+use sys
+
+# ---- the header rules real Windows enforces ----
+#
+# These found real bugs, twice. Each one was a silent failure on the
+# user's own machine that Wine did not reproduce.
+
+tr_pe_checks:
+    tr_build_for("hello.sov", "/tmp/sov-pe.exe", "--windows")
+    d: file_read_all("/tmp/sov-pe.exe")
+    if d is 0
+        tr_bad("windows header", "no file", "a PE")
+        return 0
+    n: file_size("/tmp/sov-pe.exe")
+
+    # A raw syscall does nothing on Windows. There must not be one.
+    raw: 0
+    i: 0
+    as long as i < n - 1
+        if peek_byte(d, i) is 15
+            if peek_byte(d, i + 1) is 5
+                raw: raw + 1
+        i: i + 1
+    if raw is 0
+        tr_ok("windows: no raw syscalls")
+    if not
+        tr_bad("windows: no raw syscalls", num_text(raw), "0")
+
+    # AVX-512 crashes on any processor that does not have it. The
+    # sandbox this was built in does; the user's machine does not.
+    # This was the bug behind exit code -1073741795.
+    #
+    # Those instructions begin with the byte 98 followed by three
+    # more the hardware insists on. In the second byte, bits 2 and 3
+    # are both zero and the low three bits name a valid opcode map,
+    # so they are 1, 2 or 3. In the third byte, bit 2 is always one.
+    # Text contains the byte 98 fairly often, so the loose test is
+    # not enough: "z is big" starts with one and is not AVX-512.
+    evex: 0
+    i: 0
+    as long as i < n - 4
+        if peek_byte(d, i) is 98
+            b1: peek_byte(d, i + 1)
+            b2: peek_byte(d, i + 2)
+            mm: b1 % 4
+            if (b1 / 4) % 2 is 0
+                if (b1 / 8) % 2 is 0
+                    if mm is not 0
+                        if (b2 / 4) % 2 is 1
+                            evex: evex + 1
+        i: i + 1
+    if evex is 0
+        tr_ok("windows: no AVX-512")
+    if not
+        tr_bad("windows: no AVX-512", num_text(evex), "0")
+
+    # An exe with no relocation table must not claim it can be moved,
+    # or real Windows moves it and every absolute address breaks.
+    pe: peek_byte(d, 60) + peek_byte(d, 61) * 256
+    ch: peek_byte(d, pe + 22) + peek_byte(d, pe + 23) * 256
+    dl: peek_byte(d, pe + 24 + 70) + peek_byte(d, pe + 24 + 71) * 256
+    if wand(ch, 1) is 1
+        if wand(dl, 64) is 0
+            tr_ok("windows: no ASLR without relocations")
+        if not
+            tr_bad("windows: no ASLR without relocations", "it claims DYNAMIC_BASE", "it must not")
+    if not
+        tr_bad("windows: no ASLR without relocations", "RELOCS_STRIPPED is not set", "it must be")
+
+    # The globals live at the end of the code, so the code section
+    # has to be writable as well as executable.
+    fl: peek_byte(d, pe + 24 + 240 + 36) + peek_byte(d, pe + 24 + 240 + 37) * 256 + peek_byte(d, pe + 24 + 240 + 38) * 65536 + peek_byte(d, pe + 24 + 240 + 39) * 16777216
+    ok: 1
+    if wand(fl, 536870912) is 0
+        ok: 0
+    if wand(fl, 1073741824) is 0
+        ok: 0
+    if wand(fl, 2147483648) is 0
+        ok: 0
+    if ok is 1
+        tr_ok("windows: code is read, write and execute")
+    if not
+        tr_bad("windows: code is read, write and execute", num_text(fl), "all three bits")
+    return 0
+
+# The emulator is only worth having if it is strict. These plant the
+# exact faults that got past Wine and cost days, and prove the
+# emulator stops on each one.
+tr_strict_checks:
+    # a raw syscall in a Windows program
+    tr_build_for("hello.sov", "/tmp/sov-st.exe", "--windows")
+    d: file_read_all("/tmp/sov-st.exe")
+    n: file_size("/tmp/sov-st.exe")
+    pe: peek_byte(d, 60) + peek_byte(d, 61) * 256
+    ep: pk32(d, pe + 24 + 16)
+    va: pk32(d, pe + 24 + 240 + 12)
+    ra: pk32(d, pe + 24 + 240 + 20)
+    poke_byte(d, ra + ep - va, 15)
+    poke_byte(d, ra + ep - va + 1, 5)
+    file_write_bytes("/tmp/sov-st.exe", d, n)
+    m: x86_new()
+    x86_load(m, "/tmp/sov-st.exe")
+    x86_run(m)
+    if x86_why(m) is 4
+        tr_ok("emulator refuses a raw syscall on Windows")
+    if not
+        tr_bad("emulator refuses a raw syscall on Windows", x86_reason(m), "a refusal")
+
+    # a Linux syscall number in a Mac program
+    tr_build_for("hello.sov", "/tmp/sov-st.mac", "--mac")
+    d2: file_read_all("/tmp/sov-st.mac")
+    n2: file_size("/tmp/sov-st.mac")
+    m2: x86_new()
+    if x86_load(m2, "/tmp/sov-st.mac") is 0
+        tr_bad("emulator refuses a Linux number on a Mac", "could not load", "a refusal")
+        return 0
+    # mov eax, 1 then syscall, right where it starts
+    off: x_rip(m2) - x_low(m2)
+    poke_byte(d2, off, 184)
+    poke_byte(d2, off + 1, 1)
+    poke_byte(d2, off + 2, 0)
+    poke_byte(d2, off + 3, 0)
+    poke_byte(d2, off + 4, 0)
+    poke_byte(d2, off + 5, 15)
+    poke_byte(d2, off + 6, 5)
+    file_write_bytes("/tmp/sov-st.mac", d2, n2)
+    m3: x86_new()
+    x86_load(m3, "/tmp/sov-st.mac")
+    x86_run(m3)
+    if x86_why(m3) is 4
+        tr_ok("emulator refuses a Linux number on a Mac")
+    if not
+        tr_bad("emulator refuses a Linux number on a Mac", x86_reason(m3), "a refusal")
+    return 0
+
+pk32 d a:
+    return peek_byte(d, a) + peek_byte(d, a + 1) * 256 + peek_byte(d, a + 2) * 65536 + peek_byte(d, a + 3) * 16777216
 
 main:
     tr_use("./sovren")
@@ -101,6 +240,49 @@ main:
     tr_expect("nothing unresolved", "use cffi\nuse file\nmain:\n    if file_exists(\"/lib/x86_64-linux-gnu/libz.so.1\") is 0\n        print \"0\"\n        stop\n    h: c_open(\"/lib/x86_64-linux-gnu/libz.so.1\")\n    print c_link(h)\n", "0")
     tr_expect("call back into sovren", "twice n:\n    return n * 2\n\nmain:\n    print cfunc(addr_of twice, 21, 0, 0, 0, 0, 0)\n", "42")
 
+    # ---- addr_of and cfunc must exist on every machine ----
+    tr_builds_for("cfunc on windows", "twice n:\n    return n * 2\n\nmain:\n    print cfunc(addr_of twice, 21, 0, 0, 0, 0, 0)\n", "--windows")
+    tr_builds_for("cfunc on mac", "twice n:\n    return n * 2\n\nmain:\n    print cfunc(addr_of twice, 21, 0, 0, 0, 0, 0)\n", "--mac")
+    tr_builds_for("cfunc on android", "twice n:\n    return n * 2\n\nmain:\n    print cfunc(addr_of twice, 21, 0, 0, 0, 0, 0)\n", "--android")
+    tr_builds_for("cfunc on ios", "twice n:\n    return n * 2\n\nmain:\n    print cfunc(addr_of twice, 21, 0, 0, 0, 0, 0)\n", "--ios")
+    tr_builds_for("cffi on android", "use cffi\nmain:\n    print 1\n", "--android")
+    tr_builds_for("cffi on ios", "use cffi\nmain:\n    print 1\n", "--ios")
+    tr_builds_for("cffi as a library", "use cffi\nmain:\n    print 1\n", "--android-so")
+
+    # ---- things the suite used to check from the shell ----
+    tr_expect("self host", "main:\n    print 1\n", "1")
+    tr_expect("deep use", "use chat\nmain:\n    print 1\n", "1")
+    tr_expect("global seen inside a job", "total: 0\n\nbump:\n    total: total + 5\n    return 0\n\nmain:\n    bump()\n    print total\n", "5")
+    tr_expect("forward text return", "main:\n    print greeting()\n\ngreeting:\n    return \"hello\"\n", "hello")
+    tr_expect("short circuit", "boom:\n    print \"ran\"\n    return 1\n\nmain:\n    if 1 is 2 and boom() is 1\n        print \"no\"\n    print \"done\"\n", "done")
+    tr_expect("raw alloc prints a number", "use mem\nmain:\n    p: mem_new(8)\n    poke_byte(p, 0, 65)\n    print peek_byte(p, 0)\n", "65")
+    tr_expect("file round trip", "use file\nmain:\n    file_write_all(\"/tmp/sov-rt.txt\", \"round trip\")\n    print file_read_all(\"/tmp/sov-rt.txt\")\n", "round trip")
+    tr_expect("bit32", "use bit32\nmain:\n    print wand(12, 10)\n", "8")
+    tr_expect("base32", "use base32\nmain:\n    print b32_text(\"abc\")\n", "MFRGG===")
+    tr_expect("levenshtein", "use lev\nmain:\n    print lev_dist(\"kitten\", \"sitting\")\n", "3")
+    tr_expect("prime", "use prime\nmain:\n    print pr_is(97)\n", "1")
+    tr_expect("vec3", "use vec3\nuse fixed\nmain:\n    v: v3_new(fx_from(3), fx_from(4), fx_from(0))\n    print fx_text(v3_len(v))\n", "5.000000")
+    tr_expect("tui goto", "use tui\nuse string\nmain:\n    s: str_cat(tui_csi(), \"3;5H\")\n    print str_len(s)\n", "6")
+    tr_reject("a tab indent", "main:\n\tprint 1\n")
+    tr_reject("a missing library", "use notalibrary\nmain:\n    print 1\n")
+
+    # ---- a job cannot take more than seven values ----
+    tr_reject("eight values", "f a b c d e g h i:\n    return a\n\nmain:\n    print 1\n")
+    tr_builds("seven values", "f a b c d e g h:\n    return a\n\nmain:\n    print f(1,2,3,4,5,6,7)\n")
+
+    # ---- the arm emulator, written in Sovren ----
+    # build its own arm binary first, so no other check can disturb it
+    # the emulator is checked properly by check/run, which builds an
+    # arm binary under its own name. here just prove the library loads.
+    tr_builds("the arm emulator library", "use arm\nmain:\n    m: arm_new()\n    print arm_pc(m)\n")
+
+    # ---- the arm emulator runs a real arm binary ----
+    # build the arm binary first. it was missing before, so this check
+    # was loading a file that did not exist and always failed.
+    file_write_all("/tmp/sov-emu.sov", "main:\n    print 5 * 3 / 2\n")
+    tr_build_for("/tmp/sov-emu.sov", "/tmp/sov-emu.bin", "--android")
+    tr_expect("emu math", "use arm\nmain:\n    m: arm_new()\n    arm_load(m, \"/tmp/sov-emu.bin\")\n    arm_run(m)\n    write_out(arm_out(m))\n", "7")
+
     # ---- every machine ----
     tr_builds_for("build for windows", "main:\n    print 1\n", "--windows")
     tr_builds_for("build for mac", "main:\n    print 1\n", "--mac")
@@ -109,4 +291,28 @@ main:
     tr_builds_for("build a shared library", "main:\n    print 1\n", "--android-so")
     tr_builds_for("build bare metal", "main:\n    print 1\n", "--bare")
 
-    stop
+    # ---- Windows and Mac binaries, run on the emulator in Sovren ----
+    # These used to need Unicorn and two Python scripts. Now the
+    # emulator is library/x86.sov, so Sovren runs its own output for
+    # every machine it can build for.
+    tr_emu("windows math", "main:\n    print 5 * 3 / 2\n", "7", "--windows")
+    tr_emu("windows job", "add a b:\n    return a + b\n\nmain:\n    print add(40, 2)\n", "42", "--windows")
+    tr_emu("windows recursion", "fib n:\n    if n < 2\n        return n\n    return fib(n - 1) + fib(n - 2)\n\nmain:\n    print fib(20)\n", "6765", "--windows")
+    tr_emu("windows text", "main:\n    print \"Hello from Sovren! Fully self-hosted!\"\n", "Hello from Sovren! Fully self-hosted!", "--windows")
+    tr_emu("windows sha256", "use sha256\nmain:\n    print sha256_hex(\"abc\")\n", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "--windows")
+    tr_emu("windows a file", "use file\nmain:\n    file_write_all(\"/tmp/sov-emuf.txt\", \"kept\")\n    print file_read_all(\"/tmp/sov-emuf.txt\")\n", "kept", "--windows")
+    tr_emu("mac math", "main:\n    print 5 * 3 / 2\n", "7", "--mac")
+    tr_emu("mac job", "add a b:\n    return a + b\n\nmain:\n    print add(40, 2)\n", "42", "--mac")
+    tr_emu("mac recursion", "fib n:\n    if n < 2\n        return n\n    return fib(n - 1) + fib(n - 2)\n\nmain:\n    print fib(20)\n", "6765", "--mac")
+    tr_emu("mac sha256", "use sha256\nmain:\n    print sha256_hex(\"abc\")\n", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "--mac")
+
+    # ---- the header rules real Windows enforces ----
+    tr_pe_checks()
+
+    # ---- the emulator must refuse what real hardware refuses ----
+    # If it did not, it would agree with the bugs instead of finding
+    # them, which is what Wine does.
+    tr_strict_checks()
+
+    # the tally, and an exit code so a script can tell
+    sys_exit(tr_report())

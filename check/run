@@ -1,485 +1,583 @@
 #!/bin/sh
-# Run every check. Must be started from the sovren folder.
-set -e
+# The checks. Most of them live in check/all.sov and are written in
+# Sovren; this builds that and runs it. What stays here is only the
+# part that needs another processor emulated, or a second opinion
+# from a different language, which Sovren cannot give itself.
+
 SOV=./sovren
 fail=0
-
-ok() {
-    echo "ok $1"
-}
-
-bad() {
-    echo "FAIL $1"
-    fail=1
-}
-
-skip() {
-    echo "skip $1"
-}
-
-# hello number
-$SOV check/hello.sov -o /tmp/sov-c-hello >/tmp/sov-c-log 2>&1
-chmod +x /tmp/sov-c-hello
-out=$(/tmp/sov-c-hello)
-code=$?
-if [ "$out" = "4" ] && [ "$code" = "0" ]; then ok hello; else bad hello; echo "$out exit=$code"; fi
-
-# print of a call that returns a number
-$SOV check/printn.sov -o /tmp/sov-c-pr >/tmp/sov-c-log 2>&1
-chmod +x /tmp/sov-c-pr
-out=$(/tmp/sov-c-pr | tr '\n' ' ')
-code=$?
-echo "$out" | grep -q "8" && echo "$out" | grep -q "10" && [ "$code" = "0" ] && ok printn || bad printn
-
-# math lib
-$SOV check/math.sov -o /tmp/sov-c-math >/tmp/sov-c-log 2>&1
-chmod +x /tmp/sov-c-math
-out=$(/tmp/sov-c-math | tr '\n' ' ')
-echo "$out" | grep -q "3" && echo "$out" | grep -q "8" && ok math || bad math
-
-# missing task must say so, file line, no write, exit 1
-rm -f /tmp/sov-c-miss
-printf '%s\n' '# t' 'main:' '    x: nope()' '    print x' > /tmp/sov-c-miss.sov
-set +e
-$SOV /tmp/sov-c-miss.sov -o /tmp/sov-c-miss >/tmp/sov-c-log 2>&1
-ec=$?
-set -e
-if grep -qE "no such (task|name)" /tmp/sov-c-log && grep -q "nope" /tmp/sov-c-log && ! grep -q "Wrote" /tmp/sov-c-log && [ "$ec" != "0" ] && [ ! -e /tmp/sov-c-miss ]; then ok missing-task; else bad missing-task; echo exit=$ec; cat /tmp/sov-c-log; fi
-
-# two tasks same name, file line of the second, exit 1
-rm -f /tmp/sov-c-dup
-printf '%s\n' '# t' 'foo:' '    return 1' 'foo:' '    return 2' 'main:' '    print 1' > /tmp/sov-c-dup.sov
-set +e
-$SOV /tmp/sov-c-dup.sov -o /tmp/sov-c-dup >/tmp/sov-c-log 2>&1
-ec=$?
-set -e
-if grep -qE "same name" /tmp/sov-c-log && grep -qE "[234]" /tmp/sov-c-log && ! grep -q "Wrote" /tmp/sov-c-log && [ "$ec" != "0" ]; then ok dup-task; else bad dup-task; echo exit=$ec; cat /tmp/sov-c-log; fi
-
-# missing library names the file and line
-rm -f /tmp/sov-c-nl
-printf '%s\n' '# t' 'use does_not_exist' 'main:' '    print 1' > /tmp/sov-c-nl.sov
-set +e
-$SOV /tmp/sov-c-nl.sov -o /tmp/sov-c-nl >/tmp/sov-c-log 2>&1
-ec=$?
-set -e
-if grep -q "cannot read library" /tmp/sov-c-log && grep -q "does_not_exist" /tmp/sov-c-log && ! grep -q "Wrote" /tmp/sov-c-log && [ "$ec" != "0" ]; then ok missing-lib; else bad missing-lib; echo exit=$ec; cat /tmp/sov-c-log; fi
-
-# typo with no parentheses, file line
-rm -f /tmp/sov-c-bad
-set +e
-$SOV check/badline.sov -o /tmp/sov-c-bad >/tmp/sov-c-log 2>&1
-ec=$?
-set -e
-if grep -q "bad line" /tmp/sov-c-log && grep -q "prnt 1" /tmp/sov-c-log && grep -qE "[234]" /tmp/sov-c-log && ! grep -q "Wrote" /tmp/sov-c-log && [ "$ec" != "0" ]; then ok bad-line; else bad bad-line; echo exit=$ec; cat /tmp/sov-c-log; fi
-
-# unused and empty tasks warn, still write
-printf '%s\n' '# t' 'ghost:' '    return 1' 'husk:' 'main:' '    print 1' > /tmp/sov-c-warn.sov
-$SOV /tmp/sov-c-warn.sov -o /tmp/sov-c-warn >/tmp/sov-c-log 2>&1
-if grep -q "never used" /tmp/sov-c-log && grep -q "ghost" /tmp/sov-c-log && grep -q "empty" /tmp/sov-c-log && grep -q "husk" /tmp/sov-c-log && grep -q "Wrote" /tmp/sov-c-log; then ok warn; else bad warn; cat /tmp/sov-c-log; fi
-
-# nested use: file pulls sys
-$SOV check/usefile.sov -o /tmp/sov-c-uf >/tmp/sov-c-log 2>&1
-chmod +x /tmp/sov-c-uf
-out=$(/tmp/sov-c-uf)
-if [ "$out" = "1" ]; then ok use-file; else bad use-file; echo "$out"; fi
-
-# self-host
-$SOV linux/compiler.sov -o /tmp/sov-c-self >/tmp/sov-c-log 2>&1
-if [ -x /tmp/sov-c-self ]; then ok self-host; else bad self-host; cat /tmp/sov-c-log; fi
-
-
-# ---- regression tests for 0.1.0 fixes ----
-
-rej() { # name, file  -> must error, no binary
-    rm -f /tmp/sov-r-out
-    set +e
-    $SOV "$2" -o /tmp/sov-r-out >/tmp/sov-r-log 2>&1
-    ec=$?
-    set -e
-    if [ "$ec" != "0" ] && [ ! -e /tmp/sov-r-out ]; then ok "$1"; else bad "$1"; cat /tmp/sov-r-log; fi
-}
-
-runs() { # name, file, expected
-    $SOV "$2" -o /tmp/sov-r-bin >/tmp/sov-r-log 2>&1
-    chmod +x /tmp/sov-r-bin
-    got=$(/tmp/sov-r-bin | tr '\n' ' ')
-    got=$(echo $got)
-    if [ "$got" = "$3" ]; then ok "$1"; else bad "$1"; echo "got [$got] want [$3]"; fi
-}
-
-printf '%s\n' 'main:' '    note: x' '    print 1' > /tmp/sov-r1.sov
-rej no-note /tmp/sov-r1.sov
-
-printf '%s\n' 'main:' '    if 1 is 2' '        print "a"' '    and if not' '        print "b"' > /tmp/sov-r2.sov
-rej no-and-if-not /tmp/sov-r2.sov
-
-printf '%s\n' 'main:' '    repeat 2' '        print "x"' > /tmp/sov-r3.sov
-rej no-repeat /tmp/sov-r3.sov
-
-printf 'main:\n\tprint 1\n' > /tmp/sov-r4.sov
-rej no-tabs /tmp/sov-r4.sov
-
-printf '%s\n' 'main:' '    print missing' > /tmp/sov-r5.sov
-rej undefined-name /tmp/sov-r5.sov
-
-printf '%s\n' 'main:' '    print "abc' > /tmp/sov-r6.sov
-rej unterminated-text /tmp/sov-r6.sov
-
-printf '%s\n' 'f a:' '    return a' 'main:' '    print f(1, 2)' > /tmp/sov-r7.sov
-rej wrong-arg-count /tmp/sov-r7.sov
-
-printf '%s\n' 'main:' '    print 5 * 3 / 2' '    print 100 / 5 * 2' '    print 10 - 2 - 3' > /tmp/sov-r8.sov
-runs precedence /tmp/sov-r8.sov "7 40 5"
-
-printf '%s\n' 'boom:' '    print "SIDE"' '    return 1' 'main:' '    if 0 is 1 and boom() is 1' '        print "a"' '    print "end"' > /tmp/sov-r9.sov
-runs short-circuit /tmp/sov-r9.sov "end"
-
-printf '%s\n' 'main:' '    print greeting()' '' 'greeting:' '    return "hello"' > /tmp/sov-r10.sov
-runs forward-string /tmp/sov-r10.sov "hello"
-
-printf '%s\n' 'use chat' 'main:' '    print 1' > /tmp/sov-r11.sov
-runs deep-use /tmp/sov-r11.sov "1"
-
-printf '%s\n' 'main:' '    p: _sov_alloc(64)' '    poke_byte(p, 0, 65)' '    print peek_byte(p, 0)' > /tmp/sov-r12.sov
-runs raw-alloc /tmp/sov-r12.sov "65"
-
-
-printf '%s\n' 'M: 256' 'f x:' '    return x % M' 'main:' '    print f(300)' > /tmp/sov-r13.sov
-runs global-in-function /tmp/sov-r13.sov "44"
-
-printf '%s\n' 'use bit32' 'main:' '    print wxor(255, 15)' '    print rotr(1, 1)' > /tmp/sov-r14.sov
-runs bit32 /tmp/sov-r14.sov "240 2147483648"
-
-
-printf '%s\n' 'use feed' 'main:' '    r: feed_post("/tmp/sov-feed.txt", "bob", "hi")' '    print feed_count("/tmp/sov-feed.txt")' '    print feed_who(list_get(feed_lines("/tmp/sov-feed.txt"), 0))' > /tmp/sov-r15.sov
-rm -f /tmp/sov-feed.txt
-runs feed-real /tmp/sov-r15.sov "1 bob"
-
-printf '%s\n' 'use chat' 'main:' '    l: chat_pack("amy", "yo")' '    print chat_from(l)' '    print chat_text(l)' > /tmp/sov-r16.sov
-runs chat-real /tmp/sov-r16.sov "amy yo"
-
-printf '%s\n' 'use dump' 'main:' '    print dump_text("AB")' > /tmp/sov-r17.sov
-runs dump-real /tmp/sov-r17.sov "41 42"
-
-printf '%s\n' 'use sha256' 'main:' '    print sha256_hex("abc")' > /tmp/sov-r18.sov
-runs sha256 /tmp/sov-r18.sov "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-
-printf '%s\n' 'use hmac' 'main:' '    print hmac_sha256("key", "The quick brown fox jumps over the lazy dog")' > /tmp/sov-r19.sov
-runs hmac /tmp/sov-r19.sov "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8"
-
-printf '%s\n' 'main:' '    set x to 5' > /tmp/sov-r20.sov
-rej no-set-syntax /tmp/sov-r20.sov
-
-printf '%s\n' 'main:' '    i: 0' '    i: i + 1' '    i: i - 1' '    i: i + 7' '    print i' > /tmp/sov-r21.sov
-runs incdec-opt /tmp/sov-r21.sov "7"
-
-
-printf '%s\n' 'main:' '    print 5 times 3' > /tmp/sov-r22.sov
-rej no-times-word /tmp/sov-r22.sov
-
-printf '%s\n' 'main:' '    print 6 divided by 2' > /tmp/sov-r23.sov
-rej no-divided-by /tmp/sov-r23.sov
-
-printf '%s\n' 'main:' '    print 7 modulo 3' > /tmp/sov-r24.sov
-rej no-modulo-word /tmp/sov-r24.sov
-
-printf '%s\n' 'main:' '    a: 3' '    if a == 3' '        print "y"' > /tmp/sov-r25.sov
-rej no-eqeq /tmp/sov-r25.sov
-
-printf '%s\n' 'main:' '    a: 3' '    if a != 4' '        print "y"' > /tmp/sov-r26.sov
-rej no-noteq /tmp/sov-r26.sov
-
-printf '%s\n' 'main:' '    print 6 zzz by 2' > /tmp/sov-r27.sov
-rej unknown-words /tmp/sov-r27.sov
-
-printf '%s\n' 'main:' '    print "a == b"' > /tmp/sov-r28.sov
-runs eqeq-in-text /tmp/sov-r28.sov "a == b"
-
-printf '%s\n' 'main:' '    print "loop" 2 times' > /tmp/sov-r29.sov
-runs print-times-ok /tmp/sov-r29.sov "loop loop"
-
-
-printf '%s\n' 'f a b c d e g h:' '    return a*1000000+b*100000+c*10000+d*1000+e*100+g*10+h' 'main:' '    print f(1,2,3,4,5,6,7)' > /tmp/sov-r30.sov
-runs seven-args /tmp/sov-r30.sov "1234567"
-
-printf '%s\n' 'use fixed' 'main:' '    print fx_text(fx_sqrt(fx_from(2)))' '    print fx_text(fx_div(fx_from(1), fx_from(4)))' > /tmp/sov-r31.sov
-runs fixed-point /tmp/sov-r31.sov "1.414213 0.250000"
-
-printf '%s\n' 'use vec' 'main:' '    v: vec_new(2)' '    v: vec_push(v, 5)' '    v: vec_push(v, 3)' '    v: vec_push(v, 9)' '    v: vec_sort(v)' '    print vec_get(v, 0)' '    print vec_sum(v)' > /tmp/sov-r32.sov
-runs vec /tmp/sov-r32.sov "3 17"
-
-printf '%s\n' 'use sha1' 'main:' '    print sha1_hex("abc")' > /tmp/sov-r33.sov
-runs sha1 /tmp/sov-r33.sov "a9993e364706816aba3e25717850c26c9cd0d89d"
-
-printf '%s\n' 'use crc32' 'main:' '    print crc32_text("hello")' > /tmp/sov-r34.sov
-runs crc32 /tmp/sov-r34.sov "907060870"
-
-printf '%s\n' 'use base32' 'main:' '    print b32_text("abc")' > /tmp/sov-r35.sov
-runs base32 /tmp/sov-r35.sov "MFRGG==="
-
-printf '%s\n' 'use lev' 'main:' '    print lev_dist("kitten", "sitting")' > /tmp/sov-r36.sov
-runs levenshtein /tmp/sov-r36.sov "3"
-
-printf '%s\n' 'use glob' 'main:' '    print glob_match("*.sov", "a.sov")' '    print glob_match("*.sov", "a.txt")' > /tmp/sov-r37.sov
-runs glob /tmp/sov-r37.sov "1 0"
-
-printf '%s\n' 'use stat2' 'main:' '    v: vec_new(4)' '    v: vec_push(v, 2)' '    v: vec_push(v, 4)' '    v: vec_push(v, 4)' '    v: vec_push(v, 6)' '    print fx_text(st_mean(v))' > /tmp/sov-r38.sov
-runs stats /tmp/sov-r38.sov "4.000000"
-
-printf '%s\n' 'use heap' 'main:' '    h: heap_new()' '    h: heap_push(h, 7)' '    h: heap_push(h, 2)' '    h: heap_push(h, 5)' '    print heap_pop(h)' '    print heap_pop(h)' > /tmp/sov-r39.sov
-runs heap /tmp/sov-r39.sov "2 5"
-
-
-printf '%s\n' 'use prime' 'main:' '    print pr_count(100)' '    print pr_is(97)' > /tmp/sov-r40.sov
-runs prime /tmp/sov-r40.sov "25 1"
-
-printf '%s\n' 'use matrix' 'main:' '    a: mat_new(2,2)' '    mat_set(a,0,0,1)' '    mat_set(a,1,1,4)' '    print mat_trace(a)' > /tmp/sov-r41.sov
-runs matrix /tmp/sov-r41.sov "5"
-
-printf '%s\n' 'use vec3' 'main:' '    p: v3_new(fx_from(3), fx_from(4), fx_from(0))' '    print fx_text(v3_len(p))' > /tmp/sov-r42.sov
-runs vec3 /tmp/sov-r42.sov "5.000000"
-
-{ echo 'use urlenc'; echo 'main:'; echo '    print ue_encode("a b")'; } > /tmp/sov-r43.sov
-runs urlenc /tmp/sov-r43.sov "a%20b"
-
-printf '%s\n' 'use ipaddr' 'main:' '    print ip_text(ip_parse("192.168.1.10"))' '    print ip_private(ip_parse("8.8.8.8"))' > /tmp/sov-r44.sov
-runs ipaddr /tmp/sov-r44.sov "192.168.1.10 0"
-
-printf '%s\n' 'use bitset' 'main:' '    b: bs_new(100)' '    b: bs_set(b, 5)' '    b: bs_set(b, 70)' '    print bs_count(b)' '    print bs_get(b, 70)' > /tmp/sov-r45.sov
-runs bitset /tmp/sov-r45.sov "2 1"
-
-printf '%s\n' 'use walk' 'main:' '    print walk_count("/tmp") > 0' > /tmp/sov-r46.sov
-runs walk /tmp/sov-r46.sov "1"
-
-printf '%s\n' 'use draw' 'main:' '    im: img_new(16,16)' '    im: draw_fill(im, 0, 0, 15, 15, rgb(1,2,3))' '    r: img_save("/tmp/sov-t.ppm", im)' '    print r' > /tmp/sov-r47.sov
-runs draw /tmp/sov-r47.sov "1"
-
-printf '%s\n' 'use trie' 'main:' '    t: tr_new()' '    t: tr_add(t, "apple")' '    t: tr_add(t, "apply")' '    print list_len(tr_starting(t, "app"))' > /tmp/sov-r48.sov
-runs trie /tmp/sov-r48.sov "2"
-
-
-if python3 -c "import sys" >/dev/null 2>&1; then
-    if python3 check/fuzz.py 1 150 >/tmp/sov-fuzz.log 2>&1; then
-        ok fuzz-x86
-    else
-        bad fuzz-x86; tail -12 /tmp/sov-fuzz.log
-    fi
+ok() { echo "ok $1"; }
+bad() { echo "FAIL $1"; fail=1; }
+skip() { echo "skip $1"; }
+
+# ---- the Sovren suite ----
+if $SOV check/all.sov -o /tmp/sov-all >/dev/null 2>&1; then
+    if /tmp/sov-all; then :; else fail=1; fi
+else
+    bad "could not build check/all.sov"
+    $SOV check/all.sov -o /tmp/sov-all 2>&1 | tail -5
 fi
 
+# ---- the arm emulator written in Sovren, against the C one ----
+# Both run the same binary. If they ever disagree, one is wrong.
+if $SOV arm64/run.sov -o /tmp/sov-armrun >/dev/null 2>&1; then
+    printf '%s\n' 'main:' '    print 5 * 3 / 2' > /tmp/sov-ea.sov
+    $SOV /tmp/sov-ea.sov --android -o /tmp/sov-arm.bin >/dev/null 2>&1
+    g=$(timeout 300 /tmp/sov-armrun 2>/dev/null | tr -d '\r\n')
+    if [ "$g" = "7" ]; then ok arm-emulator-in-sovren; else bad arm-emulator-in-sovren; echo "  got $g"; fi
 
-$SOV check/fuzz_run.sov -o /tmp/sov-fz.bin >/dev/null 2>&1
-chmod +x /tmp/sov-fz.bin 2>/dev/null
-g=$(timeout 600 /tmp/sov-fz.bin 2>&1 | head -1)
-if [ "$g" = "fuzz ok" ]; then ok fuzz-in-sovren; else bad fuzz-in-sovren; echo "  $g"; fi
+    printf '%s\n' 'use sha256' 'main:' '    print sha256_hex("abc")' > /tmp/sov-ea2.sov
+    $SOV /tmp/sov-ea2.sov --android -o /tmp/sov-arm.bin >/dev/null 2>&1
+    g=$(timeout 300 /tmp/sov-armrun 2>/dev/null | tr -d '\r\n')
+    if [ "$g" = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" ]; then
+        ok arm-emulator-sha256
+    else bad arm-emulator-sha256; echo "  got $g"; fi
+else
+    bad "could not build arm64/run.sov"
+fi
 
-# every library must compile
-liberr=0
-for lf in library/*.sov; do
-    ln=$(basename "$lf" .sov)
-    printf 'use %s\nmain:\n    print 1\n' "$ln" > /tmp/sov-r-lib.sov
-    if ! $SOV /tmp/sov-r-lib.sov -o /tmp/sov-r-lib.bin >/dev/null 2>&1; then
-        echo "  lib fail: $ln"
-        liberr=1
+# ---- AArch64, all of it in Sovren now ----
+# The encoder check, the back end check, and the shared library
+# exports each have a Sovren program. No Python, no Unicorn.
+
+if $SOV arm64/verify.sov -o /tmp/sov-verify >/dev/null 2>&1; then
+    if /tmp/sov-verify | tail -1 | grep -q "every encoding is right"; then
+        ok arm64-encodings
+    else
+        bad arm64-encodings; /tmp/sov-verify | grep FAIL | head -3
     fi
-done
-if [ "$liberr" = "0" ]; then ok all-libraries; else bad all-libraries; fi
+else
+    bad "could not build arm64/verify.sov"
+fi
 
-
-# ---- AArch64 (Android / iOS) ----
-if python3 -c "import unicorn" >/dev/null 2>&1; then
-    if sh arm64/test_arm64.sh >/tmp/sov-arm-log 2>&1; then
+if $SOV arm64/test.sov -o /tmp/sov-armtest >/dev/null 2>&1; then
+    if /tmp/sov-armtest | tail -1 | grep -q "the ARM back end is right"; then
         ok arm64-codegen
     else
-        bad arm64-codegen; tail -5 /tmp/sov-arm-log
+        bad arm64-codegen; /tmp/sov-armtest | grep FAIL | head -3
     fi
+else
+    bad "could not build arm64/test.sov"
+fi
 
-    printf '%s\n' 'main:' '    print 5 * 3 / 2' > /tmp/sov-so.sov
-    $SOV /tmp/sov-so.sov --android-so -o /tmp/sov-so.so >/dev/null 2>&1
-    g=$(timeout 300 python3 arm64/run_so.py /tmp/sov-so.so sovren_main 2>/dev/null | tr -d '\n')
-    if [ "$g" = "7" ]; then ok so-export-sovren_main; else bad so-export-sovren_main; echo "  got $g"; fi
-    g=$(timeout 300 python3 arm64/run_so.py /tmp/sov-so.so Java_com_sovren_Native_run 2>/dev/null | tr -d '\n')
-    if [ "$g" = "7" ]; then ok so-export-jni; else bad so-export-jni; echo "  got $g"; fi
+printf '%s\n' 'main:' '    print 5 * 3 / 2' > /tmp/sov-so.sov
+$SOV /tmp/sov-so.sov --android-so -o /tmp/sov-so.so >/dev/null 2>&1
+if $SOV arm64/runso.sov -o /tmp/sov-runso >/dev/null 2>&1; then
+    g=$(timeout 300 /tmp/sov-runso 2>/dev/null | tr -d '\r\n')
+    if [ "$g" = "77" ]; then ok so-exports; else bad so-exports; echo "  got $g"; fi
+else
+    bad "could not build arm64/runso.sov"
+fi
 
+# the iOS signature still needs a second, independent SHA-256
+if python3 -c "import hashlib" >/dev/null 2>&1; then
     $SOV hello.sov --ios -o /tmp/sov-ios.bin >/dev/null 2>&1
     if python3 arm64/check_sig.py /tmp/sov-ios.bin >/dev/null 2>&1; then
         ok ios-code-signature
     else
         bad ios-code-signature
     fi
-    printf '%s\n' 'use sha256' 'main:' '    print sha256_hex("abc")' > /tmp/sov-arm-sha.sov
-    $SOV /tmp/sov-arm-sha.sov --android -o /tmp/sov-arm-sha.bin >/dev/null 2>&1
-    g=$(timeout 900 python3 arm64/run_arm64.py /tmp/sov-arm-sha.bin 2>&1 | tr -d '\n')
-    if [ "$g" = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" ]; then
-        ok arm64-sha256
+fi
+
+# ---- the x86 emulator, instruction by instruction ----
+# check/x86ins.sov feeds library/x86.sov known bytes and checks the
+# registers and flags afterwards. The answers came from a real
+# processor, through a differential checker.
+if $SOV check/x86ins.sov -o /tmp/sov-x86ins >/dev/null 2>&1; then
+    if /tmp/sov-x86ins | tail -1 | grep -q "every instruction is right"; then
+        ok x86-instructions
     else
-        bad arm64-sha256; echo "  got $g"
+        bad x86-instructions; /tmp/sov-x86ins | grep FAIL | head -5
     fi
 else
-    echo "skip arm64 (pip install unicorn capstone)"
+    bad "could not build check/x86ins.sov"
 fi
 
-# ---- windows: import table regions must not overlap ----
-if python3 -c "import capstone" >/dev/null 2>&1; then
-    $SOV hello.sov --windows -o /tmp/sov-imp.exe >/dev/null 2>&1
-    g=$(python3 -c "
-import struct
-d=open('/tmp/sov-imp.exe','rb').read()
-pe=struct.unpack_from('<I',d,0x3c)[0]; opt=pe+24
-so=pe+24+240
-secs=[]
-for i in range(struct.unpack_from('<H',d,pe+6)[0]):
-    o=so+i*40
-    vs,va,rs,ra=struct.unpack_from('<IIII',d,o+8); secs.append((va,vs,ra,rs))
-def rd(rva,n):
-    for va,vs,ra,rs in secs:
-        if va<=rva<va+max(vs,rs): return d[ra+(rva-va):ra+(rva-va)+n]
-    return b''
-dd=opt+112
-imp=struct.unpack_from('<I',d,dd+8)[0]
-iat=struct.unpack_from('<I',d,dd+12*8)[0]
-ilt,_,_,nm,_=struct.unpack('<IIIII', rd(imp,20))
-bad=0
-for i in range(64):
-    a=struct.unpack('<Q',rd(iat+i*8,8))[0]
-    b=struct.unpack('<Q',rd(ilt+i*8,8))[0]
-    if a==0 and b==0: break
-    if a!=b: bad=1; break
-else:
-    bad=1
-print('ok' if bad==0 else 'bad')
-" 2>/dev/null)
-    if [ "$g" = "ok" ]; then ok windows-import-table; else bad windows-import-table; fi
-fi
-
-# ---- windows: console mode imports present for raw key input ----
-if python3 -c "import capstone" >/dev/null 2>&1; then
-    $SOV hello.sov --windows -o /tmp/sov-con.exe >/dev/null 2>&1
-    g=$(python3 -c "
-import struct
-d=open('/tmp/sov-con.exe','rb').read()
-pe=struct.unpack_from('<I',d,0x3c)[0]; opt=pe+24
-so=pe+24+240
-secs=[]
-for i in range(struct.unpack_from('<H',d,pe+6)[0]):
-    o=so+i*40
-    nm=d[o:o+8].rstrip(b'\0').decode()
-    vs,va,rs,ra=struct.unpack_from('<IIII',d,o+8); secs.append((va,vs,ra,rs))
-def rd(rva,n):
-    for va,vs,ra,rs in secs:
-        if va<=rva<va+max(vs,rs): return d[ra+(rva-va):ra+(rva-va)+n]
-    return b''
-iat=struct.unpack_from('<I',d,opt+112+12*8)[0]
-names=[]
-for i in range(12):
-    v=struct.unpack('<Q',rd(iat+i*8,8))[0]
-    if not v: break
-    names.append(rd((v&0x7FFFFFFF)+2,24).split(b'\0')[0].decode())
-print('ok' if 'GetConsoleMode' in names and 'SetConsoleMode' in names else 'missing')
-" 2>/dev/null)
-    if [ "$g" = "ok" ]; then ok windows-console-imports; else bad windows-console-imports; fi
-fi
-
-# ---- command line arguments reach the program ----
-printf '%s\n' 'use arg' 'main:' '    print arg_count()' '    print as text arg_at(1)' > /tmp/sov-arg.sov
-$SOV /tmp/sov-arg.sov -o /tmp/sov-arg.bin >/dev/null 2>&1
-g=$(/tmp/sov-arg.bin hello there 2>/dev/null | tr '\n' ' ')
-if [ "$g" = "3 hello " ]; then ok args-linux; else bad args-linux; echo "  got '$g'"; fi
-
-if python3 -c "import unicorn" >/dev/null 2>&1; then
-    $SOV /tmp/sov-arg.sov --windows -o /tmp/sov-arg.exe >/dev/null 2>&1
-    g=$(timeout 200 python3 windows/run_pe.py /tmp/sov-arg.exe one two 2>/dev/null | tr '\n' ' ')
-    if [ "$g" = "3 one " ]; then ok args-windows; else bad args-windows; echo "  got '$g'"; fi
-fi
-
-# ---- portable code: no AVX-512 in linux builds either ----
-if python3 -c "import capstone" >/dev/null 2>&1; then
-    $SOV hello.sov -o /tmp/sov-lavx >/dev/null 2>&1
-    g=$(python3 -c "
-from capstone import *
-import struct
-d=open('/tmp/sov-lavx','rb').read()
-e=struct.unpack_from('<Q',d,24)[0]; b=struct.unpack_from('<Q',d,80)[0]
-md=Cs(CS_ARCH_X86,CS_MODE_64); md.skipdata=True
-print(sum(1 for i in md.disasm(d[e-b:],e) if 'zmm' in i.op_str))
-" 2>/dev/null)
-    if [ "$g" = "0" ]; then ok linux-no-avx512; else bad linux-no-avx512; echo "  found $g"; fi
-fi
-
-# ---- macOS (emulated cpu, macOS syscall rules enforced) ----
-if python3 -c "import unicorn" >/dev/null 2>&1; then
-    printf '%s\n' 'main:' '    print 5 * 3 / 2' > /tmp/sov-m1.sov
-    $SOV /tmp/sov-m1.sov --mac -o /tmp/sov-m1.bin >/dev/null 2>&1
-    g=$(timeout 120 python3 mac/run_macho.py /tmp/sov-m1.bin 2>/dev/null | tr -d '\r\n')
-    if [ "$g" = "7" ]; then ok mac-run; else bad mac-run; echo "  got $g"; fi
-
-    printf '%s\n' 'add a b:' '    return a + b' '' 'main:' '    print add(40, 2)' > /tmp/sov-m2.sov
-    $SOV /tmp/sov-m2.sov --mac -o /tmp/sov-m2.bin >/dev/null 2>&1
-    g=$(timeout 120 python3 mac/run_macho.py /tmp/sov-m2.bin 2>/dev/null | tr -d '\r\n')
-    if [ "$g" = "42" ]; then ok mac-job; else bad mac-job; echo "  got $g"; fi
-
-    printf '%s\n' 'fib n:' '    if n < 2' '        return n' '    return fib(n - 1) + fib(n - 2)' '' 'main:' '    print fib(20)' > /tmp/sov-m3.sov
-    $SOV /tmp/sov-m3.sov --mac -o /tmp/sov-m3.bin >/dev/null 2>&1
-    g=$(timeout 120 python3 mac/run_macho.py /tmp/sov-m3.bin 2>/dev/null | tr -d '\r\n')
-    if [ "$g" = "6765" ]; then ok mac-recursion; else bad mac-recursion; echo "  got $g"; fi
+# ---- a real C program, built by gcc, run on the Sovren emulator ----
+# This is the difference between an emulator that runs what Sovren
+# emits and one that runs x86-64. glibc uses SSE, string
+# instructions, the full-width multiply and half the flag rules.
+if command -v gcc >/dev/null 2>&1; then
+    cat > /tmp/sov-cprog.c <<'CEOF'
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+static int cmp(const void *a, const void *b) { return *(int*)a - *(int*)b; }
+int main(void) {
+    int *a = malloc(sizeof(int) * 50);
+    for (int i = 0; i < 50; i++) a[i] = (i * 7919) % 1000;
+    qsort(a, 50, sizeof(int), cmp);
+    printf("%d %d\n", a[0], a[49]);
+    char *s = malloc(256);
+    snprintf(s, 256, "%s|%d|%x", "fmt", 42, 255);
+    printf("%s %zu\n", s, strlen(s));
+    long long b = 1;
+    for (int i = 0; i < 20; i++) b *= 3;
+    printf("%lld\n", b);
+    free(a); free(s);
+    return 0;
+}
+CEOF
+    if gcc -static -O2 -o /tmp/sov-cprog /tmp/sov-cprog.c >/dev/null 2>&1; then
+        cat > /tmp/sov-runc.sov <<'SEOF'
+use x86
+use arg
+main:
+    m: x86_new()
+    if x86_load(m, arg_at(1)) is 0
+        print "cannot load"
+        stop
+    x86_run(m)
+    write_out(x86_out(m))
+    write_err(x86_reason(m))
+SEOF
+        $SOV /tmp/sov-runc.sov -o /tmp/sov-runc >/dev/null 2>&1
+        /tmp/sov-cprog > /tmp/sov-c-native.txt 2>&1
+        timeout 300 /tmp/sov-runc /tmp/sov-cprog > /tmp/sov-c-emu.txt 2>/dev/null
+        if diff -q /tmp/sov-c-native.txt /tmp/sov-c-emu.txt >/dev/null 2>&1; then
+            ok x86-runs-a-real-c-program
+        else
+            bad x86-runs-a-real-c-program
+            echo "  native:"; sed "s/^/    /" /tmp/sov-c-native.txt
+            echo "  emulated:"; sed "s/^/    /" /tmp/sov-c-emu.txt
+        fi
+    else
+        skip "a real C program (gcc cannot build static)"
+    fi
 else
-    skip "mac (pip install unicorn)"
+    skip "a real C program (no gcc)"
 fi
 
-# ---- Windows: no raw linux syscalls, and it runs on a strict emulator ----
-if python3 -c "import unicorn" >/dev/null 2>&1; then
-    # no AVX-512 anywhere: it crashes on any cpu without it
-    $SOV hello.sov --windows -o /tmp/sov-avx.exe >/dev/null 2>&1
-    g=$(python3 -c "
-from capstone import *
-import struct
-d=open('/tmp/sov-avx.exe','rb').read()
-pe=struct.unpack_from('<I',d,0x3c)[0]; so=pe+24+240
-vs,va,rs,ra=struct.unpack_from('<IIII',d,so+8)
-md=Cs(CS_ARCH_X86,CS_MODE_64); md.skipdata=True
-print(sum(1 for i in md.disasm(d[ra:ra+rs],va) if 'zmm' in i.op_str))
-" 2>/dev/null)
-    if [ "$g" = "0" ]; then ok windows-no-avx512; else bad windows-no-avx512; echo "  found $g"; fi
+# ---- a C program that uses decimals ----
+# Decimals are the hardest part of a processor to get right. This
+# builds one with gcc and checks every line against what it prints
+# natively.
+if command -v gcc >/dev/null 2>&1; then
+    cat > /tmp/sov-fp.c <<'CEOF'
+#include <stdio.h>
+int main(void) {
+    double v[] = {1.0, 2.5, -3.75, 0.1, 1e10, 1e-10, 123456.789};
+    double s = 0, p = 1;
+    for (int i = 0; i < 7; i++) { s += v[i]; p *= v[i]; }
+    printf("sum=%.10f\nprod=%.10e\n", s, p);
+    for (int i = 0; i < 5; i++) printf("%d:%.4f ", i, (double)i / 7.0);
+    printf("\n");
+    printf("big=%.3e small=%.3e\n", 1e300 * 1e5, 1e-300 / 1e5);
+    printf("cast=%d %d %lld\n", (int)3.99, (int)-3.99, (long long)1e15);
+    printf("cmp %d %d %d\n", 1.5 < 2.5, 1.5 == 1.5, 3.0 > 4.0);
+    double a = 0.1, b = 0.2;
+    printf("tenths=%.17g exact=%d\n", a + b, (a + b) == 0.3);
+    return 0;
+}
+CEOF
+    if gcc -static -O2 -o /tmp/sov-fp /tmp/sov-fp.c >/dev/null 2>&1; then
+        /tmp/sov-fp > /tmp/sov-fp-native.txt 2>&1
+        timeout 300 /tmp/sov-runc /tmp/sov-fp > /tmp/sov-fp-emu.txt 2>/dev/null
+        if diff -q /tmp/sov-fp-native.txt /tmp/sov-fp-emu.txt >/dev/null 2>&1; then
+            ok x86-decimals-match-the-real-thing
+        else
+            bad x86-decimals-match-the-real-thing
+            echo "  native:";   sed "s/^/    /" /tmp/sov-fp-native.txt
+            echo "  emulated:"; sed "s/^/    /" /tmp/sov-fp-emu.txt
+        fi
+    else
+        skip "decimals in C (gcc cannot build static)"
+    fi
+else
+    skip "decimals in C (no gcc)"
+fi
 
-    # a PE with no relocation table must not claim ASLR, or real
-    # Windows moves the image and every absolute address breaks.
-    $SOV hello.sov --windows -o /tmp/sov-aslr.exe >/dev/null 2>&1
-    g=$(python3 -c "
-import struct
-d=open('/tmp/sov-aslr.exe','rb').read()
-pe=struct.unpack_from('<I',d,0x3c)[0]; opt=pe+24
-ch=struct.unpack_from('<H',d,pe+22)[0]; dl=struct.unpack_from('<H',d,opt+70)[0]
-print('ok' if (ch & 1) and not (dl & 0x40) else 'bad')
-")
-    if [ "$g" = "ok" ]; then ok windows-no-aslr; else bad windows-no-aslr; fi
+# ---- the window, widget and game libraries ----
+#
+# These draw on a real screen. The checks start a screen with no
+# monitor behind it, run a program that draws, and then look at
+# what actually landed on it. Anything less would only prove the
+# program did not fall over.
+if command -v Xvfb >/dev/null 2>&1; then
+    xdisp=""
+    for d in 77 78 79 80 81; do
+        if [ ! -e "/tmp/.X${d}-lock" ] && [ ! -e "/tmp/.X11-unix/X${d}" ]; then
+            Xvfb ":${d}" -screen 0 640x480x24 -nolisten tcp >/dev/null 2>&1 &
+            xvfbpid=$!
+            k=0
+            while [ $k -lt 8 ]; do
+                if [ -e "/tmp/.X11-unix/X${d}" ]; then
+                    xdisp=":${d}"
+                    k=8
+                else
+                    k=$((k+1))
+                    sleep 1
+                fi
+            done
+            if [ -n "$xdisp" ]; then break; fi
+            kill $xvfbpid 2>/dev/null
+        fi
+    done
+fi
 
-    printf '%s\n' 'main:' '    print 5 * 3 / 2' > /tmp/sov-pe1.sov
-    $SOV /tmp/sov-pe1.sov --windows -o /tmp/sov-pe1.exe >/dev/null 2>&1
-    n=$(python3 -c "print(open('/tmp/sov-pe1.exe','rb').read().count(bytes([0x0f,0x05])))")
-    if [ "$n" = "0" ]; then ok windows-no-linux-syscalls; else bad windows-no-linux-syscalls; echo "  found $n"; fi
-
-    g=$(timeout 200 python3 windows/run_pe.py /tmp/sov-pe1.exe 2>/dev/null | tr -d '\r\n')
-    if [ "$g" = "7" ]; then ok windows-emulated-run; else bad windows-emulated-run; echo "  got $g"; fi
-
-    printf '%s\n' 'add a b:' '    return a + b' '' 'main:' '    print add(40, 2)' > /tmp/sov-pe2.sov
-    $SOV /tmp/sov-pe2.sov --windows -o /tmp/sov-pe2.exe >/dev/null 2>&1
-    g=$(timeout 200 python3 windows/run_pe.py /tmp/sov-pe2.exe 2>/dev/null | tr -d '\r\n')
-    if [ "$g" = "42" ]; then ok windows-emulated-job; else bad windows-emulated-job; echo "  got $g"; fi
-
-    # sovren.exe must be able to build itself, byte for byte
-    if command -v wine >/dev/null 2>&1; then
-        $SOV windows/compiler.sov --windows -o /tmp/sov-selfw.exe >/dev/null 2>&1
-        timeout 400 wine /tmp/sov-selfw.exe windows/compiler.sov -o /tmp/sov-selfw2.exe >/dev/null 2>&1
-        a=$(sha256sum /tmp/sov-selfw.exe 2>/dev/null | cut -d" " -f1)
-        b=$(sha256sum /tmp/sov-selfw2.exe 2>/dev/null | cut -d" " -f1)
-        if [ -n "$a" ] && [ "$a" = "$b" ]; then ok windows-self-host; else bad windows-self-host; fi
+if [ -n "$xdisp" ]; then
+    cat > /tmp/sov-win.sov <<'WEOF'
+use win
+use time
+main:
+    w: win_open(320, 240, "sovrencheck")
+    if w is 0
+        print "nodisplay"
+        stop
+    i: 0
+    as long as i < 30
+        win_fill(w, 0, 0, 320, 240, WIN_WHITE)
+        win_fill(w, 20, 20, 80, 60, WIN_RED)
+        win_box(w, 140, 20, 90, 60, WIN_BLUE)
+        win_line(w, 10, 200, 300, 160, WIN_GREEN)
+        win_text(w, 20, 120, "sovren", WIN_BLACK)
+        win_flush(w)
+        sleep_ms(100)
+        i: i + 1
+    print "drew"
+WEOF
+    if $SOV /tmp/sov-win.sov -o /tmp/sov-win >/dev/null 2>&1; then
+        DISPLAY=$xdisp /tmp/sov-win > /tmp/sov-win.txt 2>&1 &
+        winpid=$!
+        k=0
+        while [ $k -lt 20 ]; do
+            if DISPLAY=$xdisp xwininfo -root -children 2>/dev/null | grep -q sovrencheck; then
+                k=20
+            else
+                k=$((k+1))
+                sleep 1
+            fi
+        done
+        n=$(DISPLAY=$xdisp xwininfo -root -children 2>/dev/null | grep -c sovrencheck)
+        if [ "$n" -ge 1 ]; then ok window-opens; else bad window-opens; fi
+        if command -v import >/dev/null 2>&1; then
+            DISPLAY=$xdisp import -window root /tmp/sov-shot.png 2>/dev/null
+            c=$(python3 -c "
+from PIL import Image
+from collections import Counter
+print(len(Counter(Image.open('/tmp/sov-shot.png').convert('RGB').getdata())))
+" 2>/dev/null || echo 0)
+            # white, red, blue, green and black all had to reach it
+            if [ "$c" -ge 5 ]; then ok window-draws; else bad window-draws; echo "  colours on the screen: $c"; fi
+        else
+            skip "looking at the screen (no import)"
+        fi
+        wait $winpid 2>/dev/null
+        if grep -q drew /tmp/sov-win.txt; then ok window-finishes; else bad window-finishes; fi
+    else
+        bad "could not build the window check"
     fi
 
-    $SOV hello.sov --windows -o /tmp/sov-pe3.exe >/dev/null 2>&1
-    g=$(timeout 200 python3 windows/run_pe.py /tmp/sov-pe3.exe 2>/dev/null | head -1 | tr -d '\r\n')
-    if [ "$g" = "Hello from Sovren! Fully self-hosted!" ]; then ok windows-hello; else bad windows-hello; echo "  got $g"; fi
+    # the game loop has to keep proper time, or everything written
+    # with it runs at a different speed on every machine
+    cat > /tmp/sov-game.sov <<'GEOF'
+use game
+use num
+use time
+main:
+    g: game_new(200, 150, "g")
+    if g is 0
+        print "nodisplay"
+        stop
+    game_speed(g, 50)
+    t0: time_ms()
+    n: 0
+    as long as n < 50
+        game_step(g)
+        game_clear(g, WIN_BLACK)
+        game_rect(g, n, 40, 10, 10, WIN_RED)
+        game_show(g)
+        n: n + 1
+    el: time_ms() - t0
+    if el > 800
+        if el < 1400
+            print "paced"
+    print num_text(game_frame(g))
+GEOF
+    if $SOV /tmp/sov-game.sov -o /tmp/sov-game >/dev/null 2>&1; then
+        g=$(DISPLAY=$xdisp timeout 40 /tmp/sov-game 2>/dev/null | head -1)
+        if [ "$g" = "paced" ]; then ok game-loop-keeps-time; else bad game-loop-keeps-time; echo "  got $g"; fi
+    else
+        bad "could not build the game check"
+    fi
+
+    # the widgets: a form with a button and a box to type in
+    cat > /tmp/sov-ui.sov <<'UEOF'
+use ui
+use time
+main:
+    u: ui_new(300, 200, "form")
+    if u is 0
+        print "nodisplay"
+        stop
+    ui_label(u, 20, 16, "name")
+    e: ui_entry(u, 20, 40, 260, 28)
+    b: ui_button(u, 20, 90, 100, 32, "Go")
+    c: ui_check(u, 20, 140, "keep me")
+    ui_set_text(u, e, "Elxan")
+    ui_tick(u, c, 1)
+    i: 0
+    as long as i < 20
+        ui_draw(u)
+        sleep_ms(100)
+        i: i + 1
+    print "form drawn"
+UEOF
+    if $SOV /tmp/sov-ui.sov -o /tmp/sov-ui >/dev/null 2>&1; then
+        DISPLAY=$xdisp /tmp/sov-ui > /tmp/sov-ui.txt 2>&1 &
+        uipid=$!
+        # wait for the window to actually appear rather than guess.
+        # A fixed sleep passes on a quick machine and fails on a
+        # loaded one, which is worse than no check at all.
+        k=0
+        while [ $k -lt 20 ]; do
+            if DISPLAY=$xdisp xwininfo -root -children 2>/dev/null | grep -q form; then
+                k=20
+            else
+                k=$((k+1))
+                sleep 1
+            fi
+        done
+        if command -v import >/dev/null 2>&1; then
+            DISPLAY=$xdisp import -window root /tmp/sov-ui.png 2>/dev/null
+            c=$(python3 -c "
+from PIL import Image
+from collections import Counter
+print(len(Counter(Image.open('/tmp/sov-ui.png').convert('RGB').getdata())))
+" 2>/dev/null || echo 0)
+            if [ "$c" -ge 3 ]; then ok widgets-draw; else bad widgets-draw; echo "  colours: $c"; fi
+        fi
+        wait $uipid 2>/dev/null
+    else
+        bad "could not build the widget check"
+    fi
+
+    kill $xvfbpid 2>/dev/null
 else
-    skip "windows emulator (pip install unicorn)"
+    skip "the window libraries (no screen to draw on)"
 fi
+
+# ---- a window program must not hang when the screen goes away ----
+#
+# This is the worst kind of fault: nothing prints, nothing fails,
+# the program simply sits there. It happened, so it is checked.
+if command -v Xvfb >/dev/null 2>&1; then
+    hd=""
+    for d in 84 85 86; do
+        if [ ! -e "/tmp/.X${d}-lock" ] && [ ! -e "/tmp/.X11-unix/X${d}" ]; then
+            Xvfb ":${d}" -screen 0 320x240x24 -nolisten tcp >/dev/null 2>&1 &
+            hxpid=$!
+            k=0
+            while [ $k -lt 8 ]; do
+                if [ -e "/tmp/.X11-unix/X${d}" ]; then
+                    hd=":${d}"
+                    k=8
+                else
+                    k=$((k+1))
+                    sleep 1
+                fi
+            done
+            if [ -n "$hd" ]; then break; fi
+            kill $hxpid 2>/dev/null
+        fi
+    done
+fi
+if [ -n "$hd" ]; then
+    cat > /tmp/sov-hang.sov <<'HEOF'
+use win
+use time
+main:
+    w: win_open(200, 150, "hangcheck")
+    if w is 0
+        print "nodisplay"
+        stop
+    i: 0
+    as long as i < 300
+        win_fill(w, 0, 0, 200, 150, WIN_RED)
+        win_flush(w)
+        if win_alive(w) is 0
+            print "noticed"
+            stop
+        sleep_ms(100)
+        i: i + 1
+    print "ranout"
+HEOF
+    if $SOV /tmp/sov-hang.sov -o /tmp/sov-hang >/dev/null 2>&1; then
+        DISPLAY=$hd /tmp/sov-hang > /tmp/sov-hang.txt 2>&1 &
+        hpid=$!
+        sleep 2
+        kill $hxpid 2>/dev/null
+        # give it a few seconds to notice and stop
+        k=0
+        while [ $k -lt 10 ]; do
+            if kill -0 $hpid 2>/dev/null; then
+                k=$((k+1))
+                sleep 1
+            else
+                k=10
+            fi
+        done
+        if kill -0 $hpid 2>/dev/null; then
+            bad window-notices-a-dead-screen
+            echo "  it was still running ten seconds after the screen went"
+            kill -9 $hpid 2>/dev/null
+        else
+            if grep -q noticed /tmp/sov-hang.txt; then
+                ok window-notices-a-dead-screen
+            else
+                bad window-notices-a-dead-screen
+                echo "  it stopped but did not say why"
+            fi
+        fi
+    else
+        bad "could not build the hang check"
+    fi
+fi
+
+# ---- reaching the rest of Windows ----
+#
+# A Windows program carries thirteen names with it, two of which
+# are LoadLibraryA and GetProcAddress. Those two are what let it
+# open user32 and gdi32 at run time and draw a window, without
+# every drawing function having to be listed at build time.
+$SOV hello.sov --windows -o /tmp/sov-imp.exe >/dev/null 2>&1
+n=$(python3 -c "
+import struct
+d = open('/tmp/sov-imp.exe','rb').read()
+pe = struct.unpack_from('<I', d, 0x3c)[0]
+imp = struct.unpack_from('<I', d, pe+24+112+8)[0]
+so = pe+24+240+40
+vs, va, rs, ra = struct.unpack_from('<IIII', d, so+8)
+def rd(rva, n): return d[ra+(rva-va):ra+(rva-va)+n]
+ilt, ts, fc, nm, iat = struct.unpack_from('<IIIII', rd(imp, 20), 0)
+names = []
+j = 0
+while True:
+    v = struct.unpack_from('<Q', rd(iat+j*8, 8))[0]
+    if v == 0: break
+    names.append(rd(v+2, 24).split(b'\\0')[0].decode())
+    j += 1
+print(' '.join(names))
+" 2>/dev/null)
+if echo "$n" | grep -q LoadLibraryA && echo "$n" | grep -q GetProcAddress; then
+    ok windows-can-reach-other-libraries
+else
+    bad windows-can-reach-other-libraries
+    echo "  imports were: $n"
+fi
+
+# and the window library must build for Windows and say honestly
+# that it cannot draw where there is no Windows
+cat > /tmp/sov-ww.sov <<'WWEOF'
+use window
+use sys
+main:
+    w: window_open(200, 150, "x")
+    if w is 0
+        print "noscreen"
+        stop
+    print window_which(w)
+    window_shut(w)
+WWEOF
+if $SOV /tmp/sov-ww.sov --windows -o /tmp/sov-ww.exe >/dev/null 2>&1; then
+    ok window-library-builds-for-windows
+else
+    bad window-library-builds-for-windows
+fi
+if $SOV /tmp/sov-ww.sov -o /tmp/sov-ww >/dev/null 2>&1; then
+    g=$(env -u DISPLAY timeout 20 /tmp/sov-ww 2>&1)
+    if [ "$g" = "noscreen" ]; then
+        ok window-library-honest-with-no-screen
+    else
+        bad window-library-honest-with-no-screen
+        echo "  got $g"
+    fi
+fi
+
+# a program that wants a screen must say so, not fall over, when
+# there is not one
+cat > /tmp/sov-nodisp.sov <<'NEOF'
+use win
+main:
+    w: win_open(100, 100, "x")
+    if w is 0
+        print "nodisplay"
+        stop
+    print "opened"
+NEOF
+if $SOV /tmp/sov-nodisp.sov -o /tmp/sov-nodisp >/dev/null 2>&1; then
+    g=$(env -u DISPLAY /tmp/sov-nodisp 2>&1)
+    if [ "$g" = "nodisplay" ]; then ok window-without-a-screen; else bad window-without-a-screen; echo "  got $g"; fi
+fi
+
+# ---- the bot libraries, against a service we run ourselves ----
+# The real ones need the locked kind of connection, which is tested
+# separately. What is checked here is everything else: building the
+# request, reading the reply, pulling the message out of the JSON.
+python3 - <<'PYEOF' &
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import json
+class H(BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def _send(self, obj):
+        b = json.dumps(obj).encode()
+        self.send_response(200); self.send_header("Content-Type","application/json")
+        self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
+    def do_GET(self):
+        if "getMe" in self.path:
+            self._send({"ok":True,"result":{"username":"sovren_test_bot"}})
+        elif "getUpdates" in self.path:
+            self._send({"ok":True,"result":[{"update_id":1,"message":{"message_id":7,"chat":{"id":999},"text":"hello bot","from":{"username":"elxan"}}}]})
+        else:
+            self._send({"ok":True})
+    def do_POST(self):
+        n = int(self.headers.get("Content-Length", 0))
+        self._send({"ok":True,"echo":self.rfile.read(n).decode() if n else ""})
+HTTPServer(("127.0.0.1", 8877), H).serve_forever()
+PYEOF
+srvpid=$!
+sleep 2
+cat > /tmp/sov-tg.sov <<'TEOF'
+use telegram
+use num
+use sys
+main:
+    t: tg_new("test:token")
+    tg_base(t, "http://127.0.0.1:8877")
+    if str_eq(tg_me(t), "sovren_test_bot") is 0
+        print "bad-me"
+        stop
+    n: tg_poll(t)
+    if n is not 1
+        print "bad-count"
+        stop
+    if str_eq(tg_text(t, 0), "hello bot") is 0
+        print "bad-text"
+        stop
+    if tg_chat(t, 0) is not 999
+        print "bad-chat"
+        stop
+    if tg_say(t, 999, "hi back") is not 1
+        print "bad-send"
+        stop
+    print "telegram-ok"
+TEOF
+if $SOV /tmp/sov-tg.sov -o /tmp/sov-tg >/dev/null 2>&1; then
+    g=$(timeout 30 /tmp/sov-tg 2>/dev/null | tail -1)
+    if [ "$g" = "telegram-ok" ]; then ok telegram-bot; else bad telegram-bot; echo "  got $g"; fi
+else
+    bad "could not build the telegram check"
+    $SOV /tmp/sov-tg.sov -o /tmp/sov-tg 2>&1 | tail -3
+fi
+kill $srvpid 2>/dev/null
+
+# ---- macOS and Windows are checked by check/all.sov now ----
+# The emulator is library/x86.sov, written in Sovren. It runs the PE
+# and the Mach-O, and it refuses a raw syscall the way real hardware
+# does. run_pe.py and run_macho.py are gone, and so is Unicorn.
+#
+# One thing stays here: sovren.exe building itself. It needs a real
+# Windows, or Wine standing in for one, and it is slow.
 
 # ---- Windows (needs wine) ----
 if command -v wine >/dev/null 2>&1; then
@@ -503,6 +601,13 @@ if command -v wine >/dev/null 2>&1; then
     if [ "$g" = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" ]; then
         ok windows-sha256
     else bad windows-sha256; echo "  got $g"; fi
+
+    # sovren.exe must be able to build itself, byte for byte
+    $SOV windows/compiler.sov --windows -o /tmp/sov-selfw.exe >/dev/null 2>&1
+    timeout 400 wine /tmp/sov-selfw.exe windows/compiler.sov -o /tmp/sov-selfw2.exe >/dev/null 2>&1
+    a=$(sha256sum /tmp/sov-selfw.exe 2>/dev/null | cut -d" " -f1)
+    b=$(sha256sum /tmp/sov-selfw2.exe 2>/dev/null | cut -d" " -f1)
+    if [ -n "$a" ] && [ "$a" = "$b" ]; then ok windows-self-host; else bad windows-self-host; fi
 else
     skip "windows (apt install wine)"
 fi
@@ -528,6 +633,56 @@ rm -f /tmp/sov-ed.txt
 printf 'hello\023\021' | timeout 30 /tmp/sov-edit /tmp/sov-ed.txt >/dev/null 2>&1
 g=$(cat /tmp/sov-ed.txt 2>/dev/null)
 if [ "$g" = "hello" ]; then ok editor; else bad editor; echo "  got '$g'"; fi
+
+# A program that reads keys must stop when there are no more, not
+# spin on nothing. The editor used to sit there forever, and then
+# fall over, when its input ran out.
+timeout 20 /tmp/sov-edit /tmp/sov-ed3.txt </dev/null >/dev/null 2>&1
+rc=$?
+if [ "$rc" = "0" ]; then
+    ok editor-stops-when-input-ends
+else
+    bad editor-stops-when-input-ends
+    if [ "$rc" = "124" ]; then echo "  it hung"; else echo "  it fell over, code $rc"; fi
+fi
+
+# Pressing escape on its own must not wedge the editor. An arrow
+# key is escape followed by two more bytes; a bare escape has
+# nothing behind it, and reading two more regardless sat there
+# forever. This sends one escape down a pipe that stays open, then
+# a quit, and insists the quit is acted on.
+if command -v mkfifo >/dev/null 2>&1; then
+    rm -f /tmp/sov-kf
+    mkfifo /tmp/sov-kf 2>/dev/null
+    ( printf '\033'; sleep 3; printf '\021'; sleep 10 ) > /tmp/sov-kf &
+    feeder=$!
+    timeout 15 /tmp/sov-edit /tmp/sov-esc.txt < /tmp/sov-kf >/dev/null 2>&1
+    rc=$?
+    kill $feeder 2>/dev/null
+    rm -f /tmp/sov-kf
+    if [ "$rc" = "0" ]; then
+        ok editor-survives-a-bare-escape
+    else
+        bad editor-survives-a-bare-escape
+        if [ "$rc" = "124" ]; then echo "  it wedged on the escape"; fi
+    fi
+fi
+
+# and the arrow keys must still move the cursor rather than being
+# typed in as letters
+rm -f /tmp/sov-arrow.txt
+printf 'ab\033[Dx\023\021' | timeout 20 /tmp/sov-edit /tmp/sov-arrow.txt >/dev/null 2>&1
+g=$(cat /tmp/sov-arrow.txt 2>/dev/null)
+if [ "$g" = "axb" ]; then ok editor-arrow-keys; else bad editor-arrow-keys; echo "  got '$g'"; fi
+
+# and so must every other example, with nothing to read
+for ex in hello.sov show.sov play.sov guess.sov mysite.sov; do
+    if $SOV "$ex" -o /tmp/sov-ex >/dev/null 2>&1; then
+        timeout 25 /tmp/sov-ex </dev/null >/dev/null 2>&1
+        r=$?
+        if [ "$r" = "124" ]; then bad "$ex stops on its own"; else ok "$ex stops on its own"; fi
+    fi
+done
 
 for tgt in --android --ios --android-so; do
     if $SOV hello.sov $tgt -o /tmp/sov-tgt.bin >/dev/null 2>&1; then

@@ -8,6 +8,7 @@ use file
 use tool
 use string
 use num
+use x86
 
 tr_pass: 0
 tr_fail: 0
@@ -121,3 +122,38 @@ tr_report:
         return 0
     print "some checks failed"
     return 1
+
+# ---- running for another machine, on the emulator written in Sovren ----
+#
+# Build this source for Windows or for Mac, run the result on the
+# x86 emulator in library/x86.sov, and compare what it printed. No
+# Wine, no Python, no Unicorn: Sovren checks its own output by
+# running it.
+
+tr_emu name src want flag:
+    file_write_all("/tmp/sov-tr.sov", src)
+    msg: tr_build_for("/tmp/sov-tr.sov", "/tmp/sov-tr.out", flag)
+    if str_has(msg, "Error") is 1
+        return tr_bad(name, msg, "a clean build")
+    m: x86_new()
+    if x86_load(m, "/tmp/sov-tr.out") is 0
+        return tr_bad(name, "could not load it", want)
+    x86_run(m)
+    if x86_why(m) is not 1
+        return tr_bad(name, x86_reason(m), want)
+    got: str_trim(x86_out(m))
+    if str_eq(got, want) is 1
+        return tr_ok(name)
+    return tr_bad(name, got, want)
+
+# this source, built for that machine, must be REFUSED by the
+# emulator. Used to prove the strict rules really bite.
+tr_emu_reject name src flag why:
+    file_write_all("/tmp/sov-tr.sov", src)
+    tr_build_for("/tmp/sov-tr.sov", "/tmp/sov-tr.out", flag)
+    m: x86_new()
+    x86_load(m, "/tmp/sov-tr.out")
+    x86_run(m)
+    if x86_why(m) is why
+        return tr_ok(name)
+    return tr_bad(name, x86_reason(m), "a refusal")
