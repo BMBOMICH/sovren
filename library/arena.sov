@@ -1,0 +1,50 @@
+# arena.sov — memory you can throw away in one go. Every piece of
+# memory Sovren gives out comes from one growing heap; nothing is
+# ever freed on its own. An arena is a mark on that heap: everything
+# allocated after the mark is forgotten the moment you end it, so a
+# loop that builds strings, a page of a game, or one request of a
+# server can use memory freely and hand it all back at once.
+#
+#   use arena
+#   main:
+#       arn_begin()
+#       s: str_cat("hello ", "world")
+#       arn_end()          # the string is gone now
+#
+# The catch, honestly: anything you allocated inside the arena must
+# not be used after arn_end. Keep what you need before you end it.
+#
+use mem
+
+# how deep the marks can stack
+AR_STACK: 64
+
+# the marks themselves, and where the top is. A mark is the value of
+# the heap pointer when the arena opened, and winding the heap back
+# to it forgets everything after.
+ar_marks: 0
+ar_top: 0
+
+# remember where the heap stands
+arn_begin:
+    if ar_marks is 0
+        ar_marks: mem_new(AR_STACK * 8)
+    if ar_top < AR_STACK
+        poke_i64(ar_marks, ar_top * 8, heap_ptr)
+        ar_top: ar_top + 1
+    return 0
+
+# throw everything since the mark away, by winding the heap back
+arn_end:
+    if ar_top > 0
+        ar_top: ar_top - 1
+        heap_ptr: peek_i64(ar_marks, ar_top * 8)
+    return 0
+
+# how many arenas are open
+arn_depth:
+    return ar_top
+
+# how much memory the whole program has asked for, in bytes
+arn_used:
+    return heap_ptr

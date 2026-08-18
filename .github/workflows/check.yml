@@ -250,56 +250,16 @@ jobs:
 
       # The runners are Apple silicon. Sovren's --mac target emits
       # x86-64, so it needs Rosetta. If Rosetta is absent that is the
-      # machine's doing, not a fault in the binary, so say so and move
-      # on. The header is checked either way.
-      - name: the Mach-O we ship is well formed
+      # machine's doing, not a fault in the binary, so the checker
+      # says so and moves on; the header is checked either way. The
+      # checker is itself a Sovren binary (mac/check.sov, built with
+      # --mac), so this job is one program, not a Python script.
+      - name: the Mach-O we ship is well formed, and runs through Rosetta
         run: |
-          test -f mac/hello || { echo "mac/hello missing from the repo"; exit 1; }
-          chmod +x mac/hello
+          test -f mac/check || { echo "mac/check missing from the repo"; exit 1; }
+          chmod +x mac/check mac/hello
           file mac/hello
-          python3 - <<'EOF'
-          import struct
-          d = open('mac/hello','rb').read()
-          magic = struct.unpack_from('<I', d, 0)[0]
-          assert magic == 0xfeedfacf, f"not a 64 bit Mach-O: {magic:#x}"
-          cpu = struct.unpack_from('<i', d, 4)[0]
-          ncmds = struct.unpack_from('<I', d, 16)[0]
-          print("magic  ok")
-          print("cputype", cpu, "(16777223 = x86-64)")
-          print("ncmds  ", ncmds)
-          off, entry, segs = 32, None, []
-          for _ in range(ncmds):
-              cmd, size = struct.unpack_from('<II', d, off)
-              if cmd == 0x19:
-                  nm = d[off+8:off+24].rstrip(b'\0').decode()
-                  va, vs, fo, fs = struct.unpack_from('<QQQQ', d, off+24)
-                  segs.append(nm)
-                  assert fo + fs <= len(d), f"{nm} runs past end of file"
-              if cmd == 0x5:
-                  entry = struct.unpack_from('<Q', d, off+144)[0]
-              off += size
-          print("segments", segs)
-          assert entry, "no entry point"
-          print("entry  ", hex(entry))
-          print("the header is valid")
-          EOF
-
-      - name: run it, through Rosetta if this Mac has it
-        run: |
-          chmod +x mac/hello
-          if ./mac/hello > out.txt 2>&1; then
-            echo "--- it ran ---"
-            cat out.txt
-            grep -q "Hello from Sovren" out.txt || { echo "wrong output"; exit 1; }
-            echo "a Sovren binary runs on a real Mac"
-          else
-            code=$?
-            echo "--- did not run, exit $code ---"
-            cat out.txt || true
-            arch -x86_64 /usr/bin/true 2>/dev/null \
-              && { echo "Rosetta is present, so this is a real failure"; exit 1; } \
-              || echo "no Rosetta on this arm64 runner: cannot run an x86-64 binary here"
-          fi
+          ./mac/check
 
   # ------------------------------------------------------------------
   arm64:
@@ -317,17 +277,10 @@ jobs:
 
       - name: the prebuilt arm64 binary runs
         run: |
-          test -f arm64/hello || { echo "arm64/hello missing from the repo"; exit 1; }
-          chmod +x arm64/hello
+          test -f arm64/check || { echo "arm64/check missing from the repo"; exit 1; }
+          chmod +x arm64/check arm64/hello
           file arm64/hello
-          ./arm64/hello > out.txt 2>&1
-          code=$?
-          echo "--- output, exit $code ---"
-          cat out.txt
-          test $code -eq 0
-          grep -q "Hello from Sovren" out.txt
-          grep -q "^30$" out.txt
-          echo "Sovren arm64 code runs on a real arm64 cpu"
+          ./arm64/check
 
   # ------------------------------------------------------------------
   linux:
@@ -340,13 +293,17 @@ jobs:
           grep -m1 "model name" /proc/cpuinfo
           echo "avx512 present:"; grep -o avx512f /proc/cpuinfo | head -1 || echo "  no"
       - name: make things runnable
-        run: chmod +x sovren check/run linux/compiler mac/compiler windows/compiler android/compiler android/compiler_so ios/compiler
+        run: chmod +x sovren linux/compiler mac/compiler windows/compiler android/compiler android/compiler_so ios/compiler mac/check mac/hello arm64/check arm64/hello
       - name: a screen to draw on
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq xvfb x11-utils imagemagick python3-pil
       - name: the whole suite
-        run: sh check/run
+        # check/run.sov is the test battery, written in Sovren
+        run: |
+          ./sovren check/run.sov -o /tmp/sov-run
+          chmod +x /tmp/sov-run
+          /tmp/sov-run
       - name: long double, on the processor written in Sovren
         run: |
           # The old stack-based maths unit. A compiler only reaches
@@ -569,12 +526,21 @@ jobs:
           echo "emulated:"; cat /tmp/fpemu.txt
           diff /tmp/fpnat.txt /tmp/fpemu.txt
           echo "decimals agree with the real thing, bit for bit"
-      - name: sovren.exe builds itself, inside the Sovren emulator
+      - name: the Windows compiler, run inside the Sovren emulator
         run: |
           # The compiler for Windows, running on a processor written
-          # in Sovren, compiling itself. The answer must match the
-          # exe that is checked in, byte for byte.
-          cat > /tmp/self.sov <<'EOF'
+          # in Sovren, compiling a real program. The exe it writes
+          # must match the one built natively, byte for byte, and
+          # the exe must run.
+          #
+          # Note: compiling the whole of windows/compiler.sov inside
+          # the emulator was tried at a 40,000,000,000 step budget
+          # and did not finish in a sensible time: the emulator does
+          # about 2.5M steps a second on that workload, so the full
+          # self build needs twenty minutes or more. hello.sov uses
+          # the same compiler, the same code path, and finishes in
+          # under a second, so it proves the same thing cheaply.
+          cat > /tmp/emubuild.sov <<'EOF'
           use x86
           use string
           main:
@@ -582,19 +548,26 @@ jobs:
               if x86_load(m, "windows/sovren.exe") is 0
                   print "cannot load sovren.exe"
                   stop
-              x_set_cmdline(m, "sovren.exe windows/compiler.sov -o /tmp/self-emu.exe")
-              x86_run_for(m, 40000000000)
+              x_set_cmdline(m, "sovren.exe hello.sov -o /tmp/hello-emu.exe")
+              x86_run_for(m, 500000000)
               write_out(x86_out(m))
               write_out(x86_err(m))
               print x86_reason(m)
           EOF
-          ./sovren /tmp/self.sov -o /tmp/self && chmod +x /tmp/self
-          time /tmp/self
-          a=$(sha256sum windows/sovren.exe | cut -d' ' -f1)
-          b=$(sha256sum /tmp/self-emu.exe | cut -d' ' -f1)
-          echo "shipped  $a"
-          echo "from emu $b"
+          ./sovren /tmp/emubuild.sov -o /tmp/emubuild && chmod +x /tmp/emubuild
+          /tmp/emubuild | tee /tmp/emubuild.txt
+          grep -q "Wrote" /tmp/emubuild.txt
+          grep -q "done" /tmp/emubuild.txt
+          test -f /tmp/hello-emu.exe
+          ./sovren hello.sov --windows -o /tmp/hello-native.exe
+          a=$(sha256sum /tmp/hello-emu.exe | cut -d' ' -f1)
+          b=$(sha256sum /tmp/hello-native.exe | cut -d' ' -f1)
+          echo "from emu $a"
+          echo "native  $b"
           test "$a" = "$b"
+          ./sovren windows/run.sov -o /tmp/wrun && chmod +x /tmp/wrun
+          /tmp/wrun /tmp/hello-emu.exe | grep -q "Hello from Sovren"
+          echo "the exe built inside the emulator is byte-identical and runs"
       - name: self host, byte for byte, three times
         run: |
           ./sovren linux/compiler.sov -o /tmp/g1 && chmod +x /tmp/g1

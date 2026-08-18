@@ -1,41 +1,5 @@
-* text=auto eol=lf
-
-# Sovren source. This maps *.sov to the name Sovren.
-# GitHub only shows that name once Linguist has Sovren in its list
-# (the same reason V had to write linguist-language=V).
 *.sov linguist-language=Sovren
 *.sov linguist-detectable
-
-# Not source
 *.md linguist-documentation
 *.txt linguist-documentation
-
-# The workflow is meant to be seen: it is how the project is tested.
-# It stays counted.
-
-# Test tooling, not part of the language.
-#
-# Only two of these are left. Both are deliberate: a checker written
-# in the language it checks agrees with its own bugs, so the fuzzer
-# and the signature check keep a second, independent opinion. The
-# processor emulators that used to live here are gone, replaced by
-# library/x86.sov and library/arm.sov, which are Sovren.
-arm64/check_sig.py linguist-vendored
-check/fuzz.py linguist-vendored
-
-# Editor colour files. These are not Sovren and cannot be: Vim reads
-# vimscript, Zed reads tree-sitter queries. They describe Sovren to
-# other programs, so they are not counted as the project's language.
 syntax/** linguist-vendored
-
-# Prebuilt binaries the tests run on real hardware
-mac/hello binary
-arm64/hello binary
-linux/compiler binary
-mac/compiler binary
-windows/compiler binary
-windows/sovren.exe binary
-windows/head.bin binary
-android/compiler binary
-android/compiler_so binary
-ios/compiler binary

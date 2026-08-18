@@ -35,3 +35,29 @@ map_has m k:
             return 1
         i: i + 2
     return 0
+
+# take a key and its value out
+map_del m k:
+    i: 0
+    n: list_len(m)
+    as long as i < n
+        if str_eq(list_get(m, i), k) is 1
+            m: list_del(m, i)
+            m: list_del(m, i)
+            return m
+        i: i + 2
+    return m
+
+# how many key-value pairs
+map_len m:
+    return list_len(m) / 2
+
+# every key, in order
+map_keys m:
+    out: list_new()
+    i: 0
+    n: list_len(m)
+    as long as i < n
+        out: list_add(out, list_get(m, i))
+        i: i + 2
+    return out

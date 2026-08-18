@@ -1,0 +1,283 @@
+# aes.sov — AES-128, encrypt and decrypt, in Sovren.
+#
+# There was no AES anywhere in the language, so the TLS work starts
+# here. The S-box and its inverse are built from the field arithmetic
+# at first use; the key schedule and the cipher itself are the plain
+# FIPS-197 construction.
+#
+#   use aes
+#   key: 16 bytes, in: 16 bytes
+#   ae_expand(key, rk)  # rk: 176 bytes
+#   ae_enc_block(rk, in, out)
+#   ae_dec_block(rk, in, out)
+
+use bit32
+use mem
+
+ae_sbox: 0
+ae_ready: 0
+
+# multiply in GF(2^8) with the AES polynomial x^8+x^4+x^3+x+1
+ae_gmul a b:
+    r: 0
+    i: 0
+    as long as i < 8
+        if b % 2 is 1
+            r: wxor(r, a)
+        b: b / 2
+        if a >= 128
+            a: a * 2
+            if a >= 256
+                a: a - 256
+            a: wxor(a, 27)
+        if not
+            a: a * 2
+            if a >= 256
+                a: a - 256
+        i: i + 1
+    return r
+
+# multiplicative inverse: a ^ 254
+ae_inv a:
+    r: 1
+    e: 254
+    as long as e > 0
+        if e % 2 is 1
+            r: ae_gmul(r, a)
+        a: ae_gmul(a, a)
+        e: e / 2
+    return r
+
+# rotate a byte left by n
+ae_rotl8 b n:
+    if n is 1
+        hi: b / 128
+        lo: b * 2
+        if lo >= 256
+            lo: lo - 256
+        return wxor(hi, lo)
+    if n is 2
+        hi: b / 64
+        lo: b * 4
+        if lo >= 256
+            lo: lo - 256
+        return wxor(hi, lo)
+    if n is 3
+        hi: b / 32
+        lo: b * 8
+        if lo >= 256
+            lo: lo - 256
+        return wxor(hi, lo)
+    if n is 4
+        hi: b / 16
+        lo: b * 16
+        if lo >= 256
+            lo: lo - 256
+        return wxor(hi, lo)
+    return b
+
+# the affine part of the S-box
+ae_aff b:
+    r: b
+    t: ae_rotl8(b, 1)
+    r: wxor(r, t)
+    t: ae_rotl8(b, 2)
+    r: wxor(r, t)
+    t: ae_rotl8(b, 3)
+    r: wxor(r, t)
+    t: ae_rotl8(b, 4)
+    r: wxor(r, t)
+    return wxor(r, 99)
+
+ae_build:
+    if ae_ready is 1
+        return 0
+    ae_sbox: _sov_alloc(256)
+    i: 0
+    as long as i < 256
+        inv: 0
+        if i is not 0
+            inv: ae_inv(i)
+        s: ae_aff(inv)
+        poke_byte(ae_sbox, i, s)
+        i: i + 1
+    ae_ready: 1
+    return 0
+
+ae_s b:
+    return peek_byte(ae_sbox, b)
+
+# the inverse S-box, looked up by searching the forward one
+ae_si b:
+    i: 0
+    as long as i < 256
+        if peek_byte(ae_sbox, i) is b
+            return i
+        i: i + 1
+    return 0
+
+# the 176-byte round-key schedule for a 16-byte key
+ae_expand key rk:
+    ae_build()
+    i: 0
+    as long as i < 16
+        poke_byte(rk, i, peek_byte(key, i))
+        i: i + 1
+    i: 16
+    rcon: 1
+    as long as i < 176
+        t0: peek_byte(rk, i - 4)
+        t1: peek_byte(rk, i - 3)
+        t2: peek_byte(rk, i - 2)
+        t3: peek_byte(rk, i - 1)
+        if i % 16 is 0
+            tmp: t0
+            t0: ae_s(t1)
+            t1: ae_s(t2)
+            t2: ae_s(t3)
+            t3: ae_s(tmp)
+            t0: wxor(t0, rcon)
+            rcon: ae_gmul(rcon, 2)
+        poke_byte(rk, i, wxor(peek_byte(rk, i - 16), t0))
+        poke_byte(rk, i + 1, wxor(peek_byte(rk, i - 15), t1))
+        poke_byte(rk, i + 2, wxor(peek_byte(rk, i - 14), t2))
+        poke_byte(rk, i + 3, wxor(peek_byte(rk, i - 13), t3))
+        i: i + 4
+    return 0
+
+# one column of MixColumns, in place at st[4c..4c+3]
+ae_mix st c:
+    a0: peek_byte(st, c * 4)
+    a1: peek_byte(st, c * 4 + 1)
+    a2: peek_byte(st, c * 4 + 2)
+    a3: peek_byte(st, c * 4 + 3)
+    poke_byte(st, c * 4, wxor(wxor(wxor(ae_gmul(a0, 2), ae_gmul(a1, 3)), a2), a3))
+    poke_byte(st, c * 4 + 1, wxor(wxor(wxor(a0, ae_gmul(a1, 2)), ae_gmul(a2, 3)), a3))
+    poke_byte(st, c * 4 + 2, wxor(wxor(wxor(a0, a1), ae_gmul(a2, 2)), ae_gmul(a3, 3)))
+    poke_byte(st, c * 4 + 3, wxor(wxor(wxor(ae_gmul(a0, 3), a1), a2), ae_gmul(a3, 2)))
+    return 0
+
+# the inverse MixColumns column
+ae_imix st c:
+    a0: peek_byte(st, c * 4)
+    a1: peek_byte(st, c * 4 + 1)
+    a2: peek_byte(st, c * 4 + 2)
+    a3: peek_byte(st, c * 4 + 3)
+    poke_byte(st, c * 4, wxor(wxor(wxor(ae_gmul(a0, 14), ae_gmul(a1, 11)), ae_gmul(a2, 13)), ae_gmul(a3, 9)))
+    poke_byte(st, c * 4 + 1, wxor(wxor(wxor(ae_gmul(a0, 9), ae_gmul(a1, 14)), ae_gmul(a2, 11)), ae_gmul(a3, 13)))
+    poke_byte(st, c * 4 + 2, wxor(wxor(wxor(ae_gmul(a0, 13), ae_gmul(a1, 9)), ae_gmul(a2, 14)), ae_gmul(a3, 11)))
+    poke_byte(st, c * 4 + 3, wxor(wxor(wxor(ae_gmul(a0, 11), ae_gmul(a1, 13)), ae_gmul(a2, 9)), ae_gmul(a3, 14)))
+    return 0
+
+# ShiftRows: row r moves left by r
+ae_shift st:
+    t: peek_byte(st, 1)
+    poke_byte(st, 1, peek_byte(st, 5))
+    poke_byte(st, 5, peek_byte(st, 9))
+    poke_byte(st, 9, peek_byte(st, 13))
+    poke_byte(st, 13, t)
+    t: peek_byte(st, 2)
+    poke_byte(st, 2, peek_byte(st, 10))
+    poke_byte(st, 10, t)
+    t: peek_byte(st, 6)
+    poke_byte(st, 6, peek_byte(st, 14))
+    poke_byte(st, 14, t)
+    t: peek_byte(st, 15)
+    poke_byte(st, 15, peek_byte(st, 11))
+    poke_byte(st, 11, peek_byte(st, 7))
+    poke_byte(st, 7, peek_byte(st, 3))
+    poke_byte(st, 3, t)
+    return 0
+
+# InvShiftRows: row r moves right by r
+ae_ishift st:
+    t: peek_byte(st, 13)
+    poke_byte(st, 13, peek_byte(st, 9))
+    poke_byte(st, 9, peek_byte(st, 5))
+    poke_byte(st, 5, peek_byte(st, 1))
+    poke_byte(st, 1, t)
+    t: peek_byte(st, 2)
+    poke_byte(st, 2, peek_byte(st, 10))
+    poke_byte(st, 10, t)
+    t: peek_byte(st, 6)
+    poke_byte(st, 6, peek_byte(st, 14))
+    poke_byte(st, 14, t)
+    t: peek_byte(st, 3)
+    poke_byte(st, 3, peek_byte(st, 7))
+    poke_byte(st, 7, peek_byte(st, 11))
+    poke_byte(st, 11, peek_byte(st, 15))
+    poke_byte(st, 15, t)
+    return 0
+
+ae_addkey st rk r:
+    i: 0
+    as long as i < 16
+        poke_byte(st, i, wxor(peek_byte(st, i), peek_byte(rk, r * 16 + i)))
+        i: i + 1
+    return 0
+
+ae_enc_block rk in out:
+    ae_build()
+    st: _sov_alloc(16)
+    i: 0
+    as long as i < 16
+        poke_byte(st, i, peek_byte(in, i))
+        i: i + 1
+    ae_addkey(st, rk, 0)
+    r: 1
+    as long as r < 10
+        i: 0
+        as long as i < 16
+            poke_byte(st, i, ae_s(peek_byte(st, i)))
+            i: i + 1
+        ae_shift(st)
+        c: 0
+        as long as c < 4
+            ae_mix(st, c)
+            c: c + 1
+        ae_addkey(st, rk, r)
+        r: r + 1
+    i: 0
+    as long as i < 16
+        poke_byte(st, i, ae_s(peek_byte(st, i)))
+        i: i + 1
+    ae_shift(st)
+    ae_addkey(st, rk, 10)
+    i: 0
+    as long as i < 16
+        poke_byte(out, i, peek_byte(st, i))
+        i: i + 1
+    return 0
+
+ae_dec_block rk in out:
+    ae_build()
+    st: _sov_alloc(16)
+    i: 0
+    as long as i < 16
+        poke_byte(st, i, peek_byte(in, i))
+        i: i + 1
+    ae_addkey(st, rk, 10)
+    r: 9
+    as long as r > 0
+        ae_ishift(st)
+        i: 0
+        as long as i < 16
+            poke_byte(st, i, ae_si(peek_byte(st, i)))
+            i: i + 1
+        ae_addkey(st, rk, r)
+        c: 0
+        as long as c < 4
+            ae_imix(st, c)
+            c: c + 1
+        r: r - 1
+    ae_ishift(st)
+    i: 0
+    as long as i < 16
+        poke_byte(st, i, ae_si(peek_byte(st, i)))
+        i: i + 1
+    ae_addkey(st, rk, 0)
+    i: 0
+    as long as i < 16
+        poke_byte(out, i, peek_byte(st, i))
+        i: i + 1
+    return 0

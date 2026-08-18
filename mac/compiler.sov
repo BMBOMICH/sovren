@@ -1625,11 +1625,22 @@ popblk:
                 put(at, st - (at + 4))
                 patch(_sov_list_get(bj, last))
             if not
-                z: _sov_list_get(bj, last)
-                if z > 0 - 1
-                    patch(z)
-                je: _sov_list_get(be, last)
-                ji: 0
+                if same(k, "try") is 1
+                    tb2: _sov_list_get(bs, last)
+                    if tb2 is 0
+                        print "Error: try needs an except"
+                        had_err: 1
+                    if not
+                        patch(tb2)
+                if not
+                    if same(k, "except") is 1
+                        skipme: 0
+                    if not
+                        z: _sov_list_get(bj, last)
+                        if z > 0 - 1
+                            patch(z)
+                        je: _sov_list_get(be, last)
+                        ji: 0
                 as long as ji < _sov_list_len(je)
                     patch(_sov_list_get(je, ji))
                     ji: ji + 1
@@ -2585,6 +2596,8 @@ body lines:
                 isel: 0
                 if same(s, "if not") is 1
                     isel: 1
+                if starts(s, "except") is 1
+                    isel: 1
                 popgo: 1
                 as long as popgo is 1
                     if _sov_list_len(bk) is 0
@@ -2598,6 +2611,8 @@ body lines:
                             if isel is 1
                                 if ind is _sov_list_get(bi, last)
                                     if same(_sov_list_get(bk, last), "if") is 1
+                                        stay: 1
+                                    if same(_sov_list_get(bk, last), "try") is 1
                                         stay: 1
                             if stay is 1
                                 popgo: 0
@@ -2725,7 +2740,125 @@ body lines:
                                         be: _sov_list_add(be, _sov_list_new())
                                         br: _sov_list_add(br, rs)
                                     if not
-                                        stmt(s)
+                                        if same(s, "try") is 1
+                                            cflush_all()
+                                            if idx(glob_names, "err_top") is 0 - 1
+                                                glob_names: _sov_list_add(glob_names, "err_top")
+                                            if idx(glob_names, "err_val") is 0 - 1
+                                                glob_names: _sov_list_add(glob_names, "err_val")
+                                            # the frame: the old error top, the frame
+                                            # pointer, the stack, and where the handler
+                                            # starts
+                                            emit(84)
+                                            emit(85)
+                                            load_glob("err_top")
+                                            emit(80)
+                                            emit(72)
+                                            emit(141)
+                                            emit(13)
+                                            ta: here()
+                                            emit4(0)
+                                            emit(81)
+                                            emit(72)
+                                            emit(137)
+                                            emit(225)
+                                            emit(72)
+                                            emit(137)
+                                            emit(200)
+                                            store_glob("err_top")
+                                            bk: _sov_list_add(bk, "try")
+                                            bi: _sov_list_add(bi, ind)
+                                            bj: _sov_list_add(bj, 0)
+                                            bs: _sov_list_add(bs, 0)
+                                            be: _sov_list_add(be, _sov_list_new())
+                                            br: _sov_list_add(br, ta)
+                                        if not
+                                            if starts(s, "except") is 1
+                                                last: _sov_list_len(bk) - 1
+                                                if last > 0 - 1
+                                                    if same(_sov_list_get(bk, last), "try") is 1
+                                                        ev: strip(cut(s, 6, length(s)))
+                                                        # the try body finished cleanly: the
+                                                        # frame comes off and the handler is
+                                                        # skipped
+                                                        load_glob("err_top")
+                                                        emit(72)
+                                                        emit(137)
+                                                        emit(194)
+                                                        emit(72)
+                                                        emit(139)
+                                                        emit(66)
+                                                        emit(8)
+                                                        store_glob("err_top")
+                                                        emit(72)
+                                                        emit(131)
+                                                        emit(196)
+                                                        emit(32)
+                                                        tb: jmp()
+                                                        bs: _sov_list_set(bs, last, tb)
+                                                        put(_sov_list_get(br, last), here() - (_sov_list_get(br, last) + 4))
+                                                        load_glob("err_val")
+                                                        store_loc(slot(ev))
+                                                        bk: _sov_list_add(bk, "except")
+                                                        bi: _sov_list_add(bi, ind)
+                                                        bj: _sov_list_add(bj, 0)
+                                                        bs: _sov_list_add(bs, 0)
+                                                        be: _sov_list_add(be, _sov_list_new())
+                                                        br: _sov_list_add(br, 0)
+                                                    if not
+                                                        print "Error: except without try"
+                                                        _sov_print(s)
+                                                        print err_line
+                                                        had_err: 1
+                                                if not
+                                                    print "Error: except without try"
+                                                    _sov_print(s)
+                                                    print err_line
+                                                    had_err: 1
+                                            if not
+                                                if starts(s, "raise ") is 1
+                                                    expr(cut(s, 6, length(s)))
+                                                    if idx(glob_names, "err_val") is 0 - 1
+                                                        glob_names: _sov_list_add(glob_names, "err_val")
+                                                    if idx(glob_names, "err_top") is 0 - 1
+                                                        glob_names: _sov_list_add(glob_names, "err_top")
+                                                    store_glob("err_val")
+                                                    load_glob("err_top")
+                                                    emit(72)
+                                                    emit(137)
+                                                    emit(194)
+                                                    emit(72)
+                                                    emit(133)
+                                                    emit(210)
+                                                    zz: jz()
+                                                    emit(72)
+                                                    emit(139)
+                                                    emit(66)
+                                                    emit(8)
+                                                    store_glob("err_top")
+                                                    emit(72)
+                                                    emit(139)
+                                                    emit(106)
+                                                    emit(16)
+                                                    emit(72)
+                                                    emit(139)
+                                                    emit(98)
+                                                    emit(24)
+                                                    emit(255)
+                                                    emit(98)
+                                                    emit(0)
+                                                    patch(zz)
+                                                    load_glob("err_val")
+                                                    mov_rdi_rax()
+                                                    used_pi: 1
+                                                    calln("_sov_print_int")
+                                                    emit(191)
+                                                    emit4(1)
+                                                    emit(184)
+                                                    emit4(60)
+                                                    sysc()
+                                                if not
+                                                    stmt(s)
                 i: i + 1
     as long as _sov_list_len(bk) > 0
         popblk()
@@ -3239,21 +3372,44 @@ emit_print:
     prolog()
     copyargs(1)
     load_loc(0)
-    # a value under 65536 is not a real address. reading from it
-    # would crash, so print it as a number instead.
     emit(72)
-    emit(61)
-    emit4(65536)
-    hi: jae()
-    load_loc(0)
+    emit(137)
+    emit(195)
+    # a real number sits inside the heap; everything else is text.
+    # Strings live below the bump pointer, and the arguments the
+    # system handed over sit above the heap's far end, so both are
+    # text whatever they look like.
+    if has_vm is 1
+        load_glob("heap_ptr")
+        emit(72)
+        emit(57)
+        emit(195)
+        n1: jb()
+        load_glob("heap_end")
+        emit(72)
+        emit(57)
+        emit(195)
+        n2: jae()
+    if not
+        emit(72)
+        emit(61)
+        emit4(65536)
+        n1: jae()
+        n2: n1
+    emit(72)
+    emit(137)
+    emit(216)
     mov_rdi_rax()
     used_pi: 1
     calln("_sov_print_int")
     xor_rax()
     leave()
     ret()
-    patch(hi)
-    load_loc(0)
+    patch(n1)
+    patch(n2)
+    emit(72)
+    emit(137)
+    emit(216)
     mov_rdi_rax()
     calln("_sov_strlen")
     emit(72)
@@ -3663,6 +3819,19 @@ emit_macnum:
     emit(6)
     emit(184)
     emit(4)
+    emit(0)
+    emit(0)
+    emit(2)
+    emit(195)
+    # linux open (2) -> mac open (5). Without this a Mac binary
+    # cannot read a file at all, which the check programs need.
+    emit(131)
+    emit(248)
+    emit(2)
+    emit(117)
+    emit(6)
+    emit(184)
+    emit(5)
     emit(0)
     emit(0)
     emit(2)
@@ -4209,6 +4378,47 @@ compile source:
                                 if length(pre_cur) > 0
                                     mark_fn_str(pre_cur)
         pre_i: pre_i + 1
+    # a job that hands back another job's answer is a text job too,
+    # whatever order the jobs were written in. Keep going round until
+    # nobody new is marked, so forward references work as well as
+    # backward ones.
+    changed: 1
+    as long as changed is 1
+        changed: 0
+        pre_i: 0
+        pre_cur: blank
+        as long as pre_i < pre_n
+            pre_l: _sov_list_get(pre_lns, pre_i)
+            if length(strip(pre_l)) > 0
+                if nind(pre_l) is 0
+                    pre_t: strip(pre_l)
+                    if starts(pre_t, "#") is 0
+                        if starts(pre_t, "use ") is 0
+                            pre_c: find_col(pre_t)
+                            if pre_c > 0
+                                if pre_c is length(pre_t) - 1
+                                    pre_h: strip(cut(pre_t, 0, pre_c))
+                                    pre_sp: look(pre_h, " ")
+                                    if pre_sp > 0 - 1
+                                        pre_cur: repl(strip(cut(pre_h, 0, pre_sp)), " ", "_")
+                                    if not
+                                        pre_cur: pre_h
+                if not
+                    pre_t2: strip(pre_l)
+                    if starts(pre_t2, "return ") is 1
+                        pre_r: strip(cut(pre_t2, 7, length(pre_t2)))
+                        if idx(str_fns, pre_cur) < 0
+                            if starts(pre_r, "as text ") is 0
+                                if length(pre_r) > 0
+                                    if _sov_byte_at(pre_r, 0) is not 34
+                                        if same(pre_r, "blank") is 0
+                                            pre_lp: look(pre_r, "(")
+                                            if pre_lp > 0
+                                                pre_f: strip(cut(pre_r, 0, pre_lp))
+                                                if idx(str_fns, pre_f) > 0 - 1
+                                                    mark_fn_str(pre_cur)
+                                                    changed: 1
+            pre_i: pre_i + 1
     if look(source, "wipe ") > 0 - 1
         need_priv: 1
     if look(source, "private") > 0 - 1
@@ -4370,11 +4580,20 @@ compile source:
                     body(_sov_list_get(bodies, fi))
                     if saw_str is 1
                         mark_fn_str(nm)
-                    ns: 0
-                    if _sov_list_len(locals) > 5
-                        ns: (_sov_list_len(locals) - 5) * 8
-                        if ns < 32
-                            ns: 32
+                    # the frame must reach past the deepest local: a
+                    # value stored at slot i sits (i + 1) * 8 bytes below
+                    # the frame pointer, so the room has to be a full
+                    # slot deeper than the count, or the callee's own
+                    # frame lands on top of our spilled values
+                    # the frame must reach past the deepest local: a
+                    # value stored at slot i sits (i + 1) * 8 bytes
+                    # below the frame pointer, so the room has to be
+                    # a full slot deeper than the count, or the
+                    # callee's own frame lands on top of our spilled
+                    # values
+                    ns: (_sov_list_len(locals) + 1) * 8
+                    if ns < 32
+                        ns: 32
                     put(pro_at, ns)
                     if same(nm, "main") is 1
                         emit(49)

@@ -27,3 +27,33 @@ url_path u:
             return str_cut(u, e, n)
         e: e + 1
     return "/"
+
+# the port, as a string: "8080" in http://host:8080/path, or "" when
+# there is none
+url_port u:
+    p: str_find(u, "://")
+    s: 0
+    if p > 0 - 1
+        s: p + 3
+    n: str_len(u)
+    e: s
+    as long as e < n
+        c: peek_byte(u, e)
+        if c is 58
+            q: e + 1
+            as long as q < n
+                if peek_byte(u, q) is 47
+                    return str_cut(u, e + 1, q)
+                q: q + 1
+            return str_cut(u, e + 1, n)
+        if c is 47
+            return ""
+        e: e + 1
+    return ""
+
+# everything after the question mark, or "" when there is none
+url_query u:
+    q: str_find(u, "?")
+    if q > 0 - 1
+        return str_cut(u, q + 1, str_len(u))
+    return ""

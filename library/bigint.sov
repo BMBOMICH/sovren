@@ -143,3 +143,105 @@ bi_pow2 n:
         r: bi_mul_small(r, 2)
         i: i + 1
     return r
+
+# a - b, which must be >= b
+bi_sub a b:
+    r: vec_new(8)
+    borrow: 0
+    i: 0
+    as long as i < bi_len(a)
+        d: bi_digit(a, i) - bi_digit(b, i) - borrow
+        if d < 0
+            d: d + 10000
+            borrow: 1
+        if not
+            borrow: 0
+        r: vec_push(r, d)
+        i: i + 1
+    return bi_trim(r)
+
+# a mod m, by long division with a binary-searched quotient digit
+bi_mod a m:
+    r: bi_zero()
+    i: bi_len(a) - 1
+    as long as i >= 0
+        r: bi_mul_small(r, 10000)
+        s: vec_get(r, 0) + bi_digit(a, i)
+        vec_set(r, 0, s % 10000)
+        if s >= 10000
+            j: 1
+            as long as j < bi_len(r)
+                s2: vec_get(r, j) + 1
+                vec_set(r, j, s2 % 10000)
+                if s2 < 10000
+                    j: bi_len(r)
+                j: j + 1
+        lo: 0
+        hi: 10000
+        as long as lo + 1 < hi
+            mid: (lo + hi) / 2
+            t: bi_mul_small(m, mid)
+            if bi_cmp(t, r) <= 0
+                lo: mid
+            if not
+                hi: mid
+        t: bi_mul_small(m, lo)
+        r: bi_sub(r, t)
+        i: i - 1
+    return bi_trim(r)
+
+# b^e mod m for a small e (fits in seventeen bits, like 65537)
+bi_modpow17 b e m:
+    r: bi_from(1)
+    k: 0
+    as long as k < 17
+        if e % 2 is 1
+            r: bi_mod(bi_mul(r, b), m)
+        e: e / 2
+        if k < 16
+            b: bi_mod(bi_mul(b, b), m)
+        k: k + 1
+    return r
+
+# n big-endian bytes into a number
+bi_from_bytes p n:
+    v: bi_zero()
+    i: 0
+    as long as i < n
+        v: bi_mul_small(v, 256)
+        s: vec_get(v, 0) + peek_byte(p, i)
+        vec_set(v, 0, s % 10000)
+        if s >= 10000
+            j: 1
+            as long as j < bi_len(v)
+                s2: vec_get(v, j) + 1
+                vec_set(v, j, s2 % 10000)
+                if s2 < 10000
+                    j: bi_len(v)
+                j: j + 1
+        i: i + 1
+    return bi_trim(v)
+
+# a number into n big-endian bytes
+bi_to_bytes a p n:
+    v: vec_new(8)
+    i: 0
+    as long as i < bi_len(a)
+        v: vec_push(v, bi_digit(a, i))
+        i: i + 1
+    i: 0
+    as long as i < n
+        poke_byte(p, i, 0)
+        i: i + 1
+    i: n - 1
+    as long as i >= 0
+        carry: 0
+        j: bi_len(v) - 1
+        as long as j >= 0
+            cur: vec_get(v, j) + carry * 10000
+            vec_set(v, j, cur / 256)
+            carry: cur % 256
+            j: j - 1
+        poke_byte(p, i, carry)
+        i: i - 1
+    return 0

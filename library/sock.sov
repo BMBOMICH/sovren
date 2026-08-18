@@ -60,3 +60,14 @@ sock_recv fd n:
 
 sock_close fd:
     return sys_close(fd)
+
+# raw send and receive for binary data (TLS records have zeros in
+# them, so the text forms cannot carry them)
+sock_send_raw fd buf n:
+    return sys_send(fd, buf, n)
+
+sock_recv_raw fd buf n:
+    g: sys_recv(fd, buf, n)
+    if g < 0
+        return 0 - 1
+    return g

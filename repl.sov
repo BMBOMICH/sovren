@@ -1,0 +1,202 @@
+# repl.sov — a read-eval-print loop. Type an expression, see the
+# answer. Type `use library` and every line after that can use it.
+# Type `quit` to leave.
+#
+# Each line is its own whole program, compiled and run for real.
+# `use` lines carry over from line to line; ordinary values do
+# not, so `x: 5` and `print x` must be written on the same line.
+#
+#   ./sovren repl.sov -o repl && ./repl
+#
+# Each line is a whole small program: it is compiled and run for
+# real, so anything that works here works in a file. The cost is a
+# second or two per line, which is the honest price of a language
+# with no interpreter.
+#
+use arg
+use file
+use num
+use string
+use sys
+
+RP_SRC: "/tmp/repl_run.sov"
+RP_BIN: "/tmp/repl_run.bin"
+RP_EOF: 0
+
+# one line from the keyboard, with the newline taken off. nought
+# means the input ran out.
+rp_line:
+    buf: _sov_alloc(4096)
+    n: 0
+    more: 1
+    as long as more is 1
+        b: _sov_alloc(1)
+        got: sys_read(0, b, 1)
+        if got is 0
+            more: 0
+            if n is 0
+                RP_EOF: 1
+        if not
+            v: peek_byte(b, 0)
+            if v is 10
+                more: 0
+            if not
+                if v is 13
+                    more: 0
+                if not
+                    poke_byte(buf, n, v)
+                    n: n + 1
+    poke_byte(buf, n, 0)
+    return buf
+
+# the pipe answers as two thirty-two bit file numbers side by
+# side, not one whole number
+rp_pr fds:
+    return peek_i64(fds, 0) % 4294967296
+
+rp_pw fds:
+    return peek_i64(fds, 0) / 4294967296
+
+# run a program and catch everything it writes. path is the
+# program, args a row of pointers ending in nought.
+rp_run path args:
+    fds: _sov_alloc(16)
+    sys_pipe(fds)
+    pid: sys_fork()
+    if pid is 0
+        sys_dup2(rp_pw(fds), 1)
+        sys_close(rp_pr(fds))
+        sys_exec(path, args, 0)
+        sys_exit(127)
+    sys_close(rp_pw(fds))
+    out: ""
+    buf: _sov_alloc(4096)
+    more: 1
+    as long as more is 1
+        n: sys_read(rp_pr(fds), buf, 4096)
+        if n <= 0
+            more: 0
+        if not
+            poke_byte(buf, n, 0)
+            out: str_cat(out, as text buf)
+    sys_close(rp_pr(fds))
+    sys_wait(pid)
+    return out
+
+# compile one line. want is 1 when the line should print its
+# answer, 0 when it is a statement of its own.
+rp_compile uses line want:
+    src: str_cat(uses, "main:\n")
+    if want is 1
+        src: str_cat(src, "    print ")
+        src: str_cat(src, line)
+        src: str_cat(src, "\n")
+    if not
+        src: str_cat(src, "    ")
+        src: str_cat(src, line)
+        src: str_cat(src, "\n")
+    file_write_all(RP_SRC, src)
+    args: _sov_alloc(40)
+    poke_i64(args, 0, rp_compiler())
+    poke_i64(args, 8, RP_SRC)
+    poke_i64(args, 16, "-o")
+    poke_i64(args, 24, RP_BIN)
+    poke_i64(args, 32, 0)
+    return rp_run(rp_compiler(), args)
+
+# where the compiler lives: beside the launcher that built us
+rp_compiler:
+    me: arg_at(0)
+    root: rp_dir(me)
+    if file_exists(str_cat(str_cat(root, "/linux/compiler"), "")) is 1
+        return str_cat(str_cat(root, "/linux/compiler"), "")
+    if file_exists(str_cat(str_cat(root, "/mac/compiler"), "")) is 1
+        return str_cat(str_cat(root, "/mac/compiler"), "")
+    if file_exists(str_cat(str_cat(root, "/windows/compiler"), "")) is 1
+        return str_cat(str_cat(root, "/windows/compiler"), "")
+    return "linux/compiler"
+
+# the folder a path lives in
+rp_dir p:
+    n: str_len(p)
+    i: n
+    as long as i > 0
+        i: i - 1
+        b: peek_byte(p, i)
+        if b is 47
+            if i is 0
+                return "/"
+            return str_cut(p, 0, i)
+    return "."
+
+# the useful part of a compile failure: from the first Error on
+rp_err o:
+    i: str_find(o, "Error")
+    if i > 0 - 1
+        write_out(str_cut(o, i, str_len(o)))
+    if not
+        write_out(o)
+    write_out("\n")
+    return 0
+
+# show a compile: its errors, or the answer its program wrote
+rp_show o:
+    if str_has(o, "Error") is 1
+        rp_err(o)
+        return 0
+    if file_exists(RP_BIN) is 0
+        return 0
+    args: _sov_alloc(16)
+    poke_i64(args, 0, RP_BIN)
+    poke_i64(args, 8, 0)
+    o2: rp_run(RP_BIN, args)
+    write_out(o2)
+    if str_len(o2) is 0
+        write_out("ok\n")
+    return 0
+
+# work one line out and show what happened. The line is tried as an
+# expression first; if that will not compile, it is tried as a
+# statement of its own, so `x: 5` and `print x` both work.
+rp_try uses line:
+    o1: rp_compile(uses, line, 1)
+    if str_has(o1, "Error") is 1
+        o2: rp_compile(uses, line, 0)
+        if str_has(o2, "Error") is 1
+            rp_err(o1)
+            return 0
+        rp_show(o2)
+        return 0
+    rp_show(o1)
+    return 0
+
+main:
+    uses: ""
+    write_out("Sovren. An expression a line; `use name` opens a library; `quit` leaves.\n")
+    more: 1
+    as long as more is 1
+        write_out("sovren> ")
+        line: rp_line()
+        if RP_EOF is 1
+            write_out("\n")
+            more: 0
+        if not
+            if str_eq(line, "quit") is 1
+                more: 0
+            if not
+                if str_eq(line, "exit") is 1
+                    more: 0
+                if not
+                    if str_eq(line, "help") is 1
+                        write_out("an expression, `use name`, or `quit`. `use` carries over;\n")
+                        write_out("other values do not: `x: 5 ; print x` needs one line.\n")
+                    if not
+                        if str_starts(line, "use ") is 1
+                            uses: str_cat(uses, line)
+                            uses: str_cat(uses, "\n")
+                            write_out("ok\n")
+                        if not
+                            if str_len(line) is 0
+                                more: more
+                            if not
+                                rp_try(uses, line)

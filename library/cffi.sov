@@ -11,17 +11,21 @@
 #       f: c_find(h, "zlibVersion")
 #       print as text c_call0(f)
 #
-# What works: functions that do not call out to another library.
-# Those are self contained, and once the RELATIVE relocations are
-# applied they run correctly.
+# What works: functions that call out to another library. The jump
+# table is filled in like a loader does it: a symbol that lives in
+# the same library points back inside it, and the handful of C
+# functions every library expects (malloc, memcpy, open and friends)
+# are answered by Sovren's own implementations, so the C code stays
+# inside Sovren's memory model. glibc-ifunc functions (a lot of
+# libm) resolve through their resolver, exactly as the loader does.
+# zlib's crc32, which calls into libc, works.
 #
-# What does not: a function that calls through the PLT into another
-# library, for example zlib's crc32, which calls into libc. Resolving
-# those needs a full dynamic linker, which this is not. Such a call
-# will crash rather than return a wrong answer, so you find out at
+# What does not: a function that needs some libc service Sovren does
+# not provide (the printf family and strerror are stubs, on purpose),
+# and a glibc function that needs loader-managed thread state (the
+# locale or TLS, which is how atoi gets to strtol). Such a call
+# crashes rather than returning a wrong answer, so you find out at
 # once.
-#
-# Check with c_leaf before calling something you are unsure of.
 
 use sys
 use file
@@ -146,6 +150,9 @@ c_relocate h:
     relasz: 0
     jmprel: 0
     jmpsz: 0
+    symtab: 0
+    strtab: 0
+    syment: 24
     d: base + dynva
     k: 0
     as long as k < dynsz
@@ -159,17 +166,26 @@ c_relocate h:
             jmprel: val
         if tag is 2
             jmpsz: val
+        if tag is 5
+            strtab: val
+        if tag is 6
+            symtab: val
+        if tag is 11
+            syment: val
         if tag is 0
             k: dynsz
         if not
             k: k + 16
 
-    c_apply(base, rela, relasz)
-    c_apply(base, jmprel, jmpsz)
+    c_apply(base, rela, relasz, symtab, strtab, syment)
+    c_apply(base, jmprel, jmpsz, symtab, strtab, syment)
     return 1
 
-# type 8 is R_X86_64_RELATIVE: put base + addend at base + offset
-c_apply base at size:
+# Apply one relocation table. The kinds a self-contained loader can
+# answer: 8 RELATIVE (load point plus addend), 6 GLOB_DAT and
+# 7 JUMP_SLOT (an address looked up through the symbols), and
+# 37 IRELATIVE (an ifunc resolver called once).
+c_apply base at size symtab strtab syment:
     if at is 0
         return 0
     i: 0
@@ -179,10 +195,41 @@ c_apply base at size:
         r_info: peek_i64(e, 8)
         r_add: peek_i64(e, 16)
         kind: r_info % 4294967296
+        si: r_info / 4294967296
         if kind is 8
             poke_i64(base + r_off, 0, base + r_add)
+        if kind is 37
+            poke_i64(base + r_off, 0, cfunc(base + r_add, 0, 0, 0, 0, 0, 0))
+        if kind is 6
+            if si > 0
+                sp: base + symtab + si * syment
+                value: peek_i64(sp, 8)
+                if value > 0
+                    poke_i64(base + r_off, 0, base + value)
+                if not
+                    c_extern(base + r_off, base + strtab + c_u32(sp, 0))
         i: i + 24
     return 1
+
+# a slot for a symbol from outside the library: the shim table
+# first, then the one piece of loader state glibc's ifunc resolvers
+# read (libm's sin and friends look at _rtld_global_ro to pick a
+# cpu-tuned implementation; a zeroed block makes them take the
+# generic one, which runs anywhere).
+cfr_state: 0
+
+c_extern slot nm:
+    n: _sov_strlen(nm)
+    a: cs_find(nm, n)
+    if a > 0
+        poke_i64(slot, 0, a)
+        return 1
+    if c_same(nm, "_rtld_global_ro", 15) is 1
+        if cfr_state is 0
+            cfr_state: _sov_alloc(512)
+        poke_i64(slot, 0, cfr_state)
+        return 1
+    return 0
 
 c_base h:
     return peek_i64(h, 0)
@@ -246,6 +293,11 @@ c_find h name:
         if value > 0
             nm: base + strtab + nameoff
             if c_same(nm, name, want) is 1
+                info: peek_byte(s, 4)
+                if info % 16 is 10
+                    # STT_GNU_IFUNC: the value is a resolver that
+                    # picks the real function. call it once.
+                    return cfunc(base + value, 0, 0, 0, 0, 0, 0)
                 return base + value
         i: i + 1
     return 0
@@ -421,11 +473,7 @@ c_link h:
                 # it lives in this same library
                 poke_i64(got, 0, base + value)
             if not
-                n: _sov_strlen(nm)
-                a: cs_find(nm, n)
-                if a > 0
-                    poke_i64(got, 0, a)
-                if not
+                if c_extern(got, nm) is 0
                     missing: missing + 1
         k: k + 24
     return missing

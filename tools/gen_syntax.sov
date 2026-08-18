@@ -1,0 +1,264 @@
+# tools/gen_syntax.sov — write the editor syntax files from this one source.
+#
+# The nine files under syntax/ (nano, vim, VS Code, Zed) are generated
+# output. This program holds their text and writes them, so the source
+# of truth is Sovren and check/run.sov can prove the files never drift.
+#
+#   ./sovren tools/gen_syntax.sov -o /tmp/gen_syntax
+#   /tmp/gen_syntax            # write into the repo (from its root)
+#   /tmp/gen_syntax /tmp/syn   # write under a different base
+#
+use arg
+use file
+use num
+use string
+use sys
+
+gs_base: "."
+
+gs_mkdirs path:
+    n: str_len(path)
+    i: 1
+    as long as i < n
+        if peek_byte(path, i) is 47
+            p: str_cut(path, 0, i)
+            if file_exists(p) is 0
+                sys_mkdir(p)
+        i: i + 1
+    return 0
+
+gs_write path content:
+    p: str_cat(str_cat(gs_base, "/"), path)
+    gs_mkdirs(p)
+    if file_write_all(p, content) is 0
+        print str_join3("cannot write ", p, "")
+        sys_exit(1)
+    return 0
+
+gs_nano:
+    s: ""
+    s: str_cat(s, "# Sovren colors for nano\n")
+    s: str_cat(s, "# Copy to ~/.nano/sovren.nanorc and add to ~/.nanorc:\n")
+    s: str_cat(s, "#   include \"~/.nano/sovren.nanorc\"\n")
+    s: str_cat(s, "\n")
+    s: str_cat(s, "syntax \"sovren\" \"\\.sov$\"\n")
+    s: str_cat(s, "comment \"#\"\n")
+    s: str_cat(s, "color brightwhite start=\"\\\"\" end=\"\\\"\"\n")
+    s: str_cat(s, "color cyan \"\\<(return|if|times|stop|use|wipe|private|print|and|or|is|not|blank)\\>\"\n")
+    s: str_cat(s, "color cyan \"as long as\"\n")
+    s: str_cat(s, "color cyan \"if not\"\n")
+    s: str_cat(s, "color magenta \"==|!=|<=|>=|&&|\\|\\|\"\n")
+    s: str_cat(s, "color magenta \"[+\\-*/%<>=:]\"\n")
+    s: str_cat(s, "color green \"\\<(syscall|peek_byte|peek_i64|peek_ptr|poke_byte|poke_i64)\\>\"\n")
+    s: str_cat(s, "color yellow \"\\<[0-9]+\\>\"\n")
+    s: str_cat(s, "color brightblack \"#.*\"\n")
+    return s
+
+gs_vim_ft:
+    s: ""
+    s: str_cat(s, "autocmd BufRead,BufNewFile *.sov set filetype=sovren\n")
+    return s
+
+gs_vim:
+    s: ""
+    s: str_cat(s, "\" Sovren colors for Vim / Neovim\n")
+    s: str_cat(s, "\" Put this file in ~/.vim/syntax/sovren.vim\n")
+    s: str_cat(s, "\" and add to ~/.vimrc:\n")
+    s: str_cat(s, "\"   autocmd BufRead,BufNewFile *.sov set filetype=sovren\n")
+    s: str_cat(s, "\n")
+    s: str_cat(s, "if exists(\"b:current_syntax\")\n")
+    s: str_cat(s, "  finish\n")
+    s: str_cat(s, "endif\n")
+    s: str_cat(s, "\n")
+    s: str_cat(s, "syntax keyword sovTask return if times stop use wipe private print and or is not blank\n")
+    s: str_cat(s, "syntax match sovTask \"\\<if not\\>\"\n")
+    s: str_cat(s, "syntax match sovTask \"\\<as long as\\>\"\n")
+    s: str_cat(s, "syntax match sovOp \"==\\|!=\\|<=\\|>=\\|&&\\|||\"\n")
+    s: str_cat(s, "syntax match sovOp \"[+\\-*/%<>=:]\"\n")
+    s: str_cat(s, "syntax keyword sovFn syscall peek_byte peek_i64 peek_ptr poke_byte poke_i64\n")
+    s: str_cat(s, "syntax match sovNum \"\\<[0-9]\\+\\>\"\n")
+    s: str_cat(s, "syntax match sovComment \"#.*$\"\n")
+    s: str_cat(s, "syntax region sovString start=+\"+ skip=+\\\\\"+ end=+\"+\n")
+    s: str_cat(s, "\n")
+    s: str_cat(s, "highlight default link sovTask Keyword\n")
+    s: str_cat(s, "highlight default link sovOp Operator\n")
+    s: str_cat(s, "highlight default link sovFn Function\n")
+    s: str_cat(s, "highlight default link sovNum Number\n")
+    s: str_cat(s, "highlight default link sovComment Comment\n")
+    s: str_cat(s, "highlight default link sovString String\n")
+    s: str_cat(s, "\n")
+    s: str_cat(s, "let b:current_syntax = \"sovren\"\n")
+    return s
+
+gs_vsc_lang:
+    s: ""
+    s: str_cat(s, "{\n")
+    s: str_cat(s, "  \"comments\": {\n")
+    s: str_cat(s, "    \"lineComment\": \"#\"\n")
+    s: str_cat(s, "  },\n")
+    s: str_cat(s, "  \"brackets\": [\n")
+    s: str_cat(s, "    [\"(\", \")\"]\n")
+    s: str_cat(s, "  ],\n")
+    s: str_cat(s, "  \"autoClosingPairs\": [\n")
+    s: str_cat(s, "    { \"open\": \"\\\"\", \"close\": \"\\\"\" },\n")
+    s: str_cat(s, "    { \"open\": \"(\", \"close\": \")\" }\n")
+    s: str_cat(s, "  ],\n")
+    s: str_cat(s, "  \"surroundingPairs\": [\n")
+    s: str_cat(s, "    [\"\\\"\", \"\\\"\"],\n")
+    s: str_cat(s, "    [\"(\", \")\"]\n")
+    s: str_cat(s, "  ],\n")
+    s: str_cat(s, "  \"wordPattern\": \"[A-Za-z_][A-Za-z0-9_]*\"\n")
+    s: str_cat(s, "}\n")
+    return s
+
+gs_vsc_pkg:
+    s: ""
+    s: str_cat(s, "{\n")
+    s: str_cat(s, "  \"name\": \"sovren\",\n")
+    s: str_cat(s, "  \"displayName\": \"Sovren\",\n")
+    s: str_cat(s, "  \"description\": \"Colors and file type for the Sovren language\",\n")
+    s: str_cat(s, "  \"version\": \"0.0.1\",\n")
+    s: str_cat(s, "  \"publisher\": \"sovren\",\n")
+    s: str_cat(s, "  \"engines\": { \"vscode\": \"^1.74.0\" },\n")
+    s: str_cat(s, "  \"categories\": [\"Programming Languages\"],\n")
+    s: str_cat(s, "  \"contributes\": {\n")
+    s: str_cat(s, "    \"languages\": [\n")
+    s: str_cat(s, "      {\n")
+    s: str_cat(s, "        \"id\": \"sovren\",\n")
+    s: str_cat(s, "        \"aliases\": [\"Sovren\", \"sovren\"],\n")
+    s: str_cat(s, "        \"extensions\": [\".sov\"],\n")
+    s: str_cat(s, "        \"configuration\": \"./language.json\"\n")
+    s: str_cat(s, "      }\n")
+    s: str_cat(s, "    ],\n")
+    s: str_cat(s, "    \"grammars\": [\n")
+    s: str_cat(s, "      {\n")
+    s: str_cat(s, "        \"language\": \"sovren\",\n")
+    s: str_cat(s, "        \"scopeName\": \"source.sovren\",\n")
+    s: str_cat(s, "        \"path\": \"./sovren.tmLanguage.json\"\n")
+    s: str_cat(s, "      }\n")
+    s: str_cat(s, "    ]\n")
+    s: str_cat(s, "  }\n")
+    s: str_cat(s, "}\n")
+    return s
+
+gs_vsc_tm:
+    s: ""
+    s: str_cat(s, "{\n")
+    s: str_cat(s, "  \"name\": \"Sovren\",\n")
+    s: str_cat(s, "  \"scopeName\": \"source.sovren\",\n")
+    s: str_cat(s, "  \"fileTypes\": [\"sov\"],\n")
+    s: str_cat(s, "  \"patterns\": [\n")
+    s: str_cat(s, "    { \"name\": \"comment.line.number-sign.sovren\", \"match\": \"#.*$\" },\n")
+    s: str_cat(s, "    {\n")
+    s: str_cat(s, "      \"name\": \"string.quoted.double.sovren\",\n")
+    s: str_cat(s, "      \"begin\": \"\\\"\",\n")
+    s: str_cat(s, "      \"end\": \"\\\"\",\n")
+    s: str_cat(s, "      \"patterns\": [\n")
+    s: str_cat(s, "        { \"name\": \"constant.character.escape.sovren\", \"match\": \"\\\\\\\\[ntr\\\"\\\\\\\\]\" }\n")
+    s: str_cat(s, "      ]\n")
+    s: str_cat(s, "    },\n")
+    s: str_cat(s, "    {\n")
+    s: str_cat(s, "      \"name\": \"keyword.control.sovren\",\n")
+    s: str_cat(s, "      \"match\": \"\\\\b(return|if not|if|as long as|times|stop|use|wipe|private|print|and|or|is not|is|not|blank|as text)\\\\b\"\n")
+    s: str_cat(s, "    },\n")
+    s: str_cat(s, "    {\n")
+    s: str_cat(s, "      \"name\": \"keyword.operator.sovren\",\n")
+    s: str_cat(s, "      \"match\": \"==|!=|<=|>=|&&|\\\\|\\\\||[+\\\\-*/%<>=:]\"\n")
+    s: str_cat(s, "    },\n")
+    s: str_cat(s, "    {\n")
+    s: str_cat(s, "      \"name\": \"support.function.sovren\",\n")
+    s: str_cat(s, "      \"match\": \"\\\\b(syscall|peek_byte|peek_i64|peek_ptr|poke_byte|poke_i64)\\\\b\"\n")
+    s: str_cat(s, "    },\n")
+    s: str_cat(s, "    {\n")
+    s: str_cat(s, "      \"name\": \"constant.numeric.sovren\",\n")
+    s: str_cat(s, "      \"match\": \"\\\\b[0-9]+\\\\b\"\n")
+    s: str_cat(s, "    },\n")
+    s: str_cat(s, "    {\n")
+    s: str_cat(s, "      \"name\": \"entity.name.function.sovren\",\n")
+    s: str_cat(s, "      \"match\": \"^[A-Za-z_][A-Za-z0-9_]*\\\\b(?=.*:)\"\n")
+    s: str_cat(s, "    }\n")
+    s: str_cat(s, "  ]\n")
+    s: str_cat(s, "}\n")
+    return s
+
+gs_zed_ext:
+    s: ""
+    s: str_cat(s, "id = \"sovren\"\n")
+    s: str_cat(s, "name = \"Sovren\"\n")
+    s: str_cat(s, "description = \"Sovren language support\"\n")
+    s: str_cat(s, "version = \"0.1.0\"\n")
+    s: str_cat(s, "schema_version = 1\n")
+    s: str_cat(s, "authors = [\"Elxan Huseynov\"]\n")
+    s: str_cat(s, "repository = \"https://github.com/sovren/sovren\"\n")
+    s: str_cat(s, "\n")
+    s: str_cat(s, "[grammars.sovren]\n")
+    s: str_cat(s, "repository = \"https://github.com/sovren/tree-sitter-sovren\"\n")
+    s: str_cat(s, "commit = \"0000000000000000000000000000000000000000\"\n")
+    return s
+
+gs_zed_cfg:
+    s: ""
+    s: str_cat(s, "name = \"Sovren\"\n")
+    s: str_cat(s, "grammar = \"sovren\"\n")
+    s: str_cat(s, "path_suffixes = [\"sov\"]\n")
+    s: str_cat(s, "line_comments = [\"# \"]\n")
+    s: str_cat(s, "autoclose_before = \")\\\"'\"\n")
+    s: str_cat(s, "tab_size = 4\n")
+    s: str_cat(s, "hard_tabs = false\n")
+    s: str_cat(s, "\n")
+    s: str_cat(s, "[[brackets]]\n")
+    s: str_cat(s, "start = \"(\"\n")
+    s: str_cat(s, "end = \")\"\n")
+    s: str_cat(s, "close = true\n")
+    s: str_cat(s, "newline = false\n")
+    s: str_cat(s, "\n")
+    s: str_cat(s, "[[brackets]]\n")
+    s: str_cat(s, "start = \"\\\"\"\n")
+    s: str_cat(s, "end = \"\\\"\"\n")
+    s: str_cat(s, "close = true\n")
+    s: str_cat(s, "newline = false\n")
+    return s
+
+gs_zed_scm:
+    s: ""
+    s: str_cat(s, "; Sovren highlighting for Zed\n")
+    s: str_cat(s, "(comment) @comment\n")
+    s: str_cat(s, "\n")
+    s: str_cat(s, "[\n")
+    s: str_cat(s, "  \"main\"\n")
+    s: str_cat(s, "  \"if\"\n")
+    s: str_cat(s, "  \"if not\"\n")
+    s: str_cat(s, "  \"as long as\"\n")
+    s: str_cat(s, "  \"return\"\n")
+    s: str_cat(s, "  \"use\"\n")
+    s: str_cat(s, "  \"times\"\n")
+    s: str_cat(s, "  \"and\"\n")
+    s: str_cat(s, "  \"or\"\n")
+    s: str_cat(s, "  \"is\"\n")
+    s: str_cat(s, "  \"is not\"\n")
+    s: str_cat(s, "  \"not\"\n")
+    s: str_cat(s, "  \"blank\"\n")
+    s: str_cat(s, "  \"as text\"\n")
+    s: str_cat(s, "] @keyword\n")
+    s: str_cat(s, "\n")
+    s: str_cat(s, "(string) @string\n")
+    s: str_cat(s, "(number) @number\n")
+    s: str_cat(s, "(task_name) @function\n")
+    s: str_cat(s, "(param) @variable.parameter\n")
+    return s
+
+main:
+    b: arg_at(1)
+    if str_len(b) > 0
+        gs_base: b
+    gs_write("syntax/nano/sovren.nanorc", gs_nano())
+    gs_write("syntax/vim/ftdetect.vim", gs_vim_ft())
+    gs_write("syntax/vim/sovren.vim", gs_vim())
+    gs_write("syntax/vs-code/language.json", gs_vsc_lang())
+    gs_write("syntax/vs-code/package.json", gs_vsc_pkg())
+    gs_write("syntax/vs-code/sovren.tmLanguage.json", gs_vsc_tm())
+    gs_write("syntax/zed/extension.toml", gs_zed_ext())
+    gs_write("syntax/zed/languages/sovren/config.toml", gs_zed_cfg())
+    gs_write("syntax/zed/languages/sovren/highlights.scm", gs_zed_scm())
+    print "syntax files written"
+    sys_exit(0)

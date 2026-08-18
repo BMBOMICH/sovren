@@ -1,6 +1,6 @@
-# sort.sov — sort a list of numbers
-# needs _sov_list
+# sort.sov — sort a list
 use list
+use string
 
 sort_ints lst:
     n: list_len(lst)
@@ -13,6 +13,53 @@ sort_ints lst:
             if x > y
                 list_set(lst, b, y)
                 list_set(lst, b + 1, x)
+            b: b + 1
+        a: a + 1
+    return lst
+
+sort_ints_desc lst:
+    n: list_len(lst)
+    a: 0
+    as long as a < n
+        b: 0
+        as long as b + 1 < n
+            x: list_get(lst, b)
+            y: list_get(lst, b + 1)
+            if x < y
+                list_set(lst, b, y)
+                list_set(lst, b + 1, x)
+            b: b + 1
+        a: a + 1
+    return lst
+
+sort_strs lst:
+    n: list_len(lst)
+    a: 0
+    as long as a < n
+        b: 0
+        as long as b + 1 < n
+            x: list_get(lst, b)
+            y: list_get(lst, b + 1)
+            if str_eq(x, y) is 0
+                if str_less(x, y) is 0
+                    list_set(lst, b, y)
+                    list_set(lst, b + 1, x)
+            b: b + 1
+        a: a + 1
+    return lst
+
+sort_strs_desc lst:
+    n: list_len(lst)
+    a: 0
+    as long as a < n
+        b: 0
+        as long as b + 1 < n
+            x: list_get(lst, b)
+            y: list_get(lst, b + 1)
+            if str_eq(x, y) is 0
+                if str_less(x, y) is 1
+                    list_set(lst, b, y)
+                    list_set(lst, b + 1, x)
             b: b + 1
         a: a + 1
     return lst

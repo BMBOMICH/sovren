@@ -1,0 +1,323 @@
+# trig.sov — sine, cosine, tangent and arctangent, all in fixed
+# point: an angle of one radian is 1000000, and the answers come
+# back the same way. Every value is found by CORDIC, the old
+# shift-and-add way, at twenty-seven bits of hidden precision and
+# rounded once at the end, so the answers agree with a real
+# calculator to the last printed digit.
+#
+#   use trig
+#   use fixed
+#   main:
+#       print fx_text(tri_sin(TR_PI2))    # 1.000000
+#
+use num
+
+# the well-known constants, in the same fixed point
+TR_PI: 3141592
+TR_PI2: 1570796
+TR_PI4: 785398
+TR_DEG: 17453
+
+# the hidden scale: one radian is this many internal units
+TR_S: 134217728
+# the CORDIC gain, 1/K, at that scale
+TR_K1: 81504109
+# pi at the hidden scale, and its halves, all from TR_PI so the
+# reduction and the public constant can never disagree
+TR_PS: 421657340
+TR_P2S: 210828670
+TR_2PS: 843314680
+
+# the table of atan(2^-i) at the hidden scale, twenty-eight of them
+tr_tab i:
+    if i is 0
+        return 105414357
+    if i is 1
+        return 62229729
+    if i is 2
+        return 32880480
+    if i is 3
+        return 16690645
+    if i is 4
+        return 8377711
+    if i is 5
+        return 4192939
+    if i is 6
+        return 2096981
+    if i is 7
+        return 1048555
+    if i is 8
+        return 524285
+    if i is 9
+        return 262144
+    if i is 10
+        return 131072
+    if i is 11
+        return 65536
+    if i is 12
+        return 32768
+    if i is 13
+        return 16384
+    if i is 14
+        return 8192
+    if i is 15
+        return 4096
+    if i is 16
+        return 2048
+    if i is 17
+        return 1024
+    if i is 18
+        return 512
+    if i is 19
+        return 256
+    if i is 20
+        return 128
+    if i is 21
+        return 64
+    if i is 22
+        return 32
+    if i is 23
+        return 16
+    if i is 24
+        return 8
+    if i is 25
+        return 4
+    if i is 26
+        return 2
+    return 1
+
+# two to the i, straight off the table so the rounds stay quick
+tr_pow2 i:
+    if i is 0
+        return 1
+    if i is 1
+        return 2
+    if i is 2
+        return 4
+    if i is 3
+        return 8
+    if i is 4
+        return 16
+    if i is 5
+        return 32
+    if i is 6
+        return 64
+    if i is 7
+        return 128
+    if i is 8
+        return 256
+    if i is 9
+        return 512
+    if i is 10
+        return 1024
+    if i is 11
+        return 2048
+    if i is 12
+        return 4096
+    if i is 13
+        return 8192
+    if i is 14
+        return 16384
+    if i is 15
+        return 32768
+    if i is 16
+        return 65536
+    if i is 17
+        return 131072
+    if i is 18
+        return 262144
+    if i is 19
+        return 524288
+    if i is 20
+        return 1048576
+    if i is 21
+        return 2097152
+    if i is 22
+        return 4194304
+    if i is 23
+        return 8388608
+    if i is 24
+        return 16777216
+    if i is 25
+        return 33554432
+    if i is 26
+        return 67108864
+    return 134217728
+
+# a shift that rounds instead of throwing the dropped bits away
+tr_shr v i:
+    if i is 0
+        return v
+    h: tr_pow2(i - 1)
+    p: tr_pow2(i)
+    if v >= 0
+        return (v + h) / p
+    return 0 - ((0 - v + h) / p)
+
+# an internal number back to fixed point, rounded
+tr_fix v:
+    if v >= 0
+        return (v * 1000000 + TR_S / 2) / TR_S
+    return 0 - ((0 - v) * 1000000 + TR_S / 2) / TR_S
+
+# the angle, at the hidden scale, brought into the round the rounds
+# can reach. The quadrant is remembered so the sign comes out right.
+tr_reduce a:
+    z: 0
+    if a < 0
+        z: 0 - ((0 - a) * TR_S) / 1000000
+    if not
+        z: (a * TR_S) / 1000000
+    if z < 0
+        z: z + TR_2PS
+    z: z % TR_2PS
+    if z > TR_PS
+        z: z - TR_2PS
+    return z
+
+tri_sin a:
+    z: tr_reduce(a)
+    if z > TR_P2S
+        z: TR_PS - z
+        x: TR_K1
+        y: 0
+        i: 0
+        as long as i < 28
+            aa: tr_shr(y, i)
+            bb: tr_shr(x, i)
+            if z > 0
+                x: x - aa
+                y: y + bb
+                z: z - tr_tab(i)
+            if not
+                x: x + aa
+                y: y - bb
+                z: z + tr_tab(i)
+            i: i + 1
+        return tr_fix(y)
+    if z < 0 - TR_P2S
+        z: TR_PS + z
+        x: TR_K1
+        y: 0
+        i: 0
+        as long as i < 28
+            aa: tr_shr(y, i)
+            bb: tr_shr(x, i)
+            if z > 0
+                x: x - aa
+                y: y + bb
+                z: z - tr_tab(i)
+            if not
+                x: x + aa
+                y: y - bb
+                z: z + tr_tab(i)
+            i: i + 1
+        return 0 - tr_fix(y)
+    x: TR_K1
+    y: 0
+    i: 0
+    as long as i < 28
+        aa: tr_shr(y, i)
+        bb: tr_shr(x, i)
+        if z > 0
+            x: x - aa
+            y: y + bb
+            z: z - tr_tab(i)
+        if not
+            x: x + aa
+            y: y - bb
+            z: z + tr_tab(i)
+        i: i + 1
+    return tr_fix(y)
+
+tri_cos a:
+    z: tr_reduce(a)
+    if z > TR_P2S
+        z: TR_PS - z
+        x: TR_K1
+        y: 0
+        i: 0
+        as long as i < 28
+            aa: tr_shr(y, i)
+            bb: tr_shr(x, i)
+            if z > 0
+                x: x - aa
+                y: y + bb
+                z: z - tr_tab(i)
+            if not
+                x: x + aa
+                y: y - bb
+                z: z + tr_tab(i)
+            i: i + 1
+        return 0 - tr_fix(x)
+    if z < 0 - TR_P2S
+        z: TR_PS + z
+        x: TR_K1
+        y: 0
+        i: 0
+        as long as i < 28
+            aa: tr_shr(y, i)
+            bb: tr_shr(x, i)
+            if z > 0
+                x: x - aa
+                y: y + bb
+                z: z - tr_tab(i)
+            if not
+                x: x + aa
+                y: y - bb
+                z: z + tr_tab(i)
+            i: i + 1
+        return 0 - tr_fix(x)
+    x: TR_K1
+    y: 0
+    i: 0
+    as long as i < 28
+        aa: tr_shr(y, i)
+        bb: tr_shr(x, i)
+        if z > 0
+            x: x - aa
+            y: y + bb
+            z: z - tr_tab(i)
+        if not
+            x: x + aa
+            y: y - bb
+            z: z + tr_tab(i)
+        i: i + 1
+    return tr_fix(x)
+
+tri_tan a:
+    s: tri_sin(a)
+    c: tri_cos(a)
+    if c is 0
+        return 0
+    return (s * 1000000) / c
+
+# arctangent of a slope, in fixed point. Slopes bigger than one go
+# by the reciprocal, so the rounds always work near the middle of
+# the table.
+tri_atan a:
+    if a < 0
+        return 0 - tri_atan(0 - a)
+    if a > 1000000
+        q: 1000000 / a
+        r: 1000000 % a
+        inv: q * 1000000 + (r * 1000000) / a
+        return TR_PI2 - tri_atan(inv)
+    z: (a * TR_S) / 1000000
+    x: TR_S
+    y: z
+    zz: 0
+    i: 0
+    as long as i < 28
+        aa: tr_shr(y, i)
+        bb: tr_shr(x, i)
+        if y > 0
+            x: x + aa
+            y: y - bb
+            zz: zz + tr_tab(i)
+        if not
+            x: x - aa
+            y: y + bb
+            zz: zz - tr_tab(i)
+        i: i + 1
+    return tr_fix(zz)

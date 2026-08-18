@@ -1,31 +1,47 @@
 # hmac.sov — HMAC-SHA256 (RFC 2104) in pure Sovren
+#
+# Nothing here hands a pointer back from a call: every buffer is
+# made by the caller and passed in, because a pointer that arrives
+# as a return value does not survive in this compiler. hmac_raw
+# writes its 32 digest bytes into the out buffer it is given.
+#
+#   use hmac
+#   hmac_sha256(key, msg)      the hex digest, as text
+#   hmac_raw(key, klen, msg, mlen, out)   the 32 raw digest bytes
+
 use sha256
 use string
 use bit32
+use mem
 
-hmac_block key:
-    n: _sov_strlen(key)
-    b: _sov_alloc(65)
+# the 64-byte padded key block for klen key bytes, into b
+hmac_block key klen b:
     i: 0
     as long as i < 64
         poke_byte(b, i, 0)
         i: i + 1
-    if n > 64
-        h: sha256_hex(key)
+    if klen > 64
+        h: _sov_alloc(64)
+        sha256_bytes(key, klen, h)
         i: 0
-        as long as i < 64
-            poke_byte(b, i, peek_byte(h, i))
+        as long as i < 8
+            v: peek_i64(h, i * 8)
+            poke_byte(b, i * 4, wand(shr(v, 24), 255))
+            poke_byte(b, i * 4 + 1, wand(shr(v, 16), 255))
+            poke_byte(b, i * 4 + 2, wand(shr(v, 8), 255))
+            poke_byte(b, i * 4 + 3, wand(v, 255))
             i: i + 1
     if not
         i: 0
-        as long as i < n
+        as long as i < klen
             poke_byte(b, i, peek_byte(key, i))
             i: i + 1
     poke_byte(b, 64, 0)
-    return b
+    return 0
 
 hmac_sha256 key msg:
-    kb: hmac_block(key)
+    kb: _sov_alloc(65)
+    hmac_block(key, _sov_strlen(key), kb)
     ipad: _sov_alloc(64 + _sov_strlen(msg) + 1)
     i: 0
     as long as i < 64
@@ -36,15 +52,16 @@ hmac_sha256 key msg:
     as long as i < m
         poke_byte(ipad, 64 + i, peek_byte(msg, i))
         i: i + 1
-    inner: sha256_bytes(ipad, 64 + m)
-    ib: _sov_alloc(32)
+    ib: _sov_alloc(64)
+    sha256_bytes(ipad, 64 + m, ib)
+    ob: _sov_alloc(32)
     i: 0
     as long as i < 8
-        v: peek_i64(inner, i * 8)
-        poke_byte(ib, i * 4, wand(shr(v, 24), 255))
-        poke_byte(ib, i * 4 + 1, wand(shr(v, 16), 255))
-        poke_byte(ib, i * 4 + 2, wand(shr(v, 8), 255))
-        poke_byte(ib, i * 4 + 3, wand(v, 255))
+        v: peek_i64(ib, i * 8)
+        poke_byte(ob, i * 4, wand(shr(v, 24), 255))
+        poke_byte(ob, i * 4 + 1, wand(shr(v, 16), 255))
+        poke_byte(ob, i * 4 + 2, wand(shr(v, 8), 255))
+        poke_byte(ob, i * 4 + 3, wand(v, 255))
         i: i + 1
     opad: _sov_alloc(96 + 1)
     i: 0
@@ -53,13 +70,14 @@ hmac_sha256 key msg:
         i: i + 1
     i: 0
     as long as i < 32
-        poke_byte(opad, 64 + i, peek_byte(ib, i))
+        poke_byte(opad, 64 + i, peek_byte(ob, i))
         i: i + 1
-    outer: sha256_bytes(opad, 96)
+    ob2: _sov_alloc(64)
+    sha256_bytes(opad, 96, ob2)
     out: _sov_alloc(72)
     i: 0
     as long as i < 8
-        v: peek_i64(outer, i * 8)
+        v: peek_i64(ob2, i * 8)
         j: 0
         as long as j < 8
             sh: 28 - j * 4
@@ -68,3 +86,48 @@ hmac_sha256 key msg:
         i: i + 1
     poke_byte(out, 64, 0)
     return as text out
+
+# the same HMAC with the digest as 32 raw bytes, into out
+hmac_raw key klen msg mlen out:
+    kb: _sov_alloc(65)
+    hmac_block(key, klen, kb)
+    ipad: _sov_alloc(64 + mlen + 1)
+    i: 0
+    as long as i < 64
+        poke_byte(ipad, i, wxor(peek_byte(kb, i), 54))
+        i: i + 1
+    i: 0
+    as long as i < mlen
+        poke_byte(ipad, 64 + i, peek_byte(msg, i))
+        i: i + 1
+    ib: _sov_alloc(64)
+    sha256_bytes(ipad, 64 + mlen, ib)
+    ob: _sov_alloc(32)
+    i: 0
+    as long as i < 8
+        v: peek_i64(ib, i * 8)
+        poke_byte(ob, i * 4, wand(shr(v, 24), 255))
+        poke_byte(ob, i * 4 + 1, wand(shr(v, 16), 255))
+        poke_byte(ob, i * 4 + 2, wand(shr(v, 8), 255))
+        poke_byte(ob, i * 4 + 3, wand(v, 255))
+        i: i + 1
+    opad: _sov_alloc(96 + 1)
+    i: 0
+    as long as i < 64
+        poke_byte(opad, i, wxor(peek_byte(kb, i), 92))
+        i: i + 1
+    i: 0
+    as long as i < 32
+        poke_byte(opad, 64 + i, peek_byte(ob, i))
+        i: i + 1
+    ob2: _sov_alloc(64)
+    sha256_bytes(opad, 96, ob2)
+    i: 0
+    as long as i < 8
+        v: peek_i64(ob2, i * 8)
+        poke_byte(out, i * 4, wand(shr(v, 24), 255))
+        poke_byte(out, i * 4 + 1, wand(shr(v, 16), 255))
+        poke_byte(out, i * 4 + 2, wand(shr(v, 8), 255))
+        poke_byte(out, i * 4 + 3, wand(v, 255))
+        i: i + 1
+    return 0

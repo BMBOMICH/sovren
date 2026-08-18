@@ -1,0 +1,866 @@
+# tls.sov — a TLS 1.2 client, in Sovren.
+#
+# The bots used to hand https to curl because there was no TLS. Now
+# there is one: the record layer, the AES-128-GCM from gcm.sov, the
+# PRF on hmac.sov, and ECDHE key exchange on X25519 from
+# x25519.sov, with the server's RSA certificate (read by a small
+# DER walk) only signing the ServerKeyExchange. The cipher is
+# ECDHE-RSA_WITH_AES_128_GCM_SHA256 (0xC02F) on X25519.
+#
+#   use tls
+#   tl_get(host, port, path, out, max)
+#   tl_send_req(host, port, request, out, max)
+#
+# out receives the response body; the byte count comes back (0 on
+# failure). tl_get builds a GET from its parts; tl_send_req takes a
+# whole HTTP request, headers and all, so POST and custom headers
+# are just text. The host name is looked up with web_lookup, which
+# is the same getent helper the rest of the library uses for DNS.
+
+use bigint
+use gcm
+use hmac
+use num
+use sha256
+use sock
+use string
+use sys
+use web
+use x25519
+
+# the DER walker: at a tag position, where the value is
+tl_vstart: 0
+tl_vend: 0
+
+tl_len p i:
+    l: peek_byte(p, i + 1)
+    if l < 128
+        tl_vstart: i + 2
+        tl_vend: i + 2 + l
+        return 0
+    if l is 129
+        tl_vstart: i + 3
+        tl_vend: i + 3 + peek_byte(p, i + 2)
+        return 0
+    if l is 130
+        tl_vstart: i + 4
+        tl_vend: i + 4 + peek_byte(p, i + 2) * 256 + peek_byte(p, i + 3)
+        return 0
+    return 0 - 1
+
+# the position of child k of the tlv whose tag is at i
+tl_child p i k:
+    tl_len(p, i)
+    at: tl_vstart
+    c: 0
+    as long as c < k
+        tl_len(p, at)
+        at: tl_vend
+        c: c + 1
+    return at
+
+# the value of the INTEGER at i, as bytes, into out; returns the
+# byte length (a leading zero that DER uses for positive numbers is
+# skipped)
+tl_integer p i out:
+    tl_len(p, i)
+    a: tl_vstart
+    n: tl_vend - tl_vstart
+    if n > 1
+        if peek_byte(p, a) is 0
+            a: a + 1
+            n: n - 1
+    j: 0
+    as long as j < n
+        poke_byte(out, j, peek_byte(p, a + j))
+        j: j + 1
+    return n
+
+# pull the RSA modulus and exponent out of a DER certificate
+tl_mod: 0
+tl_modlen: 0
+tl_exp: 0
+tl_explen: 0
+
+tl_cert_key cert clen:
+    tbs: tl_child(cert, 0, 0)
+    spki: tl_child(cert, tbs, 6)
+    bs: tl_child(cert, spki, 1)
+    tl_len(cert, bs)
+    rsa: tl_vstart + 1
+    modi: tl_child(cert, rsa, 0)
+    expi: tl_child(cert, rsa, 1)
+    if tl_mod is 0
+        tl_mod: _sov_alloc(512)
+    if tl_exp is 0
+        tl_exp: _sov_alloc(8)
+    tl_modlen: tl_integer(cert, modi, tl_mod)
+    tl_explen: tl_integer(cert, expi, tl_exp)
+    return 0
+
+# ---- the PRF (TLS 1.2 P_hash with HMAC-SHA256) ----
+tl_n: 0
+
+tl_prf out secret slen label llen seed slen2:
+    # the P_hash seed is the label followed by the seed; the A chain
+    # starts there
+    a: _sov_alloc(32 + slen2)
+    j: 0
+    as long as j < llen
+        poke_byte(a, j, peek_byte(label, j))
+        j: j + 1
+    j: 0
+    as long as j < slen2
+        poke_byte(a, llen + j, peek_byte(seed, j))
+        j: j + 1
+    alen: llen + slen2
+    pos: 0
+    na: _sov_alloc(32)
+    blk: _sov_alloc(32)
+    as long as pos < tl_n
+        hmac_raw(secret, slen, a, alen, na)
+        j: 0
+        as long as j < 32
+            poke_byte(a, j, peek_byte(na, j))
+            j: j + 1
+        alen: 32
+        buf: _sov_alloc(32 + llen + slen2 + 1)
+        j: 0
+        as long as j < 32
+            poke_byte(buf, j, peek_byte(a, j))
+            j: j + 1
+        j: 0
+        as long as j < llen
+            poke_byte(buf, 32 + j, peek_byte(label, j))
+            j: j + 1
+        j: 0
+        as long as j < slen2
+            poke_byte(buf, 32 + llen + j, peek_byte(seed, j))
+            j: j + 1
+        hmac_raw(secret, slen, buf, 32 + llen + slen2, blk)
+        j: 0
+        as long as j < 32
+            if pos + j < tl_n
+                poke_byte(out, pos + j, peek_byte(blk, j))
+            j: j + 1
+        pos: pos + 32
+    return 0
+
+# ---- RSA ----
+# encrypt m (mlen bytes) with the certificate's public key:
+# c = m^e mod n, with the exponent read as a small number; the
+# output length lands in tl_clen (return values are not reliable)
+tl_clen: 0
+
+tl_rsa_enc m mlen out mod modlen exp explen:
+    n: bi_from_bytes(mod, modlen)
+    ev: 0
+    j: 0
+    as long as j < explen
+        ev: ev * 256 + peek_byte(exp, j)
+        j: j + 1
+    mb: bi_from_bytes(m, mlen)
+    c: bi_modpow17(mb, ev, n)
+    bi_to_bytes(c, out, modlen)
+    tl_clen: modlen
+    return 0
+
+# ---- records ----
+tl_seq_c: 0
+tl_seq_s: 0
+
+# build one encrypted record into out; the record length comes back
+# through tl_clen, written as the last thing this job does. A size
+# handed back as a value does not survive in this compiler, but a
+# size written to a global and read immediately does.
+tl_rec_enc out typ body blen key iv:
+    sq: tl_seq_c
+    poke_byte(out, 0, typ)
+    poke_byte(out, 1, 3)
+    poke_byte(out, 2, 3)
+    clen: blen + 16 + 8
+    poke_byte(out, 3, clen / 256)
+    poke_byte(out, 4, clen % 256)
+    # explicit nonce: the sequence number, network order
+    i: 0
+    as long as i < 8
+        poke_byte(out, 5 + i, wand(shr(sq, (7 - i) * 8), 255))
+        i: i + 1
+    # AAD = seq || type || version || length
+    aad: _sov_alloc(16)
+    i: 0
+    as long as i < 8
+        poke_byte(aad, i, wand(shr(sq, (7 - i) * 8), 255))
+        i: i + 1
+    poke_byte(aad, 8, typ)
+    poke_byte(aad, 9, 3)
+    poke_byte(aad, 10, 3)
+    poke_byte(aad, 11, blen / 256)
+    poke_byte(aad, 12, blen % 256)
+    # nonce = iv(4) || explicit(8)
+    nonce: _sov_alloc(16)
+    i: 0
+    as long as i < 4
+        poke_byte(nonce, i, peek_byte(iv, i))
+        i: i + 1
+    i: 0
+    as long as i < 8
+        poke_byte(nonce, 4 + i, wand(shr(sq, (7 - i) * 8), 255))
+        i: i + 1
+    ct: _sov_alloc(blen + 16)
+    gmt: gm_enc(key, nonce, aad, 13, body, blen, ct)
+    i: 0
+    as long as i < blen
+        poke_byte(out, 13 + i, peek_byte(ct, i))
+        i: i + 1
+    i: 0
+    as long as i < 16
+        poke_byte(out, 13 + blen + i, peek_byte(gm_tag, i))
+        i: i + 1
+    tl_seq_c: sq + 1
+    tl_clen: 5 + 8 + blen + 16
+    return 5 + 8 + blen + 16
+
+# decrypt a record: in is the record body (explicit nonce first),
+# typ the record type from the header; the plaintext into out;
+# 1 on a good tag
+tl_rec_dec in blen typ out key iv:
+    ss: tl_seq_s
+    nonce: _sov_alloc(16)
+    i: 0
+    as long as i < 4
+        poke_byte(nonce, i, peek_byte(iv, i))
+        i: i + 1
+    i: 0
+    as long as i < 8
+        poke_byte(nonce, 4 + i, peek_byte(in, i))
+        i: i + 1
+    n: blen - 8 - 16
+    aad: _sov_alloc(16)
+    i: 0
+    as long as i < 8
+        poke_byte(aad, i, wand(shr(ss, (7 - i) * 8), 255))
+        i: i + 1
+    poke_byte(aad, 8, typ)
+    poke_byte(aad, 9, 3)
+    poke_byte(aad, 10, 3)
+    poke_byte(aad, 11, n / 256)
+    poke_byte(aad, 12, n % 256)
+    ct: _sov_alloc(n)
+    i: 0
+    as long as i < n
+        poke_byte(ct, i, peek_byte(in, 8 + i))
+        i: i + 1
+    gm_ctr_dec(key, nonce, ct, n, out)
+    gm_tag_of(key, nonce, aad, 13, ct, n)
+    bad: 0
+    i: 0
+    as long as i < 16
+        if peek_byte(gm_tag, i) is not peek_byte(in, 8 + n + i)
+            bad: 1
+        i: i + 1
+    tl_seq_s: ss + 1
+    if bad is 0
+        return 1
+    return 0
+
+# ---- the handshake ----
+# All handshake state lives in buffers owned by tl_client and is
+# handed from job to job as arguments, because this compiler does
+# not keep globals across the deep calls of the handshake. The only
+# globals left are the channels written as the very last thing a job
+# does and read immediately after it returns: tl_hslen (transcript
+# length), tl_clen (record length), tl_gtot (bytes read), and the
+# record counters tl_seq_c / tl_seq_s, which are set just before
+# each record is built.
+
+# read one record; returns (type, bodylen) via globals; body in tl_rb
+tl_rb: 0
+tl_rtype: 0
+tl_rlen: 0
+
+tl_recv fd:
+    hdr: _sov_alloc(8)
+    got: 0
+    as long as got < 5
+        n: sock_recv_raw(fd, hdr + got, 5 - got)
+        if n < 1
+            return 0 - 1
+        got: got + n
+    tl_rtype: peek_byte(hdr, 0)
+    l: peek_byte(hdr, 3) * 256 + peek_byte(hdr, 4)
+    tl_rlen: l
+    if tl_rb is 0
+        tl_rb: _sov_alloc(20000)
+    got: 0
+    as long as got < l
+        n: sock_recv_raw(fd, tl_rb + got, l - got)
+        if n < 1
+            return 0 - 1
+        got: got + n
+    return 0
+
+# the handshake transcript: append (type, len, body) to the buffer
+# hs at offset at; the new offset comes back through tl_hslen,
+# written as the last thing this job does
+tl_hslen: 0
+
+tl_hs_add hs at typ body blen:
+    poke_byte(hs, at, typ)
+    poke_byte(hs, at + 1, blen / 65536)
+    poke_byte(hs, at + 2, (blen / 256) % 256)
+    poke_byte(hs, at + 3, blen % 256)
+    i: 0
+    as long as i < blen
+        poke_byte(hs, at + 4 + i, peek_byte(body, i))
+        i: i + 1
+    tl_hslen: at + 4 + blen
+    return 0
+
+# the whole client: the handshake, then the request, then the
+# response. req is a full HTTP request, headers and all, as a
+# NUL-terminated string. Every piece of handshake state is a buffer
+# owned here and passed by argument; nothing is read back from a
+# global across calls.
+tl_client fd host req out outmax:
+    tl_seq_c: 0
+    tl_seq_s: 0
+    # rcrs: the client random in 0..31, the server random in 32..63
+    rcrs: _sov_alloc(64)
+    ms: _sov_alloc(48)
+    pm: _sov_alloc(48)
+    ep: _sov_alloc(32)
+    epu: _sov_alloc(32)
+    spub: _sov_alloc(32)
+    b9: _sov_alloc(32)
+    sk: _sov_alloc(16)
+    civ: _sov_alloc(4)
+    rk: _sov_alloc(16)
+    riv: _sov_alloc(4)
+    # mb: the certificate modulus in 0..255, its length at 256, the
+    # exponent length at 264; eb holds the exponent
+    mb: _sov_alloc(272)
+    eb: _sov_alloc(8)
+    hs: _sov_alloc(20000)
+    hlen: 0
+    i: 0
+    as long as i < 32
+        poke_byte(rcrs, i, i * 7 % 256)
+        i: i + 1
+    poke_byte(b9, 0, 9)
+    r: tl_step_ch(fd, rcrs, hs)
+    if r is 0
+        return 0
+    hlen: tl_hslen
+    r: tl_step_sh(fd, rcrs, hs, hlen)
+    if r is 0
+        return 0
+    hlen: tl_hslen
+    r: tl_step_cert(fd, mb, eb, hs, hlen)
+    if r is 0
+        return 0
+    hlen: tl_hslen
+    r: tl_step_ske(fd, rcrs, mb, eb, spub, hs, hlen)
+    if r is 0
+        return 0
+    hlen: tl_hslen
+    r: tl_step_ep(ep, epu, spub, pm, b9)
+    if r is 0
+        return 0
+    r: tl_step_shd(fd, hs, hlen)
+    if r is 0
+        return 0
+    hlen: tl_hslen
+    r: tl_step_cke(fd, epu, hs, hlen)
+    if r is 0
+        return 0
+    hlen: tl_hslen
+    r: tl_step_keys(rcrs, pm, ms, sk, civ, rk, riv)
+    if r is 0
+        return 0
+    # the sequence numbers are set just before each record: this
+    # compiler does not keep globals across the deep calls above
+    tl_seq_c: 0
+    r: tl_step_finish(fd, sk, civ, ms, hs, hlen)
+    if r is 0
+        return 0
+    hlen: tl_hslen
+    r: tl_step_vfinish(fd, rk, riv, ms, hs, hlen)
+    if r is 0
+        return 0
+    tl_seq_c: 1
+    r: tl_step_send(fd, sk, civ, req, out, outmax)
+    if r is 0
+        return 0
+    r: tl_step_read(fd, rk, riv, out, outmax)
+    tl_len: tl_gtot
+    return tl_gtot
+
+# ---- the request, sent in 4096-byte records, which is what a
+# record may carry. The record length comes back through tl_clen,
+# read immediately, because a size as a value does not survive in
+# this compiler.
+tl_gtot: 0
+
+tl_step_send fd sk civ req out outmax:
+    n: str_len(req)
+    sq: 1
+    i: 0
+    as long as i < n
+        cl: 4096
+        if n - i < 4096
+            cl: n - i
+        chunk: _sov_alloc(4096)
+        j: 0
+        as long as j < cl
+            poke_byte(chunk, j, peek_byte(req, i + j))
+            j: j + 1
+        en: _sov_alloc(4200)
+        # the counter is handed over just before the record, and the
+        # record hands the next one back the same way
+        tl_seq_c: sq
+        tl_rec_enc(en, 23, chunk, cl, sk, civ)
+        rl: tl_clen
+        sq: sq + 1
+        sock_send_raw(fd, en, rl)
+        i: i + cl
+    return 1
+
+# read the response records; the plaintext lands in out, the total
+# comes back through tl_gtot
+tl_step_read fd rk riv out outmax:
+    tot: 0
+    ss: tl_seq_s
+    more: 1
+    as long as more is 1
+        r: tl_recv(fd)
+        if r is not 0
+            more: 0
+        if not
+            if tl_rtype is 23
+                d: _sov_alloc(20000)
+                tl_seq_s: ss
+                ok: tl_rec_dec(tl_rb, tl_rlen, tl_rtype, d, rk, riv)
+                ss: tl_seq_s
+                if ok is 1
+                    n: tl_rlen - 24
+                    j: 0
+                    as long as j < n
+                        if tot + j < outmax
+                            poke_byte(out, tot + j, peek_byte(d, j))
+                        j: j + 1
+                    tot: tot + n
+            if not
+                more: 0
+    tl_gtot: tot
+    return 1
+
+# send the ClientHello. The cipher is ECDHE-RSA with AES-128-GCM
+# (0xC02F) on X25519: the server sends a ServerKeyExchange with an
+# ephemeral X25519 key, the client answers with its own, and the
+# premaster secret is the X25519 shared secret. The RSA key of the
+# certificate only signs the ServerKeyExchange.
+tl_step_ch fd rcrs hs:
+    ch: _sov_alloc(80)
+    poke_byte(ch, 0, 3)
+    poke_byte(ch, 1, 3)
+    i: 0
+    as long as i < 32
+        poke_byte(ch, 2 + i, peek_byte(rcrs, i))
+        i: i + 1
+    poke_byte(ch, 34, 0)
+    poke_byte(ch, 35, 0)
+    poke_byte(ch, 36, 2)
+    poke_byte(ch, 37, 192)
+    poke_byte(ch, 38, 47)
+    poke_byte(ch, 39, 1)
+    poke_byte(ch, 40, 0)
+    poke_byte(ch, 41, 0)
+    poke_byte(ch, 42, 22)
+    poke_byte(ch, 43, 0)
+    poke_byte(ch, 44, 13)
+    poke_byte(ch, 45, 0)
+    poke_byte(ch, 46, 4)
+    poke_byte(ch, 47, 0)
+    poke_byte(ch, 48, 2)
+    poke_byte(ch, 49, 4)
+    poke_byte(ch, 50, 1)
+    poke_byte(ch, 51, 0)
+    poke_byte(ch, 52, 10)
+    poke_byte(ch, 53, 0)
+    poke_byte(ch, 54, 4)
+    poke_byte(ch, 55, 0)
+    poke_byte(ch, 56, 2)
+    poke_byte(ch, 57, 0)
+    poke_byte(ch, 58, 29)
+    poke_byte(ch, 59, 0)
+    poke_byte(ch, 60, 11)
+    poke_byte(ch, 61, 0)
+    poke_byte(ch, 62, 2)
+    poke_byte(ch, 63, 1)
+    poke_byte(ch, 64, 0)
+    tl_hs_add(hs, 0, 1, ch, 65)
+    rec: _sov_alloc(64)
+    poke_byte(rec, 0, 22)
+    poke_byte(rec, 1, 3)
+    poke_byte(rec, 2, 3)
+    poke_byte(rec, 3, tl_hslen / 256)
+    poke_byte(rec, 4, tl_hslen % 256)
+    i: 0
+    as long as i < tl_hslen
+        poke_byte(rec, 5 + i, peek_byte(hs, i))
+        i: i + 1
+    sock_send_raw(fd, rec, 5 + tl_hslen)
+    return 1
+
+# read and record the ServerHello
+tl_step_sh fd rcrs hs hlen:
+    r: tl_recv(fd)
+    if r is not 0
+        return 0
+    if tl_rtype is not 22
+        return 0
+    sh: tl_rb + 4
+    i: 0
+    as long as i < 32
+        poke_byte(rcrs, 32 + i, peek_byte(sh, 2 + i))
+        i: i + 1
+    tl_hs_add(hs, hlen, 2, sh, tl_rlen - 4)
+    return 1
+
+# read the Certificate and pull the public key out
+tl_step_cert fd mb eb hs hlen:
+    r: tl_recv(fd)
+    if r is not 0
+        return 0
+    if tl_rtype is not 22
+        return 0
+    cbody: tl_rb + 4
+    clen: peek_byte(cbody, 3) * 65536 + peek_byte(cbody, 4) * 256 + peek_byte(cbody, 5)
+    cert: cbody + 6
+    tl_hs_add(hs, hlen, 11, cbody, tl_rlen - 4)
+    tl_cert_key(cert, clen)
+    j: 0
+    as long as j < tl_modlen
+        poke_byte(mb, j, peek_byte(tl_mod, j))
+        j: j + 1
+    j: 0
+    as long as j < tl_explen
+        poke_byte(eb, j, peek_byte(tl_exp, j))
+        j: j + 1
+    poke_i64(mb, 256, tl_modlen)
+    poke_i64(mb, 264, tl_explen)
+    return 1
+
+# read ServerHelloDone
+tl_step_shd fd hs hlen:
+    r: tl_recv(fd)
+    if r is not 0
+        return 0
+    if tl_rtype is not 22
+        return 0
+    tl_hs_add(hs, hlen, 14, tl_rb + 4, tl_rlen - 4)
+    return 1
+
+# our ephemeral X25519 keypair, and the premaster secret: the
+# shared secret with the server's ephemeral key (which
+# tl_step_ske has stored in spub)
+tl_step_ep ep epu spub pm b9:
+    i: 0
+    as long as i < 32
+        poke_byte(ep, i, (i * 13 + 5) % 256)
+        i: i + 1
+    x19(epu, ep, b9)
+    x19(pm, ep, spub)
+    return 1
+
+# read the ServerKeyExchange, check the RSA signature over
+# client_random || server_random || params, and keep the server's
+# X25519 key in spub
+tl_step_ske fd rcrs mb eb spub hs hlen:
+    r: tl_recv(fd)
+    if r is not 0
+        return 0
+    if tl_rtype is not 22
+        return 0
+    print peek_byte(tl_rb, 4)
+    if peek_byte(tl_rb, 0) is not 12
+        return 0
+    # params: curve type, named curve, point (36 bytes)
+    prm: tl_rb + 4
+    i: 0
+    as long as i < 32
+        poke_byte(spub, i, peek_byte(prm, 4 + i))
+        i: i + 1
+    tl_hs_add(hs, hlen, 12, tl_rb + 4, tl_rlen - 4)
+    # the signature over the two randoms and the params
+    hi: _sov_alloc(100)
+    i: 0
+    as long as i < 32
+        poke_byte(hi, i, peek_byte(rcrs, i))
+        poke_byte(hi, 32 + i, peek_byte(rcrs, 32 + i))
+        i: i + 1
+    i: 0
+    as long as i < 36
+        poke_byte(hi, 64 + i, peek_byte(prm, i))
+        i: i + 1
+    hb: _sov_alloc(64)
+    sha256_bytes(hi, 100, hb)
+    fseed: _sov_alloc(32)
+    j: 0
+    as long as j < 8
+        v: peek_i64(hb, j * 8)
+        poke_byte(fseed, j * 4, wand(shr(v, 24), 255))
+        poke_byte(fseed, j * 4 + 1, wand(shr(v, 16), 255))
+        poke_byte(fseed, j * 4 + 2, wand(shr(v, 8), 255))
+        poke_byte(fseed, j * 4 + 3, wand(v, 255))
+        j: j + 1
+    # the expected PKCS#1 v1.5 padded digest
+    k: peek_i64(mb, 256)
+    expd: _sov_alloc(512)
+    j: 0
+    as long as j < k
+        poke_byte(expd, j, 255)
+        j: j + 1
+    poke_byte(expd, 0, 0)
+    poke_byte(expd, 1, 1)
+    poke_byte(expd, k - 52, 0)
+    poke_byte(expd, k - 51, 48)
+    poke_byte(expd, k - 50, 49)
+    poke_byte(expd, k - 49, 48)
+    poke_byte(expd, k - 48, 13)
+    poke_byte(expd, k - 47, 6)
+    poke_byte(expd, k - 46, 9)
+    poke_byte(expd, k - 45, 96)
+    poke_byte(expd, k - 44, 134)
+    poke_byte(expd, k - 43, 72)
+    poke_byte(expd, k - 42, 1)
+    poke_byte(expd, k - 41, 101)
+    poke_byte(expd, k - 40, 3)
+    poke_byte(expd, k - 39, 4)
+    poke_byte(expd, k - 38, 2)
+    poke_byte(expd, k - 37, 1)
+    poke_byte(expd, k - 36, 5)
+    poke_byte(expd, k - 35, 0)
+    poke_byte(expd, k - 34, 4)
+    poke_byte(expd, k - 33, 32)
+    j: 0
+    as long as j < 32
+        poke_byte(expd, k - 32 + j, peek_byte(fseed, j))
+        j: j + 1
+    # the layout is params, the signature algorithm (2 bytes,
+    # SHA256-RSA here), the signature length, then the signature
+    sl: peek_byte(tl_rb, 42) * 256 + peek_byte(tl_rb, 43)
+    sg: tl_rb + 44
+    ck: _sov_alloc(512)
+    tl_rsa_enc(sg, sl, ck, mb, k, eb, peek_i64(mb, 264))
+    bad: 0
+    j: 0
+    as long as j < k
+        if peek_byte(ck, j) is not peek_byte(expd, j)
+            bad: 1
+        j: j + 1
+    print bad
+    if bad is 1
+        return 0
+    return 1
+
+# send the ClientKeyExchange: a one-byte length, then our raw
+# X25519 public key
+tl_step_cke fd epu hs hlen:
+    cke: _sov_alloc(40)
+    poke_byte(cke, 0, 32)
+    j: 0
+    as long as j < 32
+        poke_byte(cke, 1 + j, peek_byte(epu, j))
+        j: j + 1
+    tl_hs_add(hs, hlen, 16, cke, 33)
+    rec: _sov_alloc(45)
+    poke_byte(rec, 0, 22)
+    poke_byte(rec, 1, 3)
+    poke_byte(rec, 2, 3)
+    l: 4 + 33
+    poke_byte(rec, 3, l / 256)
+    poke_byte(rec, 4, l % 256)
+    poke_byte(rec, 5, 16)
+    poke_byte(rec, 6, 0)
+    poke_byte(rec, 7, 0)
+    poke_byte(rec, 8, 33)
+    j: 0
+    as long as j < 33
+        poke_byte(rec, 9 + j, peek_byte(cke, j))
+        j: j + 1
+    sock_send_raw(fd, rec, 9 + 33)
+    return 1
+
+# the key schedule: the premaster in pm, the randoms in rcrs, the
+# master secret into ms and the four record keys into their buffers
+tl_step_keys rcrs pm ms sk civ rk riv:
+    tl_n: 48
+    tl_prf(ms, pm, 48, "master secret", 13, rcrs, 64)
+    seed2: _sov_alloc(64)
+    j: 0
+    as long as j < 32
+        poke_byte(seed2, j, peek_byte(rcrs, 32 + j))
+        poke_byte(seed2, 32 + j, peek_byte(rcrs, j))
+        j: j + 1
+    kb: _sov_alloc(40)
+    tl_n: 40
+    tl_prf(kb, ms, 48, "key expansion", 13, seed2, 64)
+    j: 0
+    as long as j < 16
+        poke_byte(sk, j, peek_byte(kb, j))
+        poke_byte(rk, j, peek_byte(kb, 16 + j))
+        j: j + 1
+    j: 0
+    as long as j < 4
+        poke_byte(civ, j, peek_byte(kb, 32 + j))
+        poke_byte(riv, j, peek_byte(kb, 36 + j))
+        j: j + 1
+    return 1
+
+# send the client Finished
+tl_step_finish fd sk civ ms hs hlen:
+    hs2: _sov_alloc(64)
+    sha256_bytes(hs, hlen, hs2)
+    fseed: _sov_alloc(32)
+    j: 0
+    as long as j < 8
+        v: peek_i64(hs2, j * 8)
+        poke_byte(fseed, j * 4, wand(shr(v, 24), 255))
+        poke_byte(fseed, j * 4 + 1, wand(shr(v, 16), 255))
+        poke_byte(fseed, j * 4 + 2, wand(shr(v, 8), 255))
+        poke_byte(fseed, j * 4 + 3, wand(v, 255))
+        j: j + 1
+    fv: _sov_alloc(32)
+    tl_n: 12
+    tl_prf(fv, ms, 48, "client finished", 15, fseed, 32)
+    fm: _sov_alloc(16)
+    poke_byte(fm, 0, 20)
+    poke_byte(fm, 1, 0)
+    poke_byte(fm, 2, 0)
+    poke_byte(fm, 3, 12)
+    j: 0
+    as long as j < 12
+        poke_byte(fm, 4 + j, peek_byte(fv, j))
+        j: j + 1
+    en: _sov_alloc(64)
+    # the sequence counter does not survive the deep calls above, so
+    # it is set again right here, where nothing runs in between
+    tl_seq_c: 0
+    tl_rec_enc(en, 22, fm, 16, sk, civ)
+    rl: tl_clen
+    # send the CCS and the Finished in one write
+    both: _sov_alloc(80)
+    poke_byte(both, 0, 20)
+    poke_byte(both, 1, 3)
+    poke_byte(both, 2, 3)
+    poke_byte(both, 3, 0)
+    poke_byte(both, 4, 1)
+    poke_byte(both, 5, 1)
+    i: 0
+    as long as i < rl
+        poke_byte(both, 6 + i, peek_byte(en, i))
+        i: i + 1
+    sock_send_raw(fd, both, 6 + rl)
+    tl_hs_add(hs, hlen, 20, fv, 12)
+    return 1
+
+# read the server's CCS and Finished, verify it
+tl_step_vfinish fd rk riv ms hs hlen:
+    r: tl_recv(fd)
+    if r is not 0
+        return 0
+    if tl_rtype is not 20
+        return 0
+    r: tl_recv(fd)
+    if r is not 0
+        return 0
+    if tl_rtype is not 22
+        return 0
+    d: _sov_alloc(200)
+    ok: tl_rec_dec(tl_rb, tl_rlen, tl_rtype, d, rk, riv)
+    if ok is 0
+        return 0
+    hs2: _sov_alloc(64)
+    sha256_bytes(hs, hlen, hs2)
+    fseed: _sov_alloc(32)
+    j: 0
+    as long as j < 8
+        v: peek_i64(hs2, j * 8)
+        poke_byte(fseed, j * 4, wand(shr(v, 24), 255))
+        poke_byte(fseed, j * 4 + 1, wand(shr(v, 16), 255))
+        poke_byte(fseed, j * 4 + 2, wand(shr(v, 8), 255))
+        poke_byte(fseed, j * 4 + 3, wand(v, 255))
+        j: j + 1
+    sv: _sov_alloc(32)
+    tl_n: 12
+    tl_prf(sv, ms, 48, "server finished", 15, fseed, 32)
+    bad: 0
+    j: 0
+    as long as j < 12
+        if peek_byte(sv, j) is not peek_byte(d, 4 + j)
+            bad: 1
+        j: j + 1
+    if bad is 1
+        return 0
+    return 1
+
+# ---- the whole thing: an https request ----
+tl_len: 0
+
+# send one full HTTP request over a fresh connection; the response
+# body lands in out, the length comes back (0 on failure)
+tl_send_req host port req out outmax:
+    ip: web_lookup(host)
+    if str_len(ip) is 0
+        return 0
+    tl_parse_ip(ip)
+    fd: sock_connect(tl_a0, tl_a1, tl_a2, tl_a3, port)
+    if fd < 0
+        return 0
+    tot: tl_client(fd, host, req, out, outmax)
+    sock_close(fd)
+    return tot
+
+tl_get host port path out outmax:
+    req: str_cat("GET ", path)
+    req: str_cat(req, " HTTP/1.1\r\nHost: ")
+    req: str_cat(req, host)
+    req: str_cat(req, "\r\nConnection: close\r\n\r\n")
+    return tl_send_req(host, port, req, out, outmax)
+
+tl_a0: 0
+tl_a1: 0
+tl_a2: 0
+tl_a3: 0
+
+tl_parse_ip s:
+    a: 0
+    b: 0
+    c: 0
+    d: 0
+    tl_a0: 0
+    tl_a1: 0
+    tl_a2: 0
+    tl_a3: 0
+    n: str_len(s)
+    v: 0
+    part: 0
+    i: 0
+    as long as i < n
+        ch: peek_byte(s, i)
+        if ch is 46
+            if part is 0
+                tl_a0: v
+            if part is 1
+                tl_a1: v
+            if part is 2
+                tl_a2: v
+            part: part + 1
+            v: 0
+        if not
+            v: v * 10 + ch - 48
+        i: i + 1
+    tl_a3: v
+    return 0

@@ -1,0 +1,483 @@
+# x25519.sov — the X25519 key agreement (RFC 7748), in Sovren.
+#
+# The first attempt died on two compiler bugs: bit extraction
+# (value >> i) & 1 went wrong at the top bit, and the big ladder
+# job clobbered its own locals. This version is written around
+# both: every scalar bit is read from a byte array (no big
+# shifts), and every job is small with at most seven values, all
+# buffers made by the caller. Nothing hands a pointer back from a
+# call, and no bit-twiddling helpers are needed: every mask used
+# here is 2^k - 1, which is a remainder, and the two shifts are
+# small loops. (library/bit32.sov only thinks in 32 bits; the
+# limbs here reach 50 bits, so it must not be used.)
+#
+#   use x25519
+#   x19(out, scalar, u)   # 32-byte buffers each; out = scalar*u
+#
+# The scalar is clamped the RFC 7748 way before the ladder runs.
+
+use mem
+
+# the field is the prime 2^255 - 19; a number is ten limbs of
+# 26 bits, little-endian, each kept in an i64 slot (80 bytes)
+
+# the field prime, limb by limb: p = 2^255 - 19
+xx_p0: 67108845
+xx_p1: 67108863
+xx_p9: 2097151
+
+# shift right by n (n is small; a is never negative)
+xx_shr a n:
+    r: a
+    i: 0
+    as long as i < n
+        r: r / 2
+        i: i + 1
+    return r
+
+# shift left by n (n is small, a stays well inside 64 bits)
+xx_shl a n:
+    r: a
+    i: 0
+    as long as i < n
+        r: r * 2
+        i: i + 1
+    return r
+
+fe_zero out:
+    i: 0
+    as long as i < 10
+        poke_i64(out, i * 8, 0)
+        i: i + 1
+    return 0
+
+fe_copy out a:
+    i: 0
+    as long as i < 10
+        poke_i64(out, i * 8, peek_i64(a, i * 8))
+        i: i + 1
+    return 0
+
+# out = a + b; limbs carried so each sits below 2^27. The top
+# limb is left alone (it may reach 2^27): masking it would throw
+# away 2^260 = 608 (mod p), and the caller reduces when it needs
+# an exact answer below p.
+fe_add out a b:
+    i: 0
+    as long as i < 10
+        poke_i64(out, i * 8, peek_i64(a, i * 8) + peek_i64(b, i * 8))
+        i: i + 1
+    i: 0
+    as long as i < 9
+        c: peek_i64(out, i * 8) / 67108864
+        poke_i64(out, i * 8, peek_i64(out, i * 8) % 67108864)
+        poke_i64(out, (i + 1) * 8, peek_i64(out, (i + 1) * 8) + c)
+        i: i + 1
+    return 0
+
+# out = a - b + 4p. Every limb is kept positive by the bias, so no
+# limb ever goes below zero (this language truncates division and
+# remainder toward zero, so a negative limb would not carry back).
+# The top limb is left alone, like fe_add.
+fe_sub out a b:
+    i: 0
+    as long as i < 10
+        w: 268435452
+        if i is 0
+            w: 268435380
+        if i is 9
+            w: 8388604
+        poke_i64(out, i * 8, peek_i64(a, i * 8) - peek_i64(b, i * 8) + w)
+        i: i + 1
+    i: 0
+    as long as i < 9
+        c: peek_i64(out, i * 8) / 67108864
+        poke_i64(out, i * 8, peek_i64(out, i * 8) % 67108864)
+        poke_i64(out, (i + 1) * 8, peek_i64(out, (i + 1) * 8) + c)
+        i: i + 1
+    return 0
+
+# out = a * b mod p. Schoolbook into 20 limbs, then fold the top
+# ten back with 2^260 = 608 (mod p), splitting the last limb so no
+# sum ever leaves 64 bits.
+fe_mul out a b:
+    t: _sov_alloc(160)
+    i: 0
+    as long as i < 20
+        poke_i64(t, i * 8, 0)
+        i: i + 1
+    i: 0
+    as long as i < 10
+        j: 0
+        as long as j < 10
+            poke_i64(t, (i + j) * 8, peek_i64(t, (i + j) * 8) + peek_i64(a, i * 8) * peek_i64(b, j * 8))
+            j: j + 1
+        i: i + 1
+    i: 0
+    as long as i < 19
+        c: peek_i64(t, i * 8) / 67108864
+        poke_i64(t, i * 8, peek_i64(t, i * 8) % 67108864)
+        poke_i64(t, (i + 1) * 8, peek_i64(t, (i + 1) * 8) + c)
+        i: i + 1
+    i: 0
+    as long as i < 9
+        poke_i64(t, i * 8, peek_i64(t, i * 8) + 608 * peek_i64(t, (i + 10) * 8))
+        i: i + 1
+    # the top limb splits in two: its low 26 bits join limb 9, and
+    # the carry above 2^26 joins limb 9's overflow, which folds
+    # back into limb 0 with 608 (2^260 = 608 mod p)
+    q: peek_i64(t, 19 * 8) / 67108864
+    r: peek_i64(t, 19 * 8) % 67108864
+    c9: peek_i64(t, 9 * 8) + 608 * r
+    ex: c9 / 67108864 + 608 * q
+    poke_i64(t, 9 * 8, c9 % 67108864)
+    poke_i64(t, 0 * 8, peek_i64(t, 0 * 8) + 608 * ex)
+    poke_i64(t, 19 * 8, 0)
+    i: 0
+    as long as i < 9
+        c: peek_i64(t, i * 8) / 67108864
+        poke_i64(t, i * 8, peek_i64(t, i * 8) % 67108864)
+        poke_i64(t, (i + 1) * 8, peek_i64(t, (i + 1) * 8) + c)
+        i: i + 1
+    # the carry out of the top limb is 2^260 again
+    c: peek_i64(t, 9 * 8) / 67108864
+    poke_i64(t, 9 * 8, peek_i64(t, 9 * 8) % 67108864)
+    poke_i64(t, 0 * 8, peek_i64(t, 0 * 8) + 608 * c)
+    i: 0
+    as long as i < 9
+        c: peek_i64(t, i * 8) / 67108864
+        poke_i64(t, i * 8, peek_i64(t, i * 8) % 67108864)
+        poke_i64(t, (i + 1) * 8, peek_i64(t, (i + 1) * 8) + c)
+        i: i + 1
+    i: 0
+    as long as i < 10
+        poke_i64(out, i * 8, peek_i64(t, i * 8))
+        i: i + 1
+    return 0
+
+# out = a * a mod p
+fe_sqr out a:
+    return fe_mul(out, a, a)
+
+# 1 when out >= p (compare from the top limb down)
+fe_ge_p out:
+    i: 9
+    as long as i > 0 - 1
+        v: peek_i64(out, i * 8)
+        w: xx_p1
+        if i is 0
+            w: xx_p0
+        if i is 9
+            w: xx_p9
+        if v > w
+            return 1
+        if v < w
+            return 0
+        i: i - 1
+    return 1
+
+# out = out - p (call only when out >= p)
+fe_sub_p out:
+    br: 0
+    i: 0
+    as long as i < 10
+        w: xx_p1
+        if i is 0
+            w: xx_p0
+        if i is 9
+            w: xx_p9
+        t: peek_i64(out, i * 8) - w - br
+        if t < 0
+            t: t + 67108864
+            br: 1
+        if not
+            br: 0
+        poke_i64(out, i * 8, t)
+        i: i + 1
+    return 0
+
+# out = out mod p. The ladder keeps values below about 2^261, so
+# up to 40 subtractions of p settle it.
+fe_reduce out:
+    n: 0
+    as long as n < 40
+        if fe_ge_p(out) is 1
+            fe_sub_p(out)
+        n: n + 1
+    return 0
+
+# ---- the Montgomery ladder ----
+# x2,z2,x3,z3 follow RFC 7748; each ladder step is a handful of
+# small jobs so no job is big enough for the compiler to break.
+
+# A = x2 + z2, B = x2 - z2
+x_lab x2 z2 oa ob:
+    fe_add(oa, x2, z2)
+    fe_sub(ob, x2, z2)
+    return 0
+
+# C = x3 + z3, D = x3 - z3
+x_lcd x3 z3 oc od:
+    fe_add(oc, x3, z3)
+    fe_sub(od, x3, z3)
+    return 0
+
+# E = AA - BB
+x_le aa bb oe:
+    fe_sub(oe, aa, bb)
+    return 0
+
+# DA = D * A
+x_lda od oa oda:
+    fe_mul(oda, od, oa)
+    return 0
+
+# CB = C * B
+x_lcb oc ob ocb:
+    fe_mul(ocb, oc, ob)
+    return 0
+
+# x3 = (DA + CB)^2, U = DA - CB
+x_lx3 oda ocb ox3 ou:
+    fe_add(ox3, oda, ocb)
+    fe_sub(ou, oda, ocb)
+    fe_sqr(ox3, ox3)
+    return 0
+
+# z3 = x1 * U^2
+x_lz3 x1 ou oz3:
+    fe_sqr(oz3, ou)
+    fe_mul(oz3, x1, oz3)
+    return 0
+
+# x2 = AA * BB
+x_lx2 oaa obb ox2:
+    fe_mul(ox2, oaa, obb)
+    return 0
+
+# z2 = E * (AA + 121665 * E). The 121665 * E step can reach 2^277,
+# so its top carry folds back with 608 like everywhere else.
+x_lz2 oaa oe oz2:
+    t: _sov_alloc(80)
+    i: 0
+    as long as i < 10
+        poke_i64(t, i * 8, peek_i64(oe, i * 8) * 121665)
+        i: i + 1
+    i: 0
+    as long as i < 9
+        c: peek_i64(t, i * 8) / 67108864
+        poke_i64(t, i * 8, peek_i64(t, i * 8) % 67108864)
+        poke_i64(t, (i + 1) * 8, peek_i64(t, (i + 1) * 8) + c)
+        i: i + 1
+    c: peek_i64(t, 9 * 8) / 67108864
+    poke_i64(t, 9 * 8, peek_i64(t, 9 * 8) % 67108864)
+    poke_i64(t, 0 * 8, peek_i64(t, 0 * 8) + 608 * c)
+    i: 0
+    as long as i < 9
+        c: peek_i64(t, i * 8) / 67108864
+        poke_i64(t, i * 8, peek_i64(t, i * 8) % 67108864)
+        poke_i64(t, (i + 1) * 8, peek_i64(t, (i + 1) * 8) + c)
+        i: i + 1
+    fe_add(t, oaa, t)
+    fe_mul(oz2, oe, t)
+    return 0
+
+# swap the two numbers when sw is 1 (plain conditional swap; this
+# is a client's own ephemeral key, no secret is shared here)
+x_cswap sw a b:
+    if sw is 1
+        i: 0
+        as long as i < 10
+            t: peek_i64(a, i * 8)
+            poke_i64(a, i * 8, peek_i64(b, i * 8))
+            poke_i64(b, i * 8, t)
+            i: i + 1
+    return 0
+
+# one ladder step, in place: sc is scratch space for the step's
+# temporaries
+x_step x1 x2 z2 x3 z3 sc:
+    a: sc
+    b: sc + 80
+    aa: sc + 160
+    bb: sc + 240
+    e: sc + 320
+    c: sc + 400
+    d: sc + 480
+    da: sc + 560
+    cb: sc + 640
+    u: sc + 720
+    x_lab(x2, z2, a, b)
+    fe_sqr(aa, a)
+    fe_reduce(aa)
+    fe_sqr(bb, b)
+    fe_reduce(bb)
+    x_le(aa, bb, e)
+    x_lcd(x3, z3, c, d)
+    x_lda(d, a, da)
+    fe_reduce(da)
+    x_lcb(c, b, cb)
+    fe_reduce(cb)
+    x_lx3(da, cb, x3, u)
+    fe_reduce(x3)
+    x_lz3(x1, u, z3)
+    fe_reduce(z3)
+    x_lx2(aa, bb, x2)
+    fe_reduce(x2)
+    x_lz2(aa, e, z2)
+    fe_reduce(z2)
+    return 0
+
+# out = a^(2^255 - 21) mod p, by square-and-multiply; the exponent
+# bytes are 0xEB then 0xFF thirty times then 0x7F
+x_invert out a:
+    r: _sov_alloc(80)
+    fe_zero(r)
+    poke_i64(r, 0, 1)
+    t: 254
+    as long as t > 0 - 1
+        fe_sqr(r, r)
+        b: 255
+        if t / 8 is 31
+            b: 127
+        if t / 8 is 0
+            b: 235
+        bit: xx_shr(b, t % 8) % 2
+        if bit is 1
+            fe_mul(r, r, a)
+        t: t - 1
+    fe_copy(out, r)
+    return 0
+
+# 32 bytes (little-endian) into ten 26-bit limbs
+x_decode out b:
+    i: 0
+    as long as i < 10
+        s: i * 26
+        o: s / 8
+        sh: s % 8
+        v: xx_shr(peek_byte(b, o), sh)
+        v: v + xx_shl(peek_byte(b, o + 1), 8 - sh)
+        v: v + xx_shl(peek_byte(b, o + 2), 16 - sh)
+        if o + 3 < 32
+            v: v + xx_shl(peek_byte(b, o + 3), 24 - sh)
+        poke_i64(out, i * 8, v % 67108864)
+        i: i + 1
+    return 0
+
+# ten 26-bit limbs into 32 bytes (little-endian)
+x_encode b out:
+    i: 0
+    as long as i < 10
+        s: i * 26
+        o: s / 8
+        sh: s % 8
+        v: peek_i64(b, i * 8)
+        poke_byte(out, o, wor_byte(peek_byte(out, o), xx_shl(v % xx_shl(1, 8 - sh), sh)))
+        poke_byte(out, o + 1, wor_byte(peek_byte(out, o + 1), xx_shr(v, 8 - sh) % 256))
+        if o + 2 < 32
+            poke_byte(out, o + 2, wor_byte(peek_byte(out, o + 2), xx_shr(v, 16 - sh) % 256))
+        if o + 3 < 32
+            poke_byte(out, o + 3, wor_byte(peek_byte(out, o + 3), xx_shr(v, 24 - sh) % 256))
+        i: i + 1
+    return 0
+
+# or two small numbers together, bit by bit (both below 2^9 here)
+wor_byte a b:
+    r: 0
+    p: 1
+    x: a
+    y: b
+    i: 0
+    as long as i < 8
+        if x % 2 is 1
+            r: r + p
+        if not
+            if y % 2 is 1
+                r: r + p
+        x: x / 2
+        y: y / 2
+        p: p * 2
+        i: i + 1
+    return r
+
+# clamp the scalar and set up the ladder state in st:
+#   st + 0:   the clamped scalar, 32 bytes
+#   st + 32:  x1
+#   st + 112: x2
+#   st + 192: z2
+#   st + 272: x3
+#   st + 352: z3
+x_setup scalar u st:
+    i: 0
+    as long as i < 32
+        poke_byte(st, i, peek_byte(scalar, i))
+        i: i + 1
+    poke_byte(st, 0, peek_byte(st, 0) - (peek_byte(st, 0) % 8))
+    poke_byte(st, 31, peek_byte(st, 31) % 128)
+    poke_byte(st, 31, peek_byte(st, 31) % 64 + 64)
+    x_decode(st + 32, u)
+    poke_i64(st + 32, 9 * 8, peek_i64(st + 32, 9 * 8) % 2097152)
+    fe_zero(st + 112)
+    poke_i64(st + 112, 0, 1)
+    fe_zero(st + 192)
+    fe_copy(st + 272, st + 32)
+    fe_zero(st + 352)
+    poke_i64(st + 352, 0, 1)
+    return 0
+
+# the bit loop: swap, then step, for every bit of the scalar.
+# st + 432 holds how many bits to run (255 normally; the checks
+# run short ladders to prove the steps).
+x_loop st sc:
+    sb: st
+    x1: st + 32
+    x2: st + 112
+    z2: st + 192
+    x3: st + 272
+    z3: st + 352
+    sw: 0
+    lim: peek_i64(st, 432)
+    t: 254
+    as long as t > 254 - lim
+        bit: xx_shr(peek_byte(sb, t / 8), t % 8) % 2
+        if bit is 1
+            if sw is 0
+                sw: 1
+            if not
+                sw: 0
+        x_cswap(sw, x2, x3)
+        x_cswap(sw, z2, z3)
+        if bit is 1
+            sw: 1
+        if not
+            sw: 0
+        x_step(x1, x2, z2, x3, z3, sc)
+        t: t - 1
+    x_cswap(sw, x2, x3)
+    x_cswap(sw, z2, z3)
+    return 0
+
+# the final division and the byte output
+x_finish st out:
+    x2: st + 112
+    z2: st + 192
+    x_invert(z2, z2)
+    fe_mul(x2, x2, z2)
+    fe_reduce(x2)
+    i: 0
+    as long as i < 32
+        poke_byte(out, i, 0)
+        i: i + 1
+    x_encode(x2, out)
+    return 0
+
+# out = the X25519 result of scalar * u, all three 32 bytes
+x19 out scalar u:
+    st: _sov_alloc(440)
+    poke_i64(st, 432, 255)
+    sc: _sov_alloc(800)
+    x_setup(scalar, u, st)
+    x_loop(st, sc)
+    x_finish(st, out)
+    return 0

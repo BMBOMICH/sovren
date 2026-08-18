@@ -89,6 +89,16 @@ Quotes mean letters. No quotes means a box.
     print x
 ```
 
+A value is text when it sits inside the heap (a string) or above
+it (the arguments the system handed over), and a number otherwise,
+so `print` of a big number and `print` of a string both come out
+right without ever saying which one it is.
+
+```
+    print 1000000        # a number
+    print str_cat("a", "b")   # text
+```
+
 Print the same line more than once:
 
 ```
@@ -265,6 +275,24 @@ That prints only `1`.
 
 ---
 
+## Try
+
+A job can `raise` a number and a caller can catch it with `try`
+and `except`, so a failure can be told about without stopping the
+whole program.
+
+```
+try
+    boom()
+except e
+    print e
+print "carried on"
+```
+
+If nobody catches a `raise`, the program prints the number and
+stops. `try` without `except` and `except` without `try` are
+errors.
+
 ## Wipe
 
 `wipe` clears letters out of memory. Use it for passwords and keys.
@@ -322,11 +350,73 @@ There are over a hundred libraries. A few to start with:
 | `draw` | lines, boxes, circles |
 | `site` | a page for a browser |
 
+A few more, for the things people make:
+
+| use | what it gives you |
+| --- | --- |
+| `calc` | work out a sum written as text: `calc_eval("2 + 3 * 4")` |
+| `trig` | sine, cosine, tangent and the rest, in `fixed` |
+| `frac` | fractions, kept in lowest terms |
+| `roman` | numbers to and from the old roman way |
+| `convert` | length, mass, time, data and temperature between units |
+| `audio` | tones and WAV files, the pieces for a music program |
+| `seq` | a step sequencer: packed notes played one after another |
+| `arena` | memory handed back all at once, instead of never |
+
+## A calculator
+
+`calc` reads a whole line and works it out, so a calculator is a
+few lines:
+
+```
+use calc
+use fixed
+
+main:
+    v: calc_eval("2 + 3 * (4 - 1)")
+    print fx_text(v)
+```
+
+That prints `14.000000`. The words `sqrt`, `abs`, `sin`, `cos`,
+`tan`, `floor`, `ceil` and `round` work too, and `calc_ok()` says
+whether the line meant anything.
+
+## A tune
+
+`audio` makes WAV files. The music example in `music.sov` writes a
+tune to `/tmp/twinkle.wav`. The pieces: `aud_new` makes a row of
+noughts, `aud_sine` `aud_square` `aud_saw` `aud_triangle` and
+`aud_noise` fill it, `aud_gain` `aud_fade_in` `aud_fade_out` and
+`aud_echo` change it, `aud_mix` and `aud_mix_at` put rows together,
+`aud_adsr` shapes a note so it does not click, and `aud_wav` writes
+the file. `seq` plays a whole tune: a row of packed notes, one
+frequency and length each, is written with `seq_note` and played
+with `seq_play`, which takes the shape to use (0 sine, 1 square,
+2 triangle, 3 saw).
+
+```
+use audio
+
+main:
+    p: aud_new(2000000)
+    aud_square(p, 0, 1000000, 440, 500000)
+    aud_fade_in(p, 0, 200000)
+    aud_fade_out(p, 800000, 1000000)
+    aud_wav("/tmp/tone.wav", p, 2000000)
+    print "wrote /tmp/tone.wav"
+```
+
+Times are in millionths of a second: `1000000` is one second,
+`500000` is half. Frequencies are in thousandths of a hertz:
+`440` is 440 hertz, middle C is `261630`.
+
 ---
 
 ## A page
 
-`use site` makes a page you open in a browser.
+`use site` makes a page you open in a browser. The page is
+Sovren's output, like a WAV file: the html is printed by the
+program, never typed by hand.
 
 ```
 use site
@@ -337,15 +427,19 @@ main:
     site_color("navy")
     site_size(36)
     site_big("Hello")
-    site_size(20)
-    site_color("black")
-    site_say("This page was made with Sovren.")
-    site_go("https://example.com", "A link")
+    site_heading(1, "About me")
+    site_p("Made with Sovren.")
+    site_bullets("music|books|pages")
+    site_input("your name")
+    site_button("Send")
     site_save("mysite.html")
     print "wrote mysite.html"
 ```
 
-Then open `mysite.html`.
+Then open `mysite.html`. The pieces: `site_say` `site_big`
+`site_heading` `site_p` `site_rule` `site_bullets` `site_input`
+`site_button` `site_go` `site_image`, and `site_position` puts the
+next thing where you say.
 
 ---
 
@@ -568,13 +662,95 @@ main:
             i: i + 1
 ```
 
-Both services insist on the locked kind of connection, which needs a great deal
-of cryptography Sovren does not have yet. Rather than pretend, these libraries
-hand the locking to a helper the machine already has, and `tg_ready` and
-`dc_ready` say plainly whether one is there. Everything else — building the
-request, reading the reply, pulling the message out — is Sovren.
+Both services insist on the locked kind of connection. Sovren does the locking
+itself now — see "The locked kind" below — so `tg_ready` and `dc_ready` are
+always true. Building the request, reading the reply, pulling the message out,
+all of it is Sovren.
 
 ---
+
+## The locked kind
+
+`web_get` and `web_post` fetch a page or send something, and for `https://`
+addresses the locking is done in Sovren: a TLS 1.2 client handshakes with the
+server, and the cipher is TLS_RSA_WITH_AES_128_GCM_SHA256. The pieces it is
+built from are libraries too — `aes.sov` is AES-128 from the field arithmetic
+up, `gcm.sov` is the authenticated mode on top of it, `hmac.sov` and the PRF
+in `tls.sov` make the key schedule, and the server's certificate is read with
+a small DER walk. If a server refuses the RSA key exchange, `web_secure` falls
+back to a helper (curl) when one is on the machine, and `web_why` says what
+happened when nothing works.
+
+```sov
+use web
+main:
+    r: web_get("https://example.com/")
+    print r
+    r: web_post("https://example.com/api", "{\"a\":1}")
+    print r
+```
+
+`json` reads the answers: `json_at(text, "a[2].b")`, `json_at_num`, `json_len`
+walk paths through arrays and objects, and `json_str`/`json_num` keep the old
+flat meaning.
+
+---
+
+## The check battery
+
+`check/run.sov` is the whole test battery, written in Sovren. It
+builds every check program, runs the two emulators, runs a real C
+program on the x86 emulator and compares what it prints with what
+it prints natively, draws on a screen when there is one, and
+reports ok, FAIL or skip for each check. It used to be a shell
+script; now the only non-Sovren parts left are the tools a check
+must use: gcc, python3, Xvfb, wine.
+
+```
+./sovren check/run.sov -o /tmp/sov-run && /tmp/sov-run
+```
+
+## A read-eval-print loop
+
+`repl.sov` is a shell for the language: an expression a line, and
+`use` lines carry over so a library can be opened and then played
+with. Each line is compiled and run for real, so anything that
+works there works in a file.
+
+```
+./sovren repl.sov -o repl && ./repl
+sovren> use trig
+sovren> tri_sin(TR_PI2)
+1000000
+```
+
+## A debugger
+
+`debug.sov` runs a program inside the x86 emulator and lets you
+look at it: `r` shows the registers, `x 400078 32` shows memory,
+`s` steps one instruction, `b 400078` sets a breakpoint, `c`
+carries on, `o` shows the output so far.
+
+```
+./sovren debug.sov -o debug && ./debug ./hello
+```
+
+## An arena
+
+Memory in Sovren is never freed on its own. `use arena` puts a
+mark on the heap: everything allocated after `arn_begin` is
+forgotten by `arn_end`, so a loop or a page of a game can hand all
+its memory back at once.
+
+```
+use arena
+arn_begin()
+s: str_cat("hello", "world")
+arn_end()          # the string is gone now
+```
+
+Anything you allocated inside the arena must not be used after
+`arn_end`.
 
 ## Close to the machine
 
@@ -643,3 +819,41 @@ Save it as `mine.sov`, then:
 ./sovren mine.sov -o /tmp/mine
 /tmp/mine
 ```
+
+---
+
+## Known compiler bugs
+
+The compiler is honest about its edges; the libraries work around
+them, and when one bites, this is where the workaround lives.
+
+**A pointer that arrives as a return value does not survive.** A job
+that hands back a buffer, and the caller that reads through it, are
+sometimes miscompiled — silently, and not on every run. The rule is:
+make the buffer in the caller, pass it in, and let the job fill it.
+The crypto libraries follow it everywhere (`sha256_bytes(data, n,
+out)`, `hmac_raw(key, klen, msg, mlen, out)`, `ae_expand(key, rk)`),
+and the record layer hands sizes back through a global written as
+the last thing a job does (`tl_clen`, `tl_hslen`, `tl_gtot`).
+
+**Globals do not stay put across deep calls.** The TLS handshake
+used to read its state back from globals between jobs and
+occasionally read yesterday's values. Now every piece of handshake
+state is a buffer owned by `tl_client` and passed by argument; the
+only globals left are written immediately before a read.
+
+**The x25519 ladder used to miscompile.** The old ladder job was
+one big function with many locals, and the compiler clobbered them;
+bit extraction at the top bit also failed. The rewrite in
+`library/x25519.sov` sidesteps both: every job is small with at
+most seven values, scalar bits are read from a byte array (never
+big shifts), and no job hands a pointer back. Two subtler bugs were
+found along the way: a limb subtraction must never go negative
+(this language truncates `/` and `%` toward zero), so the field
+subtraction biases every limb with four times the prime and the
+ladder reduces after each multiply; and a one-byte slip in the
+field prime (its top limb is 2097151, not 2097152) quietly
+corrupted every reduction. X25519 now matches all four RFC 7748
+vectors, and TLS uses it for ECDHE key exchange, which replaced the
+RSA key exchange.
+

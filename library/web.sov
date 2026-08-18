@@ -6,10 +6,12 @@
 #
 # ---- about the locked kind ----
 #
-# Nearly every real service now refuses plain requests and insists
-# on the locked kind, which needs a great deal of cryptography that
-# Sovren does not yet have. Rather than pretend, this library asks
-# an outside helper to do the locking when one is available, and
+# Nearly every real service refuses plain requests and insists on
+# the locked kind. Sovren does the locking itself now: the TLS 1.2
+# client in tls.sov, built on the AES-GCM in gcm.sov, the PRF on
+# hmac.sov and RSA key exchange. https:// is handled in Sovren, no
+# helper needed. If a server refuses the RSA key exchange, the call
+# falls back to an outside helper when one is on the machine, and
 # says plainly when it is not.
 #
 #   web_secure_ready()   is the locked kind available on this machine
@@ -17,10 +19,11 @@
 #   web_post(url, body)  send something
 #
 # For a plain http:// address nothing outside is needed and it all
-# happens in Sovren. For https:// the helper is used. If there is no
-# helper, the call hands back an empty answer and web_why says why,
-# so a program can tell the person something useful instead of
-# failing in a confusing way.
+# happens in Sovren. For https:// it happens in Sovren too. If the
+# server will not talk the one cipher this client speaks, and there
+# is no helper either, the call hands back an empty answer and
+# web_why says why, so a program can tell the person something
+# useful instead of failing in a confusing way.
 
 use sock
 use string
@@ -31,6 +34,7 @@ use file
 use tool
 use jsonp
 use list
+use tls
 
 WEB_OK: 0
 WEB_NO_HOST: 1
@@ -131,10 +135,9 @@ web_port url:
 # is there a way to do the locked kind here?
 # ---------------------------------------------------------------
 #
-# Sovren cannot do it itself yet. It looks for one of the two
-# programs almost every machine already has. This is honest about
-# what it is doing: the request is handed to a helper, and if there
-# is no helper the answer says so.
+# Yes: the TLS client in tls.sov is part of Sovren, so the locked
+# kind is always available. A helper is still looked for, only as a
+# fallback for the servers that refuse the RSA key exchange.
 
 web_helper: 0
 web_looked: 0
@@ -156,8 +159,6 @@ web_find_helper:
     return 0
 
 web_secure_ready:
-    if web_find_helper() is 0
-        return 0
     return 1
 
 # ---------------------------------------------------------------
@@ -250,10 +251,31 @@ web_plain host port req:
     return as text buf
 
 # ---------------------------------------------------------------
-# the locked kind, through the helper
+# the locked kind, in Sovren
 # ---------------------------------------------------------------
 
 web_secure url method body:
+    host: web_host(url)
+    path: web_path(url)
+    port: web_port(url)
+    req: str_cat(method, " ")
+    req: str_cat(req, path)
+    req: str_cat(req, " HTTP/1.1\r\nHost: ")
+    req: str_cat(req, host)
+    if str_len(body) > 0
+        req: str_cat(req, "\r\nContent-Type: application/json\r\nContent-Length: ")
+        req: str_cat(req, num_text(str_len(body)))
+    req: str_cat(req, "\r\nConnection: close\r\n\r\n")
+    if str_len(body) > 0
+        req: str_cat(req, body)
+    out: _sov_alloc(60000)
+    n: tl_send_req(host, port, req, out, 60000)
+    if n > 0
+        poke_byte(out, n, 0)
+        web_last: WEB_OK
+        return web_body(as text out)
+    # a server that will not do RSA key exchange: fall back to a
+    # helper when there is one
     h: web_find_helper()
     if h is 0
         web_last: WEB_NO_SECURE

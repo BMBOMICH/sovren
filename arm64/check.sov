@@ -1,0 +1,149 @@
+# arm64/check.sov — check the shipped arm64 binary, on a real arm64
+# machine, in Sovren.
+#
+# This is what the arm64 job of .github/workflows/check.yml used to
+# do with shell: prove the ELF is well formed, run it, and check the
+# words it prints. Now it is one Sovren program, built with --android
+# (the same arm64 back end that made arm64/hello), and the job is:
+#
+#   chmod +x arm64/check arm64/hello
+#   ./arm64/check
+#
+# It runs on the real arm64 cpu of the runner — no emulator — so
+# the open, fork, execve and wait4 here are the kernel's own.
+
+use file
+use num
+use proc
+use string
+use sys
+
+ac_pass: 0
+ac_fail: 0
+
+ac_ok name:
+    write_out("ok   ")
+    write_out(name)
+    write_out("\n")
+    ac_pass: ac_pass + 1
+    return 0
+
+ac_bad name:
+    write_out("FAIL ")
+    write_out(name)
+    write_out("\n")
+    ac_fail: ac_fail + 1
+    return 0
+
+ac_le16 p i:
+    return peek_byte(p, i) + peek_byte(p, i + 1) * 256
+
+# ---- the ELF header, field by field ----
+ac_struct:
+    d: file_read_all("arm64/hello")
+    if d is 0
+        print "cannot read arm64/hello"
+        sys_exit(1)
+    sz: file_size("arm64/hello")
+    ok: 1
+    if peek_byte(d, 0) is not 127
+        ok: 0
+    if peek_byte(d, 1) is not 69
+        ok: 0
+    if peek_byte(d, 2) is not 76
+        ok: 0
+    if peek_byte(d, 3) is not 70
+        ok: 0
+    if peek_byte(d, 4) is not 2
+        ok: 0
+    if peek_byte(d, 5) is not 1
+        ok: 0
+    mach: ac_le16(d, 18)
+    if mach is not 183
+        ok: 0
+    print "magic  ok"
+    print str_join3("machine ", num_text(mach), " (183 = aarch64)")
+    print str_join3("size   ", num_text(sz), "")
+    if ok is 1
+        ac_ok("the ELF header is valid")
+        return 1
+    ac_bad("the ELF header is valid")
+    return 0
+
+# the low and high thirty-two bits of a pipe
+ac_pr fds:
+    return peek_i64(fds, 0) % 4294967296
+
+ac_pw fds:
+    return peek_i64(fds, 0) / 4294967296
+
+# ---- run arm64/hello, catch its words ----
+ac_run:
+    opf: _sov_alloc(16)
+    poke_i64(opf, 0, 0 - 1)
+    poke_i64(opf, 8, 0 - 1)
+    r: sys_pipe(opf)
+    if r is not 0
+        ac_bad("arm64/hello runs")
+        print "  no pipe"
+        return 0
+    pid: sys_fork()
+    if pid is 0
+        sys_dup2(ac_pw(opf), 1)
+        sys_close(ac_pr(opf))
+        argv: _sov_alloc(24)
+        poke_i64(argv, 0, "arm64/hello")
+        poke_i64(argv, 8, 0)
+        sys_exec("arm64/hello", argv, 0)
+        sys_exit(127)
+    sys_close(ac_pw(opf))
+    out: ""
+    buf: _sov_alloc(8192)
+    more: 1
+    as long as more is 1
+        n: sys_read(ac_pr(opf), buf, 8192)
+        if n <= 0
+            more: 0
+        if not
+            poke_byte(buf, n, 0)
+            out: str_cat(out, as text buf)
+    sys_close(ac_pr(opf))
+    stp: _sov_alloc(8)
+    syscall(61, pid, stp, 0, 0, 0, 0)
+    st: peek_i64(stp, 0)
+    code: (st / 256) % 256
+    if st % 256 is not 0
+        code: 128 + st % 256
+    if code is not 0
+        ac_bad("arm64/hello runs")
+        write_out("  exit ")
+        write_out(num_text(code))
+        write_out("\n")
+        write_out(out)
+        write_out("\n")
+        return 0
+    if str_has(out, "Hello from Sovren") is 0
+        ac_bad("arm64/hello says hello")
+        write_out(out)
+        write_out("\n")
+        return 0
+    if str_has(out, "30") is 0
+        ac_bad("arm64/hello prints 30")
+        write_out(out)
+        write_out("\n")
+        return 0
+    ac_ok("arm64/hello runs and prints the right words")
+    return 0
+
+main:
+    ac_struct()
+    ac_run()
+    write_out(num_text(ac_pass))
+    write_out(" passed, ")
+    write_out(num_text(ac_fail))
+    write_out(" failed\n")
+    if ac_fail is 0
+        write_out("arm64 check passed\n")
+        sys_exit(0)
+    write_out("arm64 check FAILED\n")
+    sys_exit(1)

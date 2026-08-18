@@ -39,6 +39,7 @@ use mem
 use list
 use tool
 use file
+use tls
 
 DC_MAX: 32
 DC_API: "https://discord.com/api/v10"
@@ -68,7 +69,9 @@ dc_url d path:
     return as text str_cat(as text b, path)
 
 # ---------------------------------------------------------------
-# Discord wants the token in a header, which needs the helper
+# Discord wants the token in a header; the request goes out over
+# Sovren's own TLS now, with curl only as a fallback for servers
+# that will not do RSA key exchange.
 # ---------------------------------------------------------------
 #
 # Everything here goes through one place so the token is written out
@@ -76,6 +79,32 @@ dc_url d path:
 
 dc_call d method path body:
     if web_secure_ready() is 0
+        poke_i64(d, 16, 0)
+        return blank
+    url: dc_url(d, path)
+    host: web_host(url)
+    port: web_port(url)
+    req: str_cat(method, " ")
+    req: str_cat(req, path)
+    req: str_cat(req, " HTTP/1.1\r\nHost: ")
+    req: str_cat(req, host)
+    req: str_cat(req, "\r\nAuthorization: Bot ")
+    req: str_cat(req, as text peek_i64(d, 0))
+    if str_len(body) > 0
+        req: str_cat(req, "\r\nContent-Type: application/json\r\nContent-Length: ")
+        req: str_cat(req, num_text(str_len(body)))
+    req: str_cat(req, "\r\nConnection: close\r\n\r\n")
+    if str_len(body) > 0
+        req: str_cat(req, body)
+    out: _sov_alloc(60000)
+    n: tl_send_req(host, port, req, out, 60000)
+    if n > 0
+        poke_byte(out, n, 0)
+        r: web_body(as text out)
+        poke_i64(d, 16, r)
+        return as text r
+    # fallback: the helper, when there is one
+    if web_find_helper() is 0
         poke_i64(d, 16, 0)
         return blank
     a: list_new()

@@ -1,0 +1,337 @@
+# gcm.sov — AES-128-GCM, encrypt and decrypt, in Sovren.
+#
+# The authenticated mode TLS uses. Everything is built on the AES in
+# aes.sov and a GHASH over GF(2^128). The field values are kept as
+# four 32-bit words, because the bit helpers in bit32.sov are 32-bit
+# and a 64-bit shift quietly loses the top bits.
+#
+#   use gcm
+#   gm_enc(key, iv, aad, aad_n, pt, pt_n, ct)
+#   ok: gm_dec(key, iv, aad, aad_n, ct, ct_n, pt)
+#
+# key is 16 bytes, iv is 12 bytes; the 16-byte tag lands in gm_tag.
+
+use aes
+use bit32
+use mem
+
+# the tag the last call made
+gm_tag: 0
+
+# the four words of the field value in play
+gw0: 0
+gw1: 0
+gw2: 0
+gw3: 0
+
+# operands for the multiply
+ga0: 0
+ga1: 0
+ga2: 0
+ga3: 0
+gb0: 0
+gb1: 0
+gb2: 0
+gb3: 0
+
+gm_c: 0
+
+# GCM's field works in the reflected basis: the first bit of a
+# block is the coefficient of x^0, the reverse of the usual
+# big-endian reading. Values are reflected on the way in and the
+# answer is reflected back on the way out.
+
+# reverse the 32 bits of a word
+gm_rev32 w:
+    r: 0
+    i: 0
+    as long as i < 32
+        r: r * 2
+        if w % 2 is 1
+            r: r + 1
+        w: w / 2
+        i: i + 1
+    return r
+
+# reflect four words: word order flips and each word reverses
+rw0: 0
+rw1: 0
+rw2: 0
+rw3: 0
+
+gm_rev4 a0 a1 a2 a3:
+    rw0: gm_rev32(a3)
+    rw1: gm_rev32(a2)
+    rw2: gm_rev32(a1)
+    rw3: gm_rev32(a0)
+    return 0
+
+# the four words in gw0..3, shifted left one; carry out in gm_c
+gm_shift:
+    gm_c: wand(shr(gw3, 31), 1)
+    c0: wand(shr(gw0, 31), 1)
+    gw0: shl(gw0, 1)
+    c1: wand(shr(gw1, 31), 1)
+    gw1: shl(gw1, 1)
+    c2: wand(shr(gw2, 31), 1)
+    gw2: shl(gw2, 1)
+    gw3: shl(gw3, 1)
+    gw1: wor(gw1, c0)
+    gw2: wor(gw2, c1)
+    gw3: wor(gw3, c2)
+    return 0
+
+# (ga) times (gb) in GF(2^128); answer in gw0..3
+gm_mul:
+    r0: 0
+    r1: 0
+    r2: 0
+    r3: 0
+    k: 0
+    as long as k < 128
+        bk: 0
+        w: k / 32
+        s: k % 32
+        if w is 0
+            bk: wand(shr(gb0, s), 1)
+        if w is 1
+            bk: wand(shr(gb1, s), 1)
+        if w is 2
+            bk: wand(shr(gb2, s), 1)
+        if w is 3
+            bk: wand(shr(gb3, s), 1)
+        if bk is 1
+            r0: wxor(r0, ga0)
+            r1: wxor(r1, ga1)
+            r2: wxor(r2, ga2)
+            r3: wxor(r3, ga3)
+        gw0: ga0
+        gw1: ga1
+        gw2: ga2
+        gw3: ga3
+        gm_shift()
+        ga0: gw0
+        ga1: gw1
+        ga2: gw2
+        ga3: gw3
+        if gm_c is 1
+            ga0: wxor(ga0, 135)
+        k: k + 1
+    gw0: r0
+    gw1: r1
+    gw2: r2
+    gw3: r3
+    return 0
+
+# GHASH over n bytes of data (a multiple of 16); x in gw0..3
+gm_ghash data n h0 h1 h2 h3:
+    gw0: 0
+    gw1: 0
+    gw2: 0
+    gw3: 0
+    i: 0
+    as long as i < n
+        w0: peek_byte(data, i + 12) * 16777216 + peek_byte(data, i + 13) * 65536 + peek_byte(data, i + 14) * 256 + peek_byte(data, i + 15)
+        w1: peek_byte(data, i + 8) * 16777216 + peek_byte(data, i + 9) * 65536 + peek_byte(data, i + 10) * 256 + peek_byte(data, i + 11)
+        w2: peek_byte(data, i + 4) * 16777216 + peek_byte(data, i + 5) * 65536 + peek_byte(data, i + 6) * 256 + peek_byte(data, i + 7)
+        w3: peek_byte(data, i) * 16777216 + peek_byte(data, i + 1) * 65536 + peek_byte(data, i + 2) * 256 + peek_byte(data, i + 3)
+        gm_rev4(w0, w1, w2, w3)
+        gw0: wxor(gw0, rw0)
+        gw1: wxor(gw1, rw1)
+        gw2: wxor(gw2, rw2)
+        gw3: wxor(gw3, rw3)
+        ga0: gw0
+        ga1: gw1
+        ga2: gw2
+        ga3: gw3
+        gb0: h0
+        gb1: h1
+        gb2: h2
+        gb3: h3
+        gm_mul()
+        i: i + 16
+    return 0
+
+# a 64-bit length as eight big-endian bytes at out+off
+gm_len8 out off a:
+    j: 0
+    p: 1
+    as long as j < 8
+        poke_byte(out, off + 7 - j, (a / p) % 256)
+        p: p * 256
+        j: j + 1
+    return 0
+
+# the 16 bytes of the tag into gm_tag, from gw0..3 (big-endian)
+gm_tag_out:
+    if gm_tag is 0
+        gm_tag: _sov_alloc(16)
+    gm_rev4(gw0, gw1, gw2, gw3)
+    i: 0
+    as long as i < 4
+        poke_byte(gm_tag, 15 - i, wand(shr(rw0, i * 8), 255))
+        poke_byte(gm_tag, 11 - i, wand(shr(rw1, i * 8), 255))
+        poke_byte(gm_tag, 7 - i, wand(shr(rw2, i * 8), 255))
+        poke_byte(gm_tag, 3 - i, wand(shr(rw3, i * 8), 255))
+        i: i + 1
+    return 0
+
+# encrypt one counter block into out at o (n bytes)
+gm_ctr rk j0 k out o n:
+    cb: _sov_alloc(16)
+    i: 0
+    as long as i < 16
+        poke_byte(cb, i, peek_byte(j0, i))
+        i: i + 1
+    v: k
+    i: 0
+    as long as i < 4
+        poke_byte(cb, 15 - i, v % 256)
+        v: v / 256
+        i: i + 1
+    eb: _sov_alloc(16)
+    ae_enc_block(rk, cb, eb)
+    i: 0
+    as long as i < n
+        poke_byte(out, o + i, wxor(peek_byte(out, o + i), peek_byte(eb, i)))
+        i: i + 1
+    return 0
+
+# H as four words from the encrypted zero block
+gm_hwords hb:
+    ga0: peek_byte(hb, 12) * 16777216 + peek_byte(hb, 13) * 65536 + peek_byte(hb, 14) * 256 + peek_byte(hb, 15)
+    ga1: peek_byte(hb, 8) * 16777216 + peek_byte(hb, 9) * 65536 + peek_byte(hb, 10) * 256 + peek_byte(hb, 11)
+    ga2: peek_byte(hb, 4) * 16777216 + peek_byte(hb, 5) * 65536 + peek_byte(hb, 6) * 256 + peek_byte(hb, 7)
+    ga3: peek_byte(hb, 0) * 16777216 + peek_byte(hb, 1) * 65536 + peek_byte(hb, 2) * 256 + peek_byte(hb, 3)
+    return 0
+
+# the shared tail of enc and dec: build the GHASH buffer, run it,
+# leave the tag in gm_tag
+gm_finish key iv aad aad_n ct ct_n:
+    rk: _sov_alloc(176)
+    ae_expand(key, rk)
+    z: _sov_alloc(16)
+    j: 0
+    as long as j < 16
+        poke_byte(z, j, 0)
+        j: j + 1
+    hb: _sov_alloc(16)
+    ae_enc_block(rk, z, hb)
+    gm_hwords(hb)
+    gm_rev4(ga0, ga1, ga2, ga3)
+    h0: rw0
+    h1: rw1
+    h2: rw2
+    h3: rw3
+    j0: _sov_alloc(16)
+    i: 0
+    as long as i < 12
+        poke_byte(j0, i, peek_byte(iv, i))
+        i: i + 1
+    poke_byte(j0, 12, 0)
+    poke_byte(j0, 13, 0)
+    poke_byte(j0, 14, 0)
+    poke_byte(j0, 15, 1)
+    ab: aad_n
+    as long as ab % 16 is not 0
+        ab: ab + 1
+    cb: ct_n
+    as long as cb % 16 is not 0
+        cb: cb + 1
+    buf: _sov_alloc(ab + cb + 16)
+    i: 0
+    as long as i < aad_n
+        poke_byte(buf, i, peek_byte(aad, i))
+        i: i + 1
+    i: aad_n
+    as long as i < ab
+        poke_byte(buf, i, 0)
+        i: i + 1
+    i: 0
+    as long as i < ct_n
+        poke_byte(buf, ab + i, peek_byte(ct, i))
+        i: i + 1
+    i: ct_n
+    as long as i < cb
+        poke_byte(buf, ab + i, 0)
+        i: i + 1
+    gm_len8(buf, ab + cb, aad_n * 8)
+    gm_len8(buf, ab + cb + 8, ct_n * 8)
+    gm_ghash(buf, ab + cb + 16, h0, h1, h2, h3)
+    gb: _sov_alloc(16)
+    gm_tag_out()
+    i: 0
+    as long as i < 16
+        poke_byte(gb, i, peek_byte(gm_tag, i))
+        i: i + 1
+    eb: _sov_alloc(16)
+    ae_enc_block(rk, j0, eb)
+    i: 0
+    as long as i < 16
+        xa: peek_byte(gb, i)
+        xb: peek_byte(eb, i)
+        poke_byte(gm_tag, i, wxor(xa, xb))
+        i: i + 1
+    return 0
+
+# encrypt pt (pt_n bytes) into ct; the 16-byte tag lands in gm_tag
+gm_enc key iv aad aad_n pt pt_n ct:
+    rk: _sov_alloc(176)
+    ae_expand(key, rk)
+    j0: _sov_alloc(16)
+    i: 0
+    as long as i < 12
+        poke_byte(j0, i, peek_byte(iv, i))
+        i: i + 1
+    poke_byte(j0, 12, 0)
+    poke_byte(j0, 13, 0)
+    poke_byte(j0, 14, 0)
+    poke_byte(j0, 15, 1)
+    i: 0
+    as long as i < pt_n
+        poke_byte(ct, i, peek_byte(pt, i))
+        i: i + 1
+    k: 2
+    i: 0
+    as long as i < pt_n
+        n: 16
+        if pt_n - i < 16
+            n: pt_n - i
+        gm_ctr(rk, j0, k, ct, i, n)
+        k: k + 1
+        i: i + 16
+    gm_finish(key, iv, aad, aad_n, ct, pt_n)
+    return 0
+
+# decrypt ct into pt; 1 when the tag (in gm_tag) matches
+gm_tag_of key iv aad aad_n ct ct_n:
+    tg: gm_finish(key, iv, aad, aad_n, ct, ct_n)
+    return tg
+
+# the CTR part of decryption (GCM is symmetric): ct into pt
+gm_ctr_dec key iv ct ct_n pt:
+    rk: _sov_alloc(176)
+    ae_expand(key, rk)
+    j0: _sov_alloc(16)
+    i: 0
+    as long as i < 12
+        poke_byte(j0, i, peek_byte(iv, i))
+        i: i + 1
+    poke_byte(j0, 12, 0)
+    poke_byte(j0, 13, 0)
+    poke_byte(j0, 14, 0)
+    poke_byte(j0, 15, 1)
+    i: 0
+    as long as i < ct_n
+        poke_byte(pt, i, peek_byte(ct, i))
+        i: i + 1
+    k: 2
+    i: 0
+    as long as i < ct_n
+        n: 16
+        if ct_n - i < 16
+            n: ct_n - i
+        gm_ctr(rk, j0, k, pt, i, n)
+        k: k + 1
+        i: i + 16
+    return 0

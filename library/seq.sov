@@ -1,0 +1,56 @@
+# seq.sov — a step sequencer. A tune is a run of packed notes in a
+# little block of memory: each note is the frequency in thousandths
+# of a hertz on top of the length in millionths of a second, the
+# same numbers the audio library takes.
+#
+#   use seq
+#   use audio
+#   use file
+#   main:
+#       t: seq_new(3)
+#       poke_i64(t, 0, seq_note(261630, 400000))
+#       poke_i64(t, 8, seq_note(329630, 400000))
+#       poke_i64(t, 16, seq_note(392000, 800000))
+#       p: aud_new(2000000)
+#       seq_play(p, t, 3, 0, 1000000)
+#       aud_wav("/tmp/tune.wav", p, 1600000)
+#
+use audio
+use mem
+
+# a block big enough for n notes
+seq_new n:
+    return mem_new(n * 8)
+
+# one note: frequency in thousandths of a hertz, length in
+# millionths of a second
+seq_note freq us:
+    return freq * 1000000 + us
+
+# play a run of notes into the buffer, one after another, and say
+# when the tune ends. wave is 0 for sine, 1 square, 2 triangle,
+# 3 saw.
+seq_play p seq n wave amp:
+    return seq_play_at(p, 0, seq, n, wave, amp)
+
+# the same, starting at a moment in the middle of the buffer
+seq_play_at p at seq n wave amp:
+    t: at
+    i: 0
+    as long as i < n
+        v: peek_i64(seq, i * 8)
+        f: v / 1000000
+        d: v % 1000000
+        if wave is 1
+            aud_square(p, t, t + d, f, amp)
+        if not
+            if wave is 2
+                aud_triangle(p, t, t + d, f, amp)
+            if not
+                if wave is 3
+                    aud_saw(p, t, t + d, f, amp)
+                if not
+                    aud_sine(p, t, t + d, f, amp)
+        t: t + d
+        i: i + 1
+    return t

@@ -1,4 +1,5 @@
-# site.sov — make a page you can open in a browser
+# site.sov — make a page you can open in a browser. Everything on
+# the page is written by Sovren; the html is printed, never typed.
 # use site
 use file
 use string
@@ -95,6 +96,69 @@ site_go url text:
     t: str_cat(t, "\">")
     t: str_cat(t, escape_html(text))
     t: str_cat(t, "</a>")
+    site_wrap(t)
+    return 1
+
+# a heading, first to sixth
+site_heading n text:
+    t: str_cat("<h", num_text(n))
+    t: str_cat(t, ">")
+    t: str_cat(t, escape_html(text))
+    t: str_cat(t, "</h")
+    t: str_cat(t, num_text(n))
+    t: str_cat(t, ">\n")
+    site_add(t)
+    return 1
+
+# a paragraph
+site_p text:
+    t: str_cat("<p>", escape_html(text))
+    t: str_cat(t, "</p>\n")
+    site_add(t)
+    return 1
+
+# a line across the page
+site_rule:
+    site_add("<hr>\n")
+    return 1
+
+# a bullet list. the items come in one string, separated by bars
+site_bullets s:
+    site_add("<ul>\n")
+    i: 0
+    n: str_len(s)
+    start: 0
+    more: 1
+    as long as more is 1
+        bar: str_find(str_cut(s, start, n), "|")
+        if bar > 0 - 1
+            item: str_cut(s, start, start + bar)
+            start: start + bar + 1
+        if not
+            item: str_cut(s, start, n)
+            more: 0
+        t: str_cat("<li>", escape_html(item))
+        t: str_cat(t, "</li>\n")
+        site_add(t)
+        if more is 0
+            i: n
+        i: i + 1
+    site_add("</ul>\n")
+    return 1
+
+# a box to type in
+site_input placeholder:
+    t: str_cat("<input placeholder=\"", escape_html(placeholder))
+    t: str_cat(t, "\">\n")
+    site_wrap(t)
+    return 1
+
+# a picture
+site_image src alt:
+    t: str_cat("<img src=\"", escape_html(src))
+    t: str_cat(t, "\" alt=\"")
+    t: str_cat(t, escape_html(alt))
+    t: str_cat(t, "\">\n")
     site_wrap(t)
     return 1
 

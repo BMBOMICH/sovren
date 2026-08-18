@@ -152,7 +152,7 @@ sha_k i:
         return 3329325298
     return 0
 
-sha256_bytes data n:
+sha256_bytes data n out:
     tot: n + 9
     as long as tot % 64 is not 0
         tot: tot + 1
@@ -228,7 +228,6 @@ sha256_bytes data n:
         h6: wadd(h6, g)
         h7: wadd(h7, hh)
         blk: blk + 64
-    out: _sov_alloc(72)
     poke_i64(out, 0, h0)
     poke_i64(out, 8, h1)
     poke_i64(out, 16, h2)
@@ -237,7 +236,7 @@ sha256_bytes data n:
     poke_i64(out, 40, h5)
     poke_i64(out, 48, h6)
     poke_i64(out, 56, h7)
-    return as text out
+    return 0
 
 sha_hexd v:
     if v < 10
@@ -246,7 +245,8 @@ sha_hexd v:
 
 sha256_hex text:
     n: _sov_strlen(text)
-    hs: sha256_bytes(text, n)
+    hs: _sov_alloc(64)
+    sha256_bytes(text, n, hs)
     out: _sov_alloc(72)
     i: 0
     as long as i < 8

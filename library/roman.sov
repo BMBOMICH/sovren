@@ -1,0 +1,99 @@
+# roman.sov — Roman numerals. rom_to writes a number the old way,
+# rom_from reads one back.
+#
+#   use roman
+#   main:
+#       print rom_to(2024)        # MMXXIV
+#       print rom_from("XIV")     # 14
+#
+use num
+use string
+
+# a number to its Roman form, the standard subtractive style. The
+# classical range only: one to three thousand nine hundred and
+# ninety-nine. Every step is its own line, because two calls in one
+# expression can lose the first answer.
+rom_to n:
+    if n < 1
+        return ""
+    if n > 3999
+        return ""
+    o: ""
+    as long as n >= 1000
+        o: str_cat(o, "M")
+        n: n - 1000
+    if n >= 900
+        o: str_cat(o, "CM")
+        n: n - 900
+    if n >= 500
+        o: str_cat(o, "D")
+        n: n - 500
+    if n >= 400
+        o: str_cat(o, "CD")
+        n: n - 400
+    as long as n >= 100
+        o: str_cat(o, "C")
+        n: n - 100
+    if n >= 90
+        o: str_cat(o, "XC")
+        n: n - 90
+    if n >= 50
+        o: str_cat(o, "L")
+        n: n - 50
+    if n >= 40
+        o: str_cat(o, "XL")
+        n: n - 40
+    as long as n >= 10
+        o: str_cat(o, "X")
+        n: n - 10
+    if n >= 9
+        o: str_cat(o, "IX")
+        n: n - 9
+    if n >= 5
+        o: str_cat(o, "V")
+        n: n - 5
+    if n >= 4
+        o: str_cat(o, "IV")
+        n: n - 4
+    as long as n >= 1
+        o: str_cat(o, "I")
+        n: n - 1
+    return o
+
+# the value of one Roman letter
+rom_val c:
+    if c is 73
+        return 1
+    if c is 86
+        return 5
+    if c is 88
+        return 10
+    if c is 76
+        return 50
+    if c is 67
+        return 100
+    if c is 68
+        return 500
+    if c is 77
+        return 1000
+    return 0
+
+# read a Roman numeral back into a number. A smaller letter before a
+# bigger one is subtracted, the rest is added.
+rom_from s:
+    n: str_len(s)
+    total: 0
+    i: 0
+    as long as i < n
+        c: str_at(s, i)
+        v: rom_val(c)
+        nx: 0
+        if i + 1 < n
+            c2: str_at(s, i + 1)
+            nx: rom_val(c2)
+        if nx > v
+            total: total - v
+        if not
+            total: total + v
+        i: i + 1
+    return total

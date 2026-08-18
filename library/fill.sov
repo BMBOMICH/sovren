@@ -1,4 +1,5 @@
-# fill.sov — fill bytes
+# fill.sov — fill bytes and words
+use string
 
 fill_bytes p n v:
     i: 0
@@ -6,3 +7,21 @@ fill_bytes p n v:
         poke_byte(p, i, v)
         i: i + 1
     return p
+
+# eight bytes at once, little end first
+fill_u64 p i v:
+    k: 0
+    as long as k < 8
+        poke_byte(p, i + k, v % 256)
+        v: v / 256
+        k: k + 1
+    return 0
+
+# one string repeated n times
+fill_str s n:
+    out: ""
+    i: 0
+    as long as i < n
+        out: str_cat(out, s)
+        i: i + 1
+    return out

@@ -1,7 +1,25 @@
-# json.sov — pull a "key":"value" || "key":number out of flat text
-# needs _sov_list
+# json.sov — read values out of JSON text, nested or flat.
+#
+# The old json.sov could only pull a "key":"value" out of flat text.
+# This one is a real recursive-descent reader: it walks nested
+# objects and arrays, so a path like "result[0].message.chat.id"
+# works. There are no types in Sovren, so a value comes back as the
+# text it was written in: a string without its quotes, a number as
+# its digits, true/false/null as words.
+#
+#   use json
+#   j: '{"ok":true,"result":[{"id":7,"chat":{"id":999}}]}'
+#   json_at(j, "result[0].chat.id")     -> "999"
+#   json_at(j, "ok")                    -> "true"
+#   json_at_num(j, "result[0].id")      -> 7
+#   json_len(j, "result")               -> 1
+#
+# The old names still mean the same: json_str(text, "key") and
+# json_num(text, "key") look a key up at the top level only.
+
 use string
 
+# ---- whitespace ----
 json_skip s i:
     n: str_len(s)
     as long as i < n
@@ -21,35 +39,278 @@ json_skip s i:
                         return i
     return i
 
-json_str text key:
+# the byte after a string that starts at i (i points at the quote)
+json_skip_string s i:
+    n: str_len(s)
+    i: i + 1
+    as long as i < n
+        c: peek_byte(s, i)
+        if c is 92
+            i: i + 2
+        if not
+            if c is 34
+                return i + 1
+            if not
+                i: i + 1
+    return n
+
+# where the value starting at i ends: strings to their closing
+# quote, objects and arrays to the matching closer, everything else
+# to a comma or a closer
+json_scan s i:
+    n: str_len(s)
+    c: peek_byte(s, i)
+    if c is 34
+        return json_skip_string(s, i)
+    if c is 123
+        depth: 1
+        i: i + 1
+        as long as i < n
+            cc: peek_byte(s, i)
+            if cc is 34
+                i: json_skip_string(s, i)
+            if not
+                if cc is 123
+                    depth: depth + 1
+                    i: i + 1
+                if not
+                    if cc is 125
+                        depth: depth - 1
+                        i: i + 1
+                        if depth is 0
+                            return i
+                    if not
+                        i: i + 1
+        return n
+    if c is 91
+        depth: 1
+        i: i + 1
+        as long as i < n
+            cc: peek_byte(s, i)
+            if cc is 34
+                i: json_skip_string(s, i)
+            if not
+                if cc is 91
+                    depth: depth + 1
+                    i: i + 1
+                if not
+                    if cc is 93
+                        depth: depth - 1
+                        i: i + 1
+                        if depth is 0
+                            return i
+                    if not
+                        i: i + 1
+        return n
+    as long as i < n
+        cc: peek_byte(s, i)
+        if cc is 44
+            return i
+        if cc is 125
+            return i
+        if cc is 93
+            return i
+        i: i + 1
+    return n
+
+# is the value at i an object or an array?
+json_is_obj s i:
+    if peek_byte(s, i) is 123
+        return 1
+    return 0
+
+json_is_arr s i:
+    if peek_byte(s, i) is 91
+        return 1
+    return 0
+
+# inside the object at i, find the value of key; i points at '{'
+json_obj_find s i key:
+    n: str_len(s)
     want: str_join3("\"", key, "\"")
-    p: str_find(text, want)
-    if p < 0
-        return blank
-    i: json_skip(text, p + str_len(want))
-    if peek_byte(text, i) is not 58
-        return blank
-    i: json_skip(text, i + 1)
-    if peek_byte(text, i) is 34
-        j: i + 1
-        n: str_len(text)
-        as long as j < n
-            if peek_byte(text, j) is 34
-                return str_cut(text, i + 1, j)
-            j: j + 1
-        return blank
-    j: i
-    n: str_len(text)
-    as long as j < n
-        c: peek_byte(text, j)
-        if c is 44
-            return str_cut(text, i, j)
+    wl: str_len(want)
+    i: i + 1
+    as long as i < n
+        i: json_skip(s, i)
+        c: peek_byte(s, i)
         if c is 125
-            return str_cut(text, i, j)
+            return 0 - 1
+        if c is 34
+            if str_eq(str_cut(s, i, i + wl), want) is 1
+                j: json_skip(s, i + wl)
+                if peek_byte(s, j) is 58
+                    return json_skip(s, j + 1)
+            # not the key wanted: skip the whole "key":value pair,
+            # so nested objects and arrays never confuse the walk
+            i: json_skip_string(s, i)
+            i: json_skip(s, i)
+            if peek_byte(s, i) is 58
+                i: json_scan(s, json_skip(s, i + 1))
+        if not
+            i: i + 1
+    return 0 - 1
+
+# inside the array at i, find the start of element k; i points at '['
+json_arr_at s i k:
+    n: str_len(s)
+    i: i + 1
+    e: 0
+    as long as i < n
+        i: json_skip(s, i)
+        c: peek_byte(s, i)
         if c is 93
-            return str_cut(text, i, j)
-        j: j + 1
-    return str_cut(text, i, n)
+            return 0 - 1
+        if e is k
+            return i
+        i: json_scan(s, i)
+        i: json_skip(s, i)
+        if peek_byte(s, i) is 44
+            i: i + 1
+        e: e + 1
+    return 0 - 1
+
+# how many things are inside the object/array at i?
+json_count s i:
+    n: str_len(s)
+    if json_is_obj(s, i) is 1
+        i: i + 1
+        c: 0
+        as long as i < n
+            i: json_skip(s, i)
+            cc: peek_byte(s, i)
+            if cc is 125
+                return c
+            if cc is 34
+                i: json_skip_string(s, i)
+                i: json_skip(s, i)
+                if peek_byte(s, i) is 58
+                    i: json_scan(s, json_skip(s, i + 1))
+                    c: c + 1
+            if not
+                i: i + 1
+        return c
+    if json_is_arr(s, i) is 1
+        i: i + 1
+        c: 0
+        as long as i < n
+            i: json_skip(s, i)
+            cc: peek_byte(s, i)
+            if cc is 93
+                return c
+            i: json_scan(s, i)
+            i: json_skip(s, i)
+            if peek_byte(s, i) is 44
+                i: i + 1
+            c: c + 1
+        return c
+    return 0
+
+# take one segment off a path; path comes back shorter in jp_rest
+jp_key: ""
+jp_rest: ""
+jp_is_idx: 0
+jp_idx: 0
+
+json_next_seg path:
+    n: str_len(path)
+    jp_is_idx: 0
+    jp_idx: 0
+    jp_rest: ""
+    if n is 0
+        jp_key: ""
+        return 0
+    c: peek_byte(path, 0)
+    if c is 91
+        k: 1
+        v: 0
+        br: 0
+        as long as k < n
+            cc: peek_byte(path, k)
+            if cc is 93
+                v: 1
+                br: k
+                k: n
+            if not
+                k: k + 1
+        if v is 1
+            jp_is_idx: 1
+            jp_idx: str_num(str_cut(path, 1, br))
+            jp_rest: str_cut(path, br + 1, n)
+            return 1
+    k: 0
+    ks: 0
+    if peek_byte(path, 0) is 46
+        k: 1
+        ks: 1
+    as long as k < n
+        cc: peek_byte(path, k)
+        if cc is 46
+            jp_key: str_cut(path, ks, k)
+            jp_rest: str_cut(path, k + 1, n)
+            return 1
+        if cc is 91
+            jp_key: str_cut(path, ks, k)
+            jp_rest: str_cut(path, k, n)
+            return 1
+        k: k + 1
+    jp_key: str_cut(path, ks, n)
+    jp_rest: ""
+    return 1
+
+# the raw value text at a path. blank when anything is missing.
+json_at text path:
+    i: json_skip(text, 0)
+    return json_step(text, i, path)
+
+json_step text i path:
+    if i < 0
+        return blank
+    if str_len(path) is 0
+        e: json_scan(text, i)
+        if e <= i
+            return blank
+        # a string value comes back without its quotes
+        if peek_byte(text, i) is 34
+            if e - i > 1
+                return str_cut(text, i + 1, e - 1)
+        return str_cut(text, i, e)
+    json_next_seg(path)
+    if jp_is_idx is 1
+        ni: json_arr_at(text, i, jp_idx)
+        return json_step(text, ni, jp_rest)
+    ni: json_obj_find(text, i, jp_key)
+    return json_step(text, ni, jp_rest)
+
+# how many entries at a path (an array's length or an object's keys)
+json_len text path:
+    i: json_find_path(text, path)
+    if i < 0
+        return 0
+    return json_count(text, i)
+
+# find the position of a path's value (for the count call above)
+json_find_path text path:
+    i: json_skip(text, 0)
+    return json_find_step(text, i, path)
+
+json_find_step text i path:
+    if i < 0
+        return 0 - 1
+    if str_len(path) is 0
+        return i
+    json_next_seg(path)
+    if jp_is_idx is 1
+        ni: json_arr_at(text, i, jp_idx)
+        return json_find_step(text, ni, jp_rest)
+    ni: json_obj_find(text, i, jp_key)
+    return json_find_step(text, ni, jp_rest)
+
+# the old flat helpers, still meaning the same thing
+json_str text key:
+    return json_at(text, key)
 
 json_num text key:
     return str_num(json_str(text, key))
+
+json_at_num text path:
+    return str_num(json_at(text, path))

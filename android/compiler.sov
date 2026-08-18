@@ -222,7 +222,7 @@ mark_fn_str name:
     if idx(str_fns, name) < 0
         str_fns: _sov_list_add(str_fns, name)
 patch at:
-    put_arm(at, here() - at)
+    put_here(at)
 rax_str s:
     at: here()
     movz_x(0, 0, 0)
@@ -600,6 +600,10 @@ call_args name argc:
         emitw(3594453280)
         return
     if same(name, "syscall") is 1
+        # arm64 numbers its syscalls differently. the number in x0
+        # goes through _sov_sysnum (a plain Sovren job in the
+        # runtime) and the answer, in x0 again, becomes x8.
+        calln("_sov_sysnum")
         mov_reg(8, 0)
         mov_reg(0, 1)
         mov_reg(1, 2)
@@ -931,7 +935,7 @@ stmt line:
         wb: here()
         emitw(335544320)
         put_arm(wb, wtop - wb)
-        put_arm(wend, here() - wend)
+        put_here(wend)
         patch(wsk)
         return
     if starts(s, "print ") is 1
@@ -1106,11 +1110,22 @@ popblk:
                 put_arm(at, st - at)
                 patch(_sov_list_get(bj, last))
             if not
-                z: _sov_list_get(bj, last)
-                if z > 0 - 1
-                    patch(z)
-                je: _sov_list_get(be, last)
-                ji: 0
+                if same(k, "try") is 1
+                    tb2: _sov_list_get(bs, last)
+                    if tb2 is 0
+                        print "Error: try needs an except"
+                        had_err: 1
+                    if not
+                        put_here(tb2)
+                if not
+                    if same(k, "except") is 1
+                        skipme: 0
+                    if not
+                        z: _sov_list_get(bj, last)
+                        if z > 0 - 1
+                            patch(z)
+                        je: _sov_list_get(be, last)
+                        ji: 0
                 as long as ji < _sov_list_len(je)
                     patch(_sov_list_get(je, ji))
                     ji: ji + 1
@@ -1220,6 +1235,8 @@ body lines:
                 isel: 0
                 if same(s, "if not") is 1
                     isel: 1
+                if starts(s, "except") is 1
+                    isel: 1
                 popgo: 1
                 as long as popgo is 1
                     if _sov_list_len(bk) is 0
@@ -1233,6 +1250,8 @@ body lines:
                             if isel is 1
                                 if ind is _sov_list_get(bi, last)
                                     if same(_sov_list_get(bk, last), "if") is 1
+                                        stay: 1
+                                    if same(_sov_list_get(bk, last), "try") is 1
                                         stay: 1
                             if stay is 1
                                 popgo: 0
@@ -1360,7 +1379,93 @@ body lines:
                                         be: _sov_list_add(be, _sov_list_new())
                                         br: _sov_list_add(br, rs)
                                     if not
-                                        stmt(s)
+                                        if same(s, "try") is 1
+                                            cflush_all()
+                                            if idx(glob_names, "err_top") is 0 - 1
+                                                glob_names: _sov_list_add(glob_names, "err_top")
+                                            if idx(glob_names, "err_val") is 0 - 1
+                                                glob_names: _sov_list_add(glob_names, "err_val")
+                                            # the frame: the old error top, the frame
+                                            # pointer, the stack, and where the handler
+                                            # starts
+                                            emitw(2432697321)
+                                            emitw(4162785257)
+                                            load_glob("err_top")
+                                            emitw(4162785248)
+                                            ta: here()
+                                            emitw(268435466)
+                                            emitw(4162785258)
+                                            emitw(2432697321)
+                                            mov_reg(0, 9)
+                                            store_glob("err_top")
+                                            bk: _sov_list_add(bk, "try")
+                                            bi: _sov_list_add(bi, ind)
+                                            bj: _sov_list_add(bj, 0)
+                                            bs: _sov_list_add(bs, 0)
+                                            be: _sov_list_add(be, _sov_list_new())
+                                            br: _sov_list_add(br, ta)
+                                        if not
+                                            if starts(s, "except") is 1
+                                                last: _sov_list_len(bk) - 1
+                                                if last > 0 - 1
+                                                    if same(_sov_list_get(bk, last), "try") is 1
+                                                        ev: strip(cut(s, 6, length(s)))
+                                                        load_glob("err_top")
+                                                        mov_reg(9, 0)
+                                                        emitw(4181723424)
+                                                        store_glob("err_top")
+                                                        emitw(2432746495)
+                                                        tb: here()
+                                                        emitw(335544320)
+                                                        bs: _sov_list_set(bs, last, tb)
+                                                        put_here(_sov_list_get(br, last))
+                                                        load_glob("err_val")
+                                                        store_loc(slot(ev))
+                                                        bk: _sov_list_add(bk, "except")
+                                                        bi: _sov_list_add(bi, ind)
+                                                        bj: _sov_list_add(bj, 0)
+                                                        bs: _sov_list_add(bs, 0)
+                                                        be: _sov_list_add(be, _sov_list_new())
+                                                        br: _sov_list_add(br, 0)
+                                                    if not
+                                                        print "Error: except without try"
+                                                        _sov_print(s)
+                                                        print err_line
+                                                        had_err: 1
+                                                if not
+                                                    print "Error: except without try"
+                                                    _sov_print(s)
+                                                    print err_line
+                                                    had_err: 1
+                                            if not
+                                                if starts(s, "raise ") is 1
+                                                    expr(cut(s, 6, length(s)))
+                                                    if idx(glob_names, "err_val") is 0 - 1
+                                                        glob_names: _sov_list_add(glob_names, "err_val")
+                                                    if idx(glob_names, "err_top") is 0 - 1
+                                                        glob_names: _sov_list_add(glob_names, "err_top")
+                                                    store_glob("err_val")
+                                                    load_glob("err_top")
+                                                    mov_reg(9, 0)
+                                                    emitw(4043309375)
+                                                    zz: here()
+                                                    emitw(1409286144)
+                                                    emitw(4181723424)
+                                                    store_glob("err_top")
+                                                    emitw(4181725501)
+                                                    emitw(4181727530)
+                                                    emitw(2432696671)
+                                                    emitw(4181721386)
+                                                    emitw(3592356160)
+                                                    put_here(zz)
+                                                    load_glob("err_val")
+                                                    used_pi: 1
+                                                    calln("_sov_print_int")
+                                                    set_reg(0, 1)
+                                                    set_reg(8, 93)
+                                                    sysc()
+                                                if not
+                                                    stmt(s)
                 i: i + 1
     as long as _sov_list_len(bk) > 0
         popblk()
@@ -1681,6 +1786,47 @@ compile source:
                                 if length(pre_cur) > 0
                                     mark_fn_str(pre_cur)
         pre_i: pre_i + 1
+    # a job that hands back another job's answer is a text job too,
+    # whatever order the jobs were written in. Keep going round until
+    # nobody new is marked, so forward references work as well as
+    # backward ones.
+    changed: 1
+    as long as changed is 1
+        changed: 0
+        pre_i: 0
+        pre_cur: blank
+        as long as pre_i < pre_n
+            pre_l: _sov_list_get(pre_lns, pre_i)
+            if length(strip(pre_l)) > 0
+                if nind(pre_l) is 0
+                    pre_t: strip(pre_l)
+                    if starts(pre_t, "#") is 0
+                        if starts(pre_t, "use ") is 0
+                            pre_c: find_col(pre_t)
+                            if pre_c > 0
+                                if pre_c is length(pre_t) - 1
+                                    pre_h: strip(cut(pre_t, 0, pre_c))
+                                    pre_sp: look(pre_h, " ")
+                                    if pre_sp > 0 - 1
+                                        pre_cur: repl(strip(cut(pre_h, 0, pre_sp)), " ", "_")
+                                    if not
+                                        pre_cur: pre_h
+                if not
+                    pre_t2: strip(pre_l)
+                    if starts(pre_t2, "return ") is 1
+                        pre_r: strip(cut(pre_t2, 7, length(pre_t2)))
+                        if idx(str_fns, pre_cur) < 0
+                            if starts(pre_r, "as text ") is 0
+                                if length(pre_r) > 0
+                                    if _sov_byte_at(pre_r, 0) is not 34
+                                        if same(pre_r, "blank") is 0
+                                            pre_lp: look(pre_r, "(")
+                                            if pre_lp > 0
+                                                pre_f: strip(cut(pre_r, 0, pre_lp))
+                                                if idx(str_fns, pre_f) > 0 - 1
+                                                    mark_fn_str(pre_cur)
+                                                    changed: 1
+            pre_i: pre_i + 1
     if look(source, "wipe ") > 0 - 1
         need_priv: 1
     if look(source, "private") > 0 - 1
@@ -1865,6 +2011,9 @@ warn_unused:
             uj: 0
             as long as uj < _sov_list_len(patch_kind)
                 if same(_sov_list_get(patch_kind, uj), "rel") is 1
+                    if same(_sov_list_get(patch_val, uj), nm) is 1
+                        used: 1
+                if same(_sov_list_get(patch_kind, uj), "rel26") is 1
                     if same(_sov_list_get(patch_val, uj), nm) is 1
                         used: 1
                 uj: uj + 1
@@ -2170,6 +2319,20 @@ main argc argv:
     dummy: _sov_set_byte(nl, 1, 0)
     all: join(rt, nl)
     src_base: src_base + 1
+    # the arm64 kernel numbers its syscalls differently. this
+    # function is appended to the program being built (not to the
+    # shared runtime, so other targets never carry it) and the
+    # syscall builtin routes every number through it.
+    if need is 1
+        all: join(all, nl)
+        all: join(all, "# x86 syscall number in, arm64 number out (the arm64 kernel\n# numbers its calls differently and has no plain open, pipe or\n# dup2; openat, pipe2 and dup3 stand in). Only the arm64 back end\n# calls this, so only arm64 builds carry it.\n_sov_sysnum n:\n    if n is 0\n        return 63\n    if n is 1\n        return 64\n    if n is 3\n        return 57\n    if n is 8\n        return 62\n    if n is 9\n        return 222\n    if n is 11\n        return 215\n    if n is 16\n        return 29\n")
+        all: join(all, "    if n is 22\n        return 59\n    if n is 33\n        return 24\n    if n is 35\n        return 101\n    if n is 39\n        return 172\n    if n is 41\n        return 198\n    if n is 42\n        return 203\n    if n is 43\n        return 202\n    if n is 49\n        return 200\n    if n is 50\n        return 201\n    if n is 57\n        return 220\n    if n is 59\n        return 221\n    if n is 60\n        return 93\n    if n is 61\n        return 260\n    if n is 62\n        return 129\n")
+        all: join(all, "    if n is 79\n        return 17\n    if n is 80\n        return 49\n    if n is 217\n        return 61\n    if n is 218\n        return 96\n    if n is 228\n        return 113\n    if n is 231\n        return 94\n    if n is 257\n        return 56\n    if n is 260\n        return 95\n    if n is 302\n        return 261\n    if n is 318\n        return 278\n    return n\n")
+        all: join(all, nl)
+        # these extra lines shift the error-line base, so the jobs
+        # after them still count as library jobs, not user jobs
+        src_base: src_base + 70
+
     all: join(all, src)
     compile(all)
     write_elf(outf)
@@ -2549,7 +2712,6 @@ put26 at delta:
     oc_set_word(at, base + (d % 67108864))
     return 0
 
-# put a 19-bit offset into a b.cond already at `at`
 put19 at delta:
     w: oc_word(at)
     top: (w / 16777216) % 256
@@ -2569,6 +2731,14 @@ put_arm at delta:
         put19(at, delta)
         return 0
     put26(at, delta)
+    return 0
+
+# a forward patch: to wherever the code is now. This is its own
+# little job on purpose: calling here() inside the arguments of
+# put_arm loses the first answer.
+put_here at:
+    delta: here() - at
+    put_arm(at, delta)
     return 0
 
 # ARM version of `patch`: branch at `at` jumps to the current position
@@ -2631,7 +2801,7 @@ emit_strlen:
     bp: here()
     emitw(335544320)
     put_arm(bp, top - bp)
-    put_arm(ex, here() - ex)
+    put_here(ex)
     ret()
 
 # x0, x1 = two pointers, returns 1 when the text matches
@@ -2656,10 +2826,10 @@ emit_streq:
     bp: here()
     emitw(335544320)
     put_arm(bp, top - bp)
-    put_arm(ne, here() - ne)
+    put_here(ne)
     set_reg(0, 0)
     ret()
-    put_arm(eq, here() - eq)
+    put_here(eq)
     set_reg(0, 1)
     ret()
 
@@ -2694,7 +2864,7 @@ emit_print:
     bp: here()
     emitw(335544320)
     put_arm(bp, top - bp)
-    put_arm(ex, here() - ex)
+    put_here(ex)
     set_reg(0, 1)
     mov_reg(1, 19)
     mov_reg(2, 20)
@@ -2733,7 +2903,7 @@ emit_print_int:
     emitw(1409286154)
     set_reg(21, 1)
     emitw(3406365673)
-    put_arm(ng, here() - ng)
+    put_here(ng)
     emitw(2432746474)
     set_reg(11, 10)
     emitw(3506439498)
@@ -2756,7 +2926,7 @@ emit_print_int:
     emitw(3506439498)
     set_reg(11, 45)
     emitw(956301643)
-    put_arm(ns, here() - ns)
+    put_here(ns)
     set_reg(0, 1)
     mov_reg(1, 10)
     emitw(2432746466)
@@ -2787,7 +2957,7 @@ emit_alloc:
     emitw(1409286145)
     emit_mmap()
     mov_reg(10, 0)
-    put_arm(nz, here() - nz)
+    put_here(nz)
     emitw(4177527117)
     emitw(2432704843)
     emitw(2332885356)

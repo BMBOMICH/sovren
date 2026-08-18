@@ -59,3 +59,23 @@ str_copy s:
         i: i + 1
     poke_byte(o, n, 0)
     return as text o
+
+# is a before b in the dictionary? byte by byte, the shorter one
+# first when they agree so far
+str_less a b:
+    la: str_len(a)
+    lb: str_len(b)
+    i: 0
+    as long as i < la
+        if i >= lb
+            return 0
+        ca: peek_byte(a, i)
+        cb: peek_byte(b, i)
+        if ca < cb
+            return 1
+        if ca > cb
+            return 0
+        i: i + 1
+    if la < lb
+        return 1
+    return 0

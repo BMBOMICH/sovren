@@ -232,12 +232,41 @@ main:
     tr_expect("== inside text", "main:\n    print \"a == b\"\n", "a == b")
 
     # ---- calling a C library ----
-    # zlib is on nearly every Linux box. If it is missing these are
-    # skipped rather than failed.
-    tr_expect("c library version", "use cffi\nuse file\nmain:\n    if file_exists(\"/lib/x86_64-linux-gnu/libz.so.1\") is 0\n        print \"1.3.1\"\n        stop\n    h: c_load(\"/lib/x86_64-linux-gnu/libz.so.1\")\n    print as text c_call0(c_find(h, \"zlibVersion\"))\n", "1.3.1")
+    # carry different zlibs (1.3, 1.3.1, ...). What matters is that
+    # skipped rather than failed. The version is not pinned: machines
+    tr_expect("c library version", "use cffi\nuse file\nmain:\n    if file_exists(\"/lib/x86_64-linux-gnu/libz.so.1\") is 0\n        print \"ok\"\n        stop\n    h: c_load(\"/lib/x86_64-linux-gnu/libz.so.1\")\n    v: c_call0(c_find(h, \"zlibVersion\"))\n    if v is 0\n        print \"bad\"\n        stop\n    c: peek_byte(v, 0)\n    if c >= 48\n        if c <= 57\n            print \"ok\"\n            stop\n    print \"bad\"\n", "ok")
     tr_expect("c library crc32", "use cffi\nuse file\nmain:\n    if file_exists(\"/lib/x86_64-linux-gnu/libz.so.1\") is 0\n        print \"907060870\"\n        stop\n    h: c_load(\"/lib/x86_64-linux-gnu/libz.so.1\")\n    print c_call3(c_find(h, \"crc32\"), 0, \"hello\", 5)\n", "907060870")
     tr_expect("c library adler32", "use cffi\nuse file\nmain:\n    if file_exists(\"/lib/x86_64-linux-gnu/libz.so.1\") is 0\n        print \"103547413\"\n        stop\n    h: c_load(\"/lib/x86_64-linux-gnu/libz.so.1\")\n    print c_call3(c_find(h, \"adler32\"), 1, \"hello\", 5)\n", "103547413")
     tr_expect("nothing unresolved", "use cffi\nuse file\nmain:\n    if file_exists(\"/lib/x86_64-linux-gnu/libz.so.1\") is 0\n        print \"0\"\n        stop\n    h: c_open(\"/lib/x86_64-linux-gnu/libz.so.1\")\n    print c_link(h)\n", "0")
+
+    tr_expect("calc sum", "use calc\nuse fixed\nmain:\n    v: calc_eval(\"2 + 3 * 4\")\n    print fx_text(v)\n", "14.000000")
+    tr_expect("calc brackets", "use calc\nuse fixed\nmain:\n    v: calc_eval(\"(2 + 3) * 4\")\n    print fx_text(v)\n", "20.000000")
+    tr_expect("calc divide", "use calc\nuse fixed\nmain:\n    v: calc_eval(\"7 / 2\")\n    print fx_text(v)\n", "3.500000")
+    tr_expect("calc functions", "use calc\nuse fixed\nmain:\n    v: calc_eval(\"sqrt(16)\")\n    print fx_text(v)\n", "4.000000")
+    tr_expect("calc bad line", "use calc\nmain:\n    v: calc_eval(\"1 +\")\n    print calc_ok()\n", "0")
+    tr_expect("trig sine", "use trig\nuse fixed\nmain:\n    v: tri_sin(TR_PI2)\n    print fx_text(v)\n", "1.000000")
+    tr_expect("trig cosine", "use trig\nuse fixed\nmain:\n    v: tri_cos(0)\n    print fx_text(v)\n", "1.000000")
+    tr_expect("trig arctan", "use trig\nuse fixed\nmain:\n    v: tri_atan(1000000)\n    print fx_text(v)\n", "0.785398")
+    tr_expect("frac add", "use frac\nmain:\n    a: frac_make(1, 2)\n    b: frac_make(1, 3)\n    print frac_text(frac_add(a, b))\n", "5/6")
+    tr_expect("frac lowest terms", "use frac\nmain:\n    print frac_text(frac_make(8, 12))\n", "2/3")
+    tr_expect("roman to", "use roman\nmain:\n    print rom_to(2024)\n", "MMXXIV")
+    tr_expect("roman from", "use roman\nmain:\n    print rom_from(\"XIV\")\n", "14")
+    tr_expect("convert temp", "use convert\nuse fixed\nmain:\n    v: cv_temp(fx_from(0), \"c\", \"f\")\n    print fx_text(v)\n", "32.000000")
+    tr_expect("convert length", "use convert\nuse fixed\nmain:\n    v: cv_len(fx_from(1), \"m\", \"cm\")\n    print fx_text(v)\n", "100.000000")
+    tr_expect("audio wav", "use audio\nuse file\nmain:\n    p: aud_new(1000000)\n    aud_sine(p, 0, 1000000, 440, 1000000)\n    aud_wav(\"/tmp/sov-wav.wav\", p, 1000000)\n    print file_size(\"/tmp/sov-wav.wav\")\n", "88244")
+
+    tr_expect("print 65536", "main:\n    print 65536\n", "65536")
+    tr_expect("print million", "main:\n    print 1000000\n", "1000000")
+    tr_expect("print billion", "main:\n    print 1000000000\n", "1000000000")
+    tr_expect("print text still", "main:\n    print \"hi there\"\n", "hi there")
+    tr_expect("print str var", "main:\n    s: \"abc\"\n    print s\n", "abc")
+    tr_expect("print fn result", "mk n:\n    return as text n\nmain:\n    print mk(7)\n", "7")
+    tr_expect("print negative", "main:\n    print 0 - 5\n", "-5")
+    tr_expect("try no raise", "main:\n    try\n        print 1\n    except e\n        print 9\n    print 2\n", "1\n2")
+    tr_expect("try raise caught", "main:\n    try\n        raise 42\n        print 1\n    except e\n        print e\n    print 2\n", "42\n2")
+    tr_expect("try nested", "main:\n    try\n        try\n            raise 1\n        except a\n            print a\n        raise 2\n    except b\n        print b\n    print 7\n", "1\n2\n7")
+    tr_expect("try raise in call", "boom:\n    raise 5\n    return 0\nmain:\n    try\n        boom()\n        print 1\n    except e\n        print e\n    print 2\n", "5\n2")
+    tr_expect("try uncaught", "main:\n    raise 7\n    print 1\n", "7")
     tr_expect("call back into sovren", "twice n:\n    return n * 2\n\nmain:\n    print cfunc(addr_of twice, 21, 0, 0, 0, 0, 0)\n", "42")
 
     # ---- addr_of and cfunc must exist on every machine ----

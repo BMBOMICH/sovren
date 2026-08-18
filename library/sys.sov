@@ -39,6 +39,12 @@ sys_getcwd buf n:
 sys_fork:
     return syscall(57, 0, 0, 0, 0, 0, 0)
 
+# run a program in this process's place: path, then a row of
+# pointers ending in nought for the arguments, then the same for
+# the environment (nought means none at all)
+sys_exec path argv envp:
+    return syscall(59, path, argv, envp, 0, 0, 0)
+
 sys_wait pid:
     return syscall(61, pid, 0, 0, 0, 0, 0)
 

@@ -1,0 +1,83 @@
+# convert.sov — units. Everything is fixed point (1.0 is a
+# million), and every conversion is a multiply by an exact ratio, so
+# nothing is lost on the way.
+#
+#   use convert
+#   use fixed
+#   main:
+#       v: cv_temp(fx_from(0), "c", "f")
+#       print fx_text(v)          # 32.000000
+#
+use string
+
+# one temperature into another. c f and k, and the fahrenheit pair
+# carries an offset as well as a ratio.
+cv_temp v from to:
+    if str_eq(from, "c") is 1
+        if str_eq(to, "f") is 1
+            return (v * 9) / 5 + 32000000
+        return v
+    if str_eq(from, "f") is 1
+        if str_eq(to, "c") is 1
+            return ((v - 32000000) * 5) / 9
+        return v
+    return v
+
+# one length into another: m cm mm km
+cv_len v from to:
+    if str_eq(from, "m") is 1
+        if str_eq(to, "cm") is 1
+            return v * 100
+        if str_eq(to, "mm") is 1
+            return v * 1000
+        if str_eq(to, "km") is 1
+            return v / 1000000
+        return v
+    if str_eq(from, "cm") is 1
+        if str_eq(to, "m") is 1
+            return v / 100
+        if str_eq(to, "mm") is 1
+            return v * 10
+        if str_eq(to, "km") is 1
+            return v / 100000000
+        return v
+    if str_eq(from, "mm") is 1
+        if str_eq(to, "m") is 1
+            return v / 1000
+        if str_eq(to, "cm") is 1
+            return v / 10
+        if str_eq(to, "km") is 1
+            return v / 1000000000
+        return v
+    if str_eq(from, "km") is 1
+        if str_eq(to, "m") is 1
+            return v * 1000
+        if str_eq(to, "cm") is 1
+            return v * 100000
+        if str_eq(to, "mm") is 1
+            return v * 1000000
+        return v
+    return v
+
+# one weight into another: g kg lb oz. The pound is 453.59237 grams
+# exactly, the ounce is a sixteenth of that, and everything goes
+# through grams.
+cv_mass v from to:
+    g: 0
+    if str_eq(from, "kg") is 1
+        g: v * 1000
+    if str_eq(from, "g") is 1
+        g: v
+    if str_eq(from, "lb") is 1
+        g: (v * 453592370) / 1000000
+    if str_eq(from, "oz") is 1
+        g: (v * 28349523) / 1000000
+    if str_eq(to, "kg") is 1
+        return g / 1000
+    if str_eq(to, "g") is 1
+        return g
+    if str_eq(to, "lb") is 1
+        return (g * 1000000) / 453592370
+    if str_eq(to, "oz") is 1
+        return (g * 1000000) / 28349523
+    return g

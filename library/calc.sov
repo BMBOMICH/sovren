@@ -1,0 +1,219 @@
+# calc.sov — a calculator for one line of arithmetic. calc_eval
+# takes a line like "2 + 3 * 4" or "sqrt(16)" and works it out in
+# fixed point, and calc_ok says whether the last line was sound.
+#
+#   use calc
+#   use fixed
+#   main:
+#       v: calc_eval("2 + 3 * 4")
+#       print fx_text(v)          # 14.000000
+#
+use fixed
+use mem
+use string
+use trig
+
+# the line being read, and where in it the next token starts
+CL_S: 0
+CL_P: 0
+CL_OK: 1
+
+calc_ok:
+    return CL_OK
+
+# over the spaces
+cl_skip:
+    n: str_len(CL_S)
+    more: 1
+    as long as more is 1
+        if CL_P >= n
+            more: 0
+        if not
+            b: str_at(CL_S, CL_P)
+            if b is 32
+                CL_P: CL_P + 1
+            if not
+                if b is 9
+                    CL_P: CL_P + 1
+                if not
+                    more: 0
+    return 0
+
+# the byte at the cursor, or nothing past the end
+cl_peek:
+    if CL_P >= str_len(CL_S)
+        return 0
+    return str_at(CL_S, CL_P)
+
+# a run of digits
+cl_num:
+    v: 0
+    got: 0
+    more: 1
+    as long as more is 1
+        b: cl_peek()
+        if b >= 48
+            if b <= 57
+                v: v * 10 + b - 48
+                got: 1
+                CL_P: CL_P + 1
+            if not
+                more: 0
+        if not
+            more: 0
+    if got is 0
+        CL_OK: 0
+    return v
+
+# expr := term (('+' | '-') term)*   — the answer goes in slot 920
+cl_expr m:
+    poke_i64(m, 920, cl_term(m))
+    more: 1
+    as long as more is 1
+        cl_skip()
+        b: cl_peek()
+        if b is 43
+            CL_P: CL_P + 1
+            t: cl_term(m)
+            poke_i64(m, 920, peek_i64(m, 920) + t)
+        if not
+            if b is 45
+                CL_P: CL_P + 1
+                t: cl_term(m)
+                poke_i64(m, 920, peek_i64(m, 920) - t)
+            if not
+                more: 0
+    return 0
+
+# term := factor (('*' | '/') factor)*
+cl_term m:
+    v: cl_factor(m)
+    more: 1
+    as long as more is 1
+        cl_skip()
+        b: cl_peek()
+        if b is 42
+            CL_P: CL_P + 1
+            f: cl_factor(m)
+            v: (v * f) / 1000000
+        if not
+            if b is 47
+                CL_P: CL_P + 1
+                f: cl_factor(m)
+                if f is 0
+                    CL_OK: 0
+                if not
+                    v: (v * 1000000) / f
+            if not
+                more: 0
+    return v
+
+# factor := number | '(' expr ')' | '-' factor | function
+cl_factor m:
+    cl_skip()
+    b: cl_peek()
+    if b is 40
+        CL_P: CL_P + 1
+        cl_expr(m)
+        cl_skip()
+        if cl_peek() is 41
+            CL_P: CL_P + 1
+        if not
+            CL_OK: 0
+        return peek_i64(m, 920)
+    if b is 45
+        CL_P: CL_P + 1
+        return 0 - cl_factor(m)
+    if b >= 48
+        if b <= 57
+            return cl_fixed(m)
+    if b >= 97
+        if b <= 122
+            return cl_call(m)
+    CL_OK: 0
+    return 0
+
+# a number with an optional decimal point, in fixed point
+cl_fixed m:
+    w: cl_num()
+    f: 0
+    if cl_peek() is 46
+        CL_P: CL_P + 1
+        d: 0
+        mul: 100000
+        got: 0
+        as long as d < 6
+            b: cl_peek()
+            if b >= 48
+                if b <= 57
+                    f: f + (b - 48) * mul
+                    mul: mul / 10
+                    CL_P: CL_P + 1
+                    got: 1
+            d: d + 1
+        if got is 0
+            CL_OK: 0
+    poke_i64(m, 928, f)
+    return w * 1000000 + peek_i64(m, 928)
+
+# a function call: a name, then a bracketed argument
+cl_call m:
+    st: CL_P
+    more: 1
+    as long as more is 1
+        b: cl_peek()
+        if b >= 97
+            if b <= 122
+                CL_P: CL_P + 1
+            if not
+                more: 0
+        if not
+            more: 0
+    nm: str_cut(CL_S, st, CL_P)
+    cl_skip()
+    if cl_peek() is not 40
+        if str_eq(nm, "pi") is 1
+            return TR_PI
+        CL_OK: 0
+        return 0
+    CL_P: CL_P + 1
+    cl_expr(m)
+    cl_skip()
+    if cl_peek() is 41
+        CL_P: CL_P + 1
+    if not
+        CL_OK: 0
+    a: peek_i64(m, 920)
+    if str_eq(nm, "sqrt") is 1
+        return fx_sqrt(a)
+    if str_eq(nm, "sin") is 1
+        return tri_sin(a)
+    if str_eq(nm, "cos") is 1
+        return tri_cos(a)
+    if str_eq(nm, "tan") is 1
+        return tri_tan(a)
+    if str_eq(nm, "atan") is 1
+        return tri_atan(a)
+    if str_eq(nm, "abs") is 1
+        if a < 0
+            return 0 - a
+        return a
+    if str_eq(nm, "floor") is 1
+        return fx_floor(a)
+    if str_eq(nm, "ceil") is 1
+        return fx_ceil(a)
+    if str_eq(nm, "round") is 1
+        return fx_round(a)
+    if str_eq(nm, "pi") is 1
+        return TR_PI
+    CL_OK: 0
+    return 0
+
+# work a line out, in fixed point
+calc_eval s:
+    CL_S: s
+    CL_P: 0
+    CL_OK: 1
+    m: mem_new(32)
+    cl_expr(m)
+    return peek_i64(m, 920)
