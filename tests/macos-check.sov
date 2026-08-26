@@ -6,7 +6,7 @@
 # prints. Now it is one Sovren program, compiled with --mac, and the
 # job is just:
 #
-#   chmod +x tests/macos-check mac/hello
+#   chmod +x tests/macos-check tests/macos/hello
 #   ./tests/macos-check
 #
 # On Apple silicon without Rosetta the run is skipped, exactly like
@@ -111,13 +111,13 @@ mc_segname p i:
 
 # ---- the header, load command by load command ----
 mc_struct:
-    write_out("tests/macos-check: reading mac/hello\n")
-    d: file_read_all("mac/hello")
+    write_out("tests/macos-check: reading tests/macos/hello\n")
+    d: file_read_all("tests/macos/hello")
     if d is 0
-        print "cannot read mac/hello"
+        print "cannot read tests/macos/hello"
         sys_exit(1)
     write_out("tests/macos-check: read it\n")
-    sz: file_size("mac/hello")
+    sz: file_size("tests/macos/hello")
     magic: mc_le32(d, 0)
     cpu: mc_le32(d, 4)
     ncmds: mc_le32(d, 16)
@@ -167,9 +167,9 @@ mc_pr fds:
 mc_pw fds:
     return peek_i64(fds, 0) / 4294967296
 
-# ---- run mac/hello, catch its words ----
+# ---- run tests/macos/hello, catch its words ----
 mc_run:
-    write_out("tests/macos-check: running mac/hello\n")
+    write_out("tests/macos-check: running tests/macos/hello\n")
     opf: _sov_alloc(16)
     poke_i64(opf, 0, 0 - 1)
     poke_i64(opf, 8, 0 - 1)
@@ -177,21 +177,21 @@ mc_run:
     if r is not 0
         # no pipe on this machine (the emulator has none). say so
         # and move on; a real Mac has one.
-        mc_skip("mac/hello runs (cannot spawn here)")
+        mc_skip("tests/macos/hello runs (cannot spawn here)")
         return 0
     if peek_i64(opf, 0) < 0
         # the pipe call came back empty: the emulator says yes to
         # everything but gives nothing. same answer.
-        mc_skip("mac/hello runs (cannot spawn here)")
+        mc_skip("tests/macos/hello runs (cannot spawn here)")
         return 0
     pid: sys_fork()
     if pid is 0
         sys_dup2(mc_pw(opf), 1)
         sys_close(mc_pr(opf))
         argv: _sov_alloc(24)
-        poke_i64(argv, 0, "mac/hello")
+        poke_i64(argv, 0, "tests/macos/hello")
         poke_i64(argv, 8, 0)
-        sys_exec("mac/hello", argv, 0)
+        sys_exec("tests/macos/hello", argv, 0)
         sys_exit(127)
     sys_close(mc_pw(opf))
     out: ""
@@ -214,10 +214,10 @@ mc_run:
     if code is 127
         # it would not start. on Apple silicon the usual reason is
         # no Rosetta, which is the machine's doing, not the binary's.
-        mc_skip("mac/hello runs (no Rosetta on this Mac?)")
+        mc_skip("tests/macos/hello runs (no Rosetta on this Mac?)")
         return 0
     if code is not 0
-        mc_bad("mac/hello runs")
+        mc_bad("tests/macos/hello runs")
         write_out("  exit ")
         write_out(num_text(code))
         write_out("\n")
@@ -225,9 +225,9 @@ mc_run:
         write_out("\n")
         return 0
     if str_has(out, "Hello from Sovren") is 1
-        mc_ok("mac/hello runs and says hello")
+        mc_ok("tests/macos/hello runs and says hello")
         return 0
-    mc_bad("mac/hello runs and says hello")
+    mc_bad("tests/macos/hello runs and says hello")
     write_out(out)
     write_out("\n")
     return 0
