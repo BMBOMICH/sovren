@@ -1,0 +1,18 @@
+# pd2 - a poke's value USED: assignment keeps the contract alive
+# (val_dead stays down), t lands the base pointer. everything here
+# is expression position, so the binary is byte-identical to the
+# old compiler.
+use sys
+
+b: 0
+c: 0
+
+main:
+    b: _sov_alloc(640)
+    c: _sov_alloc(640)
+    t: poke_i64(b, 0, 55)
+    r: 0
+    if t is b
+        r: 881
+    print r
+    print peek_i64(b, 0)

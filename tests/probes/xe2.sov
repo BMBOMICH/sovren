@@ -1,0 +1,14 @@
+# xe2 - REFUSAL: the except name is a global. before pass 68 the
+# local materialised mid-function and silently split the name;
+# now the compiler says no. compile-time behaviour probe, kept
+# out of the byte matrix.
+use sys
+
+g: 0
+
+main:
+    try
+        raise "boom"
+    except g
+        print 41
+    print 42

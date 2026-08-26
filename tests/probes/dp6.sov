@@ -1,0 +1,15 @@
+# dp6 - alias decline: the R index IS the target. fusing would
+# read that index after the store killed it, so the arm must
+# decline. binary byte-identical under both compilers.
+use sys
+
+g: 0
+
+main:
+    g: _sov_alloc(640)
+    poke_i64(g, 24, 67)
+    poke_i64(g, 16, 89)
+    i: 3
+    j: 2
+    i: peek_i64(g, j * 8) - peek_i64(g, i * 8)
+    print i

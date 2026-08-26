@@ -37,7 +37,7 @@ lc_help:
     print "  --version, -v  Print the version"
     print "  --help, -h     Print this"
     print ""
-    print "Read book.md to learn the language."
+    print "Read docs/BOOK.md to learn the language."
     return 0
 
 # is this word one of the target flags?
@@ -65,9 +65,9 @@ lc_dir_for a:
     if str_eq(a, "--windows") is 1
         return as text "windows"
     if str_eq(a, "--mac") is 1
-        return as text "mac"
+        return as text "macos"
     if str_eq(a, "--macos") is 1
-        return as text "mac"
+        return as text "macos"
     if str_eq(a, "--android") is 1
         return as text "android"
     if str_eq(a, "--arm64") is 1
@@ -80,7 +80,7 @@ main:
     n: arg_count()
     if n < 2
         print "Usage: sovren <file.sov> [-o out]"
-        print "sovren — native x86-64, no C, no Python"
+        print "sovren — native x86-64, self-contained"
         stop
 
     # the flags that answer and stop
@@ -129,12 +129,15 @@ main:
     me: as text arg_at(0)
     root: as text dir_of(me)
 
-    path: str_cat(root, "/")
-    path: str_cat(path, which)
     if so is 1
-        path: str_cat(path, "/compiler_so")
+        which: "android-so"
+    path: str_cat(root, "/compilers/")
+    path: str_cat(path, which)
+    path: str_cat(path, "/")
+    if so is 1
+        path: str_cat(path, "compiler_so")
     if not
-        path: str_cat(path, "/compiler")
+        path: str_cat(path, "compiler")
 
     if file_exists(path) is 0
         write_out("Error: no compiler at ")

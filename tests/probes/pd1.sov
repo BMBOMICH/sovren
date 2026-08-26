@@ -1,0 +1,20 @@
+# pd1 - statement-level pokes drop the value-normalisation tail:
+# immediate, name, expression and accumulate values across both
+# index shapes in a row. the stores themselves must be exact.
+use sys
+
+b: 0
+
+main:
+    b: _sov_alloc(640)
+    v: 7
+    poke_i64(b, 0, 5)
+    poke_i64(b, 8, v)
+    poke_i64(b, 16, v * 3 + 1)
+    i: 3
+    poke_i64(b, i * 8, v)
+    poke_i64(b, i * 8, peek_i64(b, i * 8) + 100)
+    print peek_i64(b, 0)
+    print peek_i64(b, 8)
+    print peek_i64(b, 16)
+    print peek_i64(b, 24)

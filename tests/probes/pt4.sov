@@ -1,0 +1,14 @@
+# pt4 - decline: T is a sum, not a product; old path, binary
+# byte-identical. v[1] 17 + (9+4) = 30.
+use sys
+
+v: 0
+
+main:
+    v: _sov_alloc(640)
+    poke_i64(v, 8, 17)
+    i: 1
+    dx: 9
+    f: 4
+    poke_i64(v, i * 8, peek_i64(v, i * 8) + dx + f)
+    print peek_i64(v, 8)

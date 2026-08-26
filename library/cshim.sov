@@ -1,7 +1,7 @@
 # cshim.sov — the handful of C functions a library expects to find.
 #
 # A C library does not carry its own malloc or memcpy. It asks the
-# system for them. Rather than load glibc, Sovren answers with its
+# system for them. Rather than load a foreign runtime, Sovren answers with its
 # own: c_malloc hands out memory from the Sovren heap, c_strlen is
 # Sovren's strlen. Nothing about the language changes. These are
 # plain Sovren jobs whose addresses get handed to the library.
@@ -133,7 +133,7 @@ cs_lseek fd off whence:
 
 # ---- the odds and ends ----
 
-# glibc keeps errno per thread behind this call. one slot is enough
+# the foreign runtime keeps errno per thread behind this call. one slot is enough
 # for a single threaded program.
 c_errno_slot: 0
 

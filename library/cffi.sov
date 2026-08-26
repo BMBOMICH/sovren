@@ -16,13 +16,13 @@
 # the same library points back inside it, and the handful of C
 # functions every library expects (malloc, memcpy, open and friends)
 # are answered by Sovren's own implementations, so the C code stays
-# inside Sovren's memory model. glibc-ifunc functions (a lot of
+# inside Sovren's memory model. foreign-runtime ifunc functions (a lot of
 # libm) resolve through their resolver, exactly as the loader does.
-# zlib's crc32, which calls into libc, works.
+# zlib's crc32, which calls into the foreign runtime, works.
 #
-# What does not: a function that needs some libc service Sovren does
+# What does not: a function that needs a foreign runtime service Sovren does
 # not provide (the printf family and strerror are stubs, on purpose),
-# and a glibc function that needs loader-managed thread state (the
+# and a foreign function that needs loader-managed thread state (the
 # locale or TLS, which is how atoi gets to strtol). Such a call
 # crashes rather than returning a wrong answer, so you find out at
 # once.
@@ -212,7 +212,7 @@ c_apply base at size symtab strtab syment:
     return 1
 
 # a slot for a symbol from outside the library: the shim table
-# first, then the one piece of loader state glibc's ifunc resolvers
+# first, then the one piece of loader state the foreign ifunc resolvers
 # read (libm's sin and friends look at _rtld_global_ro to pick a
 # cpu-tuned implementation; a zeroed block makes them take the
 # generic one, which runs anywhere).
@@ -350,7 +350,7 @@ c_call6 f a b c d e g:
 # slot must be filled with a real address before the library runs.
 # Some point back inside the same library; the rest are the handful
 # of C functions every library expects, and Sovren answers those
-# itself. Nothing here loads glibc.
+# itself. Nothing here loads a foreign runtime.
 
 # name to address. built once, then searched by name.
 cs_names: 0

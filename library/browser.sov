@@ -1,0 +1,415 @@
+# browser.sov — the reading part of a browser, pure Sovren.
+#
+# web_get already brings a page over the wire (plain http in
+# Sovren, https through the tls client). what was missing is the
+# part a person actually sees: turn markup into text a terminal
+# can show, name the page, and list where it points.
+#
+#   br_page  url     title, blank line, rendered text
+#   br_text  html    markup as readable text
+#   br_title html    what <title> says
+#   br_links html    href targets, one per line
+#
+# tags become line breaks, comments, scripts, styles and the head
+# are dropped, entities are decoded, and runs of blank space fold
+# to something a screen can hold.
+use web
+use string
+use mem
+use num
+
+# lowercase one byte
+br_lc c:
+    if c >= 65
+        if c <= 90
+            return c + 32
+    return c
+
+# the lowercase tag name starting at i, with a leading slash or
+# bang skipped. returns the-offset-just-past-the-name * 256 +
+# length; the offset is the first byte that is not a letter
+br_tag_name h i:
+    n: str_len(h)
+    if i < n
+        if peek_byte(h, i) is 47
+            i: i + 1
+    if i < n
+        if peek_byte(h, i) is 33
+            i: i + 1
+    ln: 0
+    stop: 0 - 1
+    k: i
+    more: 1
+    as long as more is 1
+        if k >= n
+            more: 0
+        if not
+            c: br_lc(peek_byte(h, k))
+            if c >= 97
+                if c <= 122
+                    ln: ln + 1
+                    k: k + 1
+            if not
+                stop: k
+                more: 0
+    if stop < 0
+        stop: n
+    return stop * 256 + ln
+
+# does the tag name at i equal want (a lowercase word)?
+br_tag_is h i want:
+    r: br_tag_name(h, i)
+    off: r / 256
+    ln: r % 256
+    if ln is not str_len(want)
+        return 0
+    k: 0
+    as long as k < ln
+        if br_lc(peek_byte(h, off - ln + k)) is not peek_byte(want, k)
+            return 0
+        k: k + 1
+    return 1
+
+# next case-insensitive needle from pos; -1 when absent
+br_find h needle pos:
+    hn: str_len(h)
+    nn: str_len(needle)
+    i: pos
+    hit: 0 - 1
+    more: 1
+    as long as more is 1
+        if i + nn > hn
+            more: 0
+        if not
+            same: 1
+            k: 0
+            as long as k < nn
+                if br_lc(peek_byte(h, i + k)) is not br_lc(peek_byte(needle, k))
+                    same: 0
+                k: k + 1
+            if same is 1
+                hit: i
+                more: 0
+            if not
+                i: i + 1
+    return hit
+
+# markup with every "<open ...> ... </open>" span removed
+br_without h open:
+    out: h
+    more: 1
+    as long as more is 1
+        a: br_find(out, str_cat("<", open), 0)
+        if a < 0
+            more: 0
+        if not
+            b: br_find(out, str_cat("</", open), a + 1)
+            if b < 0
+                b: str_len(out)
+            if not
+                e: br_find(out, ">", b)
+                if e < 0
+                    e: str_len(out) - 1
+                out: str_cat(str_cut(out, 0, a), str_cut(out, e + 1, str_len(out)))
+    return out
+
+# markup with comments removed
+br_no_comments h:
+    out: h
+    more: 1
+    as long as more is 1
+        a: br_find(out, "<!--", 0)
+        if a < 0
+            more: 0
+        if not
+            b: br_find(out, "-->", a + 1)
+            if b < 0
+                b: str_len(out) - 3
+            out: str_cat(str_cut(out, 0, a), str_cut(out, b + 3, str_len(out)))
+    return out
+
+# an entity at i as value * 4096 + bytes eaten; the raw byte when
+# it is not an entity we know
+br_entity h i:
+    n: str_len(h)
+    if peek_byte(h, i) is not 38
+        return peek_byte(h, i) * 4096 + 1
+    ln: 0
+    j: i + 1
+    as long as j < n
+        c: peek_byte(h, j)
+        if c is 59
+            j: n
+        if not
+            if c is 60
+                j: n
+            if not
+                if ln > 8
+                    j: n
+                if not
+                    ln: ln + 1
+                    j: j + 1
+    if peek_byte(h, i + 1 + ln) is not 59
+        return peek_byte(h, i) * 4096 + 1
+    ent: str_cut(h, i + 1, i + 1 + ln)
+    eat: ln + 2
+    if str_eq(ent, "amp") is 1
+        return 38 * 4096 + eat
+    if str_eq(ent, "lt") is 1
+        return 60 * 4096 + eat
+    if str_eq(ent, "gt") is 1
+        return 62 * 4096 + eat
+    if str_eq(ent, "quot") is 1
+        return 34 * 4096 + eat
+    if str_eq(ent, "apos") is 1
+        return 39 * 4096 + eat
+    if str_eq(ent, "nbsp") is 1
+        return 32 * 4096 + eat
+    if ln > 1
+        if peek_byte(ent, 0) is 35
+            base: 10
+            k: 1
+            if ln > 2
+                nx: peek_byte(ent, 1)
+                if nx is 120
+                    base: 16
+                    k: 2
+                if not
+                    if nx is 88
+                        base: 16
+                        k: 2
+            v: 0
+            good: 1
+            as long as k < ln
+                d: peek_byte(ent, k) - 48
+                if d > 9
+                    d: peek_byte(ent, k) - 87
+                if d < 0
+                    good: 0
+                if not
+                    if d >= base
+                        good: 0
+                if good is 1
+                    v: v * base + d
+                k: k + 1
+            if good is 1
+                return (v % 256) * 4096 + eat
+    return peek_byte(h, i) * 4096 + 1
+
+# a tag whose name starts with this letter breaks the line
+br_breaks c:
+    if c is 98
+        return 1
+    if c is 112
+        return 1
+    if c is 100
+        return 1
+    if c is 108
+        return 1
+    if c is 116
+        return 1
+    if c is 104
+        return 1
+    return 0
+
+# markup as text
+br_text h:
+    h2: br_no_comments(h)
+    h2: br_without(h2, "script")
+    h2: br_without(h2, "style")
+    h2: br_without(h2, "title")
+    h2: br_without(h2, "head")
+    n: str_len(h2)
+    out: mem_new(n + 32)
+    o: 0
+    i: 0
+    in_tag: 0
+    as long as i < n
+        c: peek_byte(h2, i)
+        if in_tag is 1
+            if c is 62
+                in_tag: 0
+            i: i + 1
+        if not
+            if c is 60
+                in_tag: 1
+                r: br_tag_name(h2, i + 1)
+                if r % 256 > 0
+                    if br_breaks(peek_byte(h2, r / 256 - r % 256)) is 1
+                        poke_byte(out, o, 10)
+                        o: o + 1
+                i: i + 1
+            if not
+                if c is 38
+                    e: br_entity(h2, i)
+                    poke_byte(out, o, e / 4096)
+                    o: o + 1
+                    i: i + e % 4096
+                if not
+                    poke_byte(out, o, c)
+                    o: o + 1
+                    i: i + 1
+    poke_byte(out, o, 0)
+    return br_fold(as text out)
+
+# space runs to one space (a space after a newline just goes),
+# blank-line runs to one blank line
+br_fold s:
+    n: str_len(s)
+    out: mem_new(n + 16)
+    o: 0
+    i: 0
+    as long as i < n
+        c: peek_byte(s, i)
+        if c is 9
+            c: 32
+        if c is 32
+            j: i
+            smore: 1
+            as long as smore is 1
+                if j >= n
+                    smore: 0
+                if not
+                    w: peek_byte(s, j)
+                    if w is 32
+                        j: j + 1
+                    if not
+                        if w is 9
+                            j: j + 1
+                        if not
+                            smore: 0
+            if j >= n
+                i: n
+            if not
+                if peek_byte(s, j) is 10
+                    i: j
+                if not
+                    if o > 0
+                        if peek_byte(out, o - 1) is 10
+                            i: j
+                        if not
+                            poke_byte(out, o, 32)
+                            o: o + 1
+                            i: j
+                    if not
+                        poke_byte(out, o, 32)
+                        o: o + 1
+                        i: j
+        if not
+            poke_byte(out, o, c)
+            o: o + 1
+            i: i + 1
+    poke_byte(out, o, 0)
+    t: as text out
+    more: 1
+    as long as more is 1
+        p: str_find(t, "\n\n\n")
+        if p < 0
+            more: 0
+        if not
+            t: str_cat(str_cut(t, 0, p + 1), str_cut(t, p + 2, str_len(t)))
+    return str_trim(t)
+
+# the page's title, entities decoded
+br_title h:
+    a: br_find(h, "<title", 0)
+    if a < 0
+        return ""
+    gt: br_find(h, ">", a)
+    if gt < 0
+        return ""
+    e: br_find(h, "</title", gt)
+    if e < 0
+        return ""
+    return str_trim(br_text(str_cut(h, gt + 1, e)))
+
+# href targets, one per line
+br_links h:
+    out: ""
+    pos: 0
+    n: str_len(h)
+    more: 1
+    as long as more is 1
+        a: br_find(h, "href", pos)
+        if a < 0
+            more: 0
+        if not
+            j: br_sksp(h, a + 4)
+            if j < n
+                if peek_byte(h, j) is 61
+                    j: br_sksp(h, j + 1)
+            if j >= n
+                pos: n
+            if not
+                if peek_byte(h, j) is 39
+                    e2: 0 - 1
+                    k: j + 1
+                    sq: 1
+                    as long as sq is 1
+                        if k >= n
+                            sq: 0
+                        if not
+                            if peek_byte(h, k) is 39
+                                e2: k
+                                sq: 0
+                            if not
+                                k: k + 1
+                    if e2 < 0
+                        e2: n
+                    val: str_cut(h, j + 1, e2)
+                    pos: e2 + 1
+                    if str_len(val) > 0
+                        out: str_cat(out, val)
+                        out: str_cat(out, "\n")
+                if not
+                if peek_byte(h, j) is 34
+                    e2: 0 - 1
+                    k: j + 1
+                    qmore: 1
+                    as long as qmore is 1
+                        if k >= n
+                            qmore: 0
+                        if not
+                            if peek_byte(h, k) is 34
+                                e2: k
+                                qmore: 0
+                            if not
+                                k: k + 1
+                    if e2 < 0
+                        e2: n
+                    val: str_cut(h, j + 1, e2)
+                    pos: e2 + 1
+                    if str_len(val) > 0
+                        out: str_cat(out, val)
+                        out: str_cat(out, "\n")
+                if not
+                    pos: j
+    return out
+
+# the next offset at or after i that is not a space or tab
+br_sksp h i:
+    n: str_len(h)
+    more: 1
+    as long as more is 1
+        if i >= n
+            more: 0
+        if not
+            c: peek_byte(h, i)
+            if c is 32
+                i: i + 1
+            if not
+                if c is 9
+                    i: i + 1
+                if not
+                    more: 0
+    return i
+
+# a whole page over the wire: title, blank line, rendered text
+br_page url:
+    body: web_get(url)
+    if str_len(body) is 0
+        return "(no page)"
+    t: br_title(body)
+    if str_len(t) is 0
+        return br_text(body)
+    return str_cat(str_cat(t, "\n\n"), br_text(body))

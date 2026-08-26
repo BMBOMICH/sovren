@@ -1,0 +1,17 @@
+# sa4 - mixed: x and y are deferred constants, c comes from
+# memory. if the deferral still holds slots the gate fires and
+# its cflush materialises x and y BEFORE rax opens. 9+16+25.
+use sys
+
+g: 0
+
+main:
+    g: _sov_alloc(128)
+    poke_i64(g, 0, 5)
+    poke_i64(g, 8, 13)
+    x: 3
+    y: 4
+    c: peek_i64(g, 0)
+    s: x * x + y * y + c * c
+    print s
+    print s + peek_i64(g, 8)

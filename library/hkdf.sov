@@ -1,0 +1,61 @@
+# hkdf.sov — HKDF-SHA256 (RFC 5869) in pure Sovren
+#
+# Extract-then-expand on top of hmac.sov. Nothing hands a pointer
+# back; the caller makes every buffer and passes it in.
+#
+#   use hkdf
+#   hkdf_extract(salt, salt_n, ikm, ikm_n, prk)   prk: 32 bytes
+#   hkdf_expand(prk, info, info_n, n, okm)        okm: n bytes
+#
+# An empty salt (salt_n 0) behaves as the RFC's default of
+# HashLen zero bytes, because hmac_block pads with zeros anyway.
+
+use hmac
+use secret
+use mem
+use bit32
+
+# PRK = HMAC-SHA256(salt, IKM)
+hkdf_extract salt salt_n ikm ikm_n prk:
+    hmac_raw(salt, salt_n, ikm, ikm_n, prk)
+    return 1
+
+# OKM = first n bytes of T(1) || T(2) || ...
+# where T(i) = HMAC(PRK, T(i-1) || info || byte i)
+hkdf_expand prk info info_n n okm:
+    # one block buffer: T(i-1) || info || counter byte
+    blk: _sov_alloc(33 + info_n)
+    t: _sov_alloc(32)
+    have_t: 0
+    done: 0
+    i: 1
+    private
+    as long as done < n
+        blen: 0
+        if have_t is 1
+            j: 0
+            as long as j < 32
+                poke_byte(blk, j, peek_byte(t, j))
+                j: j + 1
+            blen: 32
+        j: 0
+        as long as j < info_n
+            poke_byte(blk, blen + j, peek_byte(info, j))
+            j: j + 1
+        blen: blen + info_n
+        poke_byte(blk, blen, i)
+        blen: blen + 1
+        hmac_raw(prk, 32, blk, blen, t)
+        have_t: 1
+        take: 32
+        if n - done < 32
+            take: n - done
+        j: 0
+        as long as j < take
+            poke_byte(okm, done + j, peek_byte(t, j))
+            j: j + 1
+        done: done + take
+        i: i + 1
+    secret_wipe_bytes(t, 32)
+    secret_wipe_bytes(blk, 33 + info_n)
+    return 1

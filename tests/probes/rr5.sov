@@ -1,0 +1,19 @@
+# leaf8 function: locals 5-8 live in r8-r11 and ride the arm
+mix a b c:
+    d: a + 3
+    e: b + 5
+    f: c + 7
+    g: a + 11
+    h: b + 13
+    i: c + 17
+    t: f + g
+    u: h - f
+    v: g * i
+    w: i / d
+    x: i % e
+    y: a + b * i
+    return t + u * 100 + v * 10000 + w * 1000000 + x * 100000000 + y * 10000000000
+
+main:
+    print mix(2, 3, 4)
+    print mix(7, 1, 9)

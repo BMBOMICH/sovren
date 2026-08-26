@@ -1,6 +1,7 @@
 # file.sov — read && write files
 
 use sys
+use string
 file_open_read path:
     return sys_open(path, 0)
 
@@ -106,3 +107,100 @@ file_copy a b:
     if d is 0
         return 0
     return file_write_all(b, d)
+
+# Destroy a file's contents before its name: overwrite every byte
+# with zeros, force it to disk, truncate to nothing, force again,
+# unlink, and fsync the directory so even the deletion is durable.
+# The plain unlink leaves all bytes on the platter for anyone with
+# raw access; this leaves zeros. (Honesty: a journaling filesystem
+# may still hold short-lived copies of very recent writes, and
+# copies made earlier by backup or sync are beyond any program's
+# reach.)
+file_shred path:
+    # O_DSYNC on the overwrite: each zeroed block is durable before
+    # the truncate and the unlink run, so a crash cannot resurrect
+    # plaintext blocks from a journal after the file is gone.
+    fd: sys_open(path, 4098)
+    if fd < 0
+        return 0
+    n: sys_seek(fd, 0, 2)
+    sys_seek(fd, 0, 0)
+    z: _sov_alloc(4096)
+    i: 0
+    as long as i < 4096
+        poke_byte(z, i, 0)
+        i: i + 1
+    left: n
+    as long as left > 0
+        take: 4096
+        if left < take
+            take: left
+        sys_write(fd, z, take)
+        left: left - take
+    syscall(74, fd, 0, 0, 0, 0, 0)
+    syscall(77, fd, 0, 0, 0, 0, 0)
+    syscall(74, fd, 0, 0, 0, 0, 0)
+    sys_close(fd)
+    r: syscall(87, path, 0, 0, 0, 0, 0)
+    # the parent directory, so the unlink itself survives a crash
+    parent: file_dirname(path)
+    dfd: sys_open(parent, 65536)
+    if dfd > 0 - 1
+        syscall(74, dfd, 0, 0, 0, 0, 0)
+        sys_close(dfd)
+    if r is 0
+        return 1
+    return 0
+
+# everything before the last slash; "." when there is none
+file_dirname path:
+    n: _sov_strlen(path)
+    i: n - 1
+    as long as i > 0
+        if peek_byte(path, i) is 47
+            if i is 1
+                return "/"
+            return as text str_cut(path, 0, i)
+        i: i - 1
+    return "."
+
+# ---- secret files: owner-only permissions ----
+#
+# A vault in a shared /tmp at 0644 hands every local user the
+# ciphertext (and the auth file the salted hashes). These twins of
+# the write paths create files at 0600 - owner read/write only -
+# regardless of umask, and leave existing permissions untouched.
+
+# O_DSYNC (010000 = 4096) on every secret writer: the bytes reach
+# storage before write returns, so no plaintext half-exists only in
+# volatile cache after the moment of writing.
+file_open_secret path:
+    return syscall(257, 0 - 100, path, 4673, 384, 0, 0)
+
+file_write_secret_all path data:
+    fd: file_open_secret(path)
+    if fd < 0
+        return 0
+    n: _sov_strlen(data)
+    sys_write(fd, data, n)
+    sys_close(fd)
+    return 1
+
+file_write_secret_bytes path data n:
+    fd: file_open_secret(path)
+    if fd < 0
+        return 0
+    w: sys_write(fd, data, n)
+    sys_close(fd)
+    if w is n
+        return 1
+    return 0
+
+file_append_secret path data:
+    fd: syscall(257, 0 - 100, path, 5185, 384, 0, 0)
+    if fd < 0
+        return 0
+    n: _sov_strlen(data)
+    sys_write(fd, data, n)
+    sys_close(fd)
+    return 1

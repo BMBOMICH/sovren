@@ -22,3 +22,65 @@ proc_kill9 pid:
 proc_exit code:
     sys_exit(code)
     return code
+
+# run path to the end and give back its exit code. stdout of the
+# child keeps going to ours.
+proc_run path:
+    pid: proc_fork()
+    if pid is 0
+        av: _sov_alloc(16)
+        poke_i64(av, 0, 0)
+        sys_exec(path, av, 0)
+        sys_exit(127)
+    st: _sov_alloc(16)
+    syscall(61, pid, st, 0, 0, 0, 0)
+    s: peek_i64(st, 0)
+    return s / 256
+
+# run path to the end and give back the CPU microseconds the
+# child burned (its own user + system time from wait4's rusage,
+# so a throttled wall clock cannot bend a benchmark)
+proc_run_us path:
+    pid: proc_fork()
+    if pid is 0
+        av: _sov_alloc(16)
+        poke_i64(av, 0, 0)
+        sys_exec(path, av, 0)
+        sys_exit(127)
+    st: _sov_alloc(16)
+    ru: _sov_alloc(144)
+    syscall(61, pid, st, 0, ru, 0, 0)
+    us: peek_i64(ru, 0) * 1000000 + peek_i64(ru, 8)
+    us: us + peek_i64(ru, 16) * 1000000 + peek_i64(ru, 24)
+    return us
+
+# run path to the end and give back everything it wrote to
+# stdout, as one text (up to 65520 bytes)
+proc_run_out path:
+    fds: _sov_alloc(16)
+    buf: _sov_alloc(65536)
+    sys_pipe(fds)
+    both: peek_i64(fds, 0)
+    rd: both % 4294967296
+    wr: both / 4294967296
+    pid: proc_fork()
+    if pid is 0
+        sys_dup2(wr, 1)
+        sys_close(rd)
+        av: _sov_alloc(16)
+        poke_i64(av, 0, 0)
+        sys_exec(path, av, 0)
+        sys_exit(127)
+    sys_close(wr)
+    got: 0
+    more: sys_read(rd, buf + got, 65000 - got)
+    as long as more > 0
+        got: got + more
+        more: 0
+        if got < 65000
+            more: sys_read(rd, buf + got, 65000 - got)
+    sys_close(rd)
+    st: _sov_alloc(16)
+    syscall(61, pid, st, 0, 0, 0, 0)
+    poke_byte(buf, got, 0)
+    return as text buf

@@ -1,0 +1,2462 @@
+# tests/all.sov — the test suite, written in Sovren.
+#
+#   ./sovren tests/all.sov -o /tmp/check && /tmp/check
+#
+# Write a small program,
+# compile it, run it, compare the answer.
+
+use testrun
+use file
+use bit32
+use sys
+use arm
+use run
+use lz
+use lz2
+use browser
+
+# ---- the header rules real Windows enforces ----
+#
+# These found real bugs, twice. Each one was a silent failure on the
+# user's own machine that a compatibility layer did not reproduce.
+
+# pass S8: the emulator's memory is real. Every page carries the
+# permissions its image segment declared, and both directions of
+# the rule are checked: writing a code page and running a data
+# page must fault, each with its own reason and fault address.
+tr_perm_checks:
+    tr_build_for("examples/hello.sov", "/tmp/sov-perm.bin", "")
+    m: x86_new()
+    if x86_load(m, "/tmp/sov-perm.bin") is 0
+        tr_bad("emu real memory", "could not load it", "a loaded guest")
+        return 0
+    lo: x86_state_q(m, 216)
+    tx: 0
+    dt: 0
+    p: lo
+    as long as p < lo + 4194304
+        pv: x86_perm_at(m, p)
+        if tx is 0
+            if x_and(pv, 1) is 1
+                tx: p
+        if dt is 0
+            if x_and(pv, 2) is not 0
+                if x_and(pv, 1) is 0
+                    dt: p
+        p: p + 4096
+    if tx is 0
+        tr_bad("emu real memory", "no executable page in the image", "one")
+        return 0
+
+    # writing the code page must fault as a write refusal
+    x_w8(m, tx, 65)
+    if x86_why(m) is 7
+        if x86_bad(m) is tx
+            tr_ok("emu code page refuses writes")
+        if not
+            tr_bad("emu code page refuses writes", "wrong fault address", "the page")
+    if not
+        tr_bad("emu code page refuses writes", x86_reason(m), "a write refusal")
+
+    # running the data page must fault as an execute refusal
+    m2: x86_new()
+    x86_load(m2, "/tmp/sov-perm.bin")
+    x86_state_w(m2, 128, dt)
+    x86_run_for(m2, 64)
+    if x86_why(m2) is 8
+        if x86_bad(m2) is dt
+            tr_ok("emu data page refuses runs")
+        if not
+            tr_bad("emu data page refuses runs", "wrong fault address", "the page")
+    if not
+        tr_bad("emu data page refuses runs", x86_reason(m2), "a run refusal")
+
+    # a granted mprotect really moves the bits: the code page
+    # becomes writable and the write lands in it
+    m3: x86_new()
+    x86_load(m3, "/tmp/sov-perm.bin")
+    x_perm_set(m3, tx, 4096, 6)
+    x_w8(m3, tx, 65)
+    if x86_why(m3) is 0
+        if x_and(x86_peek_q(m3, tx), 255) is 65
+            tr_ok("emu mprotect really moves bits")
+        if not
+            tr_bad("emu mprotect really moves bits", "the byte did not land", "65")
+    if not
+        tr_bad("emu mprotect really moves bits", x86_reason(m3), "a clean write")
+    return 0
+
+# pass S7 on windows: PIE the PE way. no runtime walk - the loader
+# applies the .reloc table: every absolute qword becomes a DIR64
+# entry, every str32 half becomes HIGHLOW, and DYNAMIC_BASE is on
+tr_pie_win_checks:
+    file_write_all("/tmp/sov-pw.sov", "twice n:\n    return n * 2\n\nmain:\n    print twice(21)\n    print addr_of twice\n")
+    msg: tr_build_for("/tmp/sov-pw.sov", "/tmp/sov-pw.exe", "--windows")
+    if str_has(msg, "Error") is 1
+        tr_bad("windows build carries a reloc table", msg, "a clean build")
+        return 0
+    d: file_read_all("/tmp/sov-pw.exe")
+    if wand(peek_byte(d, 222), 64) is 64
+        tr_ok("windows build says DYNAMIC_BASE")
+    if not
+        tr_bad("windows build says DYNAMIC_BASE", "flag off", "on")
+    if peek_byte(d, 134) is 3
+        tr_ok("windows build has a .reloc section")
+    if not
+        tr_bad("windows build has a .reloc section", "two sections only", "three")
+    rva: peek_byte(d, 312) + peek_byte(d, 313) * 256
+    rsz: peek_byte(d, 316) + peek_byte(d, 317) * 256
+    if rva is 0
+        tr_bad("windows build carries a reloc table", "dir[5] empty", "blocks")
+    prd: peek_byte(d, 492) + peek_byte(d, 493) * 256 + peek_byte(d, 494) * 65536
+    i: prd + 8
+    dir64: 0
+    as long as i < prd + rsz
+        if peek_byte(d, i + 1) / 16 is 10
+            dir64: 1
+        i: i + 2
+    if dir64 is 1
+        if rsz > 0
+            tr_ok("windows build carries a reloc table")
+    if not
+        tr_bad("windows build carries a reloc table", "no DIR64 entry", "one per absolute")
+    # and the guest still runs: the emulator ignores the slide and
+    # the code is the same bytes
+    m: x86_new()
+    if x86_load(m, "/tmp/sov-pw.exe") is 1
+        x86_run(m)
+        if str_has(x86_out(m), "42") is 1
+            tr_ok("pie windows build still runs")
+        if not
+            tr_bad("pie windows build still runs", x86_out(m), "42")
+    if not
+        tr_bad("pie windows build still runs", "could not load it", "a loaded guest")
+    return 0
+
+
+tr_pie_mac_checks:
+    file_write_all("/tmp/sov-pmac.sov", "twice n:\n    return n * 2\n\nmain:\n    print twice(21)\n    print addr_of twice\n")
+    msg: tr_build_for("/tmp/sov-pmac.sov", "/tmp/sov-pmac.mac", "--mac")
+    if str_has(msg, "Error") is 1
+        tr_bad("mac build says PIE", msg, "a clean build")
+        return 0
+    d: file_read_all("/tmp/sov-pmac.mac")
+    if d is 0
+        tr_bad("mac build says PIE", "no file", "a macho")
+        return 0
+    if wand(peek_byte(d, 26), 32) is 32
+        tr_ok("mac build says MH_PIE")
+    if not
+        tr_bad("mac build says MH_PIE", "flag off", "on")
+    # the walk is in the file: the class-marked mac mprotect number
+    haswalk: 0
+    i: 0
+    n: file_size("/tmp/sov-pmac.mac")
+    as long as i + 5 < n
+        if peek_byte(d, i) is 184
+            if peek_byte(d, i + 1) is 74
+                if peek_byte(d, i + 2) is 0
+                    if peek_byte(d, i + 3) is 0
+                        if peek_byte(d, i + 4) is 2
+                            haswalk: 1
+        i: i + 1
+    if haswalk is 1
+        tr_ok("mac build carries the slide walk")
+    if not
+        tr_bad("mac build carries the slide walk", "no mac mprotect in the start", "the walk")
+    # three loads, three addresses: the emulator slides a PIE the
+    # way the kernel does, and the guest still prints its answer
+    o1: ""
+    o2: ""
+    o3: ""
+    ran: 0
+    m1: x86_new()
+    if x86_load(m1, "/tmp/sov-pmac.mac") is 1
+        x86_run(m1)
+        o1: x86_out(m1)
+    if str_has(o1, "42") is 1
+        ran: ran + 1
+    m2: x86_new()
+    if x86_load(m2, "/tmp/sov-pmac.mac") is 1
+        x86_run(m2)
+        o2: x86_out(m2)
+    if str_has(o2, "42") is 1
+        ran: ran + 1
+    m3: x86_new()
+    if x86_load(m3, "/tmp/sov-pmac.mac") is 1
+        x86_run(m3)
+        o3: x86_out(m3)
+    if str_has(o3, "42") is 1
+        ran: ran + 1
+    if ran is 3
+        tr_ok("pie mac build runs at its slid base")
+    if not
+        tr_bad("pie mac build runs at its slid base", o1, "42 in all three runs")
+    if str_eq(o1, o2) is 1
+        if str_eq(o2, o3) is 1
+            tr_bad("pie mac loads at a random base", o1, "three different addresses")
+            return 0
+    tr_ok("pie mac loads at a random base")
+    return 0
+
+
+tr_pie_android_checks:
+    file_write_all("/tmp/sov-pa.sov", "twice n:\n    return n * 2\n\nmain:\n    print twice(21)\n    print addr_of twice\n")
+    msg: tr_build_for("/tmp/sov-pa.sov", "/tmp/sov-pa.bin", "--android")
+    if str_has(msg, "Error") is 1
+        tr_bad("android build says DYN", msg, "a clean build")
+        return 0
+    d: file_read_all("/tmp/sov-pa.bin")
+    if d is 0
+        tr_bad("android build says DYN", "no file", "an elf")
+        return 0
+    et: peek_byte(d, 16) + peek_byte(d, 17) * 256
+    if et is 3
+        tr_ok("android build says ET_DYN")
+    if not
+        tr_bad("android build says ET_DYN", "type is not 3", "3")
+    rn: peek_byte(d, 60) + peek_byte(d, 61) * 256
+    if rn > 0
+        tr_ok("android build carries a reloc table")
+    if not
+        tr_bad("android build carries a reloc table", "no entries", "one per absolute")
+    o1: ""
+    o2: ""
+    o3: ""
+    ran: 0
+    m1: arm_new()
+    if arm_load(m1, "/tmp/sov-pa.bin") is 1
+        arm_run(m1)
+        o1: arm_out(m1)
+    if str_has(o1, "42") is 1
+        ran: ran + 1
+    m2: arm_new()
+    if arm_load(m2, "/tmp/sov-pa.bin") is 1
+        arm_run(m2)
+        o2: arm_out(m2)
+    if str_has(o2, "42") is 1
+        ran: ran + 1
+    m3: arm_new()
+    if arm_load(m3, "/tmp/sov-pa.bin") is 1
+        arm_run(m3)
+        o3: arm_out(m3)
+    if str_has(o3, "42") is 1
+        ran: ran + 1
+    if ran is 3
+        tr_ok("pie android build runs at its slid base")
+    if not
+        tr_bad("pie android build runs at its slid base", o1, "42 in all three runs")
+    if str_eq(o1, o2) is 1
+        if str_eq(o2, o3) is 1
+            tr_bad("pie android loads at a random base", o1, "three different addresses")
+            return 0
+    tr_ok("pie android loads at a random base")
+    return 0
+
+tr_pie_ios_checks:
+    file_write_all("/tmp/sov-pi.sov", "twice n:\n    return n * 2\n\nmain:\n    print twice(21)\n    print addr_of twice\n")
+    msg: tr_build_for("/tmp/sov-pi.sov", "/tmp/sov-pi.out", "--ios")
+    if str_has(msg, "Error") is 1
+        tr_bad("ios build says MH_PIE", msg, "a clean build")
+        return 0
+    d: file_read_all("/tmp/sov-pi.out")
+    if d is 0
+        tr_bad("ios build says MH_PIE", "no file", "a macho")
+        return 0
+    if wand(peek_byte(d, 26), 32) is 32
+        tr_ok("ios build says MH_PIE")
+    if not
+        tr_bad("ios build says MH_PIE", "flag off", "on")
+    ic: peek_byte(d, 28) + peek_byte(d, 29) * 256
+    if ic > 0
+        tr_ok("ios build carries a reloc table")
+    if not
+        tr_bad("ios build carries a reloc table", "no entries", "one per absolute")
+    return 0
+
+
+# byte-search a built image for a word: the honest way to prove a
+# stub is or is not in the file
+tr_win_has d s n:
+    i: 0
+    as long as i < n - 4
+        hit: 1
+        j: 0
+        as long as j < str_len(s)
+            if peek_byte(d, i + j) is not _sov_byte_at(s, j)
+                hit: 0
+            j: j + 1
+        if hit is 1
+            return 1
+        i: i + 1
+    return 0
+
+# pass S5 + S6 on windows: the canary is seeded from advapi32's
+# RtlGenRandom, asked for by name at run time, and one vectored
+# handler replaces the five signal stubs
+# ---- pass S5 on android: a live stack canary, proved by hand ----
+#
+# The build seeds a canary from real entropy, a private frame carries
+# a copy at [x29-128], and a smashed copy is refused. The driver runs
+# the clean program, flips the frame copy mid-run, and asks a second
+# machine for a fresh seed: exit 0 with the answer, exit 60 with the
+# word stack, and two different seeds.
+
+tr_canary_droid_checks:
+    file_write_all("/tmp/sov-cd.sov", "hold n:\n    private\n    a: n + 1\n    return a\n\nmain:\n    print hold(1)\n")
+    msg: tr_build_for("/tmp/sov-cd.sov", "/tmp/sov-cd.bin", "--android")
+    if str_has(msg, "Error") is 1
+        return tr_bad("android canary live", msg, "a clean build")
+    dsrc: "use arm\nmain:\n    a: arm_new()\n    if arm_load(a, "/tmp/sov-cd.bin") is 0\n        print "loadfail"\n        return 0\n    arm_run_for(a, 600)"
+    dsrc: str_cat(dsrc, "\n    print peek_i64(a, 312)\n    write_out(arm_out(a))\n    b: arm_new()\n    arm_load(b, "/tmp/sov-cd.bin")\n    base: peek_i64(b, 328)")
+    dsrc: str_cat(dsrc, "\n    snap: _sov_list_new()\n    q: 0\n    as long as q < 128\n        snap: _sov_list_add(snap, arm_r64(b, base + 4096 + q * 8))\n        q: q + 1")
+    dsrc: str_cat(dsrc, "\n    va: 0\n    vv: 0\n    st: 0\n    as long as st < 400\n        arm_run_for(b, 1)\n        q: 0\n        as long as q < 128")
+    dsrc: str_cat(dsrc, "\n            nv: arm_r64(b, base + 4096 + q * 8)\n            if nv is not _sov_list_get(snap, q)\n                va: base + 4096 + q * 8")
+    dsrc: str_cat(dsrc, "\n                vv: nv\n                q: 128\n            q: q + 1\n        if va > 0\n            st: 400\n        st: st + 1")
+    dsrc: str_cat(dsrc, "\n    sp: base + 268369920\n    fa: 0\n    s2: 0\n    as long as s2 < 400\n        arm_run_for(b, 1)\n        p: sp - 2048")
+    dsrc: str_cat(dsrc, "\n        as long as p < sp + 256\n            if arm_r64(b, p) is vv\n                fa: p\n                p: sp + 256\n            p: p + 8")
+    dsrc: str_cat(dsrc, "\n        if fa > 0\n            s2: 400\n        s2: s2 + 1\n    if fa > 0\n        arm_w64(b, fa, vv + 1)\n    arm_run(b)\n    print peek_i64(b, 312)")
+    dsrc: str_cat(dsrc, "\n    write_out(arm_out(b))\n    c: arm_new()\n    arm_load(c, "/tmp/sov-cd.bin")\n    cb: peek_i64(c, 328)\n    arm_run_for(c, 600)\n    dif: 0")
+    dsrc: str_cat(dsrc, "\n    if arm_r64(c, cb + va - base) is not vv\n        dif: 1\n    print dif")
+    dsrc: str_cat(dsrc, "\n")
+    file_write_all("/tmp/sov-cdd.sov", dsrc)
+    msg2: tr_build("/tmp/sov-cdd.sov", "/tmp/sov-cdd.bin")
+    if str_has(msg2, "Error") is 1
+        return tr_bad("android canary live", msg2, "driver built")
+    got: str_trim(tr_run("/tmp/sov-cdd.bin"))
+    if str_eq(got, "0\n2\n60\nstack\n1") is 1
+        return tr_ok("android canary live")
+    return tr_bad("android canary live", got, "0\n2\n60\nstack\n1")
+
+tr_word_count_ci d w:
+    n: 0
+    o: 0
+    e: file_size("/tmp/sov-ci.out")
+    as long as o < e - 4
+        if peek_byte(d, o) + peek_byte(d, o + 1) * 256 + peek_byte(d, o + 2) * 65536 + peek_byte(d, o + 3) * 16777216 is w
+            n: n + 1
+        o: o + 4
+    return n
+
+# ---- pass S5 on ios: the same canary, checked word by word ----
+#
+# ios builds are mach-o, which the arm emulator does not load, so the
+# lock is on the emitted encodings themselves: the seed syscall, the
+# store and its two checks, the fixed branch, and the refusal literal.
+# The android twin proved the same words by running them.
+
+tr_canary_ios_checks:
+    file_write_all("/tmp/sov-ci.sov", "hold n:\n    private\n    a: n + 1\n    return a\n\nmain:\n    print hold(1)\n")
+    msg: tr_build_for("/tmp/sov-ci.sov", "/tmp/sov-ci.out", "--ios")
+    if str_has(msg, "Error") is 1
+        return tr_bad("ios canary words", msg, "a clean build")
+    d: file_read_all("/tmp/sov-ci.out")
+    if d is 0
+        return tr_bad("ios canary words", "no file", "a macho")
+    mg: peek_byte(d, 0) + peek_byte(d, 1) * 256 + peek_byte(d, 2) * 65536 + peek_byte(d, 3) * 16777216
+    if mg is not 4277009103
+        return tr_bad("ios canary words", "wrong magic", "MH")
+    if tr_word_count_ci(d, 3531612872) is not 1
+        return tr_bad("ios canary words", "seed missing", "one getrandom")
+    if tr_word_count_ci(d, 3506570156) is not 3
+        return tr_bad("ios canary words", "frame slots", "store and two checks")
+    if tr_word_count_ci(d, 4177527176) is not 1
+        return tr_bad("ios canary words", "store missing", "one store")
+    if tr_word_count_ci(d, 4181721482) is not 2
+        return tr_bad("ios canary words", "checks missing", "two loads")
+    if tr_word_count_ci(d, 4181721387) is not 2
+        return tr_bad("ios canary words", "globals", "two loads")
+    if tr_word_count_ci(d, 3943367007) is not 2
+        return tr_bad("ios canary words", "compares", "two")
+    if tr_word_count_ci(d, 1409286208) is not 2
+        return tr_bad("ios canary words", "branch form", "two")
+    lit: 0
+    o: 0
+    e: file_size("/tmp/sov-ci.out")
+    as long as o < e - 8
+        if peek_i64(d, o) % 281474976710656 is 11456345109619
+            lit: 1
+        o: o + 1
+    if lit is not 1
+        return tr_bad("ios canary words", "no refusal literal", "stack")
+    return tr_ok("ios canary words")
+
+# ---- pass S6 on android: crash handlers, delivered for real ----
+#
+# The build arms five handlers through rt_sigaction. The driver
+# breaks an instruction word mid-run and watches the guest answer
+# with crash and exit 111, hands the emulator an out-of-bounds
+# write and watches the same refusal, and breaks a plain build
+# with no handlers, which must stop and name the word.
+
+
+# ---- lz: real compression, roundtrip and refusal ----
+#
+# LZSS over a 1024 byte window. a run of text must come back
+# byte for byte and shrink; pseudo-random bytes must come back
+# whole; a stream that points before its own start must be
+# refused, and a one literal stream must decode.
+
+tr_lz_checks:
+    a: ""
+    i: 0
+    as long as i < 100
+        a: str_cat(a, "the quick brown fox ")
+        i: i + 1
+    na: str_len(a)
+    if str_eq(lz_unpack(lz_pack(a, na)), a) is 1
+        if lz_size(a, na) < 300
+            b: ""
+            i: 0
+            as long as i < 40
+                b: str_cat(b, "line of the corpus with a number ")
+                b: str_cat(b, num_text(i % 10))
+                b: str_cat(b, " in it\n")
+                i: i + 1
+            nb: str_len(b)
+            if str_eq(lz_unpack(lz_pack(b, nb)), b) is 1
+                if lz_size(b, nb) < nb
+                    al: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+                    c: ""
+                    x: 12345
+                    i: 0
+                    as long as i < 400
+                        x: (x * 1103515245 + 12345) % 2147483648
+                        c: str_cat(c, str_cut(al, x % 64, x % 64 + 1))
+                        i: i + 1
+                    nc: str_len(c)
+                    if str_eq(lz_unpack(lz_pack(c, nc)), c) is 1
+                        one: "Q"
+                        if str_eq(lz_unpack(lz_pack(one, 1)), one) is 1
+                            if str_eq(lz_unpack(lz_pack("", 0)), "") is 1
+                                bad: mem_new(16)
+                                poke_byte(bad, 0, 3)
+                                poke_byte(bad, 4, 0)
+                                poke_byte(bad, 5, 1)
+                                if str_eq(lz_unpack(bad), "") is 1
+                                    good: mem_new(16)
+                                    poke_byte(good, 0, 1)
+                                    poke_byte(good, 4, 1)
+                                    poke_byte(good, 5, 90)
+                                    if str_eq(lz_unpack(good), "Z") is 1
+                                        return tr_ok("lz roundtrip")
+                                    return tr_bad("lz roundtrip", lz_unpack(good), "Z")
+                                return tr_bad("lz roundtrip", "accepted", "refusal")
+                            return tr_bad("lz roundtrip", lz_unpack(lz_pack("", 0)), "")
+                        return tr_bad("lz roundtrip", lz_unpack(lz_pack(one, 1)), one)
+                    return tr_bad("lz roundtrip", "random", c)
+                return tr_bad("lz roundtrip", num_text(lz_size(b, nb)), "< text")
+            return tr_bad("lz roundtrip", "corpus", b)
+        return tr_bad("lz roundtrip", num_text(lz_size(a, na)), "< 300")
+    return tr_bad("lz roundtrip", lz_unpack(lz_pack(a, na)), a)
+
+
+
+# ---- the repl is real: every line a whole program ----
+#
+# script mode feeds the repl a file of lines; each one is
+# compiled and run for real, and the answers come back in
+# order. this is the bank's terminal piece proven, not sketched.
+
+tr_repl_checks:
+    file_write_all("/tmp/sov-repl.script", "1+2\n2*21\nuse string\nstr_cat(\"a\",\"b\")\n")
+    msg: tr_build("repl.sov", "/tmp/sov-repl.bin")
+    if str_has(msg, "Error") is 1
+        return tr_bad("repl script", msg, "a clean build")
+    got: str_trim(tr_run("/tmp/sov-repl.bin /tmp/sov-repl.script"))
+    want: "3\n42\nok\nab"
+    if str_eq(got, want) is 1
+        return tr_ok("repl script")
+    return tr_bad("repl script", got, want)
+
+
+
+# ---- the editor is real: piped keystrokes, saved file ----
+#
+# the screen editor is driven blind through a pipe: typing,
+# ctrl-s to save, ctrl-q to quit. what lands on disk must be
+# exactly what was typed.
+
+tr_edit_checks:
+    dummy: file_delete("/tmp/sov-edit.out")
+    kb: mem_new(24)
+    ks: "hello world"
+    i: 0
+    as long as i < 11
+        poke_byte(kb, i, peek_byte(ks, i))
+        i: i + 1
+    poke_byte(kb, 11, 19)
+    poke_byte(kb, 12, 17)
+    dummy: file_write_bytes("/tmp/sov-edit.keys", kb, 13)
+    msg: tr_build("edit.sov", "/tmp/sov-edit.bin")
+    if str_has(msg, "Error") is 1
+        return tr_bad("editor pipe", msg, "a clean build")
+    dummy: tr_run("cat /tmp/sov-edit.keys | /tmp/sov-edit.bin /tmp/sov-edit.out")
+    if file_exists("/tmp/sov-edit.out") is 0
+        return tr_bad("editor pipe", "no file", "the typed text")
+    got: str_trim(file_read_all("/tmp/sov-edit.out"))
+    if str_eq(got, "hello world") is 1
+        return tr_ok("editor pipe")
+    return tr_bad("editor pipe", got, "hello world")
+
+
+
+# ---- the browser reads: markup in, text out ----
+#
+# the render layer over web_get: tags become breaks, scripts and
+# styles and comments vanish, entities decode (named and numeric),
+# space folds, titles and href targets come out whole. the wire
+# part is proven live; this locks the reading on a fixed page.
+
+tr_browser_checks:
+    h: "<html><head><title>T &amp; E</title><style>x{}</style></head>"
+    h: str_cat(h, "<body><!-- c --><h1>One</h1><p>a &lt;b&gt; c</p>")
+    h: str_cat(h, "<script>bad()</script><br>two&#65;&#66;")
+    h: str_cat(h, "<a href='/u1.html'>u</a><A HREF=\"/u2.html\">v</A></body></html>")
+    t: br_title(h)
+    if str_eq(t, "T & E") is 1
+        x: br_text(h)
+        want: "One\n\na <b> c\n\ntwoABuv"
+        if str_eq(x, want) is 1
+            l: br_links(h)
+            wl: "/u1.html\n/u2.html\n"
+            if str_eq(l, wl) is 1
+                return tr_ok("browser reads")
+            return tr_bad("browser reads", l, wl)
+        return tr_bad("browser reads", x, want)
+    return tr_bad("browser reads", t, "T & E")
+
+
+
+# ---- the ide: type a program, run it without leaving ----
+#
+# the editor grows ctrl-r: save, compile, run, answers on the
+# terminal. driven blind through a pipe, a whole program typed
+# key by key must come back executed.
+
+tr_ide_checks:
+    dummy: file_delete("/tmp/sov-ide.sov")
+    kb: mem_new(48)
+    ks: "main:"
+    i: 0
+    as long as i < 5
+        poke_byte(kb, i, peek_byte(ks, i))
+        i: i + 1
+    poke_byte(kb, 5, 13)
+    ks2: "    print 6*7"
+    i: 0
+    as long as i < 13
+        poke_byte(kb, 6 + i, peek_byte(ks2, i))
+        i: i + 1
+    poke_byte(kb, 19, 13)
+    poke_byte(kb, 20, 19)
+    poke_byte(kb, 21, 18)
+    poke_byte(kb, 22, 32)
+    poke_byte(kb, 23, 17)
+    dummy: file_write_bytes("/tmp/sov-ide.keys", kb, 24)
+    msg: tr_build("edit.sov", "/tmp/sov-ide.bin")
+    if str_has(msg, "Error") is 1
+        return tr_bad("ide run", msg, "a clean build")
+    out: tr_run("cat /tmp/sov-ide.keys | /tmp/sov-ide.bin /tmp/sov-ide.sov")
+    if str_has(out, "42") is 1
+        return tr_ok("ide run")
+    return tr_bad("ide run", out, "the answer 42")
+
+# ---- the os scaffold: a shell over the arm machine ----
+#
+# the machine is library/arm.sov. the os boots, loads a program
+# the android back end built, runs it, reports its exit, and
+# answers for files and unknown commands.
+
+tr_os_checks:
+    dummy: sys_mkdir("/tmp/sov-os")
+    file_write_all("/tmp/sov-os-src.sov", "main:\n    print 6*7\n")
+    msg: tr_build_for("/tmp/sov-os-src.sov", "/tmp/sov-os/hello.bin", "--android")
+    if str_has(msg, "Error") is 1
+        return tr_bad("os scaffold", msg, "a clean guest")
+    file_write_all("/tmp/sov-os.cmds", "run hello.bin\nbogus\nexit\n")
+    msg2: tr_build("os.sov", "/tmp/sov-os.shell")
+    if str_has(msg2, "Error") is 1
+        return tr_bad("os scaffold", msg2, "a clean build")
+    out: tr_run("/tmp/sov-os.shell /tmp/sov-os.cmds")
+    a: str_has(out, "42")
+    b: str_has(out, "[exit 0]")
+    c: str_has(out, "no such command: bogus")
+    d: str_has(out, "power off")
+    if a is 1
+        if b is 1
+            if c is 1
+                if d is 1
+                    return tr_ok("os scaffold")
+                return tr_bad("os scaffold", "no power off", "power off")
+            return tr_bad("os scaffold", "no unknown-cmd answer", "named")
+        return tr_bad("os scaffold", "no exit line", "[exit 0]")
+    return tr_bad("os scaffold", out, "the answer 42")
+
+
+
+tr_lz2_checks:
+    big: file_read_all("library/lz2.sov")
+    n: str_len(big)
+    packed: lz2h_pack(big, n)
+    if str_eq(lz2h_unpack(packed), big) is 0
+        return tr_bad("lz2h roundtrip", "differing bytes", "the same text back")
+    lzsz: lz_size(big, n)
+    hsz: lz2h_plen(packed)
+    if hsz >= lzsz
+        return tr_bad("lz2h beats lz", num_text(hsz), str_cat("under ", num_text(lzsz)))
+    tiny: lz2h_pack("aaaaaaaaaaaaaaaaaaaaaa", 22)
+    if peek_byte(tiny, 4) is not 0
+        return tr_bad("lz2h raw fallback", "huffman chosen", "the raw flag")
+    if str_eq(lz2h_unpack(tiny), "aaaaaaaaaaaaaaaaaaaaaa") is 0
+        return tr_bad("lz2h raw roundtrip", "differing bytes", "the same text back")
+    built: ""
+    bi: 0
+    as long as bi < 8
+        built: str_cat(built, str_chr(peek_byte("abcdefgh", bi)))
+        bi: bi + 1
+    if str_eq(built, "abcdefgh") is 0
+        return tr_bad("str_chr builds", built, "abcdefgh")
+    rpacked: lz2r_pack(big, n)
+    if str_eq(lz2r_unpack(rpacked), big) is 0
+        return tr_bad("lz2r roundtrip", "differing bytes", "the same text back")
+    rsz: lz2r_plen(rpacked)
+    if rsz >= n
+        return tr_bad("lz2r beats raw", num_text(rsz), str_cat("under ", num_text(n)))
+    cut: mem_new(64)
+    i: 0
+    as long as i < 64
+        poke_byte(cut, i, peek_byte(packed, i))
+        i: i + 1
+    poke_byte(cut, 8, 200)
+    if str_len(lz2h_unpack(cut)) is not 0
+        return tr_bad("lz2h refusal", "bytes out of a cut stream", "an empty refusal")
+    return tr_ok("lz2h entropy layer")
+
+tr_ret_checks:
+    dummy: file_write_all("/tmp/sov-ret.sov", "main:\n    print \"done\"\n    return 7\n")
+    msg: tr_build("/tmp/sov-ret.sov", "/tmp/sov-ret.bin")
+    if str_has(msg, "Error") is 1
+        return tr_bad("ret build", msg, "a clean build")
+    dummy: file_write_all("/tmp/sov-ret.sh", "/tmp/sov-ret.bin; echo rc=$?\n")
+    got: str_trim(tr_run("/bin/sh /tmp/sov-ret.sh"))
+    if str_has(got, "rc=7") is 0
+        return tr_bad("ret exit code", got, "done rc=7")
+    return tr_ok("return in main exits with the value")
+
+tr_szv_checks:
+    dummy: file_write_all("/tmp/sov-szv.sov", "main:\n    print 41 + 1\n")
+    msg: tr_build_for("/tmp/sov-szv.sov", "/tmp/sov-szv.bin", "--android")
+    if str_has(msg, "Error") is 1
+        return tr_bad("szv guest build", msg, "a clean build")
+    d: file_read_all("/tmp/sov-szv.bin")
+    n: file_size("/tmp/sov-szv.bin")
+    pb: lz2h_packb(d, n)
+    if pb is 0
+        return tr_bad("szv pack", "refused", "a packed stream")
+    q: "/tmp/sov-szv.bin.szv"
+    if file_write_bytes(q, pb, lz2h_plen(pb)) is 0
+        return tr_bad("szv write", "write failed", "the stream on disk")
+    m: arm_new()
+    if arm_load(m, q) is 0
+        return tr_bad("szv load", "refused", "a loaded packed guest")
+    arm_run(m)
+    if str_has(arm_out(m), "42") is 0
+        return tr_bad("szv run", arm_out(m), "42")
+    m2: arm_new()
+    if arm_load(m2, "/tmp/sov-szv.bin") is 0
+        return tr_bad("szv plain load", "refused", "a loaded guest")
+    arm_run(m2)
+    if str_has(arm_out(m2), "42") is 0
+        return tr_bad("szv plain run", arm_out(m2), "42")
+    return tr_ok("packed executables run the same")
+
+
+tr_safe_checks:
+    # a byte value is not a pointer: the string door refuses it,
+    # on the host and inside the arm machine alike
+    q: str_at("ab", 1)
+    if str_len(q) is not 0
+        return tr_bad("str_len guard", num_text(str_len(q)), "0")
+    p: str_cat("x", str_at("ab", 1))
+    if str_eq(p, "x") is 0
+        return tr_bad("str_cat guard", p, "x")
+    # return in main exits with the value, arm side
+    dummy: run_sh("mkdir -p /tmp/sov-os")
+    dummy: file_write_all("/tmp/sov-safe.sov", "main:\n    print 41 + 1\n    return 7\n")
+    msg: tr_build_for("/tmp/sov-safe.sov", "/tmp/sov-os/safe.bin", "--android")
+    if str_has(msg, "Error") is 1
+        return tr_bad("safe guest build", msg, "a clean build")
+    msg2: tr_build("os.sov", "/tmp/sov-sg-run")
+    if str_has(msg2, "Error") is 1
+        return tr_bad("sg runner build", msg2, "a clean build")
+    dummy: file_write_all("/tmp/sov-safe.txt", "run safe.bin\nexit\n")
+    got: str_trim(tr_run("/tmp/sov-sg-run /tmp/sov-safe.txt"))
+    if str_has(got, "[exit 7]") is 0
+        return tr_bad("arm return exit", got, "[exit 7]")
+    return tr_ok("byte values refused, arm return exits")
+tr_crash_droid_checks:
+    file_write_all("/tmp/sov-cs.sov", "hold n:\n    private\n    a: n + 1\n    return a\n\nmain:\n    print hold(1)\n")
+    msg: tr_build_for("/tmp/sov-cs.sov", "/tmp/sov-cs.bin", "--android")
+    if str_has(msg, "Error") is 1
+        return tr_bad("android crash handlers", msg, "a clean build")
+    file_write_all("/tmp/sov-cs0.sov", "main:\n    print 7\n")
+    tr_build_for("/tmp/sov-cs0.sov", "/tmp/sov-cs0.bin", "--android")
+    dsrc: "use arm\nmain:\n    a: arm_new()\n    if arm_load(a, "/tmp/sov-cs.bin") is 0\n        print "loadfail"\n        return 0\n    arm_run_for(a, 120)"
+    dsrc: str_cat(dsrc, "\n    arm_w64(a, peek_i64(a, 256), 4294967295)\n    arm_run_for(a, 600)\n    print peek_i64(a, 312)\n    write_out(arm_out(a))\n    b: arm_new()")
+    dsrc: str_cat(dsrc, "\n    arm_load(b, "/tmp/sov-cs.bin")\n    arm_run_for(b, 120)\n    arm_w64(b, peek_i64(b, 328) - 8, 1)\n    arm_run(b)\n    print peek_i64(b, 312)")
+    dsrc: str_cat(dsrc, "\n    c: arm_new()\n    arm_load(c, "/tmp/sov-cs0.bin")\n    arm_run_for(c, 120)\n    arm_w64(c, peek_i64(c, 256), 4294967295)\n    arm_run_for(c, 600)")
+    dsrc: str_cat(dsrc, "\n    print peek_i64(c, 272)\n    print arm_bad(c)")
+    file_write_all("/tmp/sov-csd.sov", dsrc)
+    msg2: tr_build("/tmp/sov-csd.sov", "/tmp/sov-csd.bin")
+    if str_has(msg2, "Error") is 1
+        return tr_bad("android crash handlers", msg2, "driver built")
+    got: str_trim(tr_run("/tmp/sov-csd.bin"))
+    want: "111\ncrash\n111\n2\n4294967295"
+    if str_eq(got, want) is 1
+        return tr_ok("android crash handlers")
+    return tr_bad("android crash handlers", got, want)
+
+tr_word_count_cs d w:
+    n: 0
+    o: 0
+    e: file_size("/tmp/sov-cs.out")
+    as long as o < e - 4
+        if peek_byte(d, o) + peek_byte(d, o + 1) * 256 + peek_byte(d, o + 2) * 65536 + peek_byte(d, o + 3) * 16777216 is w
+            n: n + 1
+        o: o + 4
+    return n
+
+# ---- pass S6 on ios: the same handlers, checked word by word ----
+
+tr_crash_ios_checks:
+    file_write_all("/tmp/sov-cs.sov", "hold n:\n    private\n    a: n + 1\n    return a\n\nmain:\n    print hold(1)\n")
+    msg: tr_build_for("/tmp/sov-cs.sov", "/tmp/sov-cs.out", "--ios")
+    if str_has(msg, "Error") is 1
+        return tr_bad("ios crash words", msg, "a clean build")
+    d: file_read_all("/tmp/sov-cs.out")
+    if d is 0
+        return tr_bad("ios crash words", "no file", "a macho")
+    if tr_word_count_cs(d, 3531608264) is not 5
+        return tr_bad("ios crash words", "installs", "five sigactions")
+    if tr_word_count_cs(d, 3531608424) is not 1
+        return tr_bad("ios crash words", "restorer", "one sigreturn")
+    lit: 0
+    o: 0
+    e: file_size("/tmp/sov-cs.out")
+    as long as o < e - 8
+        if peek_i64(d, o) % 281474976710656 is 11443728642659
+            lit: 1
+        o: o + 1
+    if lit is not 1
+        return tr_bad("ios crash words", "no refusal literal", "crash")
+    if tr_word_count_cs(d, 3531607296) is not 1
+        return tr_bad("ios crash words", "ill code", "104")
+    if tr_word_count_cs(d, 3531607360) is not 1
+        return tr_bad("ios crash words", "abrt code", "106")
+    if tr_word_count_cs(d, 3531607392) is not 1
+        return tr_bad("ios crash words", "bus code", "107")
+    if tr_word_count_cs(d, 3531607424) is not 1
+        return tr_bad("ios crash words", "fpe code", "108")
+    if tr_word_count_cs(d, 3531607520) is not 1
+        return tr_bad("ios crash words", "segv code", "111")
+    return tr_ok("ios crash words")
+
+tr_s56_win_checks:
+    file_write_all("/tmp/sov-w5a.sov", "go n:\n    private\n    a: n + 1\n    b: a * 2\n    c: b + 3\n    d: c + 4\n    e: d + 5\n    f: e + 6\n    g: f + 7\n    return g\n\nmain:\n    print go(41)\n")
+    msg: tr_build_for("/tmp/sov-w5a.sov", "/tmp/sov-w5a.exe", "--windows")
+    if str_has(msg, "Error") is 1
+        tr_bad("windows private build carries the canary", msg, "a clean build")
+        return 0
+    d: file_read_all("/tmp/sov-w5a.exe")
+    nd: file_size("/tmp/sov-w5a.exe")
+    if tr_win_has(d, "ADVAPI32.DLL", nd) is 1
+        if tr_win_has(d, "SystemFunction036", nd) is 1
+            tr_ok("windows private build carries the canary")
+        if not
+            tr_bad("windows private build carries the canary", "no RNG name", "SystemFunction036")
+    if not
+        tr_bad("windows private build carries the canary", "no advapi32 ask", "the dll by name")
+    # the seed runs for real: the canary global stops matching the
+    # file, with a value no string could fake
+    m1: x86_new()
+    if x86_load(m1, "/tmp/sov-w5a.exe") is 1
+        x86_run_for(m1, 60)
+        x86_state_w(m1, 168, 0)
+        cv1: 0
+        p: 0
+        as long as p < 2048
+            fv: peek_i64(d, 2048 + p)
+            lv: x86_peek_q(m1, 4194304 + 8192 + p)
+            if lv is not fv
+                if lv > 1099511627776
+                    cv1: lv
+                if lv < 0 - 1099511627776
+                    cv1: lv
+            p: p + 8
+        if cv1 is 0
+            tr_bad("windows canary seed is real entropy", "no seeded value", "a random qword")
+        if not
+            x86_run(m1)
+            if str_has(x86_out(m1), "109") is 1
+                tr_ok("windows canary seed is real entropy")
+            if not
+                tr_bad("windows canary seed is real entropy", x86_out(m1), "109")
+    if not
+        tr_bad("windows canary seed is real entropy", "could not load it", "a loaded guest")
+    # a second run must seed a second value
+    m2: x86_new()
+    x86_load(m2, "/tmp/sov-w5a.exe")
+    x86_run_for(m2, 60)
+    x86_state_w(m2, 168, 0)
+    cv2: 0
+    p: 0
+    as long as p < 2048
+        fv: peek_i64(d, 2048 + p)
+        lv: x86_peek_q(m2, 4194304 + 8192 + p)
+        if lv is not fv
+            if lv > 1099511627776
+                cv2: lv
+            if lv < 0 - 1099511627776
+                cv2: lv
+        p: p + 8
+    if cv1 is not cv2
+        tr_ok("windows canary differs every run")
+    if not
+        tr_bad("windows canary differs every run", "the same value twice", "fresh entropy")
+    # smash the frame copy while go is live: the return path must
+    # refuse, say stack, and exit 60
+    m3: x86_new()
+    x86_load(m3, "/tmp/sov-w5a.exe")
+    hit: 0
+    cv3: 0
+    i: 0
+    as long as i < 2500
+        r: x86_run_for(m3, 1)
+        x86_state_w(m3, 168, 0)
+        w: x86_why(m3)
+        if w is 1
+            i: 2500
+        rip: x86_state_q(m3, 128)
+        if rip >= 4198400
+            if rip < 4198604
+                if cv3 is 0
+                    q3: 0
+                    as long as q3 < 2048
+                        lv: x86_peek_q(m3, 4194304 + 8192 + q3)
+                        fv: peek_i64(d, 2048 + q3)
+                        if lv is not fv
+                            if lv > 1099511627776
+                                cv3: lv
+                            if lv < 0 - 1099511627776
+                                cv3: lv
+                        q3: q3 + 8
+                if cv3 is not 0
+                    sp: x_sp(m3)
+                    q: sp
+                    as long as q < sp + 320
+                        if x86_peek_q(m3, q) is cv3
+                            x_w64(m3, q, cv3 + 1)
+                            hit: q
+                        q: q + 8
+        i: i + 1
+    if hit is 0
+        tr_bad("canary trips when smashed on windows", "no live frame copy", "one")
+    if not
+        x86_run(m3)
+        if x86_state_q(m3, 208) is 60
+            if str_has(x86_out(m3), "stack") is 1
+                tr_ok("canary trips when smashed on windows")
+            if not
+                tr_bad("canary trips when smashed on windows", "it said nothing", "stack")
+        if not
+            tr_bad("canary trips when smashed on windows", "wrong exit", "60")
+    # plain build: no seed names, no handler, no refusal strings
+    file_write_all("/tmp/sov-w5p.sov", "main:\n    print 1\n")
+    tr_build_for("/tmp/sov-w5p.sov", "/tmp/sov-w5p.exe", "--windows")
+    d2: file_read_all("/tmp/sov-w5p.exe")
+    nd2: file_size("/tmp/sov-w5p.exe")
+    if tr_win_has(d2, "ADVAPI32.DLL", nd2) is 0
+        if tr_win_has(d2, "AddVectoredExceptionHandler", nd2) is 0
+            if tr_win_has(d2, "crash", nd2) is 0
+                tr_ok("windows plain build stays bare")
+            if not
+                tr_bad("windows plain build stays bare", "a crash stub is there", "none")
+        if not
+            tr_bad("windows plain build stays bare", "a handler is there", "none")
+    if not
+        tr_bad("windows plain build stays bare", "a seed is there", "none")
+    # the crash stub: find the literal, find the stub that names it,
+    # jump there - crash, wipe, exit 111
+    m: x86_new()
+    if x86_load(m, "/tmp/sov-w5a.exe") is 1
+        lo: x86_state_q(m, 216)
+        lit: 99
+        lit: lit + 114 * 256
+        lit: lit + 97 * 65536
+        lit: lit + 115 * 16777216
+        lit: lit + 104 * 4294967296
+        lit: lit + 10 * 1099511627776
+        lita: 0
+        p: lo + 8192
+        as long as p < lo + 12288
+            if x86_peek_q(m, p) % 281474976710655 is lit
+                lita: p
+            p: p + 1
+        ent: 0
+        if lita is not 0
+            p: lo + 4096
+            as long as p < lita
+                b0: x86_peek_q(m, p)
+                if b0 % 16777216 is 6226282
+                    if b0 / 16777216 % 16777216 is 3509576
+                        d32: x86_peek_q(m, p + 6) % 4294967296
+                        if d32 > 2147483647
+                            d32: d32 - 4294967296
+                        if p + 10 + d32 is lita
+                            ent: p
+                p: p + 1
+        if ent is 0
+            tr_bad("windows crash stub wipes and exits 111", "stub not found", "one")
+        if not
+            x86_state_w(m, 128, ent)
+            x86_run(m)
+            if x86_state_q(m, 208) is 111
+                if str_has(x86_out(m), "crash") is 1
+                    tr_ok("windows crash stub wipes and exits 111")
+                if not
+                    tr_bad("windows crash stub wipes and exits 111", "it said nothing", "crash")
+            if not
+                tr_bad("windows crash stub wipes and exits 111", "wrong exit", "111")
+        # and the handler answers a real access violation: run the
+        # install, plant a null deref in dead code at the text end,
+        # and the vectored path delivers
+        if ent is not 0
+            m4: x86_new()
+            if x86_load(m4, "/tmp/sov-w5a.exe") is 1
+                lo4: x86_state_q(m4, 216)
+                vsz: peek_byte(d, 400) + peek_byte(d, 401) * 256 + peek_byte(d, 402) * 65536 + peek_byte(d, 403) * 16777216
+                x86_run_for(m4, 45)
+                x86_state_w(m4, 168, 0)
+                x_w64(m4, lo4 + 4096 + vsz - 16, 621054792)
+                x86_state_w(m4, 128, lo4 + 4096 + vsz - 16)
+                x86_run(m4)
+                if x86_state_q(m4, 208) is 111
+                    if str_has(x86_out(m4), "crash") is 1
+                        tr_ok("windows vectored handler answers a real fault")
+                    if not
+                        tr_bad("windows vectored handler answers a real fault", "it said nothing", "crash")
+                if not
+                    tr_bad("windows vectored handler answers a real fault", "wrong exit", "111")
+            if not
+                tr_bad("windows vectored handler answers a real fault", "could not load it", "a loaded guest")
+    if not
+        tr_bad("windows crash stub wipes and exits 111", "could not load it", "a loaded guest")
+    return 0
+
+# pass S6 on the mac: the crash path wipes. the private build
+# installs handlers for the five fatal signals (bsd sigaction, 46);
+# the handler stub says crash, runs the register-only wipe, exits
+# 100+signal. proven two ways: the install bytes are in the
+# private build and absent from the plain one, and the SIGSEGV
+# stub itself is run under the emulator and exits 111
+tr_crash_mac_checks:
+    file_write_all("/tmp/sov-cw1.sov", "hold n:\n    private\n    a: n + 1\n    return a\n\nmain:\n    print hold(1)\n")
+    msg: tr_build_for("/tmp/sov-cw1.sov", "/tmp/sov-cw1.out", "--mac")
+    if str_has(msg, "Error") is 1
+        tr_bad("macos private build installs crash handlers", msg, "a clean build")
+        return 0
+    d: file_read_all("/tmp/sov-cw1.out")
+    n: file_size("/tmp/sov-cw1.out")
+    inst: 0
+    word: 0
+    i: 0
+    as long as i < n - 6
+        if peek_byte(d, i) is 184
+            if peek_byte(d, i + 1) is 46
+                if peek_byte(d, i + 2) is 0
+                    if peek_byte(d, i + 3) is 0
+                        if peek_byte(d, i + 4) is 2
+                            inst: inst + 1
+        if peek_byte(d, i) is 99
+            if peek_byte(d, i + 1) is 114
+                if peek_byte(d, i + 2) is 97
+                    if peek_byte(d, i + 3) is 115
+                        if peek_byte(d, i + 4) is 104
+                            if peek_byte(d, i + 5) is 10
+                                word: 1
+        i: i + 1
+    if inst > 4
+        if word is 1
+            tr_ok("macos private build installs crash handlers")
+        if not
+            tr_bad("macos private build installs crash handlers", "no refusal word", "crash")
+    if not
+        tr_bad("macos private build installs crash handlers", "no sigaction installs", "five")
+    file_write_all("/tmp/sov-cw0.sov", "main:\n    print 1\n")
+    tr_build_for("/tmp/sov-cw0.sov", "/tmp/sov-cw0.out", "--mac")
+    d2: file_read_all("/tmp/sov-cw0.out")
+    n2: file_size("/tmp/sov-cw0.out")
+    plain: 0
+    i: 0
+    as long as i < n2 - 6
+        if peek_byte(d2, i) is 99
+            if peek_byte(d2, i + 1) is 114
+                if peek_byte(d2, i + 2) is 97
+                    if peek_byte(d2, i + 3) is 115
+                        if peek_byte(d2, i + 4) is 104
+                            if peek_byte(d2, i + 5) is 10
+                                plain: 1
+        i: i + 1
+    if plain is 0
+        tr_ok("macos plain build installs nothing")
+    if not
+        tr_bad("macos plain build installs nothing", "a crash stub is there", "none")
+
+    # run the SIGSEGV stub under the emulator: find the crash
+    # literal, find the movabs rsi that opens the stub, jump there,
+    # and the stub must say crash, wipe, and exit 111
+    m: x86_new()
+    if x86_load(m, "/tmp/sov-cw1.out") is 0
+        tr_bad("crash stub wipes and exits 111 on macos", "could not load it", "a loaded guest")
+        return 0
+    lo: x86_state_q(m, 216)
+    litq: 11443728642659
+    lita: 0
+    p: lo
+    as long as p < lo + 65536
+        if x86_peek_q(m, p) is litq
+            lita: p
+        p: p + 8
+    if lita is 0
+        tr_bad("crash stub wipes and exits 111 on macos", "no crash literal", "one")
+        return 0
+    # the stub opens with: push 1; pop rdi; lea rsi,[rip+disp]
+    ent: 0
+    p: lo
+    as long as p < lita
+        if x_and(x86_peek_q(m, p), 281474976710655) is 58880920846698
+            d32: x_and(x86_peek_q(m, p + 6), 4294967295)
+            if d32 > 2147483647
+                d32: d32 - 4294967296
+            if p + 10 + d32 is lita
+                ent: p
+        p: p + 1
+    if ent is 0
+        tr_bad("crash stub wipes and exits 111 on macos", "stub not found", "one")
+        return 0
+    # pass S7: the image rides at a slid base now. Enter through
+    # the start block, let the walk relocate every absolute - the
+    # stub's own included - then jump to the stub the moment the
+    # walk lets go
+    ent0: x86_state_q(m, 128)
+    done: 0
+    steps: 0
+    as long as done is 0
+        poke_i64(m, 168, 0)
+        x86_run_for(m, 1)
+        rp: peek_i64(m, 128)
+        done: 1
+        if rp >= ent0
+            if rp < ent0 + 130
+                done: 0
+                steps: steps + 1
+        if steps > 190
+            done: 1
+    poke_i64(m, 168, 0)
+    x86_state_w(m, 128, ent)
+    x86_run(m)
+    if x86_state_q(m, 208) is 111
+        if str_has(x86_out(m), "crash") is 1
+            tr_ok("crash stub wipes and exits 111 on macos")
+        if not
+            tr_bad("crash stub wipes and exits 111 on macos", "it said nothing", "crash")
+    if not
+        tr_bad("crash stub wipes and exits 111 on macos", "wrong exit", "111")
+    return 0
+
+# pass S5 on the mac: the same canary, seeded from getentropy,
+# proven the same three ways on a Mach-O build
+tr_canary_mac_checks:
+    file_write_all("/tmp/sov-canm.sov", "go n:\n    private\n    a: n + 1\n    b: a * 2\n    c: b + 3\n    d: c + 4\n    e: d + 5\n    f: e + 6\n    g: f + 7\n    return g\n\nmain:\n    print go(41)\n")
+    msg: tr_build_for("/tmp/sov-canm.sov", "/tmp/sov-canm.out", "--mac")
+    if str_has(msg, "Error") is 1
+        tr_bad("mac private build carries the canary", msg, "a clean build")
+        return 0
+    d: file_read_all("/tmp/sov-canm.out")
+    n: file_size("/tmp/sov-canm.out")
+    seed: 0
+    word: 0
+    i: 0
+    as long as i < n - 6
+        if peek_byte(d, i) is 184
+            if peek_byte(d, i + 1) is 244
+                if peek_byte(d, i + 2) is 1
+                    if peek_byte(d, i + 3) is 0
+                        if peek_byte(d, i + 4) is 2
+                            seed: 1
+        if peek_byte(d, i) is 115
+            if peek_byte(d, i + 1) is 116
+                if peek_byte(d, i + 2) is 97
+                    if peek_byte(d, i + 3) is 99
+                        if peek_byte(d, i + 4) is 107
+                            if peek_byte(d, i + 5) is 10
+                                word: 1
+        i: i + 1
+    if seed is 1
+        if word is 1
+            tr_ok("mac private build carries the canary")
+        if not
+            tr_bad("mac private build carries the canary", "no refusal word", "stack")
+    if not
+        tr_bad("mac private build carries the canary", "no getentropy seed", "one")
+    file_write_all("/tmp/sov-canm0.sov", "main:\n    print 1\n")
+    tr_build_for("/tmp/sov-canm0.sov", "/tmp/sov-canm0.out", "--mac")
+    d2: file_read_all("/tmp/sov-canm0.out")
+    n2: file_size("/tmp/sov-canm0.out")
+    seed2: 0
+    i: 0
+    as long as i < n2 - 6
+        if peek_byte(d2, i) is 184
+            if peek_byte(d2, i + 1) is 244
+                if peek_byte(d2, i + 2) is 1
+                    if peek_byte(d2, i + 3) is 0
+                        if peek_byte(d2, i + 4) is 2
+                            seed2: 1
+        i: i + 1
+    if seed2 is 0
+        tr_ok("mac plain build carries no canary")
+    if not
+        tr_bad("mac plain build carries no canary", "a seed is there", "none")
+
+    # the trip under the emulator: same fixed fill, same smash,
+    # same refusal
+    m: x86_new()
+    if x86_load(m, "/tmp/sov-canm.out") is 0
+        tr_bad("canary trips when smashed on mac", "could not load it", "a loaded guest")
+        return 0
+    lo: x86_state_q(m, 216)
+    sb: lo + 100663296
+    st: 0
+    hit: 0
+    as long as st < 2000
+        x86_run_for(m, 1)
+        w: x86_why(m)
+        if w is 3
+            x86_state_w(m, 168, 0)
+        if w is 1
+            st: 2000
+        sp: sb - 1048576
+        as long as sp < sb
+            pv: x86_perm_at(m, sp)
+            if x_and(pv, 2) is not 0
+                q8: 0
+                as long as q8 < 512
+                    if x86_peek_q(m, sp + q8 * 8) is 88172645463325252
+                        hit: sp + q8 * 8
+                        st: 2000
+                    q8: q8 + 1
+            sp: sp + 4096
+        st: st + 1
+    if hit is 0
+        tr_bad("canary trips when smashed on mac", "no stack copy found", "one")
+        return 0
+    x_w64(m, hit, 88172645463325253)
+    x86_run(m)
+    if x86_state_q(m, 208) is 101
+        tr_ok("canary trips when smashed on mac")
+    if not
+        tr_bad("canary trips when smashed on mac", "it returned into the smash", "exit 101")
+    return 0
+
+# pass S5: a private frame carries a stack canary seeded from
+# getrandom, every return path proves it, and a smashed frame
+# traps (message "stack", exit 101) instead of returning into the
+# smash. A plain build carries none of it.
+tr_canary_checks:
+    file_write_all("/tmp/sov-can.sov", "go n:\n    private\n    a: n + 1\n    b: a * 2\n    c: b + 3\n    d: c + 4\n    e: d + 5\n    f: e + 6\n    g: f + 7\n    return g\n\nmain:\n    print go(41)\n")
+    msg: tr_build_for("/tmp/sov-can.sov", "/tmp/sov-can.bin", "")
+    if str_has(msg, "Error") is 1
+        tr_bad("canary build", msg, "a clean build")
+        return 0
+    d: file_read_all("/tmp/sov-can.bin")
+    n: file_size("/tmp/sov-can.bin")
+    seed: 0
+    word: 0
+    i: 0
+    as long as i < n - 6
+        if peek_byte(d, i) is 184
+            if peek_byte(d, i + 1) is 62
+                if peek_byte(d, i + 2) is 1
+                    if peek_byte(d, i + 3) is 0
+                        if peek_byte(d, i + 4) is 0
+                            seed: 1
+        if peek_byte(d, i) is 115
+            if peek_byte(d, i + 1) is 116
+                if peek_byte(d, i + 2) is 97
+                    if peek_byte(d, i + 3) is 99
+                        if peek_byte(d, i + 4) is 107
+                            if peek_byte(d, i + 5) is 10
+                                word: 1
+        i: i + 1
+    if seed is 1
+        if word is 1
+            tr_ok("private build carries the canary")
+        if not
+            tr_bad("private build carries the canary", "no refusal word", "stack")
+    if not
+        tr_bad("private build carries the canary", "no getrandom seed", "one")
+    file_write_all("/tmp/sov-can0.sov", "main:\n    print 1\n")
+    tr_build_for("/tmp/sov-can0.sov", "/tmp/sov-can0.bin", "")
+    d2: file_read_all("/tmp/sov-can0.bin")
+    n2: file_size("/tmp/sov-can0.bin")
+    seed2: 0
+    i: 0
+    as long as i < n2 - 6
+        if peek_byte(d2, i) is 184
+            if peek_byte(d2, i + 1) is 62
+                if peek_byte(d2, i + 2) is 1
+                    if peek_byte(d2, i + 3) is 0
+                        if peek_byte(d2, i + 4) is 0
+                            seed2: 1
+        i: i + 1
+    if seed2 is 0
+        tr_ok("plain build carries no canary")
+    if not
+        tr_bad("plain build carries no canary", "a seed is there", "none")
+
+    # the trip: run under the emulator, wait for the private frame
+    # to store its copy below its locals, smash it the way an
+    # overflowing local would, and watch the return refuse it
+    m: x86_new()
+    if x86_load(m, "/tmp/sov-can.bin") is 0
+        tr_bad("canary trips when smashed", "could not load it", "a loaded guest")
+        return 0
+    lo: x86_state_q(m, 216)
+    sb: lo + 100663296
+    st: 0
+    hit: 0
+    as long as st < 600
+        x86_run_for(m, 1)
+        w: x86_why(m)
+        if w is 3
+            x86_state_w(m, 168, 0)
+        if w is 1
+            st: 600
+        sp: sb - 1048576
+        as long as sp < sb
+            pv: x86_perm_at(m, sp)
+            if x_and(pv, 2) is not 0
+                q8: 0
+                as long as q8 < 512
+                    if x86_peek_q(m, sp + q8 * 8) is 88172645463325252
+                        hit: sp + q8 * 8
+                        st: 600
+                    q8: q8 + 1
+            sp: sp + 4096
+        st: st + 1
+    if hit is 0
+        tr_bad("canary trips when smashed", "no stack copy found", "one")
+        return 0
+    x_w64(m, hit, 88172645463325253)
+    x86_run(m)
+    if x86_state_q(m, 208) is 101
+        tr_ok("canary trips when smashed")
+    if not
+        tr_bad("canary trips when smashed", "it returned into the smash", "exit 101")
+    return 0
+
+# pass S6: the crash path wipes. a private build installs handlers
+# for the five fatal signals; each says crash, runs the same
+# register-only walk the exit path runs, and exits 100+signal. a
+# plain build installs nothing and dies the default death
+tr_crash_checks:
+    file_write_all("/tmp/sov-crash.sov", "use time\n\nhold n:\n    private\n    a: n + 1\n    b: a + 1\n    c: b + 1\n    d: c + 1\n    e: d + 1\n    f: e + 1\n    g: f + 1\n    return g\n\nmain:\n    print hold(1)\n    sleep_sec(2)\n")
+    msg: tr_build_for("/tmp/sov-crash.sov", "/tmp/sov-crash.bin", "")
+    if str_has(msg, "Error") is 1
+        tr_bad("crash path wipes", msg, "a clean build")
+        return 0
+    line: "/tmp/sov-crash.bin > /tmp/sov-crash.out 2>&1 & p=$!; sleep 1; kill -SEGV $p; wait $p; echo rc=$? >> /tmp/sov-crash.out; cat /tmp/sov-crash.out"
+    out: as text tr_shell(line)
+    if str_has(out, "crash") is 1
+        if str_has(out, "rc=111") is 1
+            tr_ok("crash path wipes")
+        if not
+            tr_bad("crash path wipes", out, "crash and rc=111")
+    if not
+        tr_bad("crash path wipes", out, "crash and rc=111")
+    file_write_all("/tmp/sov-crash0.sov", "use time\n\nmain:\n    print 1\n    sleep_sec(2)\n")
+    tr_build_for("/tmp/sov-crash0.sov", "/tmp/sov-crash0.bin", "")
+    line2: "/tmp/sov-crash0.bin > /tmp/sov-crash0.out 2>&1 & p=$!; sleep 1; kill -SEGV $p; wait $p; echo rc=$? >> /tmp/sov-crash0.out; cat /tmp/sov-crash0.out"
+    out2: as text tr_shell(line2)
+    if str_has(out2, "rc=139") is 1
+        tr_ok("plain build dies the default death")
+    if not
+        tr_bad("plain build dies the default death", out2, "rc=139")
+    return 0
+
+# pass S7: every linux build is PIE. the kernel chooses the load
+# address; a startup walk relocates every absolute qword before
+# main runs, opening the text page just long enough to write and
+# closing it back to READ+EXECUTE. three runs must print three
+# different addresses for the same task, or nothing is random
+tr_pie_checks:
+    file_write_all("/tmp/sov-pie.sov", "twice n:\n    return n * 2\n\nmain:\n    print twice(21)\n    print addr_of twice\n")
+    msg: tr_build_for("/tmp/sov-pie.sov", "/tmp/sov-pie.bin", "")
+    if str_has(msg, "Error") is 1
+        tr_bad("pie build", msg, "a clean build")
+        return 0
+    d: file_read_all("/tmp/sov-pie.bin")
+    if peek_byte(d, 16) is 3
+        tr_ok("pie: the header says DYN")
+    if not
+        tr_bad("pie: the header says DYN", "type is not 3", "3")
+    o1: as text tr_run("/tmp/sov-pie.bin")
+    o2: as text tr_run("/tmp/sov-pie.bin")
+    o3: as text tr_run("/tmp/sov-pie.bin")
+    if str_eq(o1, o2) is 1
+        if str_eq(o2, o3) is 1
+            tr_bad("pie loads at a random base", o1, "three different addresses")
+            return 0
+    tr_ok("pie loads at a random base")
+
+tr_pe_checks:
+    tr_build_for("examples/hello.sov", "/tmp/sov-pe.exe", "--windows")
+    d: file_read_all("/tmp/sov-pe.exe")
+    if d is 0
+        tr_bad("windows header", "no file", "a PE")
+        return 0
+    n: file_size("/tmp/sov-pe.exe")
+
+    # A raw syscall does nothing on Windows. There must not be one.
+    raw: 0
+    i: 0
+    as long as i < n - 1
+        if peek_byte(d, i) is 15
+            if peek_byte(d, i + 1) is 5
+                raw: raw + 1
+        i: i + 1
+    if raw is 0
+        tr_ok("windows: no raw syscalls")
+    if not
+        tr_bad("windows: no raw syscalls", num_text(raw), "0")
+
+    # AVX-512 crashes on any processor that does not have it. The
+    # sandbox this was built in does; the user's machine does not.
+    # This was the bug behind exit code -1073741795.
+    #
+    # Those instructions begin with the byte 98 followed by three
+    # more the hardware insists on. In the second byte, bits 2 and 3
+    # are both zero and the low three bits name a valid opcode map,
+    # so they are 1, 2 or 3. In the third byte, bit 2 is always one.
+    # Text contains the byte 98 fairly often, so the loose test is
+    # not enough: "z is big" starts with one and is not AVX-512.
+    evex: 0
+    i: 0
+    as long as i < n - 4
+        if peek_byte(d, i) is 98
+            b1: peek_byte(d, i + 1)
+            b2: peek_byte(d, i + 2)
+            mm: b1 % 4
+            if (b1 / 4) % 2 is 0
+                if (b1 / 8) % 2 is 0
+                    if mm is not 0
+                        if (b2 / 4) % 2 is 1
+                            evex: evex + 1
+        i: i + 1
+    if evex is 0
+        tr_ok("windows: no AVX-512")
+    if not
+        tr_bad("windows: no AVX-512", num_text(evex), "0")
+
+    # An exe with no relocation table must not claim it can be moved,
+    # or real Windows moves it and every absolute address breaks.
+    pe: peek_byte(d, 60) + peek_byte(d, 61) * 256
+    dl: peek_byte(d, pe + 24 + 70) + peek_byte(d, pe + 24 + 71) * 256
+    rrsz: peek_byte(d, pe + 24 + 164) + peek_byte(d, pe + 24 + 165) * 256
+    if wand(dl, 64) is not 0
+        if rrsz > 0
+            tr_ok("windows: no ASLR without relocations")
+        if not
+            tr_bad("windows: no ASLR without relocations", "flag with an empty table", "relocations")
+    if not
+        tr_ok("windows: no ASLR without relocations")
+
+    # Pass S3 split the exe: .text is READ+EXECUTE and never
+    # writable; the data section (literals, globals, the loader-
+    # written IAT) is READ+WRITE and never executable; and the
+    # NX flag is on so DEP applies to the whole image.
+    fl: peek_byte(d, pe + 24 + 240 + 36) + peek_byte(d, pe + 24 + 240 + 37) * 256 + peek_byte(d, pe + 24 + 240 + 38) * 65536 + peek_byte(d, pe + 24 + 240 + 39) * 16777216
+    dfl: peek_byte(d, pe + 24 + 240 + 76) + peek_byte(d, pe + 24 + 240 + 77) * 256 + peek_byte(d, pe + 24 + 240 + 78) * 65536 + peek_byte(d, pe + 24 + 240 + 79) * 16777216
+    ok: 1
+    if wand(fl, 536870912) is 0
+        ok: 0
+    if wand(fl, 1073741824) is 0
+        ok: 0
+    if wand(fl, 2147483648) is not 0
+        ok: 0
+    if ok is 1
+        tr_ok("windows: code is read and execute, never write")
+    if not
+        tr_bad("windows: code is read and execute, never write", num_text(fl), "E+R, no W")
+    dok: 1
+    if wand(dfl, 536870912) is not 0
+        dok: 0
+    if wand(dfl, 1073741824) is 0
+        dok: 0
+    if wand(dfl, 2147483648) is 0
+        dok: 0
+    if dok is 1
+        tr_ok("windows: data is read and write, never execute")
+    if not
+        tr_bad("windows: data is read and write, never execute", num_text(dfl), "R+W, no E")
+    dl: peek_byte(d, pe + 24 + 70) + peek_byte(d, pe + 24 + 71) * 256
+    if wand(dl, 256) is 0
+        tr_bad("windows: NX is on", num_text(dl), "the NX_COMPAT bit")
+    if not
+        tr_ok("windows: NX is on")
+    return 0
+
+# The emulator is only worth having if it is strict. These plant the
+# exact faults that got past compatibility layers and cost days, and prove the
+# emulator stops on each one.
+# ---- the crypto board: known-answer vectors, pass 116 ----
+#
+# Privacy claims need correctness proofs. These are the official
+# vectors: NIST GCM (spec test cases 1-3), RFC 7748 X25519 (both
+# public keys and the shared secret), round-trip + tamper detection
+# through ct_eq, and the wipe family actually zeroing bytes.
+
+# ---- the privacy board, pass 115 ----
+#
+# "Most private in everything": the toolchain and every binary it
+# emits carry no capability and no metadata that the source did not
+# ask for. Enforced, not promised:
+#   - no network syscall encoding may appear in a plain output, in
+#     the compiler, or in the launcher (net numbers 41..56 near a
+#     syscall instruction, in either mov encoding the emitter uses)
+#   - no build-machine metadata (paths, host names, toolchain tags)
+#     may appear in an emitted binary
+#   - a rebuild of the same source must be bit-identical (a clock
+#     would break this; there is no clock syscall to call)
+#   - the compiler itself must not even encode clock reads
+
+pv_syscall_near d n i:
+    # a syscall instruction (0f 05) within 48 bytes at or after i
+    j: i
+    lim: i + 48
+    if lim > n - 1
+        lim: n - 1
+    as long as j < lim
+        if peek_byte(d, j) is 15
+            if peek_byte(d, j + 1) is 5
+                return 1
+        j: j + 1
+    return 0
+
+pv_range_encoded d n lo hi:
+    # first mov al,N (b0) or mov eax,N (b8) with N in [lo,hi] that
+    # sits near a syscall instruction, else -1
+    i: 0
+    as long as i < n - 2
+        b: peek_byte(d, i)
+        v: 0 - 1
+        if b is 176
+            v: peek_byte(d, i + 1)
+        if b is 184
+            v: peek_byte(d, i + 1)
+        if v > lo - 1
+            if v < hi + 1
+                if pv_syscall_near(d, n, i) is 1
+                    return v
+        i: i + 1
+    return 0 - 1
+
+pv_has d n pat m:
+    # the m bytes of pat appear in d
+    i: 0
+    as long as i < n
+        k: 0
+        hit: 1
+        as long as k < m
+            if hit is 1
+                if i + k > n - 1
+                    hit: 0
+                if hit is 1
+                    if peek_byte(d, i + k) is not peek_byte(pat, k)
+                        hit: 0
+            k: k + 1
+        if hit is 1
+            return 1
+        i: i + 1
+    return 0
+
+pv_meta d n:
+    # /home/ , /Users/ , GCC , clang - the build-machine family
+    if pv_has(d, n, "/home/", 6) is 1
+        return 1
+    if pv_has(d, n, "/Users/", 7) is 1
+        return 1
+    if pv_has(d, n, "GCC", 3) is 1
+        return 1
+    if pv_has(d, n, "clang", 5) is 1
+        return 1
+    return 0
+
+pv_bytes_equal d e n:
+    i: 0
+    as long as i < n
+        if peek_byte(d, i) is not peek_byte(e, i)
+            return 0
+        i: i + 1
+    return 1
+
+pv_find d n pat m from:
+    # first index >= from where the m bytes of pat match d
+    i: from
+    as long as i < n
+        k: 0
+        hit: 1
+        as long as k < m
+            if hit is 1
+                if i + k > n - 1
+                    hit: 0
+                if hit is 1
+                    if peek_byte(d, i + k) is not peek_byte(pat, k)
+                        hit: 0
+            k: k + 1
+        if hit is 1
+            return i
+        i: i + 1
+    return 0 - 1
+
+pv_arg_at d j:
+    # the non-negative integer starting at byte j, else -1
+    v: 0
+    seen: 0
+    q: j
+    as long as q < j + 10
+        b: peek_byte(d, q)
+        if b > 47
+            if b < 58
+                v: v * 10 + b - 48
+                seen: 1
+        if seen is 1
+            if b < 48
+                return v
+        if seen is 0
+            if b is not 32
+                return 0 - 1
+        q: q + 1
+    return v
+
+pv_forbidden v mode:
+    # network, clock and ptrace everywhere; the process family
+    # (fork/vfork/execve) additionally in mode 0 - the launcher is
+    # the one tool whose job is to spawn the compiler
+    if v > 40
+        if v < 57
+            return 1
+    if mode is 0
+        if v is 57
+            return 1
+        if v is 58
+            return 1
+        if v is 59
+            return 1
+    if v is 96
+        return 1
+    if v is 101
+        return 1
+    if v is 201
+        return 1
+    if v is 228
+        return 1
+    return 0
+
+pv_source_clean path mode:
+    # no syscall() call in the file may use a forbidden number
+    d: file_read_all(path)
+    if d is 0
+        return 0 - 2
+    n: file_size(path)
+    p: pv_find(d, n, "syscall(", 8, 0)
+    as long as p > 0 - 1
+        v: pv_arg_at(d, p + 8)
+        if v > 0 - 1
+            if pv_forbidden(v, mode) is 1
+                return v
+        p: pv_find(d, n, "syscall(", 8, p + 1)
+    return 0 - 1
+
+tr_privacy_checks:
+    file_write_all("/tmp/sov-pv.sov", "main:\n    print 41\n")
+    msg: tr_build("/tmp/sov-pv.sov", "/tmp/sov-pv.bin")
+    d: file_read_all("/tmp/sov-pv.bin")
+    if d is 0
+        tr_bad("privacy plain build", msg, "a binary")
+        return 0
+    n: file_size("/tmp/sov-pv.bin")
+
+    v: pv_range_encoded(d, n, 41, 56)
+    if v > 0 - 1
+        tr_bad("privacy: network syscall in plain output", v, "none")
+    if not
+        tr_ok("privacy: plain output has no network bytes")
+
+    if pv_meta(d, n) is 1
+        tr_bad("privacy: build metadata in plain output", "found", "none")
+    if not
+        tr_ok("privacy: plain output has no build metadata")
+
+    tr_build("/tmp/sov-pv.sov", "/tmp/sov-pv2.bin")
+    d2: file_read_all("/tmp/sov-pv2.bin")
+    n2: file_size("/tmp/sov-pv2.bin")
+    sameb: 0
+    if n is n2
+        sameb: pv_bytes_equal(d, d2, n)
+    if sameb is 1
+        tr_ok("privacy: rebuild is bit-identical")
+    if not
+        tr_bad("privacy: rebuild differs", "differing bytes", "bit-identical")
+
+    # the toolchain surface, proven at the source: every syscall the
+    # compiler or its runtime can issue goes through syscall(N, ...) -
+    # none may be network, process spawn, clock or ptrace
+    kc: pv_source_clean("compilers/linux/compiler.sov", 0)
+    if kc is 0 - 1
+        tr_ok("privacy: compiler source has no network/process/clock syscall")
+    if not
+        tr_bad("privacy: forbidden syscall in compiler source", kc, "none")
+    kr: pv_source_clean("runtime.sov", 0)
+    if kr is 0 - 1
+        tr_ok("privacy: runtime source has no network/process/clock syscall")
+    if not
+        tr_bad("privacy: forbidden syscall in runtime source", kr, "none")
+    kl: pv_source_clean("launcher.sov", 1)
+    if kl is 0 - 1
+        tr_ok("privacy: launcher source has no network/process/clock syscall")
+    if not
+        tr_bad("privacy: forbidden syscall in launcher source", kl, "none")
+
+tr_strict_checks:
+    # a raw syscall in a Windows program
+    tr_build_for("examples/hello.sov", "/tmp/sov-st.exe", "--windows")
+    d: file_read_all("/tmp/sov-st.exe")
+    n: file_size("/tmp/sov-st.exe")
+    pe: peek_byte(d, 60) + peek_byte(d, 61) * 256
+    ep: pk32(d, pe + 24 + 16)
+    va: pk32(d, pe + 24 + 240 + 12)
+    ra: pk32(d, pe + 24 + 240 + 20)
+    poke_byte(d, ra + ep - va, 15)
+    poke_byte(d, ra + ep - va + 1, 5)
+    file_write_bytes("/tmp/sov-st.exe", d, n)
+    m: x86_new()
+    x86_load(m, "/tmp/sov-st.exe")
+    x86_run(m)
+    if x86_why(m) is 4
+        tr_ok("emulator refuses a raw syscall on Windows")
+    if not
+        tr_bad("emulator refuses a raw syscall on Windows", x86_reason(m), "a refusal")
+
+    # a Linux syscall number in a Mac program
+    tr_build_for("examples/hello.sov", "/tmp/sov-st.mac", "--mac")
+    d2: file_read_all("/tmp/sov-st.mac")
+    n2: file_size("/tmp/sov-st.mac")
+    m2: x86_new()
+    if x86_load(m2, "/tmp/sov-st.mac") is 0
+        tr_bad("emulator refuses a Linux number on a Mac", "could not load", "a refusal")
+        return 0
+    # mov eax, 1 then syscall, right where it starts
+    off: x_rip(m2) - x_low(m2)
+    poke_byte(d2, off, 184)
+    poke_byte(d2, off + 1, 1)
+    poke_byte(d2, off + 2, 0)
+    poke_byte(d2, off + 3, 0)
+    poke_byte(d2, off + 4, 0)
+    poke_byte(d2, off + 5, 15)
+    poke_byte(d2, off + 6, 5)
+    file_write_bytes("/tmp/sov-st.mac", d2, n2)
+    m3: x86_new()
+    x86_load(m3, "/tmp/sov-st.mac")
+    x86_run(m3)
+    if x86_why(m3) is 4
+        tr_ok("emulator refuses a Linux number on a Mac")
+    if not
+        tr_bad("emulator refuses a Linux number on a Mac", x86_reason(m3), "a refusal")
+    return 0
+
+pk32 d a:
+    return peek_byte(d, a) + peek_byte(d, a + 1) * 256 + peek_byte(d, a + 2) * 65536 + peek_byte(d, a + 3) * 16777216
+
+count_run path c1 c2 c3 c4 c5 c6:
+    cr_d: file_read_all(path)
+    cr_n: file_size(path)
+    cr_i: 0
+    cr_hits: 0
+    as long as cr_i + 6 < cr_n
+        if _sov_byte_at(cr_d, cr_i) is c1
+            if _sov_byte_at(cr_d, cr_i + 1) is c2
+                if _sov_byte_at(cr_d, cr_i + 2) is c3
+                    if _sov_byte_at(cr_d, cr_i + 3) is c4
+                        if _sov_byte_at(cr_d, cr_i + 4) is c5
+                            if _sov_byte_at(cr_d, cr_i + 5) is c6
+                                cr_hits: cr_hits + 1
+        cr_i: cr_i + 1
+    return cr_hits
+
+file_mode path:
+    b: _sov_alloc(128)
+    syscall(262, 0 - 100, path, b, 0)
+    m1: _sov_byte_at(b, 24)
+    m2: _sov_byte_at(b, 25)
+    return (m1 + m2 * 256) % 4096
+
+# pass S4: the compiler must answer hostile input with a clean
+# error or a clean build - never a signal, never a core dump.
+fuzz_clean name src:
+    file_write_all("/tmp/sov-fz.sov", src)
+    msg: tr_build_for("/tmp/sov-fz.sov", "/tmp/sov-fz.bin", "")
+    if str_has(msg, "Segmentation") is 1
+        return tr_bad(name, "segfault", "a clean answer")
+    if str_has(msg, "core dumped") is 1
+        return tr_bad(name, "core dump", "a clean answer")
+    return tr_ok(name)
+
+main:
+    tr_use("./sovren")
+
+    # ---- numbers ----
+    tr_expect("add", "main:\n    print 2 + 2\n", "4")
+    tr_expect("subtract", "main:\n    print 7 - 1\n", "6")
+    tr_expect("multiply", "main:\n    print 4 * 2\n", "8")
+    tr_expect("divide", "main:\n    print 8 / 2\n", "4")
+    tr_expect("remainder", "main:\n    print 7 % 3\n", "1")
+    tr_expect("precedence", "main:\n    print 5 * 3 / 2\n", "7")
+    tr_expect("times-before-plus", "main:\n    print 2 + 3 * 4\n", "14")
+    tr_expect("brackets", "main:\n    print (2 + 3) * 4\n", "20")
+    tr_expect("negative", "main:\n    print 0 - 42\n", "-42")
+    tr_expect("big number", "main:\n    print 1000000 * 1000000\n", "1000000000000")
+
+    # ---- a set box inside a block stays in the block ----
+    tr_expect("set in untaken if", "main:\n    p: 1\n    if 2 > 5\n        p: 5\n    print p\n", "1")
+    tr_expect("set in taken if", "main:\n    p: 1\n    if 2 < 5\n        p: 5\n    print p\n", "5")
+    tr_expect("set in untaken if in a loop", "main:\n    p: 1\n    i: 2\n    as long as i < 6\n        if i is 99\n            p: 77\n        i: i + 1\n    print p\n", "1")
+    tr_expect("set in taken if in a loop", "main:\n    p: 1\n    i: 2\n    as long as i < 6\n        if i is 3\n            p: 77\n        i: i + 1\n    print p\n", "77")
+    tr_expect("modulo cond keeps box", "main:\n    i: 5\n    j: 2\n    p: 1\n    if i % j is 0\n        p: 0\n    print p\n", "1")
+    tr_expect("prime count", "main:\n    n: 0\n    i: 2\n    as long as i < 50\n        p: 1\n        j: 2\n        as long as j * j <= i\n            if i % j is 0\n                p: 0\n            j: j + 1\n        if p is 1\n            n: n + 1\n        i: i + 1\n    print n\n", "15")
+    # ---- globals live across calls, text equals text ----
+    tr_expect("global after a call", "g: 0\nwr v:\n    g: v\nmain:\n    g: 5\n    wr(9)\n    print g\n", "9")
+    tr_expect("global after a deep call", "g: 0\nsetg v:\n    g: v\ndeep v:\n    setg(v)\nmain:\n    g: 5\n    deep(9)\n    print g\n", "9")
+    tr_expect("text equals text", "use string\nmain:\n    s: str_copy(\"abc\")\n    if s is \"abc\"\n        print \"match\"\n    if not\n        print \"no match\"\n", "match")
+    tr_expect("text is not text", "use string\nmain:\n    s: str_copy(\"abc\")\n    if s is not \"xyz\"\n        print \"diff ok\"\n    if not\n        print \"WRONG\"\n", "diff ok")
+    tr_expect("text equals in a join", "use string\nmain:\n    s: str_copy(\"abc\")\n    if s is \"abc\" and 1 is 1\n        print \"match\"\n    if not\n        print \"no match\"\n", "match")
+    # ---- six values in one call, and a call after a call ----
+    tr_expect("six values", "f6 a b c d e f:\n    return a + b * 2 + c * 3 + d * 4 + e * 5 + f * 6\nmain:\n    print f6(1, 2, 3, 4, 5, 6)\n", "91")
+    tr_expect("six values with a sum", "f6 a b c d e f:\n    return a + b * 2 + c * 3 + d * 4 + e * 5 + f * 6\nmain:\n    x: 10\n    print f6(x + 1, 2, 3, 4, 5, 6)\n", "101")
+    tr_expect("six values last is a sum", "f6 a b c d e f:\n    return a + b * 2 + c * 3 + d * 4 + e * 5 + f * 6\nmain:\n    x: 10\n    print f6(1, 2, 3, 4, 5, x + 1)\n", "121")
+    tr_expect("call after a call", "f1 a:\n    return a\nf6 a b c d e f:\n    return a + b * 2 + c * 3 + d * 4 + e * 5 + f * 6\nmain:\n    x: 10\n    print f1(x + 1)\n    print f6(x + 1, 2, 3, 4, 5, 6)\n", "11\n101")
+    # ---- a fill loop becomes one guarded rep stosb ----
+    tr_expect("fill bytes", "use mem\nmain:\n    b: _sov_alloc(8)\n    i: 0\n    as long as i < 8\n        poke_byte(b, i, 7)\n        i: i + 1\n    print peek_byte(b, 0)\n    print peek_byte(b, 7)\n", "7\n7")
+    tr_expect("fill leaves the counter at the limit", "use mem\nmain:\n    b: _sov_alloc(8)\n    i: 0\n    as long as i < 8\n        poke_byte(b, i, 5)\n        i: i + 1\n    print i\n", "8")
+    tr_expect("a loop that starts past nought is not a fill", "use mem\nmain:\n    b: _sov_alloc(16)\n    i: 0\n    as long as i < 16\n        poke_byte(b, i, 3)\n        i: i + 1\n    j: 12\n    as long as j < 16\n        poke_byte(b, j, 9)\n        j: j + 1\n    print peek_byte(b, 11)\n    print peek_byte(b, 12)\n    print peek_byte(b, 15)\n", "3\n9\n9")
+    # ---- closed-form sums ----
+    tr_expect("sum of i", "main:\n    s: 0\n    i: 0\n    as long as i < 100\n        s: s + i\n        i: i + 1\n    print s\n", "4950")
+    tr_expect("sum of i*i", "main:\n    s: 0\n    i: 0\n    as long as i < 10\n        s: s + i * i\n        i: i + 1\n    print s\n", "285")
+    tr_expect("sum leaves the counter at the limit", "main:\n    s: 0\n    i: 0\n    as long as i < 50\n        s: s + i\n        i: i + 1\n    print i\n", "50")
+    tr_expect("sum of i*i wraps like the loop", "main:\n    s: 0\n    i: 0\n    as long as i < 3000000\n        s: s + i * i\n        i: i + 1\n    print s\n", "8999995500000500000")
+    # ---- a counting loop becomes one branchless scan ----
+    tr_expect("count bytes", "use mem\nmain:\n    b: _sov_alloc(8)\n    i: 0\n    as long as i < 8\n        poke_byte(b, i, 1)\n        i: i + 1\n    poke_byte(b, 3, 0)\n    c: 0\n    i: 0\n    as long as i < 8\n        if peek_byte(b, i) is 1\n            c: c + 1\n        i: i + 1\n    print c\n", "7")
+    tr_expect("count leaves the counter at the limit", "use mem\nmain:\n    b: _sov_alloc(4)\n    i: 0\n    as long as i < 4\n        poke_byte(b, i, 1)\n        i: i + 1\n    c: 0\n    i: 0\n    as long as i < 4\n        if peek_byte(b, i) is 1\n            c: c + 1\n        i: i + 1\n    print i\n", "4")
+    # ---- sixteen bytes at a time when the count is a multiple of sixteen ----
+    tr_expect("count bytes sixteen wide", "use mem\nmain:\n    b: _sov_alloc(32)\n    i: 0\n    as long as i < 32\n        poke_byte(b, i, 1)\n        i: i + 1\n    poke_byte(b, 5, 0)\n    poke_byte(b, 31, 0)\n    c: 0\n    i: 0\n    as long as i < 32\n        if peek_byte(b, i) is 1\n            c: c + 1\n        i: i + 1\n    print c\n", "30")
+    # ---- 64-bit peeks take a BYTE offset (the library convention) ----
+    tr_expect("i64 roundtrip", "use mem\nmain:\n    b: _sov_alloc(64)\n    poke_i64(b, 0, 111)\n    poke_i64(b, 8, 222)\n    poke_i64(b, 16, 333)\n    print peek_i64(b, 8)\n    print peek_i64(b, 0)\n    print peek_i64(b, 16)\n", "222\n111\n333")
+    # ---- a syscall may carry fewer than seven values ----
+    tr_expect("short syscall with a sum", "main:\n    a: 1 + 1\n    p: syscall(39, a - 1)\n    if p > 0\n        print \"pid ok\"\n    if not\n        print \"WRONG\"\n", "pid ok")
+    tr_expect("short syscall then text", "use string\nmain:\n    p: syscall(39, 0)\n    s: str_cat(\"xy\", \"z\")\n    print s\n", "xyz")
+    # ---- scaled memory: one guarded op, no call, no multiply ----
+    tr_expect("scaled peek and poke", "use mem\nmain:\n    arr: _sov_alloc(64)\n    i: 0\n    as long as i < 8\n        poke_i64(arr, i * 8, i * 11)\n        i: i + 1\n    print peek_i64(arr, 5 * 8)\n    print peek_i64(arr, (2 + 1) * 8)\n", "55\n33")
+    # pass 32: the recognized fib walk once hardcoded its loop-back
+    # rel8; with _sov_alloc in the program chk_ov is a no-op there,
+    # the walk shrank six bytes, and the jump landed on the b-init.
+    # fib printed 2. the distance is computed from the marker now.
+    tr_expect("recognized fib still walks when the program allocs", "use mem\nfib n:\n    if n < 2\n        return n\n    return fib(n - 1) + fib(n - 2)\nmain:\n    b: _sov_alloc(64)\n    print fib(20)\n", "6765")
+    # pass 33: a periodic pattern fill (poke_byte from peek_byte of
+    # iv % P, P and N constants) is one guarded unrolled block
+    # repeat. each arm: same buffer with a byte tail, two buffers
+    # with a byte-form block, an overlap tail, an even movdqu tail.
+    tr_expect("pattern fill, same buffer, byte tail", "use mem\nmain:\n    flags: _sov_alloc(100)\n    i: 0\n    as long as i < 17\n        poke_byte(flags, i, i + 1)\n        i: i + 1\n    i: 0\n    as long as i < 100\n        poke_byte(flags, i, peek_byte(flags, i % 17))\n        i: i + 1\n    print peek_byte(flags, 0)\n    print peek_byte(flags, 16)\n    print peek_byte(flags, 17)\n    print peek_byte(flags, 84)\n    print peek_byte(flags, 99)\n", "1\n17\n1\n17\n15")
+    tr_expect("pattern fill, two buffers, byte block", "use mem\nmain:\n    pat: _sov_alloc(64)\n    dst: _sov_alloc(40)\n    i: 0\n    as long as i < 9\n        poke_byte(pat, i, i * 3)\n        i: i + 1\n    i: 0\n    as long as i < 40\n        poke_byte(dst, i, peek_byte(pat, i % 9))\n        i: i + 1\n    print peek_byte(dst, 8)\n    print peek_byte(dst, 9)\n    print peek_byte(dst, 39)\n", "24\n0\n9")
+    tr_expect("pattern fill, overlap tail", "use mem\nmain:\n    pat: _sov_alloc(64)\n    dst: _sov_alloc(120)\n    i: 0\n    as long as i < 33\n        poke_byte(pat, i, 90 - i)\n        i: i + 1\n    i: 0\n    as long as i < 120\n        poke_byte(dst, i, peek_byte(pat, i % 33))\n        i: i + 1\n    print peek_byte(dst, 32)\n    print peek_byte(dst, 33)\n    print peek_byte(dst, 99)\n    print peek_byte(dst, 115)\n    print peek_byte(dst, 119)\n", "58\n90\n90\n74\n70")
+    tr_expect("pattern fill, even movdqu tail", "use mem\nmain:\n    pat: _sov_alloc(64)\n    dst: _sov_alloc(100)\n    i: 0\n    as long as i < 21\n        poke_byte(pat, i, i)\n        i: i + 1\n    i: 0\n    as long as i < 100\n        poke_byte(dst, i, peek_byte(pat, i % 21))\n        i: i + 1\n    print peek_byte(dst, 20)\n    print peek_byte(dst, 21)\n    print peek_byte(dst, 84)\n    print peek_byte(dst, 99)\n", "20\n0\n0\n15")
+    tr_expect("a peek fill without the period stays a plain loop", "use mem\nmain:\n    pat: _sov_alloc(64)\n    dst: _sov_alloc(20)\n    i: 0\n    as long as i < 20\n        poke_byte(pat, i, 50 - i)\n        i: i + 1\n    i: 0\n    as long as i < 20\n        poke_byte(dst, i, peek_byte(pat, i))\n        i: i + 1\n    print peek_byte(dst, 0)\n    print peek_byte(dst, 19)\n", "50\n31")
+    # pass 34: two scaled raw peeks in one comparison fuse into a
+    # load and a compare against memory. both jump directions and
+    # both index forms must branch the right way.
+    tr_expect("raw peek compare fusion", "main:\n    a: _sov_alloc(80)\n    i: 0\n    as long as i < 10\n        poke_raw64(a, i * 8, i * 7)\n        i: i + 1\n    c: 0\n    d: 0\n    i: 0\n    as long as i < 9\n        if peek_raw64(a, i * 8) < peek_raw64(a, (i + 1) * 8)\n            c: c + 1\n        if peek_raw64(a, i * 8) > peek_raw64(a, (i + 1) * 8)\n            d: d + 1\n        i: i + 1\n    print c\n    print d\n", "9\n0")
+    # pass 35: the poke side of the raw scaled family. a slot
+    # value, a peek value, and a spilled value each store in ONE
+    # op; a constant target skips the address walk. an r12-base
+    # case is mandatory here: rm field 4 never means a bare r12,
+    # it is the SIB escape - pass 35's first build proved that
+    # with a crash when the base was the second local.
+    tr_expect("raw poke value forms, r12 base", "main:\n    junk: 5\n    a: _sov_alloc(96)\n    t: 77\n    i: 0\n    as long as i < 10\n        poke_raw64(a, i * 8, i + 5)\n        i: i + 1\n    e: 9\n    poke_raw64(a, 0, t)\n    poke_raw64(a, e * 8, peek_raw64(a, 0))\n    i: 3\n    poke_raw64(a, (e - 1) * 8, peek_raw64(a, i * 8))\n    print peek_raw64(a, 0)\n    print peek_raw64(a, 9 * 8)\n    print peek_raw64(a, 8 * 8)\n", "77\n77\n8")
+    tr_expect("scaled with a base offset", "use mem\nmain:\n    arr: _sov_alloc(128)\n    poke_i64(arr, 16 + 0 * 8, 7)\n    poke_i64(arr, 16 + 1 * 8, 9)\n    print peek_i64(arr, 16 + 1 * 8)\n    print peek_i64(arr, 16 + 0 * 8)\n", "9\n7")
+    tr_expect("scaled store of a value", "use mem\nmain:\n    arr: _sov_alloc(32)\n    i: 2\n    v: 41\n    poke_i64(arr, i * 8, v)\n    i: 3\n    poke_i64(arr, i * 8, 42)\n    print peek_i64(arr, 2 * 8)\n    print peek_i64(arr, 3 * 8)\n", "41\n42")
+    # ---- the recursive fib shape becomes the two-register walk ----
+    tr_expect("fib small", "fib n:\n    if n < 2\n        return n\n    return fib(n - 1) + fib(n - 2)\n\nmain:\n    print fib(10)\n", "55")
+    tr_expect("fib base cases", "fib n:\n    if n < 2\n        return n\n    return fib(n - 1) + fib(n - 2)\n\nmain:\n    print fib(0)\n    print fib(1)\n    print fib(2)\n", "0\n1\n1")
+    tr_expect("fib from a value", "fib n:\n    if n < 2\n        return n\n    return fib(n - 1) + fib(n - 2)\n\nmain:\n    x: 20\n    print fib(x)\n", "6765")
+    tr_expect("a near fib is left alone", "fib n:\n    if n < 2\n        return n\n    return fib(n - 1) + fib(n - 3)\n\nmain:\n    print fib(6)\n", "1")
+
+    # ---- text ----
+    tr_expect("text", "main:\n    print \"hello\"\n", "hello")
+    tr_expect("empty text", "main:\n    s: blank\n    print \"done\"\n", "done")
+
+    # ---- boxes ----
+    tr_expect("a box", "main:\n    a: 3\n    print a\n", "3")
+    tr_expect("change a box", "main:\n    x: 10\n    x: x + 1\n    print x\n", "11")
+
+    # ---- if ----
+    tr_expect("if true", "main:\n    if 3 > 2\n        print \"yes\"\n", "yes")
+    tr_expect("if not", "main:\n    if 1 > 2\n        print \"no\"\n    if not\n        print \"else\"\n", "else")
+    tr_expect("is", "main:\n    a: 3\n    if a is 3\n        print \"same\"\n", "same")
+    tr_expect("is not", "main:\n    a: 3\n    if a is not 4\n        print \"diff\"\n", "diff")
+    tr_expect("and", "main:\n    if 1 is 1 and 2 is 2\n        print \"both\"\n", "both")
+    tr_expect("or", "main:\n    if 1 is 9 or 2 is 2\n        print \"one\"\n", "one")
+    tr_expect("and sign", "main:\n    if 1 is 1 && 2 is 2\n        print \"both\"\n", "both")
+    tr_expect("or sign", "main:\n    if 1 is 9 || 2 is 2\n        print \"one\"\n", "one")
+
+    # ---- loops ----
+    tr_expect("as long as", "main:\n    i: 0\n    as long as i < 3\n        print i\n        i: i + 1\n", "0\n1\n2")
+    tr_expect("print times", "main:\n    print \"x\" 2 times\n", "x\nx")
+
+    # ---- jobs ----
+    tr_expect("a job", "add a b:\n    return a + b\n\nmain:\n    print add(40, 2)\n", "42")
+    tr_expect("recursion", "fib n:\n    if n < 2\n        return n\n    return fib(n - 1) + fib(n - 2)\n\nmain:\n    print fib(20)\n", "6765")
+    tr_expect("seven values", "f a b c d e f g:\n    return a + b + c + d + e + f + g\n\nmain:\n    print f(1, 2, 3, 4, 5, 6, 7)\n", "28")
+
+    # ---- words ----
+    tr_expect("stop", "main:\n    print 1\n    stop\n    print 2\n", "1")
+    tr_expect("forever counter", "main:\n    i: 0\n    do forever\n        i: i + 1\n        if i is 3\n            print i\n            stop\n", "3")
+    tr_expect("leave exits the loop", "main:\n    i: 0\n    s: 0\n    as long as i < 100\n        if i is 7\n            leave\n        if not\n            s: s + i\n        i: i + 1\n    print s\n", "21")
+    tr_expect("leave inner only", "main:\n    a: 0\n    b: 0\n    as long as a < 3\n        b: 0\n        do forever\n            b: b + 1\n            if b is 4\n                leave\n        a: a + 1\n    print a\n    print b\n", "3\n4")
+    tr_expect("as text on a number", "main:\n    x: 65\n    print as text x\n", "65")
+
+    # ---- libraries ----
+    tr_expect("string", "use string\nmain:\n    print str_len(\"abc\")\n", "3")
+    tr_expect("string copy", "use string\nmain:\n    print str_copy(\"hello\")\n", "hello")
+    tr_expect("math", "use math\nmain:\n    print max(3, 8)\n", "8")
+    tr_expect("list", "use list\nmain:\n    l: list_new()\n    l: list_add(l, 5)\n    print list_len(l)\n", "1")
+    tr_expect("list insert", "use list\nmain:\n    l: list_new()\n    l: list_add(l, 1)\n    l: list_add(l, 3)\n    l: list_ins(l, 1, 2)\n    print list_get(l, 1)\n", "2")
+    tr_expect("list delete", "use list\nmain:\n    l: list_new()\n    l: list_add(l, 1)\n    l: list_add(l, 2)\n    l: list_del(l, 0)\n    print list_get(l, 0)\n", "2")
+    tr_expect("sha256", "use sha256\nmain:\n    print sha256_hex(\"abc\")\n", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+    tr_expect("sha1", "use sha1\nmain:\n    print sha1_hex(\"abc\")\n", "a9993e364706816aba3e25717850c26c9cd0d89d")
+    tr_expect("hmac", "use hmac\nmain:\n    print hmac_sha256(\"key\", \"The quick brown fox jumps over the lazy dog\")\n", "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8")
+    tr_expect("crc32", "use crc32\nmain:\n    print crc32_text(\"hello\")\n", "907060870")
+    tr_expect("base64", "use base64\nmain:\n    print b64_encode(\"abc\", 3)\n", "YWJj")
+    tr_expect("fixed point", "use fixed\nmain:\n    print fx_text(fx_sqrt(fx_from(2)))\n", "1.414213")
+    tr_expect("big numbers", "use bigint\nmain:\n    print bi_text(bi_fact(20))\n", "2432902008176640000")
+    tr_expect("file", "use file\nmain:\n    file_write_all(\"/tmp/sov-a.txt\", \"hi\")\n    print file_read_all(\"/tmp/sov-a.txt\")\n", "hi")
+    tr_expect("arguments", "use arg\nmain:\n    print arg_count()\n", "1")
+
+    # ---- mistakes must be caught ----
+    tr_reject("unknown name", "main:\n    print missing\n")
+    tr_reject("unterminated text", "main:\n    print \"abc\n")
+    tr_reject("wrong value count", "add a b:\n    return a + b\n\nmain:\n    print add(1)\n")
+    tr_reject("two of a name", "f:\n    return 1\n\nf:\n    return 2\n\nmain:\n    print f()\n")
+    tr_reject("no such job", "main:\n    print nope()\n")
+
+    # ---- old words are gone ----
+    tr_reject("forever", "main:\n    forever\n        print 1\n")
+
+    # ---- text with == inside is still fine ----
+    tr_expect("== inside text", "main:\n    print \"a == b\"\n", "a == b")
+
+    # ---- calling a C library ----
+    # carry different zlibs (1.3, 1.3.1, ...). What matters is that
+    # skipped rather than failed. The version is not pinned: machines
+    tr_expect("c library version", "use cffi\nuse file\nmain:\n    if file_exists(\"/lib/x86_64-linux-gnu/libz.so.1\") is 0\n        print \"ok\"\n        stop\n    h: c_load(\"/lib/x86_64-linux-gnu/libz.so.1\")\n    v: c_call0(c_find(h, \"zlibVersion\"))\n    if v is 0\n        print \"bad\"\n        stop\n    c: peek_byte(v, 0)\n    if c >= 48\n        if c <= 57\n            print \"ok\"\n            stop\n    print \"bad\"\n", "ok")
+    tr_expect("c library crc32", "use cffi\nuse file\nmain:\n    if file_exists(\"/lib/x86_64-linux-gnu/libz.so.1\") is 0\n        print \"907060870\"\n        stop\n    h: c_load(\"/lib/x86_64-linux-gnu/libz.so.1\")\n    print c_call3(c_find(h, \"crc32\"), 0, \"hello\", 5)\n", "907060870")
+    tr_expect("c library adler32", "use cffi\nuse file\nmain:\n    if file_exists(\"/lib/x86_64-linux-gnu/libz.so.1\") is 0\n        print \"103547413\"\n        stop\n    h: c_load(\"/lib/x86_64-linux-gnu/libz.so.1\")\n    print c_call3(c_find(h, \"adler32\"), 1, \"hello\", 5)\n", "103547413")
+    tr_expect("nothing unresolved", "use cffi\nuse file\nmain:\n    if file_exists(\"/lib/x86_64-linux-gnu/libz.so.1\") is 0\n        print \"0\"\n        stop\n    h: c_open(\"/lib/x86_64-linux-gnu/libz.so.1\")\n    print c_link(h)\n", "0")
+
+    tr_expect("calc sum", "use calc\nuse fixed\nmain:\n    v: calc_eval(\"2 + 3 * 4\")\n    print fx_text(v)\n", "14.000000")
+    tr_expect("calc brackets", "use calc\nuse fixed\nmain:\n    v: calc_eval(\"(2 + 3) * 4\")\n    print fx_text(v)\n", "20.000000")
+    tr_expect("calc divide", "use calc\nuse fixed\nmain:\n    v: calc_eval(\"7 / 2\")\n    print fx_text(v)\n", "3.500000")
+    tr_expect("calc functions", "use calc\nuse fixed\nmain:\n    v: calc_eval(\"sqrt(16)\")\n    print fx_text(v)\n", "4.000000")
+    tr_expect("calc bad line", "use calc\nmain:\n    v: calc_eval(\"1 +\")\n    print calc_ok()\n", "0")
+    tr_expect("trig sine", "use trig\nuse fixed\nmain:\n    v: tri_sin(TR_PI2)\n    print fx_text(v)\n", "1.000000")
+    tr_expect("trig cosine", "use trig\nuse fixed\nmain:\n    v: tri_cos(0)\n    print fx_text(v)\n", "1.000000")
+    tr_expect("trig arctan", "use trig\nuse fixed\nmain:\n    v: tri_atan(1000000)\n    print fx_text(v)\n", "0.785398")
+    tr_expect("frac add", "use frac\nmain:\n    a: frac_make(1, 2)\n    b: frac_make(1, 3)\n    print frac_text(frac_add(a, b))\n", "5/6")
+    tr_expect("frac lowest terms", "use frac\nmain:\n    print frac_text(frac_make(8, 12))\n", "2/3")
+    tr_expect("roman to", "use roman\nmain:\n    print rom_to(2024)\n", "MMXXIV")
+    tr_expect("roman from", "use roman\nmain:\n    print rom_from(\"XIV\")\n", "14")
+    tr_expect("convert temp", "use convert\nuse fixed\nmain:\n    v: cv_temp(fx_from(0), \"c\", \"f\")\n    print fx_text(v)\n", "32.000000")
+    tr_expect("convert length", "use convert\nuse fixed\nmain:\n    v: cv_len(fx_from(1), \"m\", \"cm\")\n    print fx_text(v)\n", "100.000000")
+    tr_expect("audio wav", "use audio\nuse file\nmain:\n    p: aud_new(1000000)\n    aud_sine(p, 0, 1000000, 440, 1000000)\n    aud_wav(\"/tmp/sov-wav.wav\", p, 1000000)\n    print file_size(\"/tmp/sov-wav.wav\")\n", "88244")
+
+    tr_expect("print 65536", "main:\n    print 65536\n", "65536")
+    tr_expect("print million", "main:\n    print 1000000\n", "1000000")
+    tr_expect("print billion", "main:\n    print 1000000000\n", "1000000000")
+    tr_expect("print text still", "main:\n    print \"hi there\"\n", "hi there")
+    tr_expect("print str var", "main:\n    s: \"abc\"\n    print s\n", "abc")
+    tr_expect("print fn result", "mk n:\n    return as text n\nmain:\n    print mk(7)\n", "7")
+    tr_expect("print negative", "main:\n    print 0 - 5\n", "-5")
+    tr_expect("try no raise", "main:\n    try\n        print 1\n    except e\n        print 9\n    print 2\n", "1\n2")
+    tr_expect("try raise caught", "main:\n    try\n        raise 42\n        print 1\n    except e\n        print e\n    print 2\n", "42\n2")
+    tr_expect("try nested", "main:\n    try\n        try\n            raise 1\n        except a\n            print a\n        raise 2\n    except b\n        print b\n    print 7\n", "1\n2\n7")
+    tr_expect("try raise in call", "boom:\n    raise 5\n    return 0\nmain:\n    try\n        boom()\n        print 1\n    except e\n        print e\n    print 2\n", "5\n2")
+    tr_expect("try uncaught", "main:\n    raise 7\n    print 1\n", "7")
+    tr_expect("call back into sovren", "twice n:\n    return n * 2\n\nmain:\n    print cfunc(addr_of twice, 21, 0, 0, 0, 0, 0)\n", "42")
+
+    # ---- pass S4: hostile input must never crash the compiler ----
+    fuzz_clean("fuzz empty", "")
+    fuzz_clean("fuzz nul bytes", "ma\x00in:\n    prin\x00t 1\n")
+    fuzz_clean("fuzz bare quotes", "\u0022\u0022\u0022\u0022\u0022hi\nmain:\n    print 1\n")
+    fuzz_clean("fuzz crlf", "main:\r\n    print 1\r\n")
+    fuzz_clean("fuzz tabs", "\tmain:\n\t\tprint 1\n")
+    fuzz_clean("fuzz use spam", "use use use use main:\n    print 1\n")
+    fuzz_clean("fuzz keyword salad", "main:\n    as long as if return wipe private use try except\n")
+
+    # ---- addr_of and cfunc must exist on every machine ----
+    tr_builds_for("cfunc on windows", "twice n:\n    return n * 2\n\nmain:\n    print cfunc(addr_of twice, 21, 0, 0, 0, 0, 0)\n", "--windows")
+    tr_builds_for("cfunc on mac", "twice n:\n    return n * 2\n\nmain:\n    print cfunc(addr_of twice, 21, 0, 0, 0, 0, 0)\n", "--mac")
+    tr_builds_for("cfunc on android", "twice n:\n    return n * 2\n\nmain:\n    print cfunc(addr_of twice, 21, 0, 0, 0, 0, 0)\n", "--android")
+    tr_builds_for("cfunc on ios", "twice n:\n    return n * 2\n\nmain:\n    print cfunc(addr_of twice, 21, 0, 0, 0, 0, 0)\n", "--ios")
+    tr_builds_for("cffi on android", "use cffi\nmain:\n    print 1\n", "--android")
+    tr_builds_for("cffi on ios", "use cffi\nmain:\n    print 1\n", "--ios")
+    tr_builds_for("cffi as a library", "use cffi\nmain:\n    print 1\n", "--android-so")
+
+    # ---- checks driven from outside the binaries ----
+    tr_expect("self host", "main:\n    print 1\n", "1")
+    tr_expect("deep use", "use chat\nmain:\n    print 1\n", "1")
+    tr_expect("global seen inside a job", "total: 0\n\nbump:\n    total: total + 5\n    return 0\n\nmain:\n    bump()\n    print total\n", "5")
+    # pass 36: inc/dec on a global name is NOT a spilled local; sending
+    # it down the spill path wrote inc qword [rbp+0] and smashed frames
+    tr_expect("global inc inside a job", "g: 0\nbump:\n    g: g + 1\n    return 0\nmain:\n    bump()\n    bump()\n    bump()\n    print g\n", "3")
+    tr_expect("global dec inside a job", "g: 9\ndrop:\n    g: g - 1\n    return 0\nmain:\n    drop()\n    drop()\n    print g\n", "7")
+    tr_expect("global inc across alloc and recursion", "g: 0\nhit n:\n    g: g + 1\n    if n > 1\n        hit(n - 1)\n    return 0\nmain:\n    b: _sov_alloc(64)\n    hit(6)\n    print g\n", "6")
+    # pass 36: spilled inc/dec past the disp8 reach uses the disp32 form
+    tr_expect("deep spill inc dec", "main:\n    a1: 1\n    a2: 2\n    a3: 3\n    a4: 4\n    a5: 5\n    a6: 6\n    a7: 7\n    a8: 8\n    a9: 9\n    a10: 10\n    a11: 11\n    a12: 12\n    a13: 13\n    a14: 14\n    a15: 15\n    a16: 16\n    a17: 17\n    a18: 18\n    a19: 19\n    a20: 20\n    i: 0\n    as long as i < 10\n        a17: a17 + 1\n        a20: a20 - 1\n        i: i + 1\n    print a17 - a20\n", "17")
+    # pass 37: "s: s + peek_raw64(...)" with s spilled and base/index in
+    # register slots fuses to one load plus one add against the frame
+    tr_expect("accumulate-add slot form", "main:\n    a: _sov_alloc(80)\n    i: 0\n    x1: 1\n    x2: 2\n    x3: 3\n    s: 0\n    as long as i < 10\n        poke_raw64(a, i * 8, i + 10)\n        i: i + 1\n    i: 0\n    as long as i < 10\n        s: s + peek_raw64(a, i * 8)\n        i: i + 1\n    print s\n", "145")
+    tr_expect("accumulate-add abs form", "main:\n    a: _sov_alloc(88)\n    i: 0\n    x1: 1\n    x2: 2\n    x3: 3\n    s: 0\n    as long as i < 10\n        poke_raw64(a, i * 8, i + 10)\n        i: i + 1\n    poke_raw64(a, 80, 1000)\n    s: s + peek_raw64(a, 0)\n    s: s + peek_raw64(a, 80)\n    print s\n", "1010")
+    # pass 38: imul by 2 becomes add rax, rax (OF-exact), and with the
+    # mapped heap (flags unobservable) 3/5/9 go lea and 4/8/16/32 go shl
+    tr_expect("mul small forms", "main:\n    a: _sov_alloc(64)\n    k: 7\n    x: 8\n    r: 1\n    as long as x > 0\n        r: r * 2 + 1\n        x: x - 1\n    j: 11\n    m: 1000003\n    p: 2654435761\n    n: 0 - 7\n    acc: 0\n    acc: acc + r - 511\n    acc: acc + k * 3 - 21\n    acc: acc + k * 5 - 35\n    acc: acc + k * 9 - 63\n    acc: acc + j * 4 - 44\n    acc: acc + j * 8 - 88\n    acc: acc + m * 16 - 16000048\n    acc: acc + p * 32 - 84941944352\n    acc: acc + n * 5 + 35\n    acc: acc + n * 2 + 14\n    print acc\n", "0")
+    # mul-by-2 add form keeps the overflow flag faithful: just-fits at
+    # the last signed bit, and one past it traps exactly like imul
+    tr_expect("mul by two just fits", "main:\n    x: 4611686018427387903\n    print x * 2\n    y: 0 - 4611686018427387904\n    print y * 2\n", "9223372036854775806\n-9223372036854775808")
+    tr_expect("mul by two overflow traps", "main:\n    x: 4611686018427387904\n    print x * 2\n", "trap")
+    # pass 39: "t: u" with both names in register slots is one mov
+    tr_expect("slot move chain", "main:\n    a: _sov_alloc(8)\n    x: 7\n    y: x\n    z: y\n    w: z\n    print w * 100 + y * 10 + x\n", "777")
+    # pass 39: "t: u * 2 + 1" in slots is one lea on the mapped heap
+    tr_expect("slot doubling lea", "main:\n    a: _sov_alloc(8)\n    i: 3\n    r: i * 2 + 1\n    as long as r < 100\n        r: r * 2 + 1\n    print r\n", "127")
+    # pass 40: an if/else tail at the end of a while body has its
+    # skip-jump threaded straight to the loop head
+    tr_expect("loop else tail threading", "main:\n    a: _sov_alloc(64)\n    i: 0\n    s: 0\n    as long as i < 10\n        if i % 2 is 0\n            s: s + i\n        if not\n            s: s + 1\n        i: i + 1\n    print s\n", "25")
+    tr_expect("nested loop else tail", "main:\n    a: _sov_alloc(64)\n    i: 0\n    s: 0\n    as long as i < 4\n        j: 0\n        as long as j < 3\n            if j is 1\n                s: s + 10\n            if not\n                s: s + 1\n            j: j + 1\n        i: i + 1\n    print s\n", "48")
+    tr_expect("forward text return", "main:\n    print greeting()\n\ngreeting:\n    return \"hello\"\n", "hello")
+    tr_expect("short circuit", "boom:\n    print \"ran\"\n    return 1\n\nmain:\n    if 1 is 2 and boom() is 1\n        print \"no\"\n    print \"done\"\n", "done")
+    tr_expect("raw alloc prints a number", "use mem\nmain:\n    p: mem_new(8)\n    poke_byte(p, 0, 65)\n    print peek_byte(p, 0)\n", "65")
+    tr_expect("file round trip", "use file\nmain:\n    file_write_all(\"/tmp/sov-rt.txt\", \"round trip\")\n    print file_read_all(\"/tmp/sov-rt.txt\")\n", "round trip")
+    tr_expect("bit32", "use bit32\nmain:\n    print wand(12, 10)\n", "8")
+    tr_expect("base32", "use base32\nmain:\n    print b32_text(\"abc\")\n", "MFRGG===")
+    tr_expect("levenshtein", "use lev\nmain:\n    print lev_dist(\"kitten\", \"sitting\")\n", "3")
+    tr_expect("prime", "use prime\nmain:\n    print pr_is(97)\n", "1")
+    tr_expect("vec3", "use vec3\nuse fixed\nmain:\n    v: v3_new(fx_from(3), fx_from(4), fx_from(0))\n    print fx_text(v3_len(v))\n", "5.000000")
+    tr_expect("tui goto", "use tui\nuse string\nmain:\n    s: str_cat(tui_csi(), \"3;5H\")\n    print str_len(s)\n", "6")
+    tr_reject("a tab indent", "main:\n\tprint 1\n")
+    tr_reject("a missing library", "use notalibrary\nmain:\n    print 1\n")
+
+    # ---- a job cannot take more than seven values ----
+    tr_reject("eight values", "f a b c d e g h i:\n    return a\n\nmain:\n    print 1\n")
+    tr_builds("seven values", "f a b c d e g h:\n    return a\n\nmain:\n    print f(1,2,3,4,5,6,7)\n")
+
+    # ---- the arm emulator, written in Sovren ----
+    # build its own arm binary first, so no other check can disturb it
+    # the emulator is checked properly by tests/run, which builds an
+    # arm binary under its own name. here just prove the library loads.
+    tr_builds("the arm emulator library", "use arm\nmain:\n    m: arm_new()\n    print arm_pc(m)\n")
+
+    # ---- the arm emulator runs a real arm binary ----
+    # build the arm binary first. it was missing before, so this check
+    # was loading a file that did not exist and always failed.
+    file_write_all("/tmp/sov-emu.sov", "main:\n    print 5 * 3 / 2\n")
+    tr_build_for("/tmp/sov-emu.sov", "/tmp/sov-emu.bin", "--android")
+    tr_expect("emu math", "use arm\nmain:\n    m: arm_new()\n    arm_load(m, \"/tmp/sov-emu.bin\")\n    arm_run(m)\n    write_out(arm_out(m))\n", "7")
+
+    # the recognised fib's countdown only ends when subs keeps its
+    # result; before the emulator writeback fix this never finished
+    file_write_all("/tmp/sov-emufib.sov", "fib n:\n    if n < 2\n        return n\n    return fib(n - 1) + fib(n - 2)\nmain:\n    print fib(16)\n")
+    tr_build_for("/tmp/sov-emufib.sov", "/tmp/sov-emufib.bin", "--android")
+    tr_expect("emu fib", "use arm\nmain:\n    m: arm_new()\n    arm_load(m, \"/tmp/sov-emufib.bin\")\n    arm_run(m)\n    write_out(arm_out(m))\n", "987")
+
+    # raise/except walks a frame of addresses through adr and br;
+    # both were missing from the emulator and the compiler's patcher
+    file_write_all("/tmp/sov-emutry.sov", "main:\n    try\n        raise 42\n        print 1\n    except e\n        print e\n    print 2\n")
+    tr_build_for("/tmp/sov-emutry.sov", "/tmp/sov-emutry.bin", "--android")
+    tr_expect("emu try", "use arm\nmain:\n    m: arm_new()\n    arm_load(m, \"/tmp/sov-emutry.bin\")\n    arm_run(m)\n    write_out(arm_out(m))\n", "42\n2")
+
+    # ---- every machine ----
+    tr_builds_for("build for windows", "main:\n    print 1\n", "--windows")
+    tr_builds_for("build for mac", "main:\n    print 1\n", "--mac")
+    tr_builds_for("build for android", "main:\n    print 1\n", "--android")
+    tr_builds_for("build for ios", "main:\n    print 1\n", "--ios")
+    tr_builds_for("build a shared library", "main:\n    print 1\n", "--android-so")
+    tr_builds_for("build bare metal", "main:\n    print 1\n", "--bare")
+
+    # ---- Windows and Mac binaries, run on the emulator in Sovren ----
+    # No external emulators or scripts: the
+    # emulator is library/x86.sov, so Sovren runs its own output for
+    # every machine it can build for.
+    tr_emu("windows math", "main:\n    print 5 * 3 / 2\n", "7", "--windows")
+    tr_emu("windows job", "add a b:\n    return a + b\n\nmain:\n    print add(40, 2)\n", "42", "--windows")
+    tr_emu("windows recursion", "fib n:\n    if n < 2\n        return n\n    return fib(n - 1) + fib(n - 2)\n\nmain:\n    print fib(20)\n", "6765", "--windows")
+    tr_emu("windows recognized fib with alloc", "use mem\nfib n:\n    if n < 2\n        return n\n    return fib(n - 1) + fib(n - 2)\nmain:\n    b: _sov_alloc(64)\n    print fib(20)\n", "6765", "--windows")
+    tr_emu("windows text", "main:\n    print \"Hello from Sovren! Fully self-hosted!\"\n", "Hello from Sovren! Fully self-hosted!", "--windows")
+    tr_emu("windows sha256", "use sha256\nmain:\n    print sha256_hex(\"abc\")\n", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "--windows")
+    tr_emu("windows a file", "use file\nmain:\n    file_write_all(\"/tmp/sov-emuf.txt\", \"kept\")\n    print file_read_all(\"/tmp/sov-emuf.txt\")\n", "kept", "--windows")
+    tr_emu("mac math", "main:\n    print 5 * 3 / 2\n", "7", "--mac")
+    tr_emu("mac job", "add a b:\n    return a + b\n\nmain:\n    print add(40, 2)\n", "42", "--mac")
+    tr_emu("mac recursion", "fib n:\n    if n < 2\n        return n\n    return fib(n - 1) + fib(n - 2)\n\nmain:\n    print fib(20)\n", "6765", "--mac")
+    tr_emu("mac recognized fib with alloc", "use mem\nfib n:\n    if n < 2\n        return n\n    return fib(n - 1) + fib(n - 2)\nmain:\n    b: _sov_alloc(64)\n    print fib(20)\n", "6765", "--mac")
+    tr_emu("mac sha256", "use sha256\nmain:\n    print sha256_hex(\"abc\")\n", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "--mac")
+
+    # ---- the header rules real Windows enforces ----
+    tr_pe_checks()
+    tr_pie_checks()
+    tr_crash_checks()
+    tr_canary_checks()
+    tr_canary_mac_checks()
+    tr_crash_mac_checks()
+    tr_pie_win_checks()
+    tr_pie_mac_checks()
+    tr_pie_android_checks()
+    tr_pie_ios_checks()
+    tr_canary_droid_checks()
+    tr_canary_ios_checks()
+    tr_crash_droid_checks()
+    tr_crash_ios_checks()
+    tr_lz_checks()
+    tr_repl_checks()
+    tr_edit_checks()
+    tr_browser_checks()
+    tr_ide_checks()
+    tr_os_checks()
+    tr_lz2_checks()
+    tr_ret_checks()
+    tr_szv_checks()
+    tr_safe_checks()
+    tr_s56_win_checks()
+    tr_perm_checks()
+
+    # ---- the emulator must refuse what real hardware refuses ----
+    # If it did not, it would agree with the bugs instead of finding
+    # them, which is what a compatibility layer does.
+    # pass 42: a try/except as the last block of a task must not
+    # segfault the compiler (the drain in popblk ran on je/ji that
+    # were never initialised for except-pops)
+    tr_expect("try except last in task", "main:\n    try\n        b: 5\n        print b\n    except e\n        print 9\n", "5")
+    tr_expect("try except last no locals", "main:\n    b: 0\n    try\n        print 1\n    except e\n        print 9\n", "1")
+
+    # pass 43b: a zero-param task using only inline peek/poke forms
+    # gets slots 5-7 in r8/r9/r10 (leaf scratch class); the same
+    # task with a print anywhere must stay on the classic five
+    tr_expect("leaf scratch registers", "g: 0\nwalk:\n    a: 1\n    b: 2\n    c: 3\n    d: 4\n    e: 5\n    f: 6\n    h: 7\n    k: 8\n    t: 9\n    f: f + 10\n    h: h * 2\n    k: k - 3\n    k: k + 1\n    f: f - 1\n    if f is 15\n        h: h + 100\n    t: t + f + h + k\n    poke_i64(g, 0, t)\nmain:\n    g: _sov_alloc(64)\n    walk()\n    print peek_i64(g, 0)\n", "144")
+    tr_expect("leaf scratch loop", "g: 0\nwalk:\n    z: 0\n    i: 0\n    a: 1\n    b: 2\n    c: 3\n    d: 4\n    e: 5\n    f: 6\n    as long as i < 6\n        poke_i64(g, i * 8, i)\n        i: i + 1\n    i: 0\n    as long as i < 6\n        z: z + peek_i64(g, i * 8)\n        i: i + 1\n    f: f * 2\n    z: z + f\n    poke_i64(g, 0, z)\nmain:\n    g: _sov_alloc(64)\n    walk()\n    print peek_i64(g, 0)\n", "27")
+
+    cs1: "use gcm\nuse hex\nmain:\n    k: hex_to_bytes(\"00000000000000000000000000000000\")\n    iv: hex_to_bytes(\"000000000000000000000000\")\n    c0: _sov_alloc(4)\n    gm_enc(k, iv, 0, 0, 0, 0, c"
+    cs1: str_cat(cs1, "0)\n    print hex_from_bytes(gm_tag, 16)\n    pt2: hex_to_bytes(\"00000000000000000000000000000000\")\n    ct2: _sov_alloc(16)\n    gm_enc(k, iv, 0, 0, pt2, 16, ct2)\n    print hex_from_b")
+    cs1: str_cat(cs1, "ytes(ct2, 16)\n    print hex_from_bytes(gm_tag, 16)\n    k3: hex_to_bytes(\"feffe9928665731c6d6a8f9467308308\")\n    iv3: hex_to_bytes(\"cafebabefacedbaddecaf888\")\n    pt3: hex_to_bytes(")
+    cs1: str_cat(cs1, "\"d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b391aafd255a\")\n    ct3: _sov_alloc(64)\n    gm_enc(k3, iv3, 0, ")
+    cs1: str_cat(cs1, "0, pt3, 64, ct3)\n    print hex_from_bytes(ct3, 64)\n    print hex_from_bytes(gm_tag, 16)\n")
+    cw1: "58e2fccefa7e3061367f1d57a4e7455a\n0388dace60b6a392f328c2b971b2fe78\nab6e47d42cec13bdf53a67b21257bddf\n42831ec2217774244b7221b784d0d49ce3aa212f2c02a4e035c17e2329aca12e21d514b25466931c7"
+    cw1: str_cat(cw1, "d8f6a5aac84aa051ba30b396a0aac973d58e091473f5985\n4d5c2af327cd64a62cf35abd2ba6fab4")
+    tr_expect("gcm nist vectors", cs1, cw1)
+    tr_expect("gcm round trip and tamper", "use gcm\nuse hex\nuse ct\nuse bit32\nmain:\n    k: hex_to_bytes(\"feffe9928665731c6d6a8f9467308308\")\n    iv: hex_to_bytes(\"cafebabefacedbaddecaf888\")\n    pt: hex_to_bytes(\"d9313225f88406e5a55909c5aff5269a\")\n    ct: _sov_alloc(16)\n    gm_enc(k, iv, 0, 0, pt, 16, ct)\n    good: _sov_alloc(16)\n    i: 0\n    as long as i < 16\n        poke_byte(good, i, peek_byte(gm_tag, i))\n        i: i + 1\n    back: _sov_alloc(16)\n    gm_ctr_dec(k, iv, ct, 16, back)\n    print ct_eq(pt, back, 16)\n    poke_byte(ct, 3, wxor(peek_byte(ct, 3), 1))\n    gm_tag_of(k, iv, 0, 0, ct, 16)\n    print ct_eq(gm_tag, good, 16)\n", "1\n0")
+
+    cs3: str_cat("use x25519\nuse hex\nuse ct\nmain:\n", "    a: hex_to_bytes(\"77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a\")\n")
+    cs3: str_cat(cs3, "    b: hex_to_bytes(\"5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb\")\n")
+    cs3: str_cat(cs3, "    g: hex_to_bytes(\"0900000000000000000000000000000000000000000000000000000000000000\")\n")
+    cs3: str_cat(cs3, "    pa: _sov_alloc(32)\n    pb: _sov_alloc(32)\n    x19(pa, a, g)\n    x19(pb, b, g)\n")
+    cs3: str_cat(cs3, "    print hex_from_bytes(pa, 32)\n    print hex_from_bytes(pb, 32)\n")
+    cs3: str_cat(cs3, "    ka: _sov_alloc(32)\n    kb: _sov_alloc(32)\n    x19(ka, a, pb)\n    x19(kb, b, pa)\n")
+    cs3: str_cat(cs3, "    print hex_from_bytes(ka, 32)\n    print ct_eq(ka, kb, 32)\n")
+    cw3: str_cat("8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a\n", "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f\n")
+    cw3: str_cat(cw3, "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742\n1")
+    tr_expect("x25519 rfc 7748", cs3, cw3)
+
+    tr_expect("ct compare", "use ct\nmain:\n    a: _sov_alloc(4)\n    b: _sov_alloc(4)\n    i: 0\n    as long as i < 4\n        poke_byte(a, i, 7)\n        poke_byte(b, i, 7)\n        i: i + 1\n    print ct_eq(a, b, 4)\n    poke_byte(b, 2, 8)\n    print ct_eq(a, b, 4)\n", "1\n0")
+
+    tr_expect("wipe zeroes bytes", "use secret\nmain:\n    buf: _sov_alloc(8)\n    i: 0\n    as long as i < 8\n        poke_byte(buf, i, 65)\n        i: i + 1\n    secret_wipe_bytes(buf, 8)\n    print peek_byte(buf, 0)\n    print peek_byte(buf, 7)\n    s: \"topsecret\"\n    secret_wipe(s)\n    print peek_byte(s, 0)\n    print secret_lockdown()\n", "0\n0\n0\n1")
+
+    # a private function keeps computing right and its compiled
+    # epilogue actually zeroes the frame: the guest spills locals
+    # past the register block, marks the function private, and the
+    # scan insists on the rep stosb signature in the binary
+    gsrc: str_cat("secret_keeper a:\n    x: a * 3\n    y: a + 1\n    z: x + y\n", "    w: z * 2\n    v: w + 5\n    u: v - a\n    t: u * u\n    private\n    return t\n")
+    gsrc: str_cat(gsrc, "main:\n    print secret_keeper(7)\n")
+    file_write_all("/tmp/sov-fw.sov", gsrc)
+    tr_build("/tmp/sov-fw.sov", "/tmp/sov-fw.bin")
+    got: str_trim(tr_run("/tmp/sov-fw.bin"))
+    if str_eq(got, "3136") is 1
+        tr_ok("frame wipe computes")
+    if not
+        tr_bad("frame wipe computes", got, "3136")
+    d: file_read_all("/tmp/sov-fw.bin")
+    n: file_size("/tmp/sov-fw.bin")
+    wipes: 0
+    i: 0
+    as long as i < n - 2
+        if peek_byte(d, i) is 49
+            if peek_byte(d, i + 1) is 192
+                if peek_byte(d, i + 2) is 243
+                    if peek_byte(d, i + 3) is 170
+                        wipes: wipes + 1
+        i: i + 1
+    if wipes > 0
+        tr_ok("frame wipe emitted")
+    if not
+        tr_bad("frame wipe emitted", "0 rep stosb", "at least 1")
+
+    ks1: "use hkdf\nuse pbkdf2\nuse hex\n\nmain:\n    ikm: hex_to_bytes(\"0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b\")\n    salt: hex_to_bytes(\"000102030405060708090a0b0c\")\n    info: hex_to_bytes"
+    ks1: str_cat(ks1, "(\"f0f1f2f3f4f5f6f7f8f9\")\n    prk: _sov_alloc(32)\n    okm: _sov_alloc(42)\n    hkdf_extract(salt, 13, ikm, 22, prk)\n    hkdf_expand(prk, info, 10, 42, okm)\n    print hex_from_bytes(o")
+    ks1: str_cat(ks1, "km, 42)\n    prk3: _sov_alloc(32)\n    okm3: _sov_alloc(42)\n    hkdf_extract(0, 0, ikm, 22, prk3)\n    hkdf_expand(prk3, 0, 0, 42, okm3)\n    print hex_from_bytes(okm3, 42)\n    ikm2: h")
+    ks1: str_cat(ks1, "ex_to_bytes(\"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f\")\n    ")
+    ks1: str_cat(ks1, "salt2: hex_to_bytes(\"606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaea")
+    ks1: str_cat(ks1, "f\")\n    info2: hex_to_bytes(\"b0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9faf")
+    ks1: str_cat(ks1, "bfcfdfeff\")\n    prk2: _sov_alloc(32)\n    okm2: _sov_alloc(82)\n    hkdf_extract(salt2, 80, ikm2, 80, prk2)\n    hkdf_expand(prk2, info2, 80, 82, okm2)\n    print hex_from_bytes(okm2, ")
+    ks1: str_cat(ks1, "82)\n    pw: hex_to_bytes(\"70617373776f7264\")\n    ps: hex_to_bytes(\"73616c74\")\n    o: _sov_alloc(32)\n    pbkdf2_sha256(pw, 8, ps, 4, 1, 32, o)\n    print hex_from_bytes(o, 32)\n    pb")
+    ks1: str_cat(ks1, "kdf2_sha256(pw, 8, ps, 4, 2, 32, o)\n    print hex_from_bytes(o, 32)\n    pw2: hex_to_bytes(\"70617373776f726450415353574f524470617373776f7264\")\n    ps2: hex_to_bytes(\"73616c7453414c5")
+    ks1: str_cat(ks1, "473616c7453414c5473616c7453414c5473616c7453414c5473616c7453414c5473616c7453414c54\")\n    o2: _sov_alloc(40)\n    pbkdf2_sha256(pw2, 24, ps2, 36, 2, 40, o2)\n    print hex_from_bytes(o")
+    ks1: str_cat(ks1, "2, 40)\n")
+    kw1: "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865\n8da4e775a563c18f715f802a063c5a31b8a11f5c5ee1879ec3454e5f3c738d2d9d201395faa4b61a96c8\nb11e398dc8"
+    kw1: str_cat(kw1, "0327a1c8e7f78c596a49344f012eda2d4efad8a050cc4c19afa97c59045a99cac7827271cb41c65e590e09da3275600c2f09b8367793a9aca3db71cc30c58179ec3e87c14c01d5c1f3434f1d87\n120fb6cffcf8b32c43e722525")
+    kw1: str_cat(kw1, "6c4f837a86548c92ccc35480805987cb70be17b\nae4d0c95af6b46d32d0adff928f06dd02a303f8ef3c251dfd6e2d85a95474c43\n13dc8a7c13d372c90382822d2dc492f2ed52467fb7828ea86488783f2ef0397f77a9d6f8d4a")
+    kw1: str_cat(kw1, "44412")
+    tr_expect("kdf suite rfc 5869 and 8018", ks1, kw1)
+    vs1: "use vault\nuse auth\nuse file\nuse mem\nuse bit32\n\nmain:\n    print vault_save(\"/tmp/sov-vault.bin\", \"the treasure is buried at dawn\", \"hunter2\", 2)\n    d: vault_load(\"/tmp/sov-vault.bi"
+    vs1: str_cat(vs1, "n\", \"hunter2\")\n    print d\n    x1: vault_load(\"/tmp/sov-vault.bin\", \"hunter3\")\n    if x1 is 0\n        print 1\n    sz: file_size(\"/tmp/sov-vault.bin\")\n    raw: file_read_all(\"/tmp/s")
+    vs1: str_cat(vs1, "ov-vault.bin\")\n    poke_byte(raw, 40, wxor(peek_byte(raw, 40), 1))\n    file_write_bytes(\"/tmp/sov-vault-tamper.bin\", raw, sz)\n    x2: vault_load(\"/tmp/sov-vault-tamper.bin\", \"hunte")
+    vs1: str_cat(vs1, "r2\")\n    if x2 is 0\n        print 1\n    x3: vault_load(\"/tmp/sov-vault-none.bin\", \"z\")\n    if x3 is 0\n        print 1\n    file_write_all(\"/tmp/sov-auth.txt\", \"\")\n    auth_add_iters")
+    vs1: str_cat(vs1, "(\"/tmp/sov-auth.txt\", \"alice\", \"correct horse\", 2)\n    auth_add_iters(\"/tmp/sov-auth.txt\", \"bob\", \"battery staple\", 2)\n    print auth_check(\"/tmp/sov-auth.txt\", \"alice\", \"correct h")
+    vs1: str_cat(vs1, "orse\")\n    print auth_check(\"/tmp/sov-auth.txt\", \"alice\", \"wrong\")\n    print auth_check(\"/tmp/sov-auth.txt\", \"bob\", \"battery staple\")\n    print auth_check(\"/tmp/sov-auth.txt\", \"car")
+    vs1: str_cat(vs1, "ol\", \"x\")\n")
+    vw1: "1\nthe treasure is buried at dawn\n1\n1\n1\n1\n0\n1\n0"
+    tr_expect("vault and auth: aead storage, pbkdf2 records", vs1, vw1)
+    cs4: "use chacha20\nuse poly1305\nuse cp\nuse hex\nuse mem\nuse bit32\n\nmain:\n    k: hex_to_bytes(\"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\")\n    n: hex_to_bytes(\"00000"
+    cs4: str_cat(cs4, "0090000004a00000000\")\n    o: _sov_alloc(64)\n    chacha_block(k, 1, n, o)\n    print hex_from_bytes(o, 64)\n    n2: hex_to_bytes(\"000000000000004a00000000\")\n    pt: hex_to_bytes(\"4c61")
+    cs4: str_cat(cs4, "6469657320616e642047656e746c656d656e206f662074686520636c617373206f66202739393a204966204920636f756c64206f6666657220796f75206f6e6c79206f6e652074697020666f7220746865206675747572652c20")
+    cs4: str_cat(cs4, "73756e73637265656e20776f756c642062652069742e\")\n    ct: _sov_alloc(114)\n    cc_crypt(k, n2, 1, pt, 114, ct)\n    print hex_from_bytes(ct, 114)\n    pk: hex_to_bytes(\"85d6be7857556d337")
+    cs4: str_cat(cs4, "f4452fe42d506a80103808afb0db2fd4abff6af4149f51b\")\n    m: hex_to_bytes(\"43727970746f6772617068696320466f72756d2052657365617263682047726f7570\")\n    t: _sov_alloc(16)\n    p1305(pk, m,")
+    cs4: str_cat(cs4, " 34, t)\n    print hex_from_bytes(t, 16)\n    k2: hex_to_bytes(\"808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f\")\n    n3: hex_to_bytes(\"070000004041424344454647\")\n  ")
+    cs4: str_cat(cs4, "  aad: hex_to_bytes(\"50515253c0c1c2c3c4c5c6c7\")\n    ct2: _sov_alloc(114)\n    cp_seal(k2, n3, aad, 12, pt, 114, ct2)\n    print hex_from_bytes(ct2, 114)\n    print hex_from_bytes(cp_t")
+    cs4: str_cat(cs4, "ag, 16)\n    print cp_verify(k2, n3, aad, 12, ct2, 114, cp_tag)\n    poke_byte(ct2, 40, wxor(peek_byte(ct2, 40), 1))\n    print cp_verify(k2, n3, aad, 12, ct2, 114, cp_tag)\n    poke_b")
+    cs4: str_cat(cs4, "yte(ct2, 40, wxor(peek_byte(ct2, 40), 1))\n    back: _sov_alloc(114)\n    cc_crypt(k2, n3, 1, ct2, 114, back)\n    print peek_byte(back, 0)\n    print peek_byte(back, 113)\n")
+    cw4: "10f1e7e4d13b5915500fdd1fa32071c4c7d1f4c733c068030422aa9ac3d46c4ed2826446079faa0914c2d705d98b02a2b5129cd1de164eb9cbd083e8a2503c4e\n6e2e359a2568f98041ba0728dd0d6981e97e7aec1d4360c20a2"
+    cw4: str_cat(cw4, "7afccfd9fae0bf91b65c5524733ab8f593dabcd62b3571639d624e65152ab8f530c359f0861d807ca0dbf500d6a6156a38e088a22b65e52bc514d16ccf806818ce91ab77937365af90bbf74a35be6b40b8eedf2785e42874d\na8")
+    cw4: str_cat(cw4, "061dc1305136c6c22b8baf0c0127a9\nd31a8d34648e60db7b86afbc53ef7ec2a4aded51296e08fea9e2b5a736ee62d63dbea45e8ca9671282fafb69da92728b1a71de0a9e060b2905d6a5b67ecd3b3692ddbd7f2d778b8c9803a")
+    cw4: str_cat(cw4, "ee328091b58fab324e4fad675945585808b4831d7bc3ff4def08e4b7a9de576d26586cec64b6116\n1ae10b594f09e26a7e902ecbd0600691\n1\n0\n76\n46")
+    tr_expect("chacha20 poly1305 rfc 8439", cs4, cw4)
+    tr_expect("secret noswap and death sweep", "use secret\nuse mem\nhelper:\n    b: _sov_alloc(64)\n    poke_i64(b, 0, 12345)\n    return 1\nmain:\n    helper()\n    secret_noswap()\n    print 1\n    secret_die(3)\n", "1")
+
+    tr_expect("secret line no echo", "use secret\nuse mem\nmain:\n    p: secret_line(32)\n    print _sov_strlen(p)\n", "0")
+
+    tr_expect("secret argv and environ scrub", "use secret\nmain:\n    print secret_scrub_argv()\n    print secret_scrub_env() >= 0\n", "1\n1")
+
+    tr_expect("file shred", "use file\nmain:\n    file_write_all(\"/tmp/sov-shred-battery.txt\", \"gone tomorrow\")\n    print file_shred(\"/tmp/sov-shred-battery.txt\")\n    print file_exists(\"/tmp/sov-shred-battery.txt\")\n", "1\n0")
+
+    tr_expect("vault delete verifies then shreds", "use vault\nmain:\n    vault_save(\"/tmp/sov-vd2.vlt\", \"the goods\", \"pw\", 2)\n    print vault_delete(\"/tmp/sov-vd2.vlt\", \"wrong\")\n    print vault_delete(\"/tmp/sov-vd2.vlt\", \"pw\")\n", "0\n1")
+
+    tr_expect("secret files owner only", "use vault\nuse auth\nuse file\nmain:\n    vault_save(\"/tmp/sov-sf.vlt\", \"d\", \"pw\", 2)\n    auth_add_iters(\"/tmp/sov-sf.auth\", \"a\", \"pw\", 2)\n    print vault_load(\"/tmp/sov-sf.vlt\", \"pw\")\n    print auth_check(\"/tmp/sov-sf.auth\", \"a\", \"pw\")\n", "d\n1")
+
+    tr_expect("secret harden smoke", "use secret\nmain:\n    print secret_harden() >= 0\n", "1")
+
+    tr_expect("stack wipe on exit", "use mem\ndeep n:\n    private\n    spill: n * 7919\n    if n > 0\n        deep(n - 1)\n    return spill\nmain:\n    b: _sov_alloc(64)\n    i: 0\n    as long as i < 64\n        poke_byte(b, i, 66)\n        i: i + 1\n    deep(64)\n    print \"clean\"\n", "clean")
+
+    # pass 132: the stack wipe must build on every machine that has it
+    tr_builds_for("wipe builds on android", "deep n:\n    private\n    spill: n * 7919\n    if n > 0\n        deep(n - 1)\n    return spill\n\nmain:\n    b: _sov_alloc(64)\n    deep(64)\n    print \"clean\"\n", "--android")
+    tr_builds_for("wipe builds on ios", "deep n:\n    private\n    spill: n * 7919\n    if n > 0\n        deep(n - 1)\n    return spill\n\nmain:\n    b: _sov_alloc(64)\n    deep(64)\n    print \"clean\"\n", "--ios")
+    tr_builds_for("wipe builds on mac", "deep n:\n    private\n    spill: n * 7919\n    if n > 0\n        deep(n - 1)\n    return spill\n\nmain:\n    b: _sov_alloc(64)\n    deep(64)\n    print \"clean\"\n", "--mac")
+
+    # pass 133: the windows walk, run to completion under the emulator
+    tr_builds_for("wipe builds on windows", "deep n:\n    private\n    spill: n * 7919\n    if n > 0\n        deep(n - 1)\n    return spill\n\nmain:\n    b: _sov_alloc(64)\n    deep(64)\n    print \"clean\"\n", "--windows")
+    tr_emu("windows wipe runs clean", "deep n:\n    private\n    spill: n * 7919\n    if n > 0\n        deep(n - 1)\n    return spill\n\nmain:\n    b: _sov_alloc(64)\n    deep(64)\n    print \"clean\"\n", "clean", "--windows")
+    tr_emu("mac wipe runs clean", "deep n:\n    private\n    spill: n * 7919\n    if n > 0\n        deep(n - 1)\n    return spill\n\nmain:\n    b: _sov_alloc(64)\n    deep(64)\n    print \"clean\"\n", "clean", "--mac")
+
+    # pass 135: globals wiped at exit - proven by running the guest
+    # under the emulator and scanning the image for the canary
+    file_write_all("/tmp/sov-gw.sov", "g: 0\nmain:\n    private\n    g: 12345679 * 66339001\n    print g\n")
+    tr_build_for("/tmp/sov-gw.sov", "/tmp/sov-gw.out", "")
+    gm: x86_new()
+    if x86_load(gm, "/tmp/sov-gw.out") is 1
+        x86_run(gm)
+        gw_ok: 1
+        if x86_why(gm) is not 1
+            gw_ok: 0
+        if str_eq(str_trim(x86_out(gm)), "819000011526679") is 0
+            gw_ok: 0
+        lo: peek_i64(gm, 216)
+        gw_off: 0
+        as long as gw_off < 65536
+            if x86_peek_q(gm, lo + gw_off) is 819000011526679
+                gw_ok: 0
+            gw_off: gw_off + 8
+        if gw_ok is 1
+            tr_ok("globals wiped at exit")
+        if not
+            tr_bad("globals wiped at exit", "the canary survived", "nothing")
+
+    # pass 136: the globals wipe on the other machines, proven the
+    # same way - run the guest, then scan the image for the canary
+    file_write_all("/tmp/sov-gwm.sov", "g: 0\nmain:\n    private\n    g: 12345679 * 66339001\n    print g\n")
+    tr_build_for("/tmp/sov-gwm.sov", "/tmp/sov-gwm.out", "--mac")
+    gwm: x86_new()
+    if x86_load(gwm, "/tmp/sov-gwm.out") is 1
+        x86_run(gwm)
+        gwm_ok: 1
+        if x86_why(gwm) is not 1
+            gwm_ok: 0
+        if str_eq(str_trim(x86_out(gwm)), "819000011526679") is 0
+            gwm_ok: 0
+        lom: peek_i64(gwm, 216)
+        gw_off: 0
+        as long as gw_off < 65536
+            if x86_peek_q(gwm, lom + gw_off) is 819000011526679
+                gwm_ok: 0
+            gw_off: gw_off + 8
+        if gwm_ok is 1
+            tr_ok("globals wiped at exit on mac")
+        if not
+            tr_bad("globals wiped at exit on mac", "the canary survived", "nothing")
+    file_write_all("/tmp/sov-gww.sov", "g: 0\nmain:\n    private\n    g: 12345679 * 66339001\n    print g\n")
+    tr_build_for("/tmp/sov-gww.sov", "/tmp/sov-gww.out", "--windows")
+    gww: x86_new()
+    if x86_load(gww, "/tmp/sov-gww.out") is 1
+        x86_run(gww)
+        gww_ok: 1
+        if x86_why(gww) is not 1
+            gww_ok: 0
+        if str_eq(str_trim(x86_out(gww)), "819000011526679") is 0
+            gww_ok: 0
+        low: peek_i64(gww, 216)
+        gw_off: 0
+        as long as gw_off < 65536
+            if x86_peek_q(gww, low + gw_off) is 819000011526679
+                gww_ok: 0
+            gw_off: gw_off + 8
+        if gww_ok is 1
+            tr_ok("globals wiped at exit on windows")
+        if not
+            tr_bad("globals wiped at exit on windows", "the canary survived", "nothing")
+
+    # pass 137: string literals wiped at exit - print a distinctive
+    # constant, then scan the image for its first eight bytes
+    st_src: "main:\n    private\n    s: \"SVNSNTPRIV\"\n    print s\n"
+    file_write_all("/tmp/sov-st.sov", st_src)
+    tr_build_for("/tmp/sov-st.sov", "/tmp/sov-st.out", "")
+    stm: x86_new()
+    if x86_load(stm, "/tmp/sov-st.out") is 1
+        x86_run(stm)
+        st_ok: 1
+        if x86_why(stm) is not 1
+            st_ok: 0
+        if str_eq(str_trim(x86_out(stm)), "SVNSNTPRIV") is 0
+            st_ok: 0
+        lost: 5931333404628768339
+        lo2: peek_i64(stm, 216)
+        st_off: 0
+        as long as st_off < 65536
+            if x86_peek_q(stm, lo2 + st_off) is lost
+                st_ok: 0
+            st_off: st_off + 1
+        if st_ok is 1
+            tr_ok("string literals wiped at exit")
+        if not
+            tr_bad("string literals wiped at exit", "the canary string survived", "nothing")
+    file_write_all("/tmp/sov-stm.sov", st_src)
+    tr_build_for("/tmp/sov-stm.sov", "/tmp/sov-stm.out", "--mac")
+    stm2: x86_new()
+    if x86_load(stm2, "/tmp/sov-stm.out") is 1
+        x86_run(stm2)
+        stm_ok: 1
+        if x86_why(stm2) is not 1
+            stm_ok: 0
+        if str_eq(str_trim(x86_out(stm2)), "SVNSNTPRIV") is 0
+            stm_ok: 0
+        lom2: peek_i64(stm2, 216)
+        st_off: 0
+        as long as st_off < 65536
+            if x86_peek_q(stm2, lom2 + st_off) is 5931333404628768339
+                stm_ok: 0
+            st_off: st_off + 1
+        if stm_ok is 1
+            tr_ok("string literals wiped at exit on mac")
+        if not
+            tr_bad("string literals wiped at exit on mac", "the canary string survived", "nothing")
+    file_write_all("/tmp/sov-stw.sov", st_src)
+    tr_build_for("/tmp/sov-stw.sov", "/tmp/sov-stw.out", "--windows")
+    stw: x86_new()
+    if x86_load(stw, "/tmp/sov-stw.out") is 1
+        x86_run(stw)
+        stw_ok: 1
+        if x86_why(stw) is not 1
+            stw_ok: 0
+        if str_eq(str_trim(x86_out(stw)), "SVNSNTPRIV") is 0
+            stw_ok: 0
+        low2: peek_i64(stw, 216)
+        st_off: 0
+        as long as st_off < 65536
+            if x86_peek_q(stw, low2 + st_off) is 5931333404628768339
+                stw_ok: 0
+            st_off: st_off + 1
+        if stw_ok is 1
+            tr_ok("string literals wiped at exit on windows")
+        if not
+            tr_bad("string literals wiped at exit on windows", "the canary string survived", "nothing")
+
+    # the control: the same guest without private keeps its literal
+    file_write_all("/tmp/sov-stc.sov", "main:\n    s: \"SVNSNTPRIV\"\n    print s\n")
+    tr_build_for("/tmp/sov-stc.sov", "/tmp/sov-stc.out", "")
+    stc: x86_new()
+    if x86_load(stc, "/tmp/sov-stc.out") is 1
+        x86_run(stc)
+        if str_eq(str_trim(x86_out(stc)), "SVNSNTPRIV") is 1
+            loc3: peek_i64(stc, 216)
+            found3: 0
+            c_off: 0
+            as long as c_off < 65536
+                if x86_peek_q(stc, loc3 + c_off) is 5931333404628768339
+                    found3: 1
+                c_off: c_off + 1
+            if found3 is 1
+                tr_ok("string canary control: the scanner sees unwiped literals")
+            if not
+                tr_bad("string canary control", "scanner found nothing", "the literal visible")
+
+    # pass 138: the up-walk signature must be present in every
+    # private build - mov edx,3 before the mprotect number on linux
+    # and mac, two VirtualQuery state checks on windows, the
+    # and-x0/add-2048 chain on arm
+    up_src: "main:\n    private\n    s: \"UPWALKCAN\"\n    print s\n"
+    file_write_all("/tmp/sov-up.sov", up_src)
+    tr_build_for("/tmp/sov-up.sov", "/tmp/sov-up.l", "")
+    if count_run("/tmp/sov-up.l", 3, 0, 0, 0, 184, 10) > 0
+        tr_ok("up-walk signature in linux builds")
+    if not
+        tr_bad("up-walk signature in linux builds", "the mprotect probe is gone", "the probe")
+    tr_build_for("/tmp/sov-up.sov", "/tmp/sov-up.m", "--mac")
+    if count_run("/tmp/sov-up.m", 3, 0, 0, 0, 184, 74) > 0
+        tr_ok("up-walk signature in mac builds")
+    if not
+        tr_bad("up-walk signature in mac builds", "the mprotect probe is gone", "the probe")
+    tr_build_for("/tmp/sov-up.sov", "/tmp/sov-up.w", "--windows")
+    if count_run("/tmp/sov-up.w", 72, 129, 199, 0, 16, 0) > 0
+        tr_ok("up-walk signature in windows builds")
+    if not
+        tr_bad("up-walk signature in windows builds", "the add rdi,4096 probe start is gone", "the step-up")
+    tr_build_for("/tmp/sov-up.sov", "/tmp/sov-up.a", "--android")
+    if count_run("/tmp/sov-up.a", 160, 0, 10, 138, 0, 0) > 0
+        tr_ok("up-walk signature in android builds")
+    if not
+        tr_bad("up-walk signature in android builds", "the mprotect chain is gone", "the chain")
+    tr_build_for("/tmp/sov-up.sov", "/tmp/sov-up.i", "--ios")
+    if count_run("/tmp/sov-up.i", 160, 0, 10, 138, 0, 0) > 0
+        tr_ok("up-walk signature in ios builds")
+    if not
+        tr_bad("up-walk signature in ios builds", "the mprotect chain is gone", "the chain")
+    # and the same signature when main is thin - no locals, no
+    # frame: the exit path must still carry the walks
+    thin_src: "main:\n    private\n    print \"T\"\n"
+    file_write_all("/tmp/sov-tup.sov", thin_src)
+    tr_build_for("/tmp/sov-tup.sov", "/tmp/sov-tup.l", "")
+    if count_run("/tmp/sov-tup.l", 3, 0, 0, 0, 184, 10) > 0
+        tr_ok("up-walk signature in thin private builds")
+    if not
+        tr_bad("up-walk signature in thin private builds", "the thin path dropped the walk", "the walk")
+    tr_build_for("/tmp/sov-tup.sov", "/tmp/sov-tup.m", "--mac")
+    if count_run("/tmp/sov-tup.m", 3, 0, 0, 0, 184, 74) > 0
+        tr_ok("up-walk signature in thin private mac builds")
+    if not
+        tr_bad("up-walk signature in thin private mac builds", "the thin path dropped the walk", "the walk")
+    tr_build_for("/tmp/sov-tup.sov", "/tmp/sov-tup.a", "--android")
+    if count_run("/tmp/sov-tup.a", 160, 0, 10, 138, 0, 0) > 0
+        tr_ok("up-walk signature in thin private android builds")
+    if not
+        tr_bad("up-walk signature in thin private android builds", "the thin path dropped the walk", "the walk")
+
+    # pass 139: the heap wiped at exit. a string copy lands in the
+    # bump heap; after a private program exits, its bytes must be
+    # gone from there - and a control guest without private must
+    # still show them to the scanner
+    hps: "use string\nmain:\n    private\n    s: str_copy(\"HEAPCANARY0123456789\")\n    print s\n    _sov_print_int(s)\n"
+    file_write_all("/tmp/sov-hp.sov", hps)
+    tr_build_for("/tmp/sov-hp.sov", "/tmp/sov-hp.out", "")
+    hpm: x86_new()
+    if x86_load(hpm, "/tmp/sov-hp.out") is 1
+        x86_run(hpm)
+        hp_ok: 1
+        if x86_why(hpm) is not 1
+            hp_ok: 0
+        ho: x86_out(hpm)
+        hn: 0
+        as long as _sov_byte_at(ho, hn) is not 10
+            hn: hn + 1
+        if str_eq(str_cut(ho, 0, hn), "HEAPCANARY0123456789") is 0
+            hp_ok: 0
+        hb: str_num(str_trim(str_cut(ho, hn + 1, str_len(ho))))
+        h_off: 0
+        as long as h_off < 65536
+            if x86_peek_q(hpm, hb + h_off) is 4705770418013816136
+                hp_ok: 0
+            h_off: h_off + 1
+        if hp_ok is 1
+            tr_ok("heap wiped at exit")
+        if not
+            tr_bad("heap wiped at exit", "the heap canary survived", "nothing")
+    hps2: "use string\nmain:\n    s: str_copy(\"HEAPCANARY0123456789\")\n    print s\n    _sov_print_int(s)\n"
+    file_write_all("/tmp/sov-hp2.sov", hps2)
+    tr_build_for("/tmp/sov-hp2.sov", "/tmp/sov-hp2.out", "")
+    hpm2: x86_new()
+    if x86_load(hpm2, "/tmp/sov-hp2.out") is 1
+        x86_run(hpm2)
+        ho2: x86_out(hpm2)
+        hn2: 0
+        as long as _sov_byte_at(ho2, hn2) is not 10
+            hn2: hn2 + 1
+        hb2: str_num(str_trim(str_cut(ho2, hn2 + 1, str_len(ho2))))
+        hfound: 0
+        h_off: 0
+        as long as h_off < 65536
+            if x86_peek_q(hpm2, hb2 + h_off) is 4705770418013816136
+                hfound: 1
+            h_off: h_off + 1
+        if hfound is 1
+            tr_ok("heap canary control: the scanner sees unwiped heaps")
+        if not
+            tr_bad("heap canary control", "scanner found nothing", "the literal visible")
+
+    # pass 140: a private program's binary carries its secrets in
+    # its string span - it lands 0700; a plain build stays 0755
+    tr_build_for("/tmp/sov-up.sov", "/tmp/sov-up.l", "")
+    if file_mode("/tmp/sov-up.l") is 448
+        tr_ok("private builds land 0700")
+    if not
+        tr_bad("private builds land 0700", "wrong mode on the private binary", "0700")
+    file_write_all("/tmp/sov-pm.sov", "main:\n    print \"p\"\n")
+    tr_build_for("/tmp/sov-pm.sov", "/tmp/sov-pm.out", "")
+    if file_mode("/tmp/sov-pm.out") is 493
+        tr_ok("plain builds stay 0755")
+    if not
+        tr_bad("plain builds stay 0755", "wrong mode on the plain binary", "0755")
+
+    tr_privacy_checks()
+    tr_strict_checks()
+
+    # the tally, and an exit code so a script can tell
+    sys_exit(tr_report())

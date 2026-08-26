@@ -1,0 +1,19 @@
+# sa1 - sq_acc 3-term: every atom rides a register slot (values
+# from memory, never deferred), the accumulator is rax end to
+# end. the arm fires (binary differs). 9+25+36 = 70, then 77.
+use sys
+
+g: 0
+
+main:
+    g: _sov_alloc(128)
+    poke_i64(g, 0, 7)
+    poke_i64(g, 8, 3)
+    poke_i64(g, 16, 5)
+    poke_i64(g, 24, 6)
+    a: peek_i64(g, 8)
+    b: peek_i64(g, 16)
+    c: peek_i64(g, 24)
+    s: a * a + b * b + c * c
+    print s
+    print s + peek_i64(g, 0)

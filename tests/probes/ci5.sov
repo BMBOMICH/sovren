@@ -1,0 +1,39 @@
+# ci5 - non-leaf control: identical compare bodies to ci1, but the
+# bump() call makes the function call-bearing, so slots 5-8 are
+# frame slots and the fused arm must decline (byte-identical
+# output from the previous compiler for this function).
+bump z:
+    return z + 1
+
+ci5:
+    m0: 4
+    m1: 15
+    m2: -26
+    m3: 43
+    m4: -54
+    m5: 61
+    m6: -71
+    m7: 81
+    m8: -91
+    r: 0
+    t: bump(3)
+    if m5 > 60
+        r: r + 1
+    if m5 is 61
+        r: r + 10
+    if m6 < -70
+        r: r + 100
+    if m6 is -71
+        r: r + 1000
+    if m7 >= 81
+        r: r + 10000
+    if m7 <= 80
+        r: r + 100000
+    if m8 <= -91
+        r: r + 1000000
+    if m8 is not -91
+        r: r + 10000000
+    return r * 10 + t
+
+main:
+    print ci5()

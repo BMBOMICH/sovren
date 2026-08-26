@@ -1,0 +1,24 @@
+# ps5 - leaf8 indices: i and j sit in slots 5-6 (r8-r9), so the
+# index builds take the loadv fallback forms that clobber rax. the
+# first index must live in rdx through the base load and be intact
+# when the folded sub addresses it.
+use sys
+
+b: 0
+
+work:
+    n0: 1
+    n1: 2
+    n2: 3
+    n3: 4
+    n4: 5
+    i: 1
+    j: 2
+    d: peek_i64(b, j * 8) - peek_i64(b, i * 8)
+    return d
+
+main:
+    b: _sov_alloc(640)
+    poke_i64(b, 8, 300)
+    poke_i64(b, 16, 700)
+    print work()

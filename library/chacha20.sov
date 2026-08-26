@@ -1,0 +1,88 @@
+# chacha20.sov — the ChaCha20 block function and stream (RFC 8439)
+#
+#   use chacha20
+#   chacha_block(key, counter, nonce, out)   64 keystream bytes
+#   cc_crypt(key, nonce, counter, pt, n, ct) xor the stream
+#
+# Nothing branches on key material: the rounds are adds, xors and
+# fixed rolls, the block count is public. The caller wipes what
+# needs wiping - cc_crypt itself holds only the caller's pointers.
+
+use bit32
+use mem
+
+cc_le32 p off:
+    return peek_byte(p, off) + peek_byte(p, off + 1) * 256 + peek_byte(p, off + 2) * 65536 + peek_byte(p, off + 3) * 16777216
+
+cc_qr st a b c d:
+    va: peek_i64(st, a * 8)
+    vb: peek_i64(st, b * 8)
+    vc: peek_i64(st, c * 8)
+    vd: peek_i64(st, d * 8)
+    va: wadd(va, vb)
+    vd: wxor(vd, va)
+    vd: rotr(vd, 16)
+    vc: wadd(vc, vd)
+    vb: wxor(vb, vc)
+    vb: rotr(vb, 20)
+    va: wadd(va, vb)
+    vd: wxor(vd, va)
+    vd: rotr(vd, 24)
+    vc: wadd(vc, vd)
+    vb: wxor(vb, vc)
+    vb: rotr(vb, 25)
+    poke_i64(st, a * 8, va)
+    poke_i64(st, b * 8, vb)
+    poke_i64(st, c * 8, vc)
+    poke_i64(st, d * 8, vd)
+    return 0
+
+chacha_block key counter nonce out:
+    st: _sov_alloc(128)
+    poke_i64(st, 0, 1634760805)
+    poke_i64(st, 8, 857760878)
+    poke_i64(st, 16, 2036477234)
+    poke_i64(st, 24, 1797285236)
+    i: 0
+    as long as i < 8
+        poke_i64(st, 32 + i * 8, cc_le32(key, i * 4))
+        i: i + 1
+    poke_i64(st, 96, counter)
+    poke_i64(st, 104, cc_le32(nonce, 0))
+    poke_i64(st, 112, cc_le32(nonce, 4))
+    poke_i64(st, 120, cc_le32(nonce, 8))
+    init: _sov_alloc(128)
+    i: 0
+    as long as i < 16
+        poke_i64(init, i * 8, peek_i64(st, i * 8))
+        i: i + 1
+    r: 0
+    as long as r < 10
+        cc_qr(st, 0, 4, 8, 12)
+        cc_qr(st, 1, 5, 9, 13)
+        cc_qr(st, 2, 6, 10, 14)
+        cc_qr(st, 3, 7, 11, 15)
+        cc_qr(st, 0, 5, 10, 15)
+        cc_qr(st, 1, 6, 11, 12)
+        cc_qr(st, 2, 7, 8, 13)
+        cc_qr(st, 3, 4, 9, 14)
+        r: r + 1
+    i: 0
+    as long as i < 16
+        v: wadd(peek_i64(st, i * 8), peek_i64(init, i * 8))
+        poke_byte(out, i * 4, wand(v, 255))
+        poke_byte(out, i * 4 + 1, wand(shr(v, 8), 255))
+        poke_byte(out, i * 4 + 2, wand(shr(v, 16), 255))
+        poke_byte(out, i * 4 + 3, wand(shr(v, 24), 255))
+        i: i + 1
+    return 0
+
+cc_crypt key nonce counter pt n ct:
+    ks: _sov_alloc(64)
+    j: 0
+    as long as j < n
+        if j % 64 is 0
+            chacha_block(key, counter + j / 64, nonce, ks)
+        poke_byte(ct, j, wxor(peek_byte(pt, j), peek_byte(ks, j % 64)))
+        j: j + 1
+    return 0

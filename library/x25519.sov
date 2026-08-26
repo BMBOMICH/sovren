@@ -296,7 +296,7 @@ x_cswap sw a b:
 
 # one ladder step, in place: sc is scratch space for the step's
 # temporaries
-x_step x1 x2 z2 x3 z3 sc:
+x19_step x1 x2 z2 x3 z3 sc:
     a: sc
     b: sc + 80
     aa: sc + 160
@@ -452,14 +452,14 @@ x_loop st sc:
             sw: 1
         if not
             sw: 0
-        x_step(x1, x2, z2, x3, z3, sc)
+        x19_step(x1, x2, z2, x3, z3, sc)
         t: t - 1
     x_cswap(sw, x2, x3)
     x_cswap(sw, z2, z3)
     return 0
 
 # the final division and the byte output
-x_finish st out:
+x19_finish st out:
     x2: st + 112
     z2: st + 192
     x_invert(z2, z2)
@@ -479,5 +479,5 @@ x19 out scalar u:
     sc: _sov_alloc(800)
     x_setup(scalar, u, st)
     x_loop(st, sc)
-    x_finish(st, out)
+    x19_finish(st, out)
     return 0

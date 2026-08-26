@@ -1,0 +1,13 @@
+# sa4b - mixed 2-term: deferred constant x, live c. 9+25=34, +7=41.
+use sys
+
+g: 0
+
+main:
+    g: _sov_alloc(128)
+    poke_i64(g, 0, 5)
+    poke_i64(g, 8, 7)
+    x: 3
+    c: peek_i64(g, 0)
+    s: x * x + c * c
+    print s + peek_i64(g, 8)

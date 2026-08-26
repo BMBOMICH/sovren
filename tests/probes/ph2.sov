@@ -1,0 +1,30 @@
+# ph2 - leaf8 homes r8-r11 (slots 5-8) through the same straight
+# forms. i, j, k, m take r8-r11; r is a frame accumulator.
+use sys
+
+b: 0
+
+w:
+    n0: 101
+    n1: 102
+    n2: 103
+    n3: 104
+    n4: 105
+    i: 1
+    j: 2
+    k: 3
+    m: 4
+    r: 0
+    poke_i64(b, i * 8, 11)
+    poke_i64(b, j * 8, 22)
+    poke_i64(b, k * 8, 33)
+    poke_i64(b, m * 8, 44)
+    r: peek_i64(b, k * 8)
+    r: r + peek_i64(b, m * 8)
+    r: r + peek_i64(b, j * 8)
+    r: r + peek_i64(b, i * 8)
+    return r
+
+main:
+    b: _sov_alloc(640)
+    print w()

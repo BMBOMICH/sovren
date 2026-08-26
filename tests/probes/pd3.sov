@@ -1,0 +1,11 @@
+# pd3 - a poke inside a condition: the compare context evaluates
+# the call for its value, so the tail must exist. byte-identical.
+use sys
+
+b: 0
+
+main:
+    b: _sov_alloc(640)
+    if poke_i64(b, 0, 33) is b
+        print 882
+    print peek_i64(b, 0)

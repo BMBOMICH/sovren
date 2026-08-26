@@ -1,0 +1,144 @@
+# run.sov — run a program and catch its answer, find the
+# compiler, and read a line from the keyboard.
+#
+#   run_out p x y    run p with zero to two arguments, capture
+#                    everything it writes
+#   run_sh cmd       the same through /bin/sh -c
+#   cc_path          the nearest host compiler binary
+#   compile_sov s o  compile a .sov file, answer is diagnostics
+#   run_line         one line from stdin, without the newline;
+#                    run_eof says when it ran out
+#
+# the repl and the editor both drive the toolchain through here,
+# and the os shell reads its commands with it.
+use sys
+use string
+use file
+use mem
+use arg
+use num
+use list
+
+RUN_EOF: 0
+
+# one line from standard input, newline taken off. nought when
+# the input ran out (and run_eof is set from then on)
+run_line:
+    buf: _sov_alloc(4096)
+    n: 0
+    more: 1
+    as long as more is 1
+        b: _sov_alloc(1)
+        got: sys_read(0, b, 1)
+        if got <= 0
+            more: 0
+            if n is 0
+                RUN_EOF: 1
+        if not
+            v: peek_byte(b, 0)
+            if v is 10
+                more: 0
+            if not
+                if v is 13
+                    more: 0
+                if not
+                    if n < 4000
+                        poke_byte(buf, n, v)
+                        n: n + 1
+    poke_byte(buf, n, 0)
+    return buf
+
+# the two halves of a pipe, which arrive as two thirty-two bit
+# file numbers side by side in one buffer
+run_pr fds:
+    return peek_i64(fds, 0) % 4294967296
+
+run_pw fds:
+    return peek_i64(fds, 0) / 4294967296
+
+# run p with an argument vector from a list (the program path is
+# put on the front itself). everything written to standard output
+# comes back as one string
+run_argv p lst:
+    fds: _sov_alloc(16)
+    sys_pipe(fds)
+    pid: sys_fork()
+    if pid is 0
+        sys_dup2(run_pw(fds), 1)
+        sys_close(run_pr(fds))
+        na: list_len(lst)
+        args: _sov_alloc(16 * (na + 2))
+        poke_i64(args, 0, p)
+        k: 0
+        as long as k < na
+            poke_i64(args, 8 + k * 8, list_get(lst, k))
+            k: k + 1
+        poke_i64(args, 8 + na * 8, 0)
+        sys_exec(p, args, 0)
+        sys_exit(127)
+    sys_close(run_pw(fds))
+    out: ""
+    buf: _sov_alloc(4096)
+    more: 1
+    as long as more is 1
+        n: sys_read(run_pr(fds), buf, 4096)
+        if n <= 0
+            more: 0
+        if not
+            poke_byte(buf, n, 0)
+            out: str_cat(out, as text buf)
+    sys_close(run_pr(fds))
+    sys_wait(pid)
+    return out
+
+# the common case: a program with zero to two arguments
+run_out p x y:
+    lst: list_new()
+    if str_len(x) > 0
+        lst: list_add(lst, x)
+    if str_len(y) > 0
+        lst: list_add(lst, y)
+    return run_argv(p, lst)
+
+# run a shell command and catch what it says
+run_sh cmd:
+    lst: list_new()
+    lst: list_add(lst, "-c")
+    lst: list_add(lst, cmd)
+    return run_argv("/bin/sh", lst)
+
+# the folder a path lives in
+run_dir p:
+    n: str_len(p)
+    i: n
+    as long as i > 0
+        i: i - 1
+        if peek_byte(p, i) is 47
+            if i is 0
+                return "/"
+            return str_cut(p, 0, i)
+    return "."
+
+# the nearest host compiler, beside the launcher that built us
+cc_path:
+    me: arg_at(0)
+    root: run_dir(me)
+    want: str_cat(root, "/compilers/linux/compiler")
+    if file_exists(want) is 1
+        return want
+    want: str_cat(root, "/compilers/macos/compiler")
+    if file_exists(want) is 1
+        return want
+    want: str_cat(root, "/compilers/windows/compiler")
+    if file_exists(want) is 1
+        return want
+    return "compilers/linux/compiler"
+
+# compile a .sov file to a binary; the answer is the compiler's
+# own output, errors and all
+compile_sov src bin:
+    lst: list_new()
+    lst: list_add(lst, src)
+    lst: list_add(lst, "-o")
+    lst: list_add(lst, bin)
+    return run_argv(cc_path(), lst)

@@ -1,0 +1,20 @@
+# scaled peek < name - the swap_op path, both outcomes
+main:
+    arr: _sov_alloc(8000)
+    r: 2
+    poke_raw64(arr, r * 8, 5)
+    v: 8
+    if peek_raw64(arr, r * 8) < v
+        print 301
+    if not
+        print 302
+    v: 3
+    if peek_raw64(arr, r * 8) < v
+        print 303
+    if not
+        print 304
+    v: 9001
+    if peek_raw64(arr, r * 8) < v
+        print 305
+    if not
+        print 306

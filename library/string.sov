@@ -62,6 +62,14 @@ str_copy s:
 
 # is a before b in the dictionary? byte by byte, the shorter one
 # first when they agree so far
+# one byte as a one-character string: the bridge from str_at,
+# whose answer is a number, not text
+str_chr n:
+    o: _sov_alloc(2)
+    poke_byte(o, 0, n % 256)
+    poke_byte(o, 1, 0)
+    return as text o
+
 str_less a b:
     la: str_len(a)
     lb: str_len(b)

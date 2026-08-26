@@ -1,14 +1,140 @@
-# WARNING: built on XOR. NOT secure storage. Demo only.
-# vault.sov — encrypt a file with a key
+# vault.sov — encrypted secret storage, for real this time
+#
+# The old vault was XOR and said so: "NOT secure storage. Demo
+# only." This one is AES-256-GCM with a PBKDF2-HMAC-SHA256 key
+# derived from the password, fresh random salt and nonce per save,
+# and the tag verified before decryption returns anything.
+#
+#   use vault
+#   vault_save(path, data, password, iters)
+#   vault_load(path, password)        the data, or 0
+#
+# File format (all binary, zeros and all):
+#   "SVLT1"          5 bytes   magic and version
+#   iters            4 bytes   big-endian, so the cost can rise
+#   salt             16 bytes  fresh per save
+#   nonce            12 bytes  fresh per save
+#   ct               n bytes   the data under GCM
+#   tag              16 bytes  over ct (aad is the header itself
+#                              is NOT covered - the header holds
+#                              the tag's own inputs)
+#
+# A wrong password and a tampered file look identical from outside:
+# zero. iters is a work factor - see pbkdf2.sov. The key is wiped
+# before return; these functions declare private, so their frames
+# are wiped too (pass 117/118) and the program gets dumpable-off.
+#
+# data is text and must be NUL-free - text parameters end at the
+# first zero byte. The stored ciphertext is fully binary and round
+# trips through file_write_bytes untouched.
+
 use file
-use encrypt
-use string
+use pbkdf2
+use gcm
+use ct
+use rand
+use secret
+use mem
 
-vault_save path data key:
-    return file_write_all(path, encrypt_xor(data, key))
+vault_save path data password iters:
+    private
+    n: _sov_strlen(data)
+    if n < 1
+        return 0
+    salt: rand_bytes(16)
+    nonce: rand_bytes(12)
+    key: _sov_alloc(32)
+    pbkdf2_sha256(password, _sov_strlen(password), salt, 16, iters, 32, key)
+    ctb: _sov_alloc(n)
+    gm_enc(key, nonce, 0, 0, data, n, ctb)
+    blob: _sov_alloc(53 + n)
+    i: 0
+    as long as i < 5
+        poke_byte(blob, i, peek_byte("SVLT1", i))
+        i: i + 1
+    poke_byte(blob, 5, wand(shr(iters, 24), 255))
+    poke_byte(blob, 6, wand(shr(iters, 16), 255))
+    poke_byte(blob, 7, wand(shr(iters, 8), 255))
+    poke_byte(blob, 8, wand(iters, 255))
+    i: 0
+    as long as i < 16
+        poke_byte(blob, 9 + i, peek_byte(salt, i))
+        i: i + 1
+    i: 0
+    as long as i < 12
+        poke_byte(blob, 25 + i, peek_byte(nonce, i))
+        i: i + 1
+    i: 0
+    as long as i < n
+        poke_byte(blob, 37 + i, peek_byte(ctb, i))
+        i: i + 1
+    i: 0
+    as long as i < 16
+        poke_byte(blob, 37 + n + i, peek_byte(gm_tag, i))
+        i: i + 1
+    w: file_write_secret_bytes(path, blob, 53 + n)
+    secret_wipe_bytes(key, 32)
+    secret_wipe_bytes(blob, 53 + n)
+    secret_wipe_bytes(ctb, n)
+    return w
 
-vault_load path key:
+vault_load path password:
+    private
+    sz: file_size(path)
+    if sz < 54
+        return 0
     raw: file_read_all(path)
     if raw is 0
         return 0
-    return decrypt_xor(raw, key)
+    i: 0
+    as long as i < 5
+        if peek_byte(raw, i) is not peek_byte("SVLT1", i)
+            return 0
+        i: i + 1
+    iters: peek_byte(raw, 5) * 16777216 + peek_byte(raw, 6) * 65536 + peek_byte(raw, 7) * 256 + peek_byte(raw, 8)
+    if iters < 1
+        return 0
+    n: sz - 53
+    if n < 1
+        return 0
+    salt: _sov_alloc(16)
+    i: 0
+    as long as i < 16
+        poke_byte(salt, i, peek_byte(raw, 9 + i))
+        i: i + 1
+    nonce: _sov_alloc(12)
+    i: 0
+    as long as i < 12
+        poke_byte(nonce, i, peek_byte(raw, 25 + i))
+        i: i + 1
+    key: _sov_alloc(32)
+    pbkdf2_sha256(password, _sov_strlen(password), salt, 16, iters, 32, key)
+    ctb: _sov_alloc(n)
+    i: 0
+    as long as i < n
+        poke_byte(ctb, i, peek_byte(raw, 37 + i))
+        i: i + 1
+    stored: _sov_alloc(16)
+    i: 0
+    as long as i < 16
+        poke_byte(stored, i, peek_byte(raw, 37 + n + i))
+        i: i + 1
+    gm_tag_of(key, nonce, 0, 0, ctb, n)
+    if ct_eq(stored, gm_tag, 16) is 0
+        secret_wipe_bytes(key, 32)
+        return 0
+    pt: _sov_alloc(n + 1)
+    gm_ctr_dec(key, nonce, ctb, n, pt)
+    poke_byte(pt, n, 0)
+    secret_wipe_bytes(key, 32)
+    return as text pt
+
+# Destroy a vault the right way: the password is proven against
+# the tag first, and only a real vault is shredded - file_shred
+# zeroes, truncates, unlinks, and syncs the directory. 1 gone,
+# 0 wrong password or no such vault.
+vault_delete path password:
+    d: vault_load(path, password)
+    if d is 0
+        return 0
+    return file_shred(path)

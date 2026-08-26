@@ -1,0 +1,18 @@
+# ps4 - decline control: different bases and a bare immediate
+# subtract never enter the fused arm. generic path both compilers;
+# binary byte-identical.
+use sys
+
+b: 0
+c: 0
+
+main:
+    b: _sov_alloc(640)
+    c: _sov_alloc(640)
+    poke_i64(b, 8, 30)
+    poke_i64(c, 8, 7)
+    i: 1
+    d: peek_i64(b, i * 8) - peek_i64(c, i * 8)
+    print d
+    d2: peek_i64(b, i * 8) - 5
+    print d2

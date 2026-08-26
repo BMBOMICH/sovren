@@ -1,0 +1,24 @@
+# eq and ne against a scaled peek through the same arm
+main:
+    arr: _sov_alloc(8000)
+    r: 1
+    poke_raw64(arr, r * 8, 77)
+    v: 77
+    if v is peek_raw64(arr, r * 8)
+        print 501
+    if not
+        print 502
+    v: 78
+    if v is peek_raw64(arr, r * 8)
+        print 503
+    if not
+        print 504
+    if v is not peek_raw64(arr, r * 8)
+        print 505
+    if not
+        print 506
+    v: 77
+    if peek_raw64(arr, r * 8) is not v
+        print 507
+    if not
+        print 508

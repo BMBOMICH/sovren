@@ -1,0 +1,211 @@
+# poly1305.sov — the Poly1305 one-time authenticator (RFC 8439)
+#
+#   use poly1305
+#   p1305(key, msg, mlen, tag)   16-byte tag into your buffer
+#
+# Five 26-bit limbs, the donna layout. Everything is adds, multiplies
+# and masks - no branch depends on key or message bits, and the
+# final h-vs-h+5 selection is an arithmetic mask, not a branch. The
+# serialization extracts the 128 output bits one at a time so no
+# value ever has to leave 64-bit arithmetic.
+
+use bit32
+use mem
+use secret
+
+# plain 2 to the n, for n up to 25 - bit weights, never wrapped
+p13_2pow n:
+    r: 1
+    i: 0
+    as long as i < n
+        r: r * 2
+        i: i + 1
+    return r
+
+p13_le32 p off:
+    return peek_byte(p, off) + peek_byte(p, off + 1) * 256 + peek_byte(p, off + 2) * 65536 + peek_byte(p, off + 3) * 16777216
+
+p1305 key msg mlen tag:
+    private
+    # clamp r: bytes 3, 7, 11, 15 keep their low nibble; bytes 4,
+    # 8, 12 keep their top six bits. then pull the five 26-bit
+    # limbs out by absolute bit position - a byte can straddle a
+    # limb boundary, so bits are the honest way
+    rb: _sov_alloc(16)
+    i: 0
+    as long as i < 16
+        poke_byte(rb, i, peek_byte(key, i))
+        i: i + 1
+    poke_byte(rb, 3, wand(peek_byte(rb, 3), 15))
+    poke_byte(rb, 7, wand(peek_byte(rb, 7), 15))
+    poke_byte(rb, 11, wand(peek_byte(rb, 11), 15))
+    poke_byte(rb, 15, wand(peek_byte(rb, 15), 15))
+    poke_byte(rb, 4, wand(peek_byte(rb, 4), 252))
+    poke_byte(rb, 8, wand(peek_byte(rb, 8), 252))
+    poke_byte(rb, 12, wand(peek_byte(rb, 12), 252))
+    r0: 0
+    r1: 0
+    r2: 0
+    r3: 0
+    r4: 0
+    i: 0
+    as long as i < 128
+        limb: i / 26
+        bit: wand(shr(peek_byte(rb, i / 8), i % 8), 1)
+        if limb is 0
+            r0: r0 + bit * p13_2pow(i % 26)
+        if limb is 1
+            r1: r1 + bit * p13_2pow(i % 26)
+        if limb is 2
+            r2: r2 + bit * p13_2pow(i % 26)
+        if limb is 3
+            r3: r3 + bit * p13_2pow(i % 26)
+        if limb is 4
+            r4: r4 + bit * p13_2pow(i % 26)
+        i: i + 1
+    s1: r1 * 5
+    s2: r2 * 5
+    s3: r3 * 5
+    s4: r4 * 5
+    h0: 0
+    h1: 0
+    h2: 0
+    h3: 0
+    h4: 0
+    blk: _sov_alloc(16)
+    i: 0
+    as long as i < mlen
+        take: 16
+        if mlen - i < 16
+            take: mlen - i
+        j: 0
+        as long as j < 16
+            poke_byte(blk, j, 0)
+            j: j + 1
+        j: 0
+        as long as j < take
+            poke_byte(blk, j, peek_byte(msg, i + j))
+            j: j + 1
+        poke_byte(blk, take, 1)
+        t0: p13_le32(blk, 0)
+        t1: p13_le32(blk, 4)
+        t2: p13_le32(blk, 8)
+        t3: p13_le32(blk, 12)
+        hi: 16777216
+        if take < 16
+            hi: 0
+        h0: h0 + wand(t0, 67108863)
+        h1: h1 + wand(wor(shr(t0, 26), shl(t1, 6)), 67108863)
+        h2: h2 + wand(wor(shr(t1, 20), shl(t2, 12)), 67108863)
+        h3: h3 + wand(wor(shr(t2, 14), shl(t3, 18)), 67108863)
+        h4: h4 + wor(shr(t3, 8), hi)
+        # h *= r, limbs folded by 5 where they wrap the 130-bit prime
+        d0: h0 * r0 + h1 * s4 + h2 * s3 + h3 * s2 + h4 * s1
+        d1: h0 * r1 + h1 * r0 + h2 * s4 + h3 * s3 + h4 * s2
+        d2: h0 * r2 + h1 * r1 + h2 * r0 + h3 * s4 + h4 * s3
+        d3: h0 * r3 + h1 * r2 + h2 * r1 + h3 * r0 + h4 * s4
+        d4: h0 * r4 + h1 * r3 + h2 * r2 + h3 * r1 + h4 * r0
+        c: d0 / 67108864
+        h0: wand(d0, 67108863)
+        d1: d1 + c
+        c: d1 / 67108864
+        h1: wand(d1, 67108863)
+        d2: d2 + c
+        c: d2 / 67108864
+        h2: wand(d2, 67108863)
+        d3: d3 + c
+        c: d3 / 67108864
+        h3: wand(d3, 67108863)
+        d4: d4 + c
+        c: d4 / 67108864
+        h4: wand(d4, 67108863)
+        h0: h0 + c * 5
+        c: shr(h0, 26)
+        h0: wand(h0, 67108863)
+        h1: h1 + c
+        i: i + 16
+    # carry, then pick h or h+5 by an arithmetic mask: bit 31 of
+    # g4 is set exactly when the h+5 sum went negative
+    c: shr(h1, 26)
+    h1: wand(h1, 67108863)
+    h2: h2 + c
+    c: shr(h2, 26)
+    h2: wand(h2, 67108863)
+    h3: h3 + c
+    c: shr(h3, 26)
+    h3: wand(h3, 67108863)
+    h4: h4 + c
+    c: shr(h4, 26)
+    h4: wand(h4, 67108863)
+    h0: h0 + c * 5
+    c: shr(h0, 26)
+    h0: wand(h0, 67108863)
+    h1: h1 + c
+    g0: h0 + 5
+    c: shr(g0, 26)
+    g0: wand(g0, 67108863)
+    g1: h1 + c
+    c: shr(g1, 26)
+    g1: wand(g1, 67108863)
+    g2: h2 + c
+    c: shr(g2, 26)
+    g2: wand(g2, 67108863)
+    g3: h3 + c
+    c: shr(g3, 26)
+    g3: wand(g3, 67108863)
+    g4: h4 + c - 67108864
+    # g4 lies in (-2^26, 2^26): adding one limb makes it positive,
+    # and the top bit of that sum is the borrow, in plain integers
+    borrow: 1 - (g4 + 67108864) / 67108864
+    nb: 1 - borrow
+    h0: g0 * nb + h0 * borrow
+    h1: g1 * nb + h1 * borrow
+    h2: g2 * nb + h2 * borrow
+    h3: g3 * nb + h3 * borrow
+    # add s as a 128-bit number: word j sits at bit 32j, and
+    # 32j mod 26 is 6j, so each word shifts and splits across the
+    # two limbs it straddles
+    s0: p13_le32(key, 16)
+    sv1: p13_le32(key, 20)
+    sv2: p13_le32(key, 24)
+    sv3: p13_le32(key, 28)
+    h0: h0 + wand(s0, 67108863)
+    h1: h1 + wand(sv1 * 64, 67108863) + s0 / 67108864
+    h2: h2 + wand(sv2 * 4096, 67108863) + sv1 * 64 / 67108864
+    h3: h3 + wand(sv3 * 262144, 67108863) + sv2 * 4096 / 67108864
+    h4: h4 + sv3 * 262144 / 67108864
+    c: shr(h0, 26)
+    h0: wand(h0, 67108863)
+    h1: h1 + c
+    c: shr(h1, 26)
+    h1: wand(h1, 67108863)
+    h2: h2 + c
+    c: shr(h2, 26)
+    h2: wand(h2, 67108863)
+    h3: h3 + c
+    c: shr(h3, 26)
+    h3: wand(h3, 67108863)
+    h4: h4 + c
+    # serialize the low 128 bits one bit at a time
+    i: 0
+    as long as i < 16
+        poke_byte(tag, i, 0)
+        i: i + 1
+    i: 0
+    as long as i < 128
+        limb: i / 26
+        v: h0
+        if limb is 1
+            v: h1
+        if limb is 2
+            v: h2
+        if limb is 3
+            v: h3
+        if limb is 4
+            v: h4
+        bit: wand(shr(v, i % 26), 1)
+        byte: i / 8
+        poke_byte(tag, byte, peek_byte(tag, byte) + bit * p13_2pow(i % 8))
+        i: i + 1
+    secret_wipe_bytes(rb, 16)
+    return 0

@@ -1,0 +1,39 @@
+# ci2 - leaf8 slots 5-8 vs 32-bit immediates (81 /7 ladder),
+# mirrored operand order through swap_op, digit-folded results.
+ci2:
+    n0: 7
+    n1: 17
+    n2: 27
+    n3: 37
+    n4: -47
+    n5: 500
+    n6: -129
+    n7: 2000000000
+    n8: -2147483648
+    r: 0
+    if n5 > 128
+        r: r + 1
+    if n5 <= 128
+        r: r + 10
+    if n5 is 500
+        r: r + 100
+    if n6 < -128
+        r: r + 1000
+    if n6 is -129
+        r: r + 10000
+    if 128 < n5
+        r: r + 100000
+    if -128 > n6
+        r: r + 1000000
+    if n7 is 2000000000
+        r: r + 10000000
+    if n7 < 2147483647
+        r: r + 100000000
+    if -2147483648 is n8
+        r: r + 1000000000
+    if n8 is not -2147483648
+        r: r + 10000000000
+    return r
+
+main:
+    print ci2()

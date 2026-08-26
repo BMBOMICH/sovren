@@ -39,21 +39,20 @@ wa_init:
     base: wa_image_base()
     if base is 0
         return 0
-    # the PE header says where .rdata starts
+    # the IAT directory in the optional header points straight at the
+    # import table; LoadLibraryA and GetProcAddress are always the
+    # last two entries, so their addresses are the last two before
+    # the null terminator.
     pe: peek_u32(base, 60)
     if pe < 64
         return 0
-    nsec: peek_u16(base, pe + 6)
-    if nsec < 2
+    iat_rva: peek_u32(base, pe + 24 + 112 + 96)
+    iat_size: peek_u32(base, pe + 24 + 112 + 96 + 4)
+    if iat_size < 32
         return 0
-    # the second section is .rdata
-    so: pe + 24 + 240 + 40
-    rva: peek_u32(base, so + 12)
-    if rva is 0
-        return 0
-    iat: base + rva
-    wa_loadlib: peek_raw64(iat, 88)
-    wa_getproc: peek_raw64(iat, 96)
+    n: iat_size / 8
+    wa_loadlib: peek_raw64(base + iat_rva, (n - 3) * 8)
+    wa_getproc: peek_raw64(base + iat_rva, (n - 2) * 8)
     if wa_loadlib is 0
         return 0
     return 1

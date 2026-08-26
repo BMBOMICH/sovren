@@ -1,0 +1,24 @@
+# ct.sov — constant-time helpers for cryptographic comparison.
+#
+# Tag and MAC verification compare secrets. A comparison that exits
+# at the first differing byte leaks how many bytes matched through
+# its runtime, and that leak is a real attack surface (Lucky13-
+# style). ct_eq folds every byte into one accumulator with xor/or -
+# no branch in the loop reads secret data, and the final branch
+# depends only on the answer, never on where a difference sits.
+#
+# needs _sov_list
+use bit32
+
+# 1 when the first n bytes of a and b are equal, else 0
+ct_eq a b n:
+    acc: 0
+    i: 0
+    as long as i < n
+        c: peek_byte(a, i)
+        d: peek_byte(b, i)
+        acc: wor(acc, wxor(c, d))
+        i: i + 1
+    if acc is 0
+        return 1
+    return 0

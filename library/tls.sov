@@ -1,7 +1,6 @@
 # tls.sov — a TLS 1.2 client, in Sovren.
 #
-# The bots used to hand https to curl because there was no TLS. Now
-# there is one: the record layer, the AES-128-GCM from gcm.sov, the
+# Sovren speaks https itself: the record layer, the AES-128-GCM from gcm.sov, the
 # PRF on hmac.sov, and ECDHE key exchange on X25519 from
 # x25519.sov, with the server's RSA certificate (read by a small
 # DER walk) only signing the ServerKeyExchange. The cipher is

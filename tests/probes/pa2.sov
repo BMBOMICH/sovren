@@ -1,0 +1,20 @@
+# pa2 - poke-accumulate with a parameter (register) base: the
+# address build rewrites the load tail byte, rax is never read.
+# b[i] += i*3 - 100 for i 0..2.
+use sys
+
+acc buf n:
+    i: 0
+    as long as i < n
+        poke_i64(buf, i * 8, peek_i64(buf, i * 8) + i * 3 - 100)
+        i: i + 1
+
+main:
+    b: _sov_alloc(640)
+    poke_i64(b, 0, 50)
+    poke_i64(b, 8, 60)
+    poke_i64(b, 16, 70)
+    acc(b, 3)
+    print peek_i64(b, 0)
+    print peek_i64(b, 8)
+    print peek_i64(b, 16)

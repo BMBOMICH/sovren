@@ -1,0 +1,10 @@
+evs: 0
+chk lim:
+    evs: evs + 1
+    return evs < lim
+main:
+    laps: 0
+    as long as chk(4)
+        laps: laps + 1
+    print laps
+    print evs

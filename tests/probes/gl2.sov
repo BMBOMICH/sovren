@@ -1,0 +1,18 @@
+# gl2 - base swap: two global buffers alternating through the
+# direct-to-rdi loads, plus a local holding a buffer pointer in
+# between. no stale base may ever survive a statement.
+use sys
+
+b: 0
+c: 0
+
+main:
+    b: _sov_alloc(128)
+    c: _sov_alloc(128)
+    poke_i64(b, 0, 11)
+    poke_i64(c, 0, 99)
+    print peek_i64(b, 0)
+    t: c
+    print peek_i64(t, 0)
+    print peek_i64(c, 0)
+    print peek_i64(b, 0)

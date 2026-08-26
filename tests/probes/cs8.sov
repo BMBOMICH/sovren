@@ -1,0 +1,35 @@
+# name-vs-scaled-peek as a while guard, value re-loaded per lap
+main:
+    arr: _sov_alloc(8000)
+    poke_raw64(arr, 0, 1)
+    poke_raw64(arr, 8, 10)
+    poke_raw64(arr, 16, 19)
+    poke_raw64(arr, 24, 28)
+    poke_raw64(arr, 32, 28)
+    poke_raw64(arr, 40, 46)
+    v: 12
+    r: 2
+    c: 0
+    as long as v < peek_raw64(arr, r * 8)
+        v: peek_raw64(arr, r * 8)
+        c: c + 1
+        r: r + 1
+    print v
+    print c
+    print r
+    poke_raw64(arr, 0, 46)
+    poke_raw64(arr, 8, 37)
+    poke_raw64(arr, 16, 28)
+    poke_raw64(arr, 24, 19)
+    poke_raw64(arr, 32, 19)
+    poke_raw64(arr, 40, 1)
+    w: 30
+    s: 2
+    d: 0
+    as long as w > peek_raw64(arr, s * 8)
+        w: peek_raw64(arr, s * 8)
+        d: d + 2
+        s: s + 1
+    print w
+    print d
+    print s

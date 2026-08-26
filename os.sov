@@ -1,0 +1,187 @@
+# os.sov — the Sovren OS scaffold.
+#
+# The arm machine in library/arm.sov is the hardware: memory that
+# faults at its edges, instructions that mean one thing, syscalls
+# that answer. This is the layer above it: a loader that brings
+# programs in, a shell that starts them and reports how they
+# ended, and a home folder the programs live in.
+#
+#   run <name>   load and run an arm program in OS_HOME
+#   ls           what lives in OS_HOME
+#   cat <file>   read a file out of it
+#   help         this list
+#   exit         power off
+#
+# A command file on the command line is read instead of the
+# keyboard, the same deal as the repl.
+use arm
+use lz2
+use run
+use file
+use string
+use num
+use arg
+
+OS_HOME: "/tmp/sov-os"
+OS_FILE: 0
+OS_TXT: ""
+OS_POS: 0
+
+os_path n:
+    return str_cat(str_cat(OS_HOME, "/"), n)
+
+os_prompt:
+    write_out("os> ")
+    return 0
+
+# one line from the script file when there is one, else the
+# keyboard. run_eof says the keyboard ran out
+os_src:
+    if OS_FILE is 1
+        t: OS_TXT
+        n: str_len(t)
+        if OS_POS >= n
+            return ""
+        i: OS_POS
+        j: i
+        more: 1
+        as long as more is 1
+            if j >= n
+                more: 0
+            if not
+                if peek_byte(t, j) is 10
+                    more: 0
+                if not
+                    j: j + 1
+        line: str_cut(t, i, j)
+        ln: str_len(line)
+        if ln > 0
+            if peek_byte(line, ln - 1) is 13
+                line: str_cut(line, 0, ln - 1)
+        OS_POS: j + 1
+        return line
+    return run_line()
+
+# compress a program in place: NAME -> NAME.szv, runnable as-is
+os_pack name:
+    p: os_path(name)
+    if file_exists(p) is 0
+        write_out("no such program: ")
+        write_out(name)
+        write_out("\n")
+        return 0
+    d: file_read_all(p)
+    if peek_byte(d, 0) is not 127
+        write_out("not an arm program: ")
+        write_out(name)
+        write_out("\n")
+        return 0
+    n: file_size(p)
+    pb: lz2h_packb(d, n)
+    if pb is 0
+        write_out("would not compress: ")
+        write_out(name)
+        write_out("\n")
+        return 0
+    q: str_cat(p, ".szv")
+    if file_write_bytes(q, pb, lz2h_plen(pb)) is 0
+        write_out("write failed: ")
+        write_out(q)
+        write_out("\n")
+        return 0
+    write_out(name)
+    write_out(": ")
+    write_out(num_text(n))
+    write_out(" -> ")
+    write_out(num_text(lz2h_plen(pb)))
+    write_out("\n")
+    return 0
+
+# load and run a program on the machine
+os_run name:
+    p: os_path(name)
+    if file_exists(p) is 0
+        write_out("no such program: ")
+        write_out(name)
+        write_out("\n")
+        return 0
+    m: arm_new()
+    if arm_load(m, p) is 0
+        write_out("would not load: ")
+        write_out(name)
+        write_out("\n")
+        return 0
+    arm_run(m)
+    write_out(arm_out(m))
+    if str_len(arm_out(m)) > 0
+        if peek_byte(arm_out(m), str_len(arm_out(m)) - 1) is not 10
+            write_out("\n")
+    w: arm_why(m)
+    if w is 2
+        write_out("[refused: bad code]\n")
+        return 0
+    write_out("[exit ")
+    write_out(num_text(arm_code(m)))
+    write_out("]\n")
+    return 0
+
+os_cat name:
+    p: os_path(name)
+    if file_exists(p) is 0
+        write_out("no such file: ")
+        write_out(name)
+        write_out("\n")
+        return 0
+    write_out(file_read_all(p))
+    return 0
+
+main:
+    write_out("Sovren OS 0.1 — the arm machine inside\n")
+    write_out("home: ")
+    write_out(OS_HOME)
+    write_out("\n")
+    dummy: run_sh(str_cat("mkdir -p ", OS_HOME))
+    sc: arg_at(1)
+    if str_len(sc) > 0
+        OS_TXT: file_read_all(sc)
+        OS_FILE: 1
+    going: 1
+    as long as going is 1
+        if OS_FILE is 0
+            os_prompt()
+        line: os_src()
+        if run_eof_dummy() is 1
+            going: 0
+        if not
+            if str_eq(line, "exit") is 1
+                going: 0
+            if not
+                hit: 0
+            if str_eq(line, "help") is 1
+                write_out("run NAME  pack NAME  ls  cat FILE  help  exit\n")
+                hit: 1
+            if str_starts(line, "run ") is 1
+                dummy: os_run(str_cut(line, 4, str_len(line)))
+                hit: 1
+            if str_starts(line, "pack ") is 1
+                dummy: os_pack(str_cut(line, 5, str_len(line)))
+                hit: 1
+            if str_eq(line, "ls") is 1
+                write_out(run_sh(str_cat("ls ", OS_HOME)))
+                hit: 1
+            if str_starts(line, "cat ") is 1
+                dummy: os_cat(str_cut(line, 4, str_len(line)))
+                hit: 1
+            if hit is 0
+                if str_len(line) > 0
+                    write_out("no such command: ")
+                    write_out(line)
+                    write_out("\n")
+    write_out("power off\n")
+
+run_eof_dummy:
+    if OS_FILE is 1
+        if OS_POS >= str_len(OS_TXT)
+            return 1
+        return 0
+    return RUN_EOF

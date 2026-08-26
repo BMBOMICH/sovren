@@ -1,0 +1,13 @@
+# sa2 - sq_acc 2-term twin: 16+81, then 100.
+use sys
+
+g: 0
+
+main:
+    g: _sov_alloc(128)
+    poke_i64(g, 0, 3)
+    a: 4
+    b: 9
+    s: a * a + b * b
+    print s
+    print s + peek_i64(g, 0)

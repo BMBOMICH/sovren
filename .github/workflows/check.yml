@@ -30,15 +30,15 @@ jobs:
       - name: the exe is well formed before running it
         shell: pwsh
         run: |
-          $b = [IO.File]::ReadAllBytes("windows\sovren.exe")
+          $b = [IO.File]::ReadAllBytes("sovren.exe")
           if ($b[0] -ne 0x4D -or $b[1] -ne 0x5A) { throw "not a PE file" }
           $pe = [BitConverter]::ToInt32($b, 0x3c)
           $chars = [BitConverter]::ToUInt16($b, $pe + 22)
           $dll = [BitConverter]::ToUInt16($b, $pe + 24 + 70)
           "Characteristics    : 0x{0:X}" -f $chars
           "DllCharacteristics : 0x{0:X}" -f $dll
-          if (($chars -band 1) -eq 0) { throw "relocations not stripped but there is no reloc table" }
-          if (($dll -band 0x40) -ne 0) { throw "claims ASLR with no reloc table: Windows will move it and it will die" }
+          if (($chars -band 1) -ne 0) { throw "RELOCS_STRIPPED still set: the S7 exe must carry its relocs" }
+          if (($dll -band 0x40) -eq 0) { throw "DYNAMIC_BASE not set: ASLR is off; S7 promised it on" }
           $n = 0
           for ($i = 0; $i -lt $b.Length - 1; $i++) { if ($b[$i] -eq 0x0F -and $b[$i+1] -eq 0x05) { $n++ } }
           "raw linux syscall instructions: $n"
@@ -51,7 +51,7 @@ jobs:
         run: |
           # with no arguments it prints how to use it and exits 1.
           # that is correct. anything negative is a crash.
-          $out = (.\windows\sovren.exe 2>&1 | Out-String)
+          $out = (.\sovren.exe 2>&1 | Out-String)
           $code = $LASTEXITCODE
           $out.Trim()
           "exit=$code"
@@ -65,7 +65,7 @@ jobs:
       - name: hello.sov
         shell: pwsh
         run: |
-          .\windows\sovren.exe hello.sov -o hello.exe
+          .\sovren.exe hello.sov -o hello.exe
           if ($LASTEXITCODE -ne 0) { throw "compile failed, exit $LASTEXITCODE" }
           if (-not (Test-Path hello.exe)) { throw "nothing was written" }
           $o = (.\hello.exe | Out-String).Trim()
@@ -80,7 +80,7 @@ jobs:
         run: |
           function Try-One($name, $src, $want) {
             $src | Set-Content -NoNewline t.sov
-            .\windows\sovren.exe t.sov -o t.exe 2>&1 | Out-Null
+            .\sovren.exe t.sov -o t.exe 2>&1 | Out-Null
             if ($LASTEXITCODE -ne 0) { throw "$name : compile failed, exit $LASTEXITCODE" }
             $g = (.\t.exe | Out-String).Trim() -replace "`r`n", " "
             "{0,-22} {1}" -f $name, $g
@@ -109,7 +109,7 @@ jobs:
         run: |
           function Must-Fail($name, $src) {
             $src | Set-Content -NoNewline bad.sov
-            $out = (.\windows\sovren.exe bad.sov -o bad.exe 2>&1 | Out-String)
+            $out = (.\sovren.exe bad.sov -o bad.exe 2>&1 | Out-String)
             "{0,-22} exit={1}" -f $name, $LASTEXITCODE
             if ($LASTEXITCODE -eq 0) { throw "$name : should have been rejected but compiled" }
           }
@@ -128,7 +128,7 @@ jobs:
           foreach ($f in Get-ChildItem library\*.sov) {
             $n = $f.BaseName
             "use $n`nmain:`n    print 1" | Set-Content -NoNewline lib.sov
-            .\windows\sovren.exe lib.sov -o lib.exe 2>&1 | Out-Null
+            .\sovren.exe lib.sov -o lib.exe 2>&1 | Out-Null
             if ($LASTEXITCODE -ne 0) { $fail += "$n (build, exit $LASTEXITCODE)"; continue }
             $g = (.\lib.exe | Out-String).Trim()
             if ($LASTEXITCODE -ne 0) { $fail += "$n (run, exit $LASTEXITCODE)"; continue }
@@ -145,7 +145,7 @@ jobs:
         run: |
           function Try-One($name, $src, $want) {
             $src | Set-Content -NoNewline t.sov
-            .\windows\sovren.exe t.sov -o t.exe 2>&1 | Out-Null
+            .\sovren.exe t.sov -o t.exe 2>&1 | Out-Null
             $g = (.\t.exe | Out-String).Trim()
             "{0,-10} {1}" -f $name, $g
             if ($g -ne $want) { throw "$name : wanted $want" }
@@ -164,19 +164,19 @@ jobs:
         shell: pwsh
         run: |
           "use file`nmain:`n    file_write_all(`"w.txt`", `"hi there`")`n    print file_read_all(`"w.txt`")" | Set-Content -NoNewline t.sov
-          .\windows\sovren.exe t.sov -o t.exe
+          .\sovren.exe t.sov -o t.exe
           $g = (.\t.exe | Out-String).Trim()
           "file round trip : $g"
           if ($g -ne "hi there") { throw "file io broken" }
 
           "use file`nmain:`n    print file_exists(`"hello.sov`")" | Set-Content -NoNewline t.sov
-          .\windows\sovren.exe t.sov -o t.exe
+          .\sovren.exe t.sov -o t.exe
           $g = (.\t.exe | Out-String).Trim()
           "file_exists     : $g"
           if ($g -ne "1") { throw "file_exists broken" }
 
           "use arg`nmain:`n    print arg_count()`n    print as text arg_at(1)" | Set-Content -NoNewline t.sov
-          .\windows\sovren.exe t.sov -o t.exe
+          .\sovren.exe t.sov -o t.exe
           $g = (.\t.exe one two | Out-String).Trim() -replace "`r`n", " "
           "arguments       : $g"
           if ($g -ne "3 one") { throw "arguments broken" }
@@ -189,7 +189,7 @@ jobs:
           New-Item -ItemType Directory -Force elsewhere | Out-Null
           Set-Location elsewhere
           "use string`nmain:`n    print str_copy(`"found its library`")" | Set-Content -NoNewline q.sov
-          ..\windows\sovren.exe q.sov -o q.exe
+          ..\sovren.exe q.sov -o q.exe
           if ($LASTEXITCODE -ne 0) { throw "could not compile from another folder, exit $LASTEXITCODE" }
           $g = (.\q.exe | Out-String).Trim()
           $g
@@ -200,9 +200,9 @@ jobs:
       - name: sovren.exe builds itself, byte for byte
         shell: pwsh
         run: |
-          .\windows\sovren.exe windows\compiler.sov -o gen2.exe
+          .\sovren.exe compilers\windows\compiler.sov -o gen2.exe
           if ($LASTEXITCODE -ne 0) { throw "self build failed, exit $LASTEXITCODE" }
-          .\gen2.exe windows\compiler.sov -o gen3.exe
+          .\gen2.exe compilers\windows\compiler.sov -o gen3.exe
           if ($LASTEXITCODE -ne 0) { throw "gen2 could not build, exit $LASTEXITCODE" }
           $a = (Get-FileHash gen2.exe -Algorithm SHA256).Hash
           $b = (Get-FileHash gen3.exe -Algorithm SHA256).Hash
@@ -215,10 +215,10 @@ jobs:
       - name: it can build bare metal too
         shell: pwsh
         run: |
-          # windows\sovren.exe is the Windows back end. The target
+          # sovren.exe is the Windows back end. The target
           # flags are the launcher's job, and the launcher is a Linux
           # program, so only --bare applies here.
-          .\windows\sovren.exe hello.sov --bare -o out.bin 2>&1 | Out-Null
+          .\sovren.exe hello.sov --bare -o out.bin 2>&1 | Out-Null
           "--bare exit=$LASTEXITCODE"
           if ($LASTEXITCODE -ne 0) { throw "--bare failed from Windows" }
           $global:LASTEXITCODE = 0
@@ -229,7 +229,7 @@ jobs:
         run: |
           foreach ($f in @("guess.sov", "show.sov", "play.sov", "mysite.sov", "edit.sov")) {
             if (-not (Test-Path $f)) { continue }
-            .\windows\sovren.exe $f -o ex.exe 2>&1 | Out-Null
+            .\sovren.exe $f -o ex.exe 2>&1 | Out-Null
             "{0,-14} exit={1}" -f $f, $LASTEXITCODE
             if ($LASTEXITCODE -ne 0) { throw "$f does not compile on Windows" }
           }
@@ -252,14 +252,14 @@ jobs:
       # x86-64, so it needs Rosetta. If Rosetta is absent that is the
       # machine's doing, not a fault in the binary, so the checker
       # says so and moves on; the header is checked either way. The
-      # checker is itself a Sovren binary (mac/check.sov, built with
+      # checker is itself a Sovren binary (tests/macos-check.sov, built with
       # --mac), so this job is one program, not a Python script.
       - name: the Mach-O we ship is well formed, and runs through Rosetta
         run: |
-          test -f mac/check || { echo "mac/check missing from the repo"; exit 1; }
-          chmod +x mac/check mac/hello
+          test -f tests/macos-check || { echo "tests/macos-check missing from the repo"; exit 1; }
+          chmod +x tests/macos-check mac/hello
           file mac/hello
-          ./mac/check
+          ./tests/macos-check
 
   # ------------------------------------------------------------------
   arm64:
@@ -277,10 +277,10 @@ jobs:
 
       - name: the prebuilt arm64 binary runs
         run: |
-          test -f arm64/check || { echo "arm64/check missing from the repo"; exit 1; }
-          chmod +x arm64/check arm64/hello
-          file arm64/hello
-          ./arm64/check
+          test -f tests/arm64/check || { echo "tests/arm64/check missing from the repo"; exit 1; }
+          chmod +x tests/arm64/check tests/arm64/hello
+          file tests/arm64/hello
+          ./tests/arm64/check
 
   # ------------------------------------------------------------------
   linux:
@@ -293,15 +293,15 @@ jobs:
           grep -m1 "model name" /proc/cpuinfo
           echo "avx512 present:"; grep -o avx512f /proc/cpuinfo | head -1 || echo "  no"
       - name: make things runnable
-        run: chmod +x sovren linux/compiler mac/compiler windows/compiler android/compiler android/compiler_so ios/compiler mac/check mac/hello arm64/check arm64/hello
+        run: chmod +x sovren compilers/linux/compiler compilers/macos/compiler compilers/windows/compiler compilers/android/compiler compilers/android-so/compiler compilers/ios/compiler tests/macos-check mac/hello tests/arm64/check tests/arm64/hello
       - name: a screen to draw on
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq xvfb x11-utils imagemagick python3-pil
       - name: the whole suite
-        # check/run.sov is the test battery, written in Sovren
+        # tests/run.sov is the test battery, written in Sovren
         run: |
-          ./sovren check/run.sov -o /tmp/sov-run
+          ./sovren tests/run.sov -o /tmp/sov-run
           chmod +x /tmp/sov-run
           /tmp/sov-run
       - name: long double, on the processor written in Sovren
@@ -447,8 +447,8 @@ jobs:
           # library/x86.sov is a processor written in Sovren. It runs
           # the PE and the Mach-O this compiler emits, with no Wine,
           # no Unicorn and no Python. It is strict where Wine is not.
-          ./sovren windows/run.sov -o /tmp/wrun && chmod +x /tmp/wrun
-          ./sovren mac/run.sov -o /tmp/mrun && chmod +x /tmp/mrun
+          ./sovren tests/windows-run.sov -o /tmp/wrun && chmod +x /tmp/wrun
+          ./sovren tests/macos-run.sov -o /tmp/mrun && chmod +x /tmp/mrun
           ./sovren hello.sov --windows -o /tmp/h.exe
           ./sovren hello.sov --mac -o /tmp/h.mac
           /tmp/wrun /tmp/h.exe > /tmp/w.txt
@@ -533,7 +533,7 @@ jobs:
           # must match the one built natively, byte for byte, and
           # the exe must run.
           #
-          # Note: compiling the whole of windows/compiler.sov inside
+          # Note: compiling the whole of compilers/windows/compiler.sov inside
           # the emulator was tried at a 40,000,000,000 step budget
           # and did not finish in a sensible time: the emulator does
           # about 2.5M steps a second on that workload, so the full
@@ -545,7 +545,7 @@ jobs:
           use string
           main:
               m: x86_new()
-              if x86_load(m, "windows/sovren.exe") is 0
+              if x86_load(m, "sovren.exe") is 0
                   print "cannot load sovren.exe"
                   stop
               x_set_cmdline(m, "sovren.exe hello.sov -o /tmp/hello-emu.exe")
@@ -565,15 +565,15 @@ jobs:
           echo "from emu $a"
           echo "native  $b"
           test "$a" = "$b"
-          ./sovren windows/run.sov -o /tmp/wrun && chmod +x /tmp/wrun
+          ./sovren tests/windows-run.sov -o /tmp/wrun && chmod +x /tmp/wrun
           /tmp/wrun /tmp/hello-emu.exe | grep -q "Hello from Sovren"
           echo "the exe built inside the emulator is byte-identical and runs"
       - name: self host, byte for byte, three times
         run: |
-          ./sovren linux/compiler.sov -o /tmp/g1 && chmod +x /tmp/g1
-          /tmp/g1 linux/compiler.sov -o /tmp/g2 && chmod +x /tmp/g2
-          /tmp/g2 linux/compiler.sov -o /tmp/g3
-          a=$(sha256sum linux/compiler | cut -d' ' -f1)
+          ./sovren compilers/linux/compiler.sov -o /tmp/g1 && chmod +x /tmp/g1
+          /tmp/g1 compilers/linux/compiler.sov -o /tmp/g2 && chmod +x /tmp/g2
+          /tmp/g2 compilers/linux/compiler.sov -o /tmp/g3
+          a=$(sha256sum compilers/linux/compiler | cut -d' ' -f1)
           b=$(sha256sum /tmp/g3 | cut -d' ' -f1)
           echo "shipped $a"
           echo "gen3    $b"

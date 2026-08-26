@@ -1,0 +1,18 @@
+# pa1 - poke-accumulate fusion, add-to-memory form: global base,
+# register index, T has a multiply. b[i] += 10*(i+1) for i 0..2.
+use sys
+
+b: 0
+
+main:
+    b: _sov_alloc(640)
+    poke_i64(b, 0, 1000)
+    poke_i64(b, 8, 2000)
+    poke_i64(b, 16, 5)
+    i: 0
+    as long as i < 3
+        poke_i64(b, i * 8, peek_i64(b, i * 8) + 10 * (i + 1))
+        i: i + 1
+    print peek_i64(b, 0)
+    print peek_i64(b, 8)
+    print peek_i64(b, 16)

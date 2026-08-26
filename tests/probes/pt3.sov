@@ -1,0 +1,17 @@
+# pt3 - decline: T has a global atom (gg), evaluating it walks
+# memory - old rcx-staging path runs, binary byte-identical.
+use sys
+
+v: 0
+
+gg: 0
+
+main:
+    v: _sov_alloc(640)
+    gg: 7
+    poke_i64(v, 8, 31)
+    i: 1
+    dx: 6
+    poke_i64(v, i * 8, peek_i64(v, i * 8) + dx * gg)
+    print peek_i64(v, 8)
+    print peek_i64(v, 8) + gg

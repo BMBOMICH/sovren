@@ -1,0 +1,16 @@
+use sys
+main:
+    arr: _sov_alloc(80)
+    poke_i64(arr, 0, 5)
+    poke_i64(arr, 8, 0 - 3)
+    poke_i64(arr, 16, 7)
+    poke_i64(arr, 24, 0 - 9)
+    poke_i64(arr, 32, 4)
+    m: 0 - 100
+    i: 0
+    as long as i < 5
+        v: peek_i64(arr, i * 8)
+        if m < v
+            m: v
+        i: i + 1
+    print m

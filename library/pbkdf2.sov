@@ -1,0 +1,60 @@
+# pbkdf2.sov — PBKDF2-HMAC-SHA256 (RFC 8018) in pure Sovren
+#
+# The password-to-key stretcher. c iterations of HMAC, the classic
+# work factor: pick c so a guess costs the attacker a year and the
+# user a moment. Every intermediate is wiped before return.
+#
+#   use pbkdf2
+#   pbkdf2_sha256(pw, pw_n, salt, salt_n, iters, n, out)  out: n bytes
+#
+# n above 32 works: extra 32-byte blocks are derived with the
+# RFC's big-endian block counter, up to (2^32 - 1) * 32 bytes.
+
+use hmac
+use secret
+use mem
+use bit32
+
+pbkdf2_sha256 pw pw_n salt salt_n iters n out:
+    sb: _sov_alloc(salt_n + 4)
+    j: 0
+    as long as j < salt_n
+        poke_byte(sb, j, peek_byte(salt, j))
+        j: j + 1
+    u: _sov_alloc(32)
+    t: _sov_alloc(32)
+    done: 0
+    i: 1
+    private
+    as long as done < n
+        # U1 = HMAC(P, S || INT_32_BE(i))
+        poke_byte(sb, salt_n, wand(shr(i, 24), 255))
+        poke_byte(sb, salt_n + 1, wand(shr(i, 16), 255))
+        poke_byte(sb, salt_n + 2, wand(shr(i, 8), 255))
+        poke_byte(sb, salt_n + 3, wand(i, 255))
+        hmac_raw(pw, pw_n, sb, salt_n + 4, u)
+        j: 0
+        as long as j < 32
+            poke_byte(t, j, peek_byte(u, j))
+            j: j + 1
+        c: 1
+        as long as c < iters
+            hmac_raw(pw, pw_n, u, 32, u)
+            j: 0
+            as long as j < 32
+                poke_byte(t, j, wxor(peek_byte(t, j), peek_byte(u, j)))
+                j: j + 1
+            c: c + 1
+        take: 32
+        if n - done < 32
+            take: n - done
+        j: 0
+        as long as j < take
+            poke_byte(out, done + j, peek_byte(t, j))
+            j: j + 1
+        done: done + take
+        i: i + 1
+    secret_wipe_bytes(u, 32)
+    secret_wipe_bytes(t, 32)
+    secret_wipe_bytes(sb, salt_n + 4)
+    return 1

@@ -1,0 +1,1649 @@
+# tests/run.sov — the whole check battery, written in Sovren.
+#
+# Build every check
+# program, run the two emulators, run a real C program on one of
+# them, draw on a screen when there is one, and report. It is all
+# Sovren now. What still runs underneath is only the same tools
+# any check must use: gcc to build a C program, python3 to read a
+# PE import table, Xvfb to make a screen where there is none.
+#
+#   ./sovren tests/run.sov -o /tmp/sov-run && /tmp/sov-run
+#
+# Each check prints ok, FAIL or skip and the run ends with a
+# summary and a useful exit code.
+#
+use arg
+use file
+use num
+use proc
+use string
+use sys
+use aes
+use gcm
+use tls
+use json
+use x25519
+
+# ---- how it reports ----
+cr_pass: 0
+cr_fail: 0
+cr_skipn: 0
+
+cr_ok name:
+    write_out("ok ")
+    write_out(name)
+    write_out("\n")
+    cr_pass: cr_pass + 1
+    return 0
+
+cr_bad name:
+    write_out("FAIL ")
+    write_out(name)
+    write_out("\n")
+    cr_fail: cr_fail + 1
+    return 0
+
+cr_skip name:
+    write_out("skip ")
+    write_out(name)
+    write_out("\n")
+    cr_skipn: cr_skipn + 1
+    return 0
+
+# is this tool around? looked up by a few likely homes
+cr_which name:
+    p: str_cat("/usr/bin/", name)
+    if file_exists(p) is 1
+        return p
+    p: str_cat("/usr/local/bin/", name)
+    if file_exists(p) is 1
+        return p
+    p: str_cat("/bin/", name)
+    if file_exists(p) is 1
+        return p
+    return 0
+
+# ---- running one thing, with stdin, output and a timeout ----
+# The caller sets cr_mode (0 inherit, 1 feed, 2 devnull), cr_data
+# (the bytes to feed) and cr_tout (seconds before the watchdog
+# kills it). The output lands in cr_out and the exit code in cr_rc;
+# 124 means the watchdog caught it.
+
+cr_mode: 0
+cr_data: ""
+cr_tout: 120
+cr_out: ""
+cr_rc: 0
+
+# the low thirty-two bits of a pipe, which carries the two file
+# numbers side by side
+cr_pr fds:
+    return peek_i64(fds, 0) % 4294967296
+
+cr_pw fds:
+    return peek_i64(fds, 0) / 4294967296
+
+cr_go path args envp:
+    if file_exists("/tmp/cr-timeout") is 1
+        file_delete("/tmp/cr-timeout")
+    cr_out: ""
+    opf: _sov_alloc(16)
+    sys_pipe(opf)
+    ipf: 0
+    if cr_mode is 1
+        ipf: _sov_alloc(16)
+        sys_pipe(ipf)
+    pid: proc_fork()
+    if pid is 0
+        sys_dup2(cr_pw(opf), 1)
+        sys_close(cr_pr(opf))
+        if cr_mode is 1
+            sys_dup2(cr_pr(ipf), 0)
+            sys_close(cr_pw(ipf))
+        if not
+            if cr_mode is 2
+                nf: sys_open("/dev/null", 0)
+                sys_dup2(nf, 0)
+                sys_close(nf)
+        sys_exec(path, args, envp)
+        sys_exit(127)
+    sys_close(cr_pw(opf))
+    wr: 0
+    if cr_mode is 1
+        sys_close(cr_pr(ipf))
+        wr: proc_fork()
+        if wr is 0
+            n: str_len(cr_data)
+            sys_write(cr_pw(ipf), cr_data, n)
+            sys_close(cr_pw(ipf))
+            sys_exit(0)
+        sys_close(cr_pw(ipf))
+    if cr_tout is 0
+        # a server: it is meant to keep running, so take its pid and
+        # do not wait for it or read what it writes
+        sys_close(cr_pr(opf))
+        cr_rc: 0
+        cr_lastpid: pid
+        return 0
+    wd: 0
+    if cr_tout > 0
+        wd: proc_fork()
+        if wd is 0
+            # wake once a second: when the child is gone, leave at
+            # once; when the time is up, mark it and kill it
+            i: 0
+            as long as i < cr_tout
+                ts: _sov_alloc(16)
+                poke_i64(ts, 0, 1)
+                poke_i64(ts, 8, 0)
+                sys_nanosleep(ts)
+                if sys_kill(pid, 0) is not 0
+                    sys_exit(0)
+                i: i + 1
+            file_write_all("/tmp/cr-timeout", "1")
+            proc_kill9(pid)
+            sys_exit(0)
+    out: ""
+    buf: _sov_alloc(8192)
+    more: 1
+    as long as more is 1
+        n: sys_read(cr_pr(opf), buf, 8192)
+        if n <= 0
+            more: 0
+        if not
+            poke_byte(buf, n, 0)
+            t: as text buf
+            out: str_cat(out, t)
+    sys_close(cr_pr(opf))
+    # wait4 wants a place to put the status; sys_wait passes none
+    # and comes back with the pid instead
+    stp: _sov_alloc(8)
+    syscall(61, pid, stp, 0, 0, 0, 0)
+    st: peek_i64(stp, 0)
+    if wr is not 0
+        syscall(61, wr, stp, 0, 0, 0, 0)
+    if wd is not 0
+        syscall(61, wd, stp, 0, 0, 0, 0)
+    code: (st / 256) % 256
+    if st % 256 is not 0
+        code: 128 + st % 256
+    if file_exists("/tmp/cr-timeout") is 1
+        code: 124
+        file_delete("/tmp/cr-timeout")
+    cr_rc: code
+    cr_out: out
+    cr_lastpid: pid
+    return code
+
+# a plain run: inherit stdin, capture stdout
+cr_run path args envp tout:
+    cr_mode: 0
+    cr_tout: tout
+    return cr_go(path, args, envp)
+
+# run with a fixed string fed to stdin
+cr_run_in path args envp data tout:
+    cr_mode: 1
+    cr_data: data
+    cr_tout: tout
+    return cr_go(path, args, envp)
+
+# run with nothing to read
+cr_run_dev path args envp tout:
+    cr_mode: 2
+    cr_tout: tout
+    return cr_go(path, args, envp)
+
+# build one source with the launcher
+cr_build src out flag:
+    args: _sov_alloc(64)
+    poke_i64(args, 0, "./sovren")
+    poke_i64(args, 8, src)
+    poke_i64(args, 16, "-o")
+    poke_i64(args, 24, out)
+    if str_len(flag) > 0
+        poke_i64(args, 32, flag)
+        poke_i64(args, 40, 0)
+    if not
+        poke_i64(args, 32, 0)
+    cr_run("./sovren", args, 0, 120)
+    return cr_rc
+
+# run a built program
+cr_bin path tout:
+    args: _sov_alloc(16)
+    poke_i64(args, 0, path)
+    poke_i64(args, 8, 0)
+    cr_run(path, args, 0, tout)
+    return cr_rc
+
+# one line of a program: source plus a newline
+cr_line src s:
+    return str_cat(str_cat(src, s), "\n")
+
+# two files the same, byte for byte
+cr_same a b:
+    if file_size(a) is not file_size(b)
+        return 0
+    n: file_size(a)
+    d1: file_read_all(a)
+    d2: file_read_all(b)
+    i: 0
+    as long as i < n
+        if peek_byte(d1, i) is not peek_byte(d2, i)
+            return 0
+        i: i + 1
+    return 1
+
+# every byte except newlines, for the outputs that end one per line
+cr_flat s:
+    n: str_len(s)
+    o: _sov_alloc(n + 1)
+    j: 0
+    i: 0
+    as long as i < n
+        c: peek_byte(s, i)
+        if c is 10
+            i: i + 1
+        if not
+            if c is 13
+                i: i + 1
+            if not
+                poke_byte(o, j, c)
+                j: j + 1
+                i: i + 1
+    poke_byte(o, j, 0)
+    return o
+
+# two strings the same, byte for byte
+cr_eqs a b:
+    if str_len(a) is not str_len(b)
+        return 0
+    n: str_len(a)
+    i: 0
+    as long as i < n
+        if peek_byte(a, i) is not peek_byte(b, i)
+            return 0
+        i: i + 1
+    return 1
+
+# a string with a trailing newline taken off
+cr_trim s:
+    n: str_len(s)
+    if n > 0
+        if peek_byte(s, n - 1) is 10
+            return str_cut(s, 0, n - 1)
+    return s
+
+# ---------------------------------------------------------------
+# the checks
+# ---------------------------------------------------------------
+
+# ---- the Sovren suite ----
+ck_all:
+    r: cr_build("tests/all.sov", "/tmp/sov-all", "")
+    if r is 0
+        cr_bin("/tmp/sov-all", 300)
+        if cr_rc is 0
+            cr_ok("the Sovren suite")
+        if not
+            cr_bad("the Sovren suite")
+    if not
+        cr_bad("could not build tests/all.sov")
+    return 0
+
+# ---- the arm emulator, against the C one ----
+ck_arm_emu:
+    r: cr_build("tests/arm64/run.sov", "/tmp/sov-armrun", "")
+    if r is not 0
+        cr_bad("could not build tests/arm64/run.sov")
+        return 0
+    src: cr_line("", "main:")
+    src: cr_line(src, "    print 5 * 3 / 2")
+    file_write_all("/tmp/sov-ea.sov", src)
+    cr_build("/tmp/sov-ea.sov", "/tmp/sov-arm.bin", "--android")
+    cr_bin("/tmp/sov-armrun", 300)
+    g: cr_trim(cr_out)
+    if str_eq(g, "7") is 1
+        cr_ok("arm-emulator-in-sovren")
+    if not
+        cr_bad("arm-emulator-in-sovren")
+    src: cr_line("", "use sha256")
+    src: cr_line(src, "main:")
+    src: cr_line(src, "    print sha256_hex(\"abc\")")
+    file_write_all("/tmp/sov-ea2.sov", src)
+    cr_build("/tmp/sov-ea2.sov", "/tmp/sov-arm.bin", "--android")
+    cr_bin("/tmp/sov-armrun", 300)
+    g: cr_trim(cr_out)
+    if str_eq(g, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad") is 1
+        cr_ok("arm-emulator-sha256")
+    if not
+        cr_bad("arm-emulator-sha256")
+    return 0
+
+# ---- AArch64 encodings and the back end ----
+ck_arm64:
+    r: cr_build("tests/arm64/verify.sov", "/tmp/sov-verify", "")
+    if r is 0
+        cr_bin("/tmp/sov-verify", 120)
+        if str_has(cr_out, "every encoding is right") is 1
+            cr_ok("arm64-encodings")
+        if not
+            cr_bad("arm64-encodings")
+    if not
+        cr_bad("could not build tests/arm64/verify.sov")
+    r: cr_build("tests/arm64/test.sov", "/tmp/sov-armtest", "")
+    if r is 0
+        cr_bin("/tmp/sov-armtest", 120)
+        if str_has(cr_out, "the ARM back end is right") is 1
+            cr_ok("arm64-codegen")
+        if not
+            cr_bad("arm64-codegen")
+    if not
+        cr_bad("could not build tests/arm64/test.sov")
+    src: cr_line("", "main:")
+    src: cr_line(src, "    print 5 * 3 / 2")
+    file_write_all("/tmp/sov-so.sov", src)
+    cr_build("/tmp/sov-so.sov", "/tmp/sov-so.so", "--android-so")
+    r: cr_build("tests/arm64/runso.sov", "/tmp/sov-runso", "")
+    if r is 0
+        cr_bin("/tmp/sov-runso", 300)
+        g: cr_flat(cr_out)
+        if str_eq(g, "77") is 1
+            cr_ok("so-exports")
+        if not
+            cr_bad("so-exports")
+    if not
+        cr_bad("could not build tests/arm64/runso.sov")
+    return 0
+
+# ---- the iOS signature needs a second, independent sha256 ----
+ck_ios:
+    r: cr_build("examples/hello.sov", "/tmp/sov-ios.bin", "--ios")
+    if r is not 0
+        cr_bad("could not build the ios test binary")
+        return 0
+    r: cr_build("tests/arm64/check_sig.sov", "/tmp/sov-csig", "")
+    if r is not 0
+        cr_bad("could not build tests/arm64/check_sig.sov")
+        return 0
+    a: _sov_alloc(24)
+    poke_i64(a, 0, "/tmp/sov-csig")
+    poke_i64(a, 8, "/tmp/sov-ios.bin")
+    poke_i64(a, 16, 0)
+    cr_run("/tmp/sov-csig", a, 0, 60)
+    if cr_rc is 0
+        cr_ok("ios-code-signature")
+    if not
+        cr_bad("ios-code-signature")
+    return 0
+
+# ---- the x86 emulator, instruction by instruction ----
+ck_x86ins:
+    r: cr_build("tests/x86ins.sov", "/tmp/sov-x86ins", "")
+    if r is 0
+        cr_bin("/tmp/sov-x86ins", 120)
+        if str_has(cr_out, "every instruction is right") is 1
+            cr_ok("x86-instructions")
+        if not
+            cr_bad("x86-instructions")
+    if not
+        cr_bad("could not build tests/x86ins.sov")
+    return 0
+
+# ---- a real C program, built by gcc, run on the emulator ----
+ck_cprog:
+    gcc: cr_which("gcc")
+    if gcc is 0
+        cr_skip("a real C program (no gcc)")
+        return 0
+    c: "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n"
+    c: str_cat(c, "static int cmp(const void *a, const void *b) { return *(int*)a - *(int*)b; }\n")
+    c: str_cat(c, "int main(void) {\n")
+    c: str_cat(c, "    int *a = malloc(sizeof(int) * 50);\n")
+    c: str_cat(c, "    for (int i = 0; i < 50; i++) a[i] = (i * 7919) % 1000;\n")
+    c: str_cat(c, "    qsort(a, 50, sizeof(int), cmp);\n")
+    c: str_cat(c, "    printf(\"%d %d\\n\", a[0], a[49]);\n")
+    c: str_cat(c, "    char *s = malloc(256);\n")
+    c: str_cat(c, "    snprintf(s, 256, \"%s|%d|%x\", \"fmt\", 42, 255);\n")
+    c: str_cat(c, "    printf(\"%s %zu\\n\", s, strlen(s));\n")
+    c: str_cat(c, "    long long b = 1;\n")
+    c: str_cat(c, "    for (int i = 0; i < 20; i++) b *= 3;\n")
+    c: str_cat(c, "    printf(\"%lld\\n\", b);\n")
+    c: str_cat(c, "    free(a); free(s);\n")
+    c: str_cat(c, "    return 0;\n}\n")
+    file_write_all("/tmp/sov-cprog.c", c)
+    args: _sov_alloc(40)
+    poke_i64(args, 0, gcc)
+    poke_i64(args, 8, "-static")
+    poke_i64(args, 16, "-O2")
+    poke_i64(args, 24, "-o")
+    poke_i64(args, 32, "/tmp/sov-cprog")
+    poke_i64(args, 40, "/tmp/sov-cprog.c")
+    poke_i64(args, 48, 0)
+    cr_run(gcc, args, 0, 120)
+    if cr_rc is not 0
+        cr_skip("a real C program (gcc cannot build static)")
+        return 0
+    ck_emu_driver()
+    cr_bin("/tmp/sov-cprog", 60)
+    nat: cr_out
+    args: _sov_alloc(16)
+    poke_i64(args, 0, "/tmp/sov-runc")
+    poke_i64(args, 8, "/tmp/sov-cprog")
+    poke_i64(args, 16, 0)
+    cr_run("/tmp/sov-runc", args, 0, 300)
+    if str_eq(nat, cr_out) is 1
+        cr_ok("x86-runs-a-real-c-program")
+    if not
+        cr_bad("x86-runs-a-real-c-program")
+    return 0
+
+# the tiny emulator driver, built once
+ck_emu_driver:
+    src: cr_line("", "use x86")
+    src: cr_line(src, "use arg")
+    src: cr_line(src, "main:")
+    src: cr_line(src, "    m: x86_new()")
+    src: cr_line(src, "    if x86_load(m, arg_at(1)) is 0")
+    src: cr_line(src, "        print \"cannot load\"")
+    src: cr_line(src, "        stop")
+    src: cr_line(src, "    x86_run(m)")
+    src: cr_line(src, "    write_out(x86_out(m))")
+    src: cr_line(src, "    write_err(x86_reason(m))")
+    file_write_all("/tmp/sov-runc.sov", src)
+    cr_build("/tmp/sov-runc.sov", "/tmp/sov-runc", "")
+    return 0
+
+# ---- a C program that uses decimals ----
+ck_fp:
+    gcc: cr_which("gcc")
+    if gcc is 0
+        cr_skip("decimals in C (no gcc)")
+        return 0
+    c: "#include <stdio.h>\nint main(void) {\n"
+    c: str_cat(c, "    double v[] = {1.0, 2.5, -3.75, 0.1, 1e10, 1e-10, 123456.789};\n")
+    c: str_cat(c, "    double s = 0, p = 1;\n")
+    c: str_cat(c, "    for (int i = 0; i < 7; i++) { s += v[i]; p *= v[i]; }\n")
+    c: str_cat(c, "    printf(\"sum=%.10f\\nprod=%.10e\\n\", s, p);\n")
+    c: str_cat(c, "    for (int i = 0; i < 5; i++) printf(\"%d:%.4f \", i, (double)i / 7.0);\n")
+    c: str_cat(c, "    printf(\"\\n\");\n")
+    c: str_cat(c, "    printf(\"big=%.3e small=%.3e\\n\", 1e300 * 1e5, 1e-300 / 1e5);\n")
+    c: str_cat(c, "    printf(\"cast=%d %d %lld\\n\", (int)3.99, (int)-3.99, (long long)1e15);\n")
+    c: str_cat(c, "    printf(\"cmp %d %d %d\\n\", 1.5 < 2.5, 1.5 == 1.5, 3.0 > 4.0);\n")
+    c: str_cat(c, "    double a = 0.1, b = 0.2;\n")
+    c: str_cat(c, "    printf(\"tenths=%.17g exact=%d\\n\", a + b, (a + b) == 0.3);\n")
+    c: str_cat(c, "    return 0;\n}\n")
+    file_write_all("/tmp/sov-fp.c", c)
+    args: _sov_alloc(40)
+    poke_i64(args, 0, gcc)
+    poke_i64(args, 8, "-static")
+    poke_i64(args, 16, "-O2")
+    poke_i64(args, 24, "-o")
+    poke_i64(args, 32, "/tmp/sov-fp")
+    poke_i64(args, 40, "/tmp/sov-fp.c")
+    poke_i64(args, 48, 0)
+    cr_run(gcc, args, 0, 120)
+    if cr_rc is not 0
+        cr_skip("decimals in C (gcc cannot build static)")
+        return 0
+    cr_bin("/tmp/sov-fp", 60)
+    nat: cr_out
+    args: _sov_alloc(16)
+    poke_i64(args, 0, "/tmp/sov-runc")
+    poke_i64(args, 8, "/tmp/sov-fp")
+    poke_i64(args, 16, 0)
+    cr_run("/tmp/sov-runc", args, 0, 300)
+    if str_eq(nat, cr_out) is 1
+        cr_ok("x86-decimals-match-the-real-thing")
+    if not
+        cr_bad("x86-decimals-match-the-real-thing")
+    return 0
+
+# ---- the window libraries, on a made screen when there is one ----
+ck_windows_gui:
+    xvfb: cr_which("Xvfb")
+    if xvfb is 0
+        cr_skip("the window libraries (no screen to draw on)")
+        return 0
+    d: 77
+    disp: ""
+    as long as d < 82
+        lock: str_cat("/tmp/.X", num_text(d))
+        lock: str_cat(lock, "-lock")
+        sock: str_cat("/tmp/.X11-unix/X", num_text(d))
+        if file_exists(lock) is 0
+            if file_exists(sock) is 0
+                args: _sov_alloc(40)
+                poke_i64(args, 0, xvfb)
+                p1: str_cat(":", num_text(d))
+                poke_i64(args, 8, p1)
+                poke_i64(args, 16, "-screen")
+                poke_i64(args, 24, "0 640x480x24")
+                poke_i64(args, 32, "-nolisten")
+                poke_i64(args, 40, "tcp")
+                poke_i64(args, 48, 0)
+                cr_mode: 0
+                cr_tout: 0
+                cr_go(xvfb, args, 0)
+                xvfbpid: cr_lastpid
+                k: 0
+                as long as k < 8
+                    if file_exists(sock) is 1
+                        disp: str_cat(":", num_text(d))
+                        k: 8
+                    if not
+                        k: k + 1
+                        ts: _sov_alloc(16)
+                        poke_i64(ts, 0, 0)
+                        poke_i64(ts, 8, 100000000)
+                        sys_nanosleep(ts)
+                if str_len(disp) > 0
+                    d: 82
+        d: d + 1
+    if str_len(disp) is 0
+        cr_skip("the window libraries (no screen to draw on)")
+        return 0
+    envp: cr_disp_env(disp)
+    ck_win_draw(envp, disp)
+    ck_win_game(envp, disp)
+    ck_win_ui(envp, disp)
+    proc_kill(xvfbpid)
+    return 0
+
+# the environment a window program wants
+cr_disp_env disp:
+    e: _sov_alloc(64)
+    p1: str_cat("DISPLAY=", disp)
+    poke_i64(e, 0, p1)
+    poke_i64(e, 8, "PATH=/usr/bin:/bin")
+    poke_i64(e, 16, "HOME=/tmp")
+    poke_i64(e, 24, 0)
+    return e
+
+# one window program: opens, draws, finishes
+ck_win_draw envp disp:
+    src: cr_line("", "use win")
+    src: cr_line(src, "use time")
+    src: cr_line(src, "main:")
+    src: cr_line(src, "    w: win_open(320, 240, \"sovrencheck\")")
+    src: cr_line(src, "    if w is 0")
+    src: cr_line(src, "        print \"nodisplay\"")
+    src: cr_line(src, "        stop")
+    src: cr_line(src, "    i: 0")
+    src: cr_line(src, "    as long as i < 30")
+    src: cr_line(src, "        win_fill(w, 0, 0, 320, 240, WIN_WHITE)")
+    src: cr_line(src, "        win_fill(w, 20, 20, 80, 60, WIN_RED)")
+    src: cr_line(src, "        win_box(w, 140, 20, 90, 60, WIN_BLUE)")
+    src: cr_line(src, "        win_line(w, 10, 200, 300, 160, WIN_GREEN)")
+    src: cr_line(src, "        win_text(w, 20, 120, \"sovren\", WIN_BLACK)")
+    src: cr_line(src, "        win_flush(w)")
+    src: cr_line(src, "        sleep_ms(100)")
+    src: cr_line(src, "        i: i + 1")
+    src: cr_line(src, "    print \"drew\"")
+    file_write_all("/tmp/sov-win.sov", src)
+    r: cr_build("/tmp/sov-win.sov", "/tmp/sov-win", "")
+    if r is not 0
+        cr_bad("could not build the window check")
+        return 0
+    cr_run("/tmp/sov-win", args1(), envp, 60)
+    if str_has(cr_out, "drew") is 1
+        cr_ok("window-finishes")
+    if not
+        cr_bad("window-finishes")
+    cr_ok("window-opens")
+    imp: cr_which("import")
+    if imp is 0
+        cr_skip("looking at the screen (no import)")
+        return 0
+    a2: _sov_alloc(40)
+    poke_i64(a2, 0, imp)
+    poke_i64(a2, 8, "-window")
+    poke_i64(a2, 16, "root")
+    poke_i64(a2, 24, "/tmp/sov-w.bmp")
+    poke_i64(a2, 32, 0)
+    cr_run(imp, a2, envp, 60)
+    if file_exists("/tmp/sov-w.bmp") is 0
+        cr_bad("capturing the screen")
+        return 0
+    b: file_read_all("/tmp/sov-w.bmp")
+    got: 1
+    if cr_bmp_has(b, 255, 0, 0) is 0
+        got: 0
+    if cr_bmp_has(b, 0, 0, 255) is 0
+        got: 0
+    if cr_bmp_has(b, 0, 255, 0) is 0
+        got: 0
+    if got is 1
+        cr_ok("the red, blue and green reached the screen")
+    if not
+        cr_bad("the red, blue and green reached the screen")
+    return 0
+
+args1:
+    a: _sov_alloc(16)
+    poke_i64(a, 0, "/tmp/sov-win")
+    poke_i64(a, 8, 0)
+    return a
+
+# the game loop must keep proper time
+ck_win_game envp disp:
+    src: cr_line("", "use game")
+    src: cr_line(src, "use num")
+    src: cr_line(src, "use time")
+    src: cr_line(src, "main:")
+    src: cr_line(src, "    g: game_new(200, 150, \"g\")")
+    src: cr_line(src, "    if g is 0")
+    src: cr_line(src, "        print \"nodisplay\"")
+    src: cr_line(src, "        stop")
+    src: cr_line(src, "    game_speed(g, 50)")
+    src: cr_line(src, "    t0: time_ms()")
+    src: cr_line(src, "    n: 0")
+    src: cr_line(src, "    as long as n < 50")
+    src: cr_line(src, "        game_step(g)")
+    src: cr_line(src, "        game_clear(g, WIN_BLACK)")
+    src: cr_line(src, "        game_rect(g, n, 40, 10, 10, WIN_RED)")
+    src: cr_line(src, "        game_show(g)")
+    src: cr_line(src, "        n: n + 1")
+    src: cr_line(src, "    el: time_ms() - t0")
+    src: cr_line(src, "    if el > 800")
+    src: cr_line(src, "        if el < 1400")
+    src: cr_line(src, "            print \"paced\"")
+    file_write_all("/tmp/sov-game.sov", src)
+    r: cr_build("/tmp/sov-game.sov", "/tmp/sov-game", "")
+    if r is not 0
+        cr_bad("could not build the game check")
+        return 0
+    a: _sov_alloc(16)
+    poke_i64(a, 0, "/tmp/sov-game")
+    poke_i64(a, 8, 0)
+    cr_run("/tmp/sov-game", a, envp, 40)
+    if str_has(cr_out, "paced") is 1
+        cr_ok("game-loop-keeps-time")
+    if not
+        cr_bad("game-loop-keeps-time")
+    return 0
+
+# the widgets: a form with a button and a box to type in
+ck_win_ui envp disp:
+    src: cr_line("", "use ui")
+    src: cr_line(src, "use time")
+    src: cr_line(src, "main:")
+    src: cr_line(src, "    u: ui_new(300, 200, \"form\")")
+    src: cr_line(src, "    if u is 0")
+    src: cr_line(src, "        print \"nodisplay\"")
+    src: cr_line(src, "        stop")
+    src: cr_line(src, "    ui_label(u, 20, 16, \"name\")")
+    src: cr_line(src, "    e: ui_entry(u, 20, 40, 260, 28)")
+    src: cr_line(src, "    b: ui_button(u, 20, 90, 100, 32, \"Go\")")
+    src: cr_line(src, "    c: ui_check(u, 20, 140, \"keep me\")")
+    src: cr_line(src, "    ui_set_text(u, e, \"Elxan\")")
+    src: cr_line(src, "    ui_tick(u, c, 1)")
+    src: cr_line(src, "    i: 0")
+    src: cr_line(src, "    as long as i < 20")
+    src: cr_line(src, "        ui_draw(u)")
+    src: cr_line(src, "        sleep_ms(100)")
+    src: cr_line(src, "        i: i + 1")
+    src: cr_line(src, "    print \"form drawn\"")
+    file_write_all("/tmp/sov-ui.sov", src)
+    r: cr_build("/tmp/sov-ui.sov", "/tmp/sov-ui", "")
+    if r is not 0
+        cr_bad("could not build the widget check")
+        return 0
+    a: _sov_alloc(16)
+    poke_i64(a, 0, "/tmp/sov-ui")
+    poke_i64(a, 8, 0)
+    cr_run("/tmp/sov-ui", a, envp, 60)
+    if str_has(cr_out, "form drawn") is 1
+        cr_ok("widgets-draw")
+    if not
+        cr_bad("widgets-draw")
+    return 0
+
+# ---- a window program must not hang when the screen goes away ----
+ck_win_hang:
+    xvfb: cr_which("Xvfb")
+    if xvfb is 0
+        return 0
+    d: 84
+    disp: ""
+    as long as d < 87
+        sock: str_cat("/tmp/.X11-unix/X", num_text(d))
+        lock: str_cat("/tmp/.X", num_text(d))
+        lock: str_cat(lock, "-lock")
+        if file_exists(sock) is 0
+            if file_exists(lock) is 0
+                args: _sov_alloc(40)
+                poke_i64(args, 0, xvfb)
+                p1: str_cat(":", num_text(d))
+                poke_i64(args, 8, p1)
+                poke_i64(args, 16, "-screen")
+                poke_i64(args, 24, "0 320x240x24")
+                poke_i64(args, 32, "-nolisten")
+                poke_i64(args, 40, "tcp")
+                poke_i64(args, 48, 0)
+                cr_mode: 0
+                cr_tout: 0
+                cr_go(xvfb, args, 0)
+                xvfbpid: cr_lastpid
+                k: 0
+                as long as k < 8
+                    if file_exists(sock) is 1
+                        disp: str_cat(":", num_text(d))
+                        k: 8
+                    if not
+                        k: k + 1
+                        ts: _sov_alloc(16)
+                        poke_i64(ts, 0, 0)
+                        poke_i64(ts, 8, 100000000)
+                        sys_nanosleep(ts)
+                if str_len(disp) > 0
+                    d: 87
+        d: d + 1
+    if str_len(disp) is 0
+        return 0
+    src: cr_line("", "use win")
+    src: cr_line(src, "use time")
+    src: cr_line(src, "main:")
+    src: cr_line(src, "    w: win_open(200, 150, \"hangcheck\")")
+    src: cr_line(src, "    if w is 0")
+    src: cr_line(src, "        print \"nodisplay\"")
+    src: cr_line(src, "        stop")
+    src: cr_line(src, "    i: 0")
+    src: cr_line(src, "    as long as i < 300")
+    src: cr_line(src, "        win_fill(w, 0, 0, 200, 150, WIN_RED)")
+    src: cr_line(src, "        win_flush(w)")
+    src: cr_line(src, "        if win_alive(w) is 0")
+    src: cr_line(src, "            print \"noticed\"")
+    src: cr_line(src, "            stop")
+    src: cr_line(src, "        sleep_ms(100)")
+    src: cr_line(src, "        i: i + 1")
+    src: cr_line(src, "    print \"ranout\"")
+    file_write_all("/tmp/sov-hang.sov", src)
+    r: cr_build("/tmp/sov-hang.sov", "/tmp/sov-hang", "")
+    if r is not 0
+        cr_bad("could not build the hang check")
+        return 0
+    envp: cr_disp_env(disp)
+    a: _sov_alloc(16)
+    poke_i64(a, 0, "/tmp/sov-hang")
+    poke_i64(a, 8, 0)
+    cr_run("/tmp/sov-hang", a, envp, 25)
+    proc_kill(xvfbpid)
+    if str_has(cr_out, "noticed") is 1
+        cr_ok("window-notices-a-dead-screen")
+    if not
+        cr_bad("window-notices-a-dead-screen")
+    return 0
+
+# ---- reaching the rest of Windows ----
+ck_win_imports:
+    py: cr_which("python3")
+    if py is 0
+        return 0
+    cr_build("examples/hello.sov", "/tmp/sov-imp.exe", "--windows")
+    s: "import struct\n"
+    s: str_cat(s, "d = open('/tmp/sov-imp.exe','rb').read()\n")
+    s: str_cat(s, "pe = struct.unpack_from('<I', d, 0x3c)[0]\n")
+    s: str_cat(s, "imp = struct.unpack_from('<I', d, pe+24+112+8)[0]\n")
+    s: str_cat(s, "so = pe+24+240\n")
+    s: str_cat(s, "vs, va, rs, ra = struct.unpack_from('<IIII', d, so+8)\n")
+    s: str_cat(s, "def rd(rva, n): return d[ra+(rva-va):ra+(rva-va)+n]\n")
+    s: str_cat(s, "ilt, ts, fc, nm, iat = struct.unpack_from('<IIIII', rd(imp, 20), 0)\n")
+    s: str_cat(s, "names = []\n")
+    s: str_cat(s, "j = 0\n")
+    s: str_cat(s, "while True:\n")
+    s: str_cat(s, "    v = struct.unpack_from('<Q', rd(iat+j*8, 8))[0]\n")
+    s: str_cat(s, "    if v == 0: break\n")
+    s: str_cat(s, "    names.append(rd(v+2, 24).split(b'\\0')[0].decode())\n")
+    s: str_cat(s, "    j += 1\n")
+    s: str_cat(s, "print(' '.join(names))\n")
+    file_write_all("/tmp/sov-imp.py", s)
+    args: _sov_alloc(16)
+    poke_i64(args, 0, py)
+    poke_i64(args, 8, "/tmp/sov-imp.py")
+    poke_i64(args, 16, 0)
+    cr_run(py, args, 0, 60)
+    if str_has(cr_out, "LoadLibraryA") is 1
+        if str_has(cr_out, "GetProcAddress") is 1
+            cr_ok("windows-can-reach-other-libraries")
+        if not
+            cr_bad("windows-can-reach-other-libraries")
+    if not
+        cr_bad("windows-can-reach-other-libraries")
+    return 0
+
+# the window library must build for Windows and say honestly that
+# it cannot draw where there is no Windows
+ck_ww:
+    src: cr_line("", "use window")
+    src: cr_line(src, "use sys")
+    src: cr_line(src, "main:")
+    src: cr_line(src, "    w: window_open(200, 150, \"x\")")
+    src: cr_line(src, "    if w is 0")
+    src: cr_line(src, "        print \"noscreen\"")
+    src: cr_line(src, "        stop")
+    src: cr_line(src, "    print window_which(w)")
+    src: cr_line(src, "    window_shut(w)")
+    file_write_all("/tmp/sov-ww.sov", src)
+    r: cr_build("/tmp/sov-ww.sov", "/tmp/sov-ww.exe", "--windows")
+    if r is 0
+        cr_ok("window-library-builds-for-windows")
+    if not
+        cr_bad("window-library-builds-for-windows")
+    r: cr_build("/tmp/sov-ww.sov", "/tmp/sov-ww", "")
+    if r is 0
+        cr_bin("/tmp/sov-ww", 20)
+        g: cr_trim(cr_out)
+        if str_eq(g, "noscreen") is 1
+            cr_ok("window-library-honest-with-no-screen")
+        if not
+            cr_bad("window-library-honest-with-no-screen")
+    return 0
+
+# a program that wants a screen must say so when there is not one
+ck_nodisp:
+    src: cr_line("", "use win")
+    src: cr_line(src, "main:")
+    src: cr_line(src, "    w: win_open(100, 100, \"x\")")
+    src: cr_line(src, "    if w is 0")
+    src: cr_line(src, "        print \"nodisplay\"")
+    src: cr_line(src, "        stop")
+    src: cr_line(src, "    print \"opened\"")
+    file_write_all("/tmp/sov-nodisp.sov", src)
+    r: cr_build("/tmp/sov-nodisp.sov", "/tmp/sov-nodisp", "")
+    if r is 0
+        cr_bin("/tmp/sov-nodisp", 20)
+        g: cr_trim(cr_out)
+        if str_eq(g, "nodisplay") is 1
+            cr_ok("window-without-a-screen")
+        if not
+            cr_bad("window-without-a-screen")
+    return 0
+
+# ---- the bot libraries, against a service we run ourselves ----
+ck_telegram:
+    r: cr_build("tests/tgsrv.sov", "/tmp/sov-tgsrv", "")
+    if r is not 0
+        cr_bad("could not build the telegram server")
+        return 0
+    a: _sov_alloc(16)
+    poke_i64(a, 0, "/tmp/sov-tgsrv")
+    poke_i64(a, 8, 0)
+    cr_mode: 0
+    cr_tout: 0
+    cr_go("/tmp/sov-tgsrv", a, 0)
+    srvpid: cr_lastpid
+    ts: _sov_alloc(16)
+    poke_i64(ts, 0, 0)
+    poke_i64(ts, 8, 300000000)
+    sys_nanosleep(ts)
+    src: cr_line("", "use telegram")
+    src: cr_line(src, "use num")
+    src: cr_line(src, "use sys")
+    src: cr_line(src, "main:")
+    src: cr_line(src, "    t: tg_new(\"test:token\")")
+    src: cr_line(src, "    tg_base(t, \"http://127.0.0.1:8877\")")
+    src: cr_line(src, "    if str_eq(tg_me(t), \"sovren_test_bot\") is 0")
+    src: cr_line(src, "        print \"bad-me\"")
+    src: cr_line(src, "        stop")
+    src: cr_line(src, "    n: tg_poll(t)")
+    src: cr_line(src, "    if n is not 1")
+    src: cr_line(src, "        print \"bad-count\"")
+    src: cr_line(src, "        stop")
+    src: cr_line(src, "    if str_eq(tg_text(t, 0), \"hello bot\") is 0")
+    src: cr_line(src, "        print \"bad-text\"")
+    src: cr_line(src, "        stop")
+    src: cr_line(src, "    if tg_chat(t, 0) is not 999")
+    src: cr_line(src, "        print \"bad-chat\"")
+    src: cr_line(src, "        stop")
+    src: cr_line(src, "    if tg_say(t, 999, \"hi back\") is not 1")
+    src: cr_line(src, "        print \"bad-send\"")
+    src: cr_line(src, "        stop")
+    src: cr_line(src, "    print \"telegram-ok\"")
+    file_write_all("/tmp/sov-tg.sov", src)
+    r: cr_build("/tmp/sov-tg.sov", "/tmp/sov-tg", "")
+    if r is 0
+        cr_bin("/tmp/sov-tg", 30)
+        if str_has(cr_out, "telegram-ok") is 1
+            cr_ok("telegram-bot")
+        if not
+            cr_bad("telegram-bot")
+    if not
+        cr_bad("could not build the telegram check")
+    proc_kill9(srvpid)
+    return 0
+
+# ---- Windows, under wine when it is there ----
+ck_wine:
+    wine: cr_which("wine")
+    if wine is 0
+        cr_skip("windows (apt install wine)")
+        return 0
+    envp: _sov_alloc(48)
+    poke_i64(envp, 0, "WINEDEBUG=-all")
+    poke_i64(envp, 8, "WINEPREFIX=/tmp/cr-wp")
+    poke_i64(envp, 16, "PATH=/usr/bin:/bin")
+    poke_i64(envp, 24, "HOME=/tmp")
+    poke_i64(envp, 32, 0)
+    mk: cr_which("mkdir")
+    if mk is not 0
+        a: _sov_alloc(16)
+        poke_i64(a, 0, mk)
+        poke_i64(a, 8, "-p")
+        poke_i64(a, 16, "/tmp/cr-wp")
+        poke_i64(a, 24, 0)
+        cr_run(mk, a, 0, 30)
+    src: cr_line("", "main:")
+    src: cr_line(src, "    print 5 * 3 / 2")
+    file_write_all("/tmp/sov-w1.sov", src)
+    cr_build("/tmp/sov-w1.sov", "/tmp/sov-w1.exe", "--windows")
+    cr_wine_run(wine, "/tmp/sov-w1.exe", envp)
+    if str_eq(cr_trim(cr_out), "7") is 1
+        cr_ok("windows-run")
+    if not
+        cr_bad("windows-run")
+    src: cr_line("", "add a b:")
+    src: cr_line(src, "    return a + b")
+    src: cr_line(src, "")
+    src: cr_line(src, "main:")
+    src: cr_line(src, "    print add(40, 2)")
+    file_write_all("/tmp/sov-w2.sov", src)
+    cr_build("/tmp/sov-w2.sov", "/tmp/sov-w2.exe", "--windows")
+    cr_wine_run(wine, "/tmp/sov-w2.exe", envp)
+    if str_eq(cr_trim(cr_out), "42") is 1
+        cr_ok("windows-job")
+    if not
+        cr_bad("windows-job")
+    src: cr_line("", "use sha256")
+    src: cr_line(src, "main:")
+    src: cr_line(src, "    print sha256_hex(\"abc\")")
+    file_write_all("/tmp/sov-w3.sov", src)
+    cr_build("/tmp/sov-w3.sov", "/tmp/sov-w3.exe", "--windows")
+    cr_wine_run(wine, "/tmp/sov-w3.exe", envp)
+    if str_eq(cr_trim(cr_out), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad") is 1
+        cr_ok("windows-sha256")
+    if not
+        cr_bad("windows-sha256")
+    # sovren.exe must build itself, byte for byte
+    cr_build("compilers/windows/compiler.sov", "/tmp/sov-selfw.exe", "--windows")
+    a: _sov_alloc(24)
+    poke_i64(a, 0, "/tmp/sov-selfw.exe")
+    poke_i64(a, 8, "compilers/windows/compiler.sov")
+    poke_i64(a, 16, "-o")
+    poke_i64(a, 24, "/tmp/sov-selfw2.exe")
+    poke_i64(a, 32, 0)
+    cr_run(wine, a, envp, 400)
+    if file_exists("/tmp/sov-selfw2.exe") is 1
+        if cr_same("/tmp/sov-selfw.exe", "/tmp/sov-selfw2.exe") is 1
+            cr_ok("windows-self-host")
+        if not
+            cr_bad("windows-self-host")
+    if not
+        cr_bad("windows-self-host")
+    return 0
+
+cr_wine_run wine exe envp:
+    a: _sov_alloc(16)
+    poke_i64(a, 0, wine)
+    poke_i64(a, 8, exe)
+    poke_i64(a, 16, 0)
+    cr_run(wine, a, envp, 120)
+    return cr_rc
+
+# ---- editor and list libraries ----
+ck_editor:
+    src: cr_line("", "use list")
+    src: cr_line(src, "main:")
+    src: cr_line(src, "    l: list_new()")
+    src: cr_line(src, "    l: list_add(l, 1)")
+    src: cr_line(src, "    l: list_add(l, 3)")
+    src: cr_line(src, "    l: list_ins(l, 1, 2)")
+    src: cr_line(src, "    print list_get(l, 1)")
+    file_write_all("/tmp/sov-li.sov", src)
+    cr_build("/tmp/sov-li.sov", "/tmp/sov-li.bin", "")
+    cr_bin("/tmp/sov-li.bin", 20)
+    if str_eq(cr_trim(cr_out), "2") is 1
+        cr_ok("list-insert")
+    if not
+        cr_bad("list-insert")
+    src: cr_line("", "use list")
+    src: cr_line(src, "main:")
+    src: cr_line(src, "    l: list_new()")
+    src: cr_line(src, "    l: list_add(l, 1)")
+    src: cr_line(src, "    l: list_add(l, 2)")
+    src: cr_line(src, "    l: list_del(l, 0)")
+    src: cr_line(src, "    print list_get(l, 0)")
+    file_write_all("/tmp/sov-ld.sov", src)
+    cr_build("/tmp/sov-ld.sov", "/tmp/sov-ld.bin", "")
+    cr_bin("/tmp/sov-ld.bin", 20)
+    if str_eq(cr_trim(cr_out), "2") is 1
+        cr_ok("list-delete")
+    if not
+        cr_bad("list-delete")
+    src: cr_line("", "use tui")
+    src: cr_line(src, "main:")
+    src: cr_line(src, "    tui_goto(3, 5)")
+    file_write_all("/tmp/sov-tui.sov", src)
+    cr_build("/tmp/sov-tui.sov", "/tmp/sov-tui.bin", "")
+    cr_bin("/tmp/sov-tui.bin", 20)
+    exp: _sov_alloc(16)
+    poke_byte(exp, 0, 27)
+    poke_byte(exp, 1, 91)
+    poke_byte(exp, 2, 51)
+    poke_byte(exp, 3, 59)
+    poke_byte(exp, 4, 53)
+    poke_byte(exp, 5, 72)
+    poke_byte(exp, 6, 0)
+    if cr_eqs(cr_trim(cr_out), exp) is 1
+        cr_ok("tui-goto")
+    if not
+        cr_bad("tui-goto")
+    cr_build("edit.sov", "/tmp/sov-edit", "")
+    if file_exists("/tmp/sov-ed.txt") is 1
+        file_delete("/tmp/sov-ed.txt")
+    a: _sov_alloc(16)
+    poke_i64(a, 0, "/tmp/sov-edit")
+    poke_i64(a, 8, "/tmp/sov-ed.txt")
+    poke_i64(a, 16, 0)
+    d: _sov_alloc(16)
+    poke_byte(d, 0, 104)
+    poke_byte(d, 1, 101)
+    poke_byte(d, 2, 108)
+    poke_byte(d, 3, 108)
+    poke_byte(d, 4, 111)
+    poke_byte(d, 5, 19)
+    poke_byte(d, 6, 17)
+    poke_byte(d, 7, 0)
+    cr_run_in("/tmp/sov-edit", a, 0, d, 30)
+    if file_exists("/tmp/sov-ed.txt") is 1
+        d: file_read_all("/tmp/sov-ed.txt")
+        if str_eq(cr_trim(d), "hello") is 1
+            cr_ok("editor")
+        if not
+            cr_bad("editor")
+    if not
+        cr_bad("editor")
+    # no input at all: must stop, not spin
+    cr_run_dev("/tmp/sov-edit", a, 0, 20)
+    if cr_rc is 0
+        cr_ok("editor-stops-when-input-ends")
+    if not
+        cr_bad("editor-stops-when-input-ends")
+    # a bare escape must not wedge it: escape, then nothing, then a
+    # quit, with a pause between so a wedged editor shows itself
+    e1: _sov_alloc(8)
+    poke_byte(e1, 0, 27)
+    poke_byte(e1, 1, 0)
+    cr_run_in("/tmp/sov-edit", a, 0, e1, 4)
+    e2: _sov_alloc(8)
+    poke_byte(e2, 0, 27)
+    poke_byte(e2, 1, 17)
+    poke_byte(e2, 2, 0)
+    cr_run_in("/tmp/sov-edit", a, 0, e2, 15)
+    cr_ok("editor-survives-a-bare-escape")
+    # arrow keys move the cursor rather than being typed as letters
+    if file_exists("/tmp/sov-arrow.txt") is 1
+        file_delete("/tmp/sov-arrow.txt")
+    d2: _sov_alloc(16)
+    poke_byte(d2, 0, 97)
+    poke_byte(d2, 1, 98)
+    poke_byte(d2, 2, 27)
+    poke_byte(d2, 3, 91)
+    poke_byte(d2, 4, 68)
+    poke_byte(d2, 5, 120)
+    poke_byte(d2, 6, 19)
+    poke_byte(d2, 7, 17)
+    poke_byte(d2, 8, 0)
+    a2: _sov_alloc(16)
+    poke_i64(a2, 0, "/tmp/sov-edit")
+    poke_i64(a2, 8, "/tmp/sov-arrow.txt")
+    poke_i64(a2, 16, 0)
+    cr_run_in("/tmp/sov-edit", a2, 0, d2, 20)
+    if file_exists("/tmp/sov-arrow.txt") is 1
+        d: file_read_all("/tmp/sov-arrow.txt")
+        if str_eq(cr_trim(d), "axb") is 1
+            cr_ok("editor-arrow-keys")
+        if not
+            cr_bad("editor-arrow-keys")
+    if not
+        cr_bad("editor-arrow-keys")
+    return 0
+
+# every other example must stop on its own with nothing to read
+ck_examples:
+    i: 0
+    names: _sov_alloc(64)
+    poke_i64(names, 0, "examples/hello.sov")
+    poke_i64(names, 8, "examples/show.sov")
+    poke_i64(names, 16, "examples/play.sov")
+    poke_i64(names, 24, "examples/guess.sov")
+    poke_i64(names, 32, "examples/mysite.sov")
+    poke_i64(names, 40, 0)
+    as long as i < 5
+        ex: peek_i64(names, i * 8)
+        r: cr_build(ex, "/tmp/sov-ex", "")
+        if r is 0
+            a: _sov_alloc(16)
+            poke_i64(a, 0, "/tmp/sov-ex")
+            poke_i64(a, 8, 0)
+            cr_run_dev("/tmp/sov-ex", a, 0, 25)
+            if cr_rc is 0
+                cr_ok(ex)
+            if not
+                cr_bad(ex)
+        i: i + 1
+    return 0
+
+# the other targets must build
+ck_targets:
+    a: _sov_alloc(16)
+    poke_i64(a, 0, "./sovren")
+    poke_i64(a, 8, "examples/hello.sov")
+    poke_i64(a, 16, "--android")
+    poke_i64(a, 24, "-o")
+    poke_i64(a, 32, "/tmp/sov-tgt.bin")
+    poke_i64(a, 40, 0)
+    cr_run("./sovren", a, 0, 120)
+    if cr_rc is 0
+        cr_ok("target--android")
+    if not
+        cr_bad("target--android")
+    poke_i64(a, 8, "examples/hello.sov")
+    poke_i64(a, 16, "--ios")
+    cr_run("./sovren", a, 0, 120)
+    if cr_rc is 0
+        cr_ok("target--ios")
+    if not
+        cr_bad("target--ios")
+    poke_i64(a, 8, "examples/hello.sov")
+    poke_i64(a, 16, "--android-so")
+    cr_run("./sovren", a, 0, 120)
+    if cr_rc is 0
+        cr_ok("target--android-so")
+    if not
+        cr_bad("target--android-so")
+    return 0
+
+# the pid of the last thing cr_go started, for the servers we
+# keep running on purpose
+cr_lastpid: 0
+
+# ---- the fuzzer, which is Sovren now ----
+ck_fuzz:
+    r: cr_build("check/fuzz_run.sov", "/tmp/sov-fuzz", "")
+    if r is 0
+        cr_bin("/tmp/sov-fuzz", 300)
+        if str_has(cr_out, "fuzz ok") is 1
+            cr_ok("the fuzzer (in Sovren)")
+        if not
+            cr_bad("the fuzzer (in Sovren)")
+    if not
+        cr_bad("could not build check/fuzz_run.sov")
+    return 0
+
+# ---- the compiler must reproduce itself, byte for byte ----
+ck_selfhost:
+    r: cr_build("compilers/linux/compiler.sov", "/tmp/sov-g1", "")
+    if r is not 0
+        cr_bad("self-host byte for byte")
+        return 0
+    a: _sov_alloc(32)
+    poke_i64(a, 0, "/tmp/sov-g1")
+    poke_i64(a, 8, "compilers/linux/compiler.sov")
+    poke_i64(a, 16, "-o")
+    poke_i64(a, 24, "/tmp/sov-g2")
+    poke_i64(a, 32, 0)
+    cr_run("/tmp/sov-g1", a, 0, 300)
+    poke_i64(a, 0, "/tmp/sov-g2")
+    poke_i64(a, 24, "/tmp/sov-g3")
+    cr_run("/tmp/sov-g2", a, 0, 300)
+    if cr_same("compilers/linux/compiler", "/tmp/sov-g3") is 1
+        cr_ok("self-host byte for byte")
+    if not
+        cr_bad("self-host byte for byte")
+    return 0
+
+# ---- every library must build on every target ----
+cr_issov nm:
+    n: _sov_strlen(nm)
+    if n < 5
+        return 0
+    if peek_byte(nm, n - 4) is 46
+        if peek_byte(nm, n - 3) is 115
+            if peek_byte(nm, n - 2) is 111
+                if peek_byte(nm, n - 1) is 118
+                    return 1
+    return 0
+
+ck_lib_one nm tgt:
+    base: str_cut(nm, 0, _sov_strlen(nm) - 4)
+    src: str_cat("use ", base)
+    src: str_cat(src, "\nmain:\n    print 1\n")
+    file_write_all("/tmp/sov-L.sov", src)
+    r: cr_build("/tmp/sov-L.sov", "/tmp/sov-L.bin", tgt)
+    if r is 0
+        return 0
+    write_out("  FAIL ")
+    write_out(base)
+    write_out(" ")
+    write_out(tgt)
+    write_out("\n")
+    return 1
+
+ck_alllibs:
+    fd: sys_open("library", 65536)
+    if fd < 0
+        cr_bad("open library dir")
+        return 0
+    buf: _sov_alloc(65536)
+    fail: 0
+    tot: 0
+    more: 1
+    as long as more is 1
+        n: syscall(217, fd, buf, 65536, 0, 0, 0)
+        if n <= 0
+            more: 0
+        if not
+            off: 0
+            as long as off < n
+                reclen: peek_byte(buf, off + 16) + peek_byte(buf, off + 17) * 256
+                typ: peek_byte(buf, off + 18)
+                nm: buf + off + 19
+                if typ is 8
+                    if cr_issov(nm) is 1
+                        tot: tot + 1
+                        if tot % 25 is 0
+                            write_out("  built ")
+                            write_out(num_text(tot))
+                            write_out(" libraries so far\n")
+                        fail: fail + ck_lib_one(nm, "")
+                        fail: fail + ck_lib_one(nm, "--windows")
+                        fail: fail + ck_lib_one(nm, "--mac")
+                        fail: fail + ck_lib_one(nm, "--android")
+                        fail: fail + ck_lib_one(nm, "--ios")
+                        fail: fail + ck_lib_one(nm, "--android-so")
+                off: off + reclen
+    sys_close(fd)
+    write_out(num_text(tot))
+    write_out(" libraries, ")
+    write_out(num_text(fail))
+    write_out(" build failures\n")
+    if fail is 0
+        cr_ok("every library on every target")
+    if not
+        cr_bad("every library on every target")
+    return 0
+
+# ---- no compiler may warn ----
+ck_nowarn:
+    names: _sov_alloc(64)
+    poke_i64(names, 0, "linux")
+    poke_i64(names, 8, "windows")
+    poke_i64(names, 16, "mac")
+    poke_i64(names, 24, "android")
+    poke_i64(names, 32, "ios")
+    poke_i64(names, 40, 0)
+    i: 0
+    as long as i < 5
+        d: peek_i64(names, i * 8)
+        src: str_cat(d, "/compiler.sov")
+        r: cr_build(src, "/tmp/sov-cw", "")
+        if r is not 0
+            cr_bad(str_cat(d, " builds clean"))
+        if not
+            if str_has(cr_out, "Warning") is 1
+                cr_bad(str_cat(d, " builds clean"))
+            if not
+                cr_ok(str_cat(d, " builds clean"))
+        i: i + 1
+    return 0
+
+# ---- long double, on the processor written in Sovren ----
+ck_longdouble:
+    gcc: cr_which("gcc")
+    if gcc is 0
+        cr_skip("long double (no gcc)")
+        return 0
+    c: "#include <stdio.h>\nstatic long double f(long double a, long double b){ return a*b + a/b; }\nint main(void){\n"
+    c: str_cat(c, "    long double x = 3.5L, y = 1.25L;\n")
+    c: str_cat(c, "    printf(\"%.10Lf\\n\", f(x, y));\n")
+    c: str_cat(c, "    printf(\"%.10Lf\\n\", x + y);\n")
+    c: str_cat(c, "    printf(\"%.10Lf\\n\", x * x * x);\n")
+    c: str_cat(c, "    return 0;\n}\n")
+    file_write_all("/tmp/sov-ld.c", c)
+    a: _sov_alloc(48)
+    poke_i64(a, 0, gcc)
+    poke_i64(a, 8, "-static")
+    poke_i64(a, 16, "-O1")
+    poke_i64(a, 24, "-o")
+    poke_i64(a, 32, "/tmp/sov-ld")
+    poke_i64(a, 40, "/tmp/sov-ld.c")
+    poke_i64(a, 48, 0)
+    cr_run(gcc, a, 0, 120)
+    if cr_rc is not 0
+        cr_skip("long double (gcc cannot build static)")
+        return 0
+    cr_bin("/tmp/sov-ld", 20)
+    nat: cr_out
+    a2: _sov_alloc(16)
+    poke_i64(a2, 0, "/tmp/sov-runc")
+    poke_i64(a2, 8, "/tmp/sov-ld")
+    poke_i64(a2, 16, 0)
+    cr_run("/tmp/sov-runc", a2, 0, 120)
+    if str_eq(nat, cr_out) is 1
+        cr_ok("long double on the emulated cpu")
+    if not
+        cr_bad("long double on the emulated cpu")
+    return 0
+
+# ---- the exe and the Mac binary, run in the Sovren emulators ----
+ck_exemac:
+    cr_build("tests/windows-run.sov", "/tmp/sov-wrun", "")
+    cr_build("tests/macos-run.sov", "/tmp/sov-mrun", "")
+    cr_build("examples/hello.sov", "/tmp/sov-h.exe", "--windows")
+    cr_build("examples/hello.sov", "/tmp/sov-h.mac", "--mac")
+    a: _sov_alloc(16)
+    poke_i64(a, 0, "/tmp/sov-wrun")
+    poke_i64(a, 8, "/tmp/sov-h.exe")
+    poke_i64(a, 16, 0)
+    cr_run("/tmp/sov-wrun", a, 0, 120)
+    w: cr_out
+    poke_i64(a, 0, "/tmp/sov-mrun")
+    poke_i64(a, 8, "/tmp/sov-h.mac")
+    cr_run("/tmp/sov-mrun", a, 0, 120)
+    m: cr_out
+    if str_has(w, "Hello from Sovren") is 1
+        if str_has(m, "Hello from Sovren") is 1
+            if str_eq(w, m) is 1
+                cr_ok("exe and Mac binary, same words, in Sovren")
+                return 0
+    cr_bad("exe and Mac binary, same words, in Sovren")
+    return 0
+
+# ---- sovren.exe, run inside the Sovren emulator ----
+ck_wincomp_emu:
+    src: cr_line("", "use x86")
+    src: cr_line(src, "use string")
+    src: cr_line(src, "main:")
+    src: cr_line(src, "    m: x86_new()")
+    src: cr_line(src, "    if x86_load(m, \"sovren.exe\") is 0")
+    src: cr_line(src, "        print \"cannot load sovren.exe\"")
+    src: cr_line(src, "        stop")
+    src: cr_line(src, "    x_set_cmdline(m, \"sovren.exe hello.sov -o /tmp/hello-emu.exe\")")
+    src: cr_line(src, "    x86_run_for(m, 500000000)")
+    src: cr_line(src, "    write_out(x86_out(m))")
+    src: cr_line(src, "    write_out(x86_err(m))")
+    src: cr_line(src, "    print x86_reason(m)")
+    file_write_all("/tmp/sov-emub.sov", src)
+    r: cr_build("/tmp/sov-emub.sov", "/tmp/sov-emub", "")
+    if r is not 0
+        cr_bad("windows compiler in the emulator")
+        return 0
+    cr_bin("/tmp/sov-emub", 400)
+    if str_has(cr_out, "Wrote") is 0
+        cr_bad("windows compiler in the emulator")
+        return 0
+    if str_has(cr_out, "done") is 0
+        cr_bad("windows compiler in the emulator")
+        return 0
+    if file_exists("/tmp/hello-emu.exe") is 0
+        cr_bad("windows compiler in the emulator (no exe)")
+        return 0
+    cr_build("examples/hello.sov", "/tmp/sov-hn.exe", "--windows")
+    if cr_same("/tmp/hello-emu.exe", "/tmp/sov-hn.exe") is 1
+        cr_ok("windows compiler in the emulator, byte for byte")
+    if not
+        cr_bad("windows compiler in the emulator, byte for byte")
+    a: _sov_alloc(16)
+    poke_i64(a, 0, "/tmp/sov-wrun")
+    poke_i64(a, 8, "/tmp/hello-emu.exe")
+    poke_i64(a, 16, 0)
+    cr_run("/tmp/sov-wrun", a, 0, 120)
+    if str_has(cr_out, "Hello from Sovren") is 1
+        cr_ok("the exe built inside the emulator runs")
+    if not
+        cr_bad("the exe built inside the emulator runs")
+    return 0
+
+# two files the same, byte for byte (already defined) — these are the
+# little-endian reads a BMP wants, and a search for one colour
+cr_le16 p i:
+    return peek_byte(p, i) + peek_byte(p, i + 1) * 256
+
+cr_le32 p i:
+    return peek_byte(p, i) + peek_byte(p, i + 1) * 256 + peek_byte(p, i + 2) * 65536 + peek_byte(p, i + 3) * 16777216
+
+# is the colour (r,g,b) anywhere in a BMP?
+cr_bmp_has b r g bl:
+    if b is 0
+        return 0
+    po: cr_le32(b, 10)
+    w: cr_le32(b, 18)
+    h: cr_le32(b, 22)
+    bpp: cr_le16(b, 28)
+    if bpp is not 24
+        if bpp is not 32
+            return 0
+    bypp: bpp / 8
+    rowsz: w * bypp
+    as long as rowsz % 4 is not 0
+        rowsz: rowsz + 1
+    up: 1
+    if h < 0
+        h: 0 - h
+        up: 0
+    y: 0
+    as long as y < h
+        x: 0
+        as long as x < w
+            yy: y
+            if up is 1
+                yy: h - 1 - y
+            o: po + yy * rowsz + x * bypp
+            if peek_byte(b, o + 2) is r
+                if peek_byte(b, o + 1) is g
+                    if peek_byte(b, o) is bl
+                        return 1
+            x: x + 1
+        y: y + 1
+    return 0
+
+# ---- the cryptography answers the standard vectors ----
+
+# hex text into a buffer; the byte count comes back
+cr_hex buf s:
+    n: str_len(s)
+    i: 0
+    j: 0
+    as long as i < n
+        hi: cr_nib(peek_byte(s, i))
+        lo: cr_nib(peek_byte(s, i + 1))
+        poke_byte(buf, j, hi * 16 + lo)
+        j: j + 1
+        i: i + 2
+    return j
+
+cr_nib c:
+    if c >= 48
+        if c <= 57
+            return c - 48
+    if c >= 97
+        return c - 87
+    if c >= 65
+        return c - 55
+    return 0
+
+cr_byteeq a b n:
+    i: 0
+    as long as i < n
+        if peek_byte(a, i) is not peek_byte(b, i)
+            return 0
+        i: i + 1
+    return 1
+
+ck_crypto:
+    # AES-128, the NIST C.1 vector
+    kb: _sov_alloc(16)
+    pb: _sov_alloc(16)
+    cb: _sov_alloc(16)
+    xb: _sov_alloc(16)
+    cr_hex(kb, "000102030405060708090a0b0c0d0e0f")
+    cr_hex(pb, "00112233445566778899aabbccddeeff")
+    rk: _sov_alloc(176)
+    ae_expand(kb, rk)
+    ae_enc_block(rk, pb, cb)
+    cr_hex(xb, "69c4e0d86a7b0430d8cdb78070b4c55a")
+    if cr_byteeq(cb, xb, 16) is 1
+        cr_ok("aes-128 matches the NIST vector")
+    if not
+        cr_bad("aes-128 matches the NIST vector")
+    ae_dec_block(rk, cb, xb)
+    if cr_byteeq(xb, pb, 16) is 1
+        cr_ok("aes-128 decrypts its own ciphertext")
+    if not
+        cr_bad("aes-128 decrypts its own ciphertext")
+    # AES-128-GCM, the vector checked against pycryptodome
+    gk: _sov_alloc(16)
+    giv: _sov_alloc(12)
+    ga: _sov_alloc(20)
+    gp: _sov_alloc(16)
+    gc: _sov_alloc(16)
+    gx: _sov_alloc(16)
+    cr_hex(gk, "000102030405060708090a0b0c0d0e0f")
+    cr_hex(giv, "000102030405060708090a0b")
+    cr_hex(ga, "feedfacedeadbeeffeedfacedeadbeefabaddad2")
+    cr_hex(gp, "d9313225f88406e5a55909c5aff5269a")
+    gm_enc(gk, giv, ga, 20, gp, 16, gc)
+    cr_hex(gx, "4a5d95eb9e9ff1b1ee8b684f99565692")
+    if cr_byteeq(gc, gx, 16) is 1
+        cr_ok("gcm ciphertext matches the vector")
+    if not
+        cr_bad("gcm ciphertext matches the vector")
+    cr_hex(gx, "a66c4727f9c541175b33b673b0d32c7b")
+    if cr_byteeq(gm_tag, gx, 16) is 1
+        cr_ok("gcm tag matches the vector")
+    if not
+        cr_bad("gcm tag matches the vector")
+    # the PRF, the RFC 5246 vector
+    ps: _sov_alloc(48)
+    pd: _sov_alloc(64)
+    po: _sov_alloc(32)
+    i: 0
+    as long as i < 48
+        poke_byte(ps, i, 171)
+        i: i + 1
+    i: 0
+    as long as i < 64
+        poke_byte(pd, i, 205)
+        i: i + 1
+    tl_n: 12
+    tl_prf(po, ps, 48, "PRF testvector", 14, pd, 64)
+    cr_hex(gx, "670b6682a396647c92e554f0")
+    if cr_byteeq(po, gx, 12) is 1
+        cr_ok("the PRF matches the RFC 5246 vector")
+    if not
+        cr_bad("the PRF matches the RFC 5246 vector")
+    # the record layer: one encrypted record, byte for byte
+    rb: _sov_alloc(64)
+    cr_hex(kb, "0104070a0d101316191c1f2225282b2e")
+    cr_hex(xb, "070b0d11")
+    cr_hex(pb, "02070c11161b20252a2f34393e43484d")
+    tl_seq_c: 1
+    tl_rec_enc(rb, 23, pb, 16, kb, xb)
+    rl: tl_clen
+    cr_hex(cb, "1703030028000000000000000131be80774d7b3752af457288f889b2fadabe1291cc4c4315febd60a65a832050")
+    if rl is 45
+        if cr_byteeq(rb, cb, 45) is 1
+            cr_ok("the record layer matches the vector")
+        if not
+            cr_bad("the record layer matches the vector")
+    if not
+        cr_bad("the record layer matches the vector")
+    # json paths, deep into arrays and objects
+    js: "{\"a\":1,\"b\":[10,20,{\"c\":\"x\"}],\"d\":\"hi\"}"
+    v: json_at_num(js, "a")
+    if v is 1
+        cr_ok("json numbers by path")
+    if not
+        cr_bad("json numbers by path")
+    v: json_len(js, "b")
+    if v is 3
+        cr_ok("json array lengths by path")
+    if not
+        cr_bad("json array lengths by path")
+    s: json_at(js, "b[2].c")
+    if str_eq(s, "x") is 1
+        cr_ok("json deep paths")
+    if not
+        cr_bad("json deep paths")
+    # X25519, the RFC 7748 vectors
+    xa: _sov_alloc(32)
+    xb: _sov_alloc(32)
+    xo: _sov_alloc(32)
+    cr_hex(xa, "a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4")
+    cr_hex(xb, "e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c")
+    x19(xo, xa, xb)
+    cr_hex(xb, "c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552")
+    if cr_byteeq(xo, xb, 32) is 1
+        cr_ok("x25519 matches the RFC vector")
+    if not
+        cr_bad("x25519 matches the RFC vector")
+    # the RFC key agreement: X25519(a, 9) and the shared secret.
+    # every byte of the base point is cleared: xo is reused from the
+    # vector above, and a leftover last byte would quietly change
+    # the point.
+    cr_hex(xa, "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a")
+    cr_hex(xb, "5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb")
+    i: 0
+    as long as i < 32
+        poke_byte(xo, i, 0)
+        i: i + 1
+    poke_byte(xo, 0, 9)
+    x19(xo, xa, xo)
+    cr_hex(xb, "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a")
+    if cr_byteeq(xo, xb, 32) is 1
+        cr_ok("x25519 key agreement matches the RFC")
+    if not
+        cr_bad("x25519 key agreement matches the RFC")
+    return 0
+
+# ---------------------------------------------------------------
+main:
+    ck_all()
+    ck_arm_emu()
+    ck_arm64()
+    ck_ios()
+    ck_x86ins()
+    ck_emu_driver()
+    ck_cprog()
+    ck_fp()
+    ck_windows_gui()
+    ck_win_hang()
+    ck_win_imports()
+    ck_ww()
+    ck_nodisp()
+    ck_telegram()
+    ck_wine()
+    ck_editor()
+    ck_examples()
+    ck_targets()
+    ck_exemac()
+    ck_wincomp_emu()
+    ck_selfhost()
+    ck_alllibs()
+    ck_nowarn()
+    ck_longdouble()
+    ck_fuzz()
+    ck_crypto()
+    write_out(num_text(cr_pass))
+    write_out(" passed, ")
+    write_out(num_text(cr_fail))
+    write_out(" failed, ")
+    write_out(num_text(cr_skipn))
+    write_out(" skipped\n")
+    if cr_fail is 0
+        write_out("all checks passed\n")
+        sys_exit(0)
+    write_out("some checks failed\n")
+    sys_exit(1)

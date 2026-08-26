@@ -1,0 +1,27 @@
+# ph5 - frame-slot index: ten locals push i past slot 8, so the
+# index spills to the frame and every arm declines to the staged
+# forms. binary must be byte-identical to the previous compiler.
+use sys
+
+b: 0
+
+w:
+    n0: 1
+    n1: 11
+    n2: 21
+    n3: 31
+    n4: 41
+    n5: 51
+    n6: 61
+    n7: 71
+    n8: 81
+    i: 2
+    t: 0
+    poke_i64(b, i * 8, 91)
+    t: peek_i64(b, i * 8)
+    t: t + n1 - n0
+    return t
+
+main:
+    b: _sov_alloc(640)
+    print w()

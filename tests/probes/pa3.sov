@@ -1,0 +1,27 @@
+# pa3 - poke-accumulate where the address build MUST clobber rax:
+# leaf8 worker, the index lives in slot 5 (r8), so loadv_rsi falls
+# to the mov_rsi_rax path. T must survive in rcx. T folds to -308.
+use sys
+
+b: 0
+
+work:
+    n0: 11
+    n1: 22
+    n2: 33
+    n3: 44
+    n4: 55
+    i: 0
+    as long as i < 3
+        poke_i64(b, i * 8, peek_i64(b, i * 8) + (n0 + n1) * (n2 - n3) + n4)
+        i: i + 1
+
+main:
+    b: _sov_alloc(640)
+    poke_i64(b, 0, 100)
+    poke_i64(b, 8, 200)
+    poke_i64(b, 16, 300)
+    work()
+    print peek_i64(b, 0)
+    print peek_i64(b, 8)
+    print peek_i64(b, 16)

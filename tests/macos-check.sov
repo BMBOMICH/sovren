@@ -1,0 +1,253 @@
+# tests/macos-check.sov — check the shipped Mac binary, on a Mac, in Sovren.
+#
+# This does what the macos job of .github/workflows/check.yml does:
+# prove the Mach-O we ship is
+# well formed, then run it through Rosetta and check the words it
+# prints. Now it is one Sovren program, compiled with --mac, and the
+# job is just:
+#
+#   chmod +x tests/macos-check mac/hello
+#   ./tests/macos-check
+#
+# On Apple silicon without Rosetta the run is skipped, exactly like
+# the old shell did, and the structure check still counts.
+#
+#   ./tests/macos-check struct   — structure only (also what the emulator
+#                          can run here, where there is no Rosetta)
+
+use arg
+use file
+use num
+use proc
+use string
+use sys
+
+mc_pass: 0
+mc_fail: 0
+mc_skipn: 0
+
+mc_ok name:
+    write_out("ok   ")
+    write_out(name)
+    write_out("\n")
+    mc_pass: mc_pass + 1
+    return 0
+
+mc_bad name:
+    write_out("FAIL ")
+    write_out(name)
+    write_out("\n")
+    mc_fail: mc_fail + 1
+    return 0
+
+mc_skip name:
+    write_out("skip ")
+    write_out(name)
+    write_out("\n")
+    mc_skipn: mc_skipn + 1
+    return 0
+
+mc_le32 p i:
+    return peek_byte(p, i) + peek_byte(p, i + 1) * 256 + peek_byte(p, i + 2) * 65536 + peek_byte(p, i + 3) * 16777216
+
+mc_le64 p i:
+    lo: mc_le32(p, i)
+    hi: mc_le32(p, i + 4)
+    return lo + hi * 4294967296
+
+# a number as 0x12345678, no leading zeros
+mc_hx v:
+    b: _sov_alloc(8)
+    poke_byte(b, 0, (v / 16777216) % 256)
+    poke_byte(b, 1, (v / 65536) % 256)
+    poke_byte(b, 2, (v / 256) % 256)
+    poke_byte(b, 3, v % 256)
+    hx: mc_hex_from(b, 4)
+    n: _sov_strlen(hx)
+    pos: 0
+    st: 1
+    as long as st is 1
+        if pos >= n - 1
+            st: 0
+        if not
+            if peek_byte(hx, pos) is not 48
+                st: 0
+            if not
+                pos: pos + 1
+    if pos >= n - 1
+        if peek_byte(hx, pos) is 48
+            return "0x0"
+    return str_cat("0x", str_cut(hx, pos, n))
+
+mc_hex_from p n:
+    out: _sov_alloc(n * 2 + 1)
+    i: 0
+    as long as i < n
+        b: peek_byte(p, i)
+        poke_byte(out, i * 2, mc_hexd(b / 16))
+        poke_byte(out, i * 2 + 1, mc_hexd(b % 16))
+        i: i + 1
+    poke_byte(out, n * 2, 0)
+    return as text out
+
+mc_hexd v:
+    if v < 10
+        return v + 48
+    return v + 87
+
+# the sixteen-byte segment name, NUL-terminated
+mc_segname p i:
+    b: _sov_alloc(17)
+    k: 0
+    as long as k < 16
+        c: peek_byte(p, i + k)
+        if c is 0
+            k: 16
+        if not
+            poke_byte(b, k, c)
+            k: k + 1
+    poke_byte(b, k, 0)
+    return as text b
+
+# ---- the header, load command by load command ----
+mc_struct:
+    write_out("tests/macos-check: reading mac/hello\n")
+    d: file_read_all("mac/hello")
+    if d is 0
+        print "cannot read mac/hello"
+        sys_exit(1)
+    write_out("tests/macos-check: read it\n")
+    sz: file_size("mac/hello")
+    magic: mc_le32(d, 0)
+    cpu: mc_le32(d, 4)
+    ncmds: mc_le32(d, 16)
+    ok: 1
+    if magic is not 4277009103
+        ok: 0
+    if cpu is not 16777223
+        ok: 0
+    print "magic  ok"
+    print str_join3("cputype ", num_text(cpu), "")
+    print str_join3("ncmds  ", num_text(ncmds), "")
+    off: 32
+    i: 0
+    segs: ""
+    entry: 0
+    as long as i < ncmds
+        cmd: mc_le32(d, off)
+        size: mc_le32(d, off + 4)
+        if cmd is 25
+            nm: mc_segname(d, off + 8)
+            va: mc_le64(d, off + 24)
+            vs: mc_le64(d, off + 32)
+            fo: mc_le64(d, off + 40)
+            fs: mc_le64(d, off + 48)
+            if fo + fs > sz
+                ok: 0
+            segs: str_cat(segs, nm)
+            segs: str_cat(segs, " ")
+        if cmd is 5
+            entry: mc_le64(d, off + 144)
+        off: off + size
+        i: i + 1
+    print str_join3("segments ", str_trim(segs), "")
+    if entry is 0
+        ok: 0
+    print str_join3("entry   ", mc_hx(entry), "")
+    if ok is 1
+        mc_ok("the Mach-O header is valid")
+        return 1
+    mc_bad("the Mach-O header is valid")
+    return 0
+
+# the low and high thirty-two bits of a pipe
+mc_pr fds:
+    return peek_i64(fds, 0) % 4294967296
+
+mc_pw fds:
+    return peek_i64(fds, 0) / 4294967296
+
+# ---- run mac/hello, catch its words ----
+mc_run:
+    write_out("tests/macos-check: running mac/hello\n")
+    opf: _sov_alloc(16)
+    poke_i64(opf, 0, 0 - 1)
+    poke_i64(opf, 8, 0 - 1)
+    r: sys_pipe(opf)
+    if r is not 0
+        # no pipe on this machine (the emulator has none). say so
+        # and move on; a real Mac has one.
+        mc_skip("mac/hello runs (cannot spawn here)")
+        return 0
+    if peek_i64(opf, 0) < 0
+        # the pipe call came back empty: the emulator says yes to
+        # everything but gives nothing. same answer.
+        mc_skip("mac/hello runs (cannot spawn here)")
+        return 0
+    pid: sys_fork()
+    if pid is 0
+        sys_dup2(mc_pw(opf), 1)
+        sys_close(mc_pr(opf))
+        argv: _sov_alloc(24)
+        poke_i64(argv, 0, "mac/hello")
+        poke_i64(argv, 8, 0)
+        sys_exec("mac/hello", argv, 0)
+        sys_exit(127)
+    sys_close(mc_pw(opf))
+    out: ""
+    buf: _sov_alloc(8192)
+    more: 1
+    as long as more is 1
+        n: sys_read(mc_pr(opf), buf, 8192)
+        if n <= 0
+            more: 0
+        if not
+            poke_byte(buf, n, 0)
+            out: str_cat(out, as text buf)
+    sys_close(mc_pr(opf))
+    stp: _sov_alloc(8)
+    syscall(61, pid, stp, 0, 0, 0, 0)
+    st: peek_i64(stp, 0)
+    code: (st / 256) % 256
+    if st % 256 is not 0
+        code: 128 + st % 256
+    if code is 127
+        # it would not start. on Apple silicon the usual reason is
+        # no Rosetta, which is the machine's doing, not the binary's.
+        mc_skip("mac/hello runs (no Rosetta on this Mac?)")
+        return 0
+    if code is not 0
+        mc_bad("mac/hello runs")
+        write_out("  exit ")
+        write_out(num_text(code))
+        write_out("\n")
+        write_out(out)
+        write_out("\n")
+        return 0
+    if str_has(out, "Hello from Sovren") is 1
+        mc_ok("mac/hello runs and says hello")
+        return 0
+    mc_bad("mac/hello runs and says hello")
+    write_out(out)
+    write_out("\n")
+    return 0
+
+main:
+    write_out("tests/macos-check: starting\n")
+    only: ""
+    if arg_count() > 1
+        only: arg_at(1)
+    mc_struct()
+    if str_eq(only, "struct") is 0
+        mc_run()
+    write_out(num_text(mc_pass))
+    write_out(" passed, ")
+    write_out(num_text(mc_fail))
+    write_out(" failed, ")
+    write_out(num_text(mc_skipn))
+    write_out(" skipped\n")
+    if mc_fail is 0
+        write_out("mac check passed\n")
+        sys_exit(0)
+    write_out("mac check FAILED\n")
+    sys_exit(1)

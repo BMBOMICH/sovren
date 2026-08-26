@@ -1,0 +1,11 @@
+use sys
+main:
+    t: "abcbc"
+    i: 0
+    c: 0
+    as long as i < 5
+        if peek_byte(t, i) is 98
+            c: c + 1
+        i: i + 1
+    print c
+    print i

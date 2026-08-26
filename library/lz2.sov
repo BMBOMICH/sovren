@@ -1,0 +1,793 @@
+# lz2.sov — the second compressor: farther window, lazy matches.
+#
+# lz looks back 1024 bytes and grabs greedily. lz2 looks back
+# 4096, waits one byte when waiting is better, and pays for the
+# distance only when it finds something worth it:
+#
+#   near token, two bytes: distance 1..1024, length 3..66,
+#     value = (distance-1)*64 + (length-3); never 65535
+#   far token, four bytes: 65535, then (distance-1)*16 +
+#     (length-3) for distance 1..4096, length 3..18
+#
+#   lz2_size   p n   packed size of p's first n bytes
+#   lz2_pack   p n   the stream, lz2_size bytes long
+#   lz2_unpack p     the original bytes back, as text
+#
+# the stream is still led by the true length, so a lie about
+# size is refused, not believed. unpacked data comes back as
+# text: no embedded zero bytes, same deal as lz.
+use mem
+use string
+
+LZ2_WIN: 4096
+LZ2_MIN: 3
+
+# 2^i for the control bits
+lz2_bit i:
+    if i is 0
+        return 1
+    if i is 1
+        return 2
+    if i is 2
+        return 4
+    if i is 3
+        return 8
+    if i is 4
+        return 16
+    if i is 5
+        return 32
+    if i is 6
+        return 64
+    return 128
+
+# best match at pos: distance * 256 + length. lengths are capped
+# by what the token for that distance can carry: 66 near, 18 far
+lz2_best p n pos:
+    bd: 1
+    bl: 0
+    lim: LZ2_WIN
+    if lim > pos
+        lim: pos
+    d: 1
+    as long as d <= lim
+        if peek_byte(p, pos - d) is peek_byte(p, pos)
+            cap: 66
+            if d > 1024
+                cap: 18
+            l: 1
+            done: 0
+            as long as done is 0
+                if l >= cap
+                    done: 1
+                if not
+                    if pos + l >= n
+                        done: 1
+                    if not
+                        if peek_byte(p, pos + l) is peek_byte(p, pos - d + l)
+                            l: l + 1
+                        if not
+                            done: 1
+            if l > bl
+                bl: l
+                bd: d
+                if bl >= 66
+                    d: lim
+        d: d + 1
+    return bd * 256 + bl
+
+# what to do at pos: length + distance*256 + lazy*1048576.
+# length nought means one literal; lazy one means the literal is
+# taken because pos+1 matches better
+lz2_pick p n pos:
+    r1: lz2_best(p, n, pos)
+    l1: r1 % 256
+    if l1 < LZ2_MIN
+        return 0
+    if pos + 1 >= n
+        return r1
+    r2: lz2_best(p, n, pos + 1)
+    l2: r2 % 256
+    if l2 > l1
+        return 1048576
+    return r1
+
+# the bytes one item costs at pos: 1 literal, 2 near, 4 far
+lz2_item p n pos r:
+    l: r % 256
+    if l < LZ2_MIN
+        return 1
+    if r >= 1048576
+        return 1
+    d: (r % 1048576) / 256
+    if d <= 1024
+        return 2
+    return 4
+
+lz2_size p n:
+    items: 0
+    groups: 0
+    bytes: 0
+    pos: 0
+    as long as pos < n
+        r: lz2_pick(p, n, pos)
+        bytes: bytes + lz2_item(p, n, pos, r)
+        l: r % 256
+        if l < LZ2_MIN
+            pos: pos + 1
+        if not
+            if r >= 1048576
+                pos: pos + 1
+            if not
+                pos: pos + l
+        items: items + 1
+        if items % 8 is 0
+            groups: groups + 1
+    tail: 0
+    if items % 8 is not 0
+        tail: 1
+    return 4 + groups + tail + bytes
+
+lz2_pack p n:
+    out: mem_new(lz2_size(p, n) + 8)
+    poke_byte(out, 0, n % 256)
+    poke_byte(out, 1, (n / 256) % 256)
+    poke_byte(out, 2, (n / 65536) % 256)
+    poke_byte(out, 3, (n / 16777216) % 256)
+    o: 4
+    ctrl: 0
+    cnum: 0
+    cat: 0
+    pos: 0
+    as long as pos < n
+        if cnum is 0
+            cat: o
+            poke_byte(out, o, 0)
+            o: o + 1
+        r: lz2_pick(p, n, pos)
+        l: r % 256
+        lit: 0
+        if l < LZ2_MIN
+            lit: 1
+        if not
+            if r >= 1048576
+                lit: 1
+        if lit is 1
+            ctrl: ctrl + lz2_bit(cnum)
+            poke_byte(out, o, peek_byte(p, pos))
+            o: o + 1
+            pos: pos + 1
+        if not
+            d: (r % 1048576) / 256
+            ml: l
+            if d <= 1024
+                if ml is 66
+                    if d is 1024
+                        ml: 65
+                t: (d - 1) * 64 + (ml - 3)
+                poke_byte(out, o, t % 256)
+                poke_byte(out, o + 1, (t / 256) % 256)
+                o: o + 2
+            if not
+                t2: (d - 1) * 16 + (ml - 3)
+                poke_byte(out, o, 255)
+                poke_byte(out, o + 1, 255)
+                poke_byte(out, o + 2, t2 % 256)
+                poke_byte(out, o + 3, (t2 / 256) % 256)
+                o: o + 4
+            pos: pos + ml
+        cnum: cnum + 1
+        if cnum is 8
+            poke_byte(out, cat, ctrl)
+            ctrl: 0
+            cnum: 0
+    if cnum is not 0
+        poke_byte(out, cat, ctrl)
+    return out
+
+lz2_unpack p:
+    n: peek_byte(p, 0) + peek_byte(p, 1) * 256 + peek_byte(p, 2) * 65536 + peek_byte(p, 3) * 16777216
+    if n is 0
+        return ""
+    out: mem_new(n + 1)
+    o: 0
+    i: 4
+    ctrl: 0
+    cnum: 8
+    bad: 0
+    as long as o < n
+        if bad is 1
+            o: n
+        if not
+            if cnum is 8
+                ctrl: peek_byte(p, i)
+                i: i + 1
+                cnum: 0
+            if (ctrl / lz2_bit(cnum)) % 2 is 1
+                poke_byte(out, o, peek_byte(p, i))
+                o: o + 1
+                i: i + 1
+            if not
+                t: peek_byte(p, i) + peek_byte(p, i + 1) * 256
+                i: i + 2
+                d: 0
+                l: 0
+                if t is 65535
+                    t2: peek_byte(p, i) + peek_byte(p, i + 1) * 256
+                    i: i + 2
+                    d: t2 / 16 + 1
+                    l: t2 % 16 + 3
+                if not
+                    d: t / 64 + 1
+                    l: t % 64 + 3
+                if d > o
+                    bad: 1
+                if not
+                    if o + l > n
+                        bad: 1
+                    if not
+                        k: 0
+                        as long as k < l
+                            poke_byte(out, o, peek_byte(out, o - d))
+                            o: o + 1
+                            k: k + 1
+            cnum: cnum + 1
+    if bad is 1
+        return ""
+    poke_byte(out, o, 0)
+    return as text out
+
+# ---- the entropy layer: canonical huffman over the packed stream
+#
+# the lz layer squeezes repeats; the bytes it leaves behind are
+# still skewed (controls, token halves, literal text), so a
+# per-stream huffman code takes another bite. the stream is led
+# by a flag: one, huffman follows; nought, the lz stream sits
+# there raw because coding would not pay for its own table.
+
+# code lengths for 256 symbols from their counts. nought length
+# for symbols that never happen; a lone distinct symbol gets a
+# one-bit code. returns the longest length, or 99 when the shape
+# is too wild (the caller then stores the stream raw)
+lz2h_lengths buf n lens:
+    fr: mem_new(4096)
+    i: 0
+    as long as i < 512
+        poke_i64(fr, i * 8, 0)
+        i: i + 1
+    i: 0
+    as long as i < n
+        v: peek_byte(buf, i)
+        poke_i64(fr, v * 8, peek_i64(fr, v * 8) + 1)
+        i: i + 1
+    # how many live symbols
+    live: 0
+    only: 0
+    s: 0
+    as long as s < 256
+        if peek_i64(fr, s * 8) > 0
+            live: live + 1
+            only: s
+        s: s + 1
+    if live is 0
+        return 0
+    if live is 1
+        poke_i64(lens, only * 8, 1)
+        return 1
+    # huffman by repeated two-smallest merges over 512 slots
+    par: mem_new(4096)
+    used: mem_new(4096)
+    i: 0
+    as long as i < 512
+        poke_i64(par, i * 8, 0 - 1)
+        poke_i64(used, i * 8, 0)
+        i: i + 1
+    s: 0
+    as long as s < 256
+        if peek_i64(fr, s * 8) > 0
+            poke_i64(used, s * 8, 1)
+        s: s + 1
+    nxt: 256
+    merges: 0
+    as long as merges < live - 1
+        a: 0 - 1
+        b: 0 - 1
+        i: 0
+        as long as i < nxt
+            if peek_i64(used, i * 8) is 1
+                if a < 0
+                    a: i
+                if not
+                    if peek_i64(fr, i * 8) < peek_i64(fr, a * 8)
+                        a: i
+            i: i + 1
+        i: 0
+        as long as i < nxt
+            if peek_i64(used, i * 8) is 1
+                if i is not a
+                    if b < 0
+                        b: i
+                    if not
+                        if peek_i64(fr, i * 8) < peek_i64(fr, b * 8)
+                            b: i
+            i: i + 1
+        poke_i64(fr, nxt * 8, peek_i64(fr, a * 8) + peek_i64(fr, b * 8))
+        poke_i64(par, a * 8, nxt)
+        poke_i64(par, b * 8, nxt)
+        poke_i64(used, a * 8, 0)
+        poke_i64(used, b * 8, 0)
+        poke_i64(used, nxt * 8, 1)
+        nxt: nxt + 1
+        merges: merges + 1
+    longest: 0
+    s: 0
+    as long as s < 256
+        if peek_i64(fr, s * 8) > 0
+            dep: 0
+            w: s
+            more: 1
+            as long as more is 1
+                pp: peek_i64(par, w * 8)
+                if pp < 0
+                    more: 0
+                if not
+                    dep: dep + 1
+                    w: pp
+            poke_i64(lens, s * 8, dep)
+            if dep > longest
+                longest: dep
+        s: s + 1
+    if longest > 31
+        return 99
+    return longest
+
+# 2^k for code math (codes run past eight bits)
+lz2h_pw k:
+    r: 1
+    i: 0
+    as long as i < k
+        r: r * 2
+        i: i + 1
+    return r
+
+# canonical codes from lengths (deflate's way), msb first
+lz2h_codes lens codes:
+    mx: 0
+    i: 0
+    as long as i < 256
+        if peek_i64(lens, i * 8) > mx
+            mx: peek_i64(lens, i * 8)
+        i: i + 1
+    cnt: mem_new(512)
+    i: 0
+    as long as i < mx + 1
+        poke_i64(cnt, i * 8, 0)
+        i: i + 1
+    i: 0
+    as long as i < 256
+        l: peek_i64(lens, i * 8)
+        if l > 0
+            poke_i64(cnt, l * 8, peek_i64(cnt, l * 8) + 1)
+        i: i + 1
+    nx: mem_new(512)
+    c: 0
+    i: 1
+    as long as i < mx + 1
+        c: (c + peek_i64(cnt, (i - 1) * 8)) * 2
+        poke_i64(nx, i * 8, c)
+        i: i + 1
+    i: 0
+    as long as i < 256
+        l: peek_i64(lens, i * 8)
+        if l > 0
+            poke_i64(codes, i * 8, peek_i64(nx, l * 8))
+            poke_i64(nx, l * 8, peek_i64(nx, l * 8) + 1)
+        i: i + 1
+    return mx
+
+# lz2 plus the entropy layer, led by the true original length
+lz2h_pack p n:
+    inner: lz2_pack(p, n)
+    plen: lz2_size(p, n)
+    lens: mem_new(2048)
+    longest: lz2h_lengths(inner, plen, lens)
+    if longest is 99
+        out: mem_new(plen + 16)
+        poke_byte(out, 0, n % 256)
+        poke_byte(out, 1, (n / 256) % 256)
+        poke_byte(out, 2, (n / 65536) % 256)
+        poke_byte(out, 3, (n / 16777216) % 256)
+        poke_byte(out, 4, 0)
+        poke_byte(out, 5, plen % 256)
+        poke_byte(out, 6, (plen / 256) % 256)
+        poke_byte(out, 7, (plen / 65536) % 256)
+        poke_byte(out, 8, (plen / 16777216) % 256)
+        o: 9
+        i: 0
+        as long as i < plen
+            poke_byte(out, o + i, peek_byte(inner, i))
+            i: i + 1
+        return out
+    codes: mem_new(2048)
+    mx: lz2h_codes(lens, codes)
+    coded: plen * 4 + 64
+    bits: mem_new(coded)
+    nbits: 0
+    i: 0
+    as long as i < plen
+        v: peek_byte(inner, i)
+        cd: peek_i64(codes, v * 8)
+        ln: peek_i64(lens, v * 8)
+        k: ln - 1
+        as long as k >= 0
+            bit: (cd / lz2h_pw(k)) % 2
+            byi: nbits / 8
+            if (nbits % 8) is 0
+                poke_byte(bits, byi, 0)
+            if bit is 1
+                poke_byte(bits, byi, peek_byte(bits, byi) + lz2_bit(nbits % 8))
+            nbits: nbits + 1
+            k: k - 1
+        i: i + 1
+    nbytes: (nbits + 7) / 8
+    if 137 + nbytes >= plen
+        out: mem_new(plen + 16)
+        poke_byte(out, 0, n % 256)
+        poke_byte(out, 1, (n / 256) % 256)
+        poke_byte(out, 2, (n / 65536) % 256)
+        poke_byte(out, 3, (n / 16777216) % 256)
+        poke_byte(out, 4, 0)
+        poke_byte(out, 5, plen % 256)
+        poke_byte(out, 6, (plen / 256) % 256)
+        poke_byte(out, 7, (plen / 65536) % 256)
+        poke_byte(out, 8, (plen / 16777216) % 256)
+        o: 9
+        i: 0
+        as long as i < plen
+            poke_byte(out, o + i, peek_byte(inner, i))
+            i: i + 1
+        return out
+    out: mem_new(144 + nbytes)
+    poke_byte(out, 0, n % 256)
+    poke_byte(out, 1, (n / 256) % 256)
+    poke_byte(out, 2, (n / 65536) % 256)
+    poke_byte(out, 3, (n / 16777216) % 256)
+    poke_byte(out, 4, 1)
+    poke_byte(out, 5, plen % 256)
+    poke_byte(out, 6, (plen / 256) % 256)
+    poke_byte(out, 7, (plen / 65536) % 256)
+    poke_byte(out, 8, (plen / 16777216) % 256)
+    poke_byte(out, 9, nbits % 256)
+    poke_byte(out, 10, (nbits / 256) % 256)
+    poke_byte(out, 11, (nbits / 65536) % 256)
+    o: 12
+    s: 0
+    as long as s < 256
+        l: peek_i64(lens, s * 8)
+        half: 0
+        if s % 2 is 1
+            half: l * 16
+        if not
+            half: l
+        if s % 2 is 0
+            poke_byte(out, o + s / 2, half)
+        if not
+            poke_byte(out, o + s / 2, peek_byte(out, o + s / 2) + half)
+        s: s + 1
+    o: 12 + 128
+    i: 0
+    as long as i < nbytes
+        poke_byte(out, o + i, peek_byte(bits, i))
+        i: i + 1
+    return out
+
+# canonical decode of the bitstream, then the lz layer
+lz2h_unpack p:
+    n: peek_byte(p, 0) + peek_byte(p, 1) * 256 + peek_byte(p, 2) * 65536 + peek_byte(p, 3) * 16777216
+    if n is 0
+        return ""
+    flag: peek_byte(p, 4)
+    # a lied-about length is refused, not believed: nothing packs
+    # past sixteen megs, so a stream claiming more is hostile
+    claim: peek_byte(p, 5) + peek_byte(p, 6) * 256 + peek_byte(p, 7) * 65536 + peek_byte(p, 8) * 16777216
+    if claim > 16777216
+        return ""
+    if flag is 0
+        inner: claim
+        if inner < 4
+            return ""
+        sub: mem_new(inner + 16)
+        i: 0
+        as long as i < inner
+            poke_byte(sub, i, peek_byte(p, 9 + i))
+            i: i + 1
+        return lz2_unpack(sub)
+    plen: peek_byte(p, 5) + peek_byte(p, 6) * 256 + peek_byte(p, 7) * 65536 + peek_byte(p, 8) * 16777216
+    nbits: peek_byte(p, 9) + peek_byte(p, 10) * 256 + peek_byte(p, 11) * 65536
+    lens: mem_new(2048)
+    s: 0
+    as long as s < 256
+        b: peek_byte(p, 12 + s / 2)
+        l: b % 16
+        if s % 2 is 1
+            l: b / 16
+        poke_i64(lens, s * 8, l)
+        s: s + 1
+    codes: mem_new(2048)
+    mx: lz2h_codes(lens, codes)
+    # canonical tables: first code and first index per length,
+    # symbols in order of (length, symbol)
+    cnt: mem_new(512)
+    i: 0
+    as long as i < mx + 1
+        poke_i64(cnt, i * 8, 0)
+        i: i + 1
+    s: 0
+    as long as s < 256
+        l: peek_i64(lens, s * 8)
+        if l > 0
+            poke_i64(cnt, l * 8, peek_i64(cnt, l * 8) + 1)
+        s: s + 1
+    fcode: mem_new(512)
+    fidx: mem_new(512)
+    symat: mem_new(2048)
+    c: 0
+    acc: 0
+    i: 1
+    as long as i < mx + 1
+        c: (c + peek_i64(cnt, (i - 1) * 8)) * 2
+        poke_i64(fcode, i * 8, c)
+        poke_i64(fidx, i * 8, acc)
+        acc: acc + peek_i64(cnt, i * 8)
+        i: i + 1
+    # walk (length, symbol) order properly: fill symat by lengths
+    w: 0
+    li: 1
+    as long as li < mx + 1
+        s: 0
+        as long as s < 256
+            if peek_i64(lens, s * 8) is li
+                poke_i64(symat, w * 8, s)
+                w: w + 1
+            s: s + 1
+        li: li + 1
+    outb: mem_new(plen + 8)
+    ob: 0
+    bitp: 0
+    as long as ob < plen
+        code: 0
+        l: 0
+        got: 0
+        as long as got is 0
+            if bitp >= nbits
+                got: 2
+            if not
+                if l >= mx
+                    got: 2
+                if not
+                    byi: bitp / 8
+                    bit: (peek_byte(p, 140 + byi) / lz2_bit(bitp % 8)) % 2
+                    bitp: bitp + 1
+                    code: code * 2 + bit
+                    l: l + 1
+                    if peek_i64(cnt, l * 8) > 0
+                        if code >= peek_i64(fcode, l * 8)
+                            if code - peek_i64(fcode, l * 8) < peek_i64(cnt, l * 8)
+                                got: 1
+        if got is 2
+            ob: plen + 1
+        if not
+            idx: peek_i64(fidx, l * 8) + code - peek_i64(fcode, l * 8)
+            poke_byte(outb, ob, peek_i64(symat, idx * 8))
+            ob: ob + 1
+    if ob is not plen
+        return ""
+    if ob < plen
+        return ""
+    return lz2_unpack(as text outb)
+
+# packed form for binaries: same stream, but refuses anything it
+# cannot represent exactly (depth over 31, or nothing to code) so a
+# caller never mistakes a refusal for data
+lz2h_packb p n:
+    inner: lz2_pack(p, n)
+    plen: lz2_size(p, n)
+    lens: mem_new(2048)
+    longest: lz2h_lengths(inner, plen, lens)
+    if longest is 99
+        return 0
+    if longest is 0
+        return 0
+    return lz2h_pack(p, n)
+
+# how many bytes the stored stream occupies
+lz2h_plen p:
+    flag: peek_byte(p, 4)
+    if flag is 0
+        return 9 + peek_byte(p, 5) + peek_byte(p, 6) * 256 + peek_byte(p, 7) * 65536 + peek_byte(p, 8) * 16777216
+    nbits: peek_byte(p, 9) + peek_byte(p, 10) * 256 + peek_byte(p, 11) * 65536
+    return 140 + (nbits + 7) / 8
+
+# --- lz2r: the range-coded form (pass 141b) ---
+# lz2h pays huffman's whole-symbol price: every symbol costs a whole
+# number of bits. a range coder pays fractions, and the table can
+# learn while it runs. lz2r range-codes the lz2 stream with one
+# adaptive order-0 model: frequencies start flat, move toward what
+# the file actually holds, and halve when they fill up. the stream
+# is [ulen4][flag 2][innerlen4][rc bytes].
+
+LZ2R_TOP: 16777216
+
+# --- the encoder ---
+# low is kept in one 64-bit cell; the carry rides bit 32 until
+# shift_low spends it. cache holds a byte the carries have not
+# finished with yet.
+
+lz2r_enc_init ob:
+    poke_i64(ob, 0, 0)
+    poke_i64(ob, 8, 4294967295)
+    poke_i64(ob, 16, 0)
+    poke_i64(ob, 24, 1)
+    poke_i64(ob, 32, 0)
+    return 0
+
+# the state lives in one 40-byte block: low, range, cache, csize, w
+lz2r_shift_low ob:
+    low: peek_i64(ob, 0)
+    if low < 4278190080
+        lz2r_shift_emit(ob, 0)
+    if not
+        if low > 4294967295
+            lz2r_shift_emit(ob, 1)
+    poke_i64(ob, 24, peek_i64(ob, 24) + 1)
+    poke_i64(ob, 0, (low * 256) % 4294967296)
+    return 0
+
+lz2r_shift_emit ob carry:
+    b: peek_i64(ob, 16)
+    cs: peek_i64(ob, 24)
+    as long as cs > 0
+        poke_byte(peek_i64(ob, 40), peek_i64(ob, 32), (b + carry) % 256)
+        poke_i64(ob, 32, peek_i64(ob, 32) + 1)
+        b: 255
+        cs: cs - 1
+    low: peek_i64(ob, 0)
+    poke_i64(ob, 16, (low / 16777216) % 256)
+    poke_i64(ob, 24, 0)
+    return 0
+
+# code one symbol: cum below it, its own freq, the total
+lz2r_enc ob cum freq tot:
+    r: peek_i64(ob, 8) / tot
+    poke_i64(ob, 0, peek_i64(ob, 0) + cum * r)
+    poke_i64(ob, 8, r * freq)
+    as long as peek_i64(ob, 8) < LZ2R_TOP
+        poke_i64(ob, 8, peek_i64(ob, 8) * 256)
+        lz2r_shift_low(ob)
+    return 0
+
+# --- the adaptive model: 257 slots of 8 bytes ---
+# freq[0..255] for the bytes, slot 256 spare. every hit adds 32;
+# past 262143 everything halves. flat start, no zero frequencies.
+
+lz2r_mod_init mb:
+    i: 0
+    as long as i < 256
+        poke_i64(mb, i * 8, 32)
+        i: i + 1
+    return 256 * 32
+
+lz2r_mod_hit mb s tot:
+    poke_i64(mb, s * 8, peek_i64(mb, s * 8) + 32)
+    tot: tot + 32
+    if tot > 262144
+        i: 0
+        as long as i < 256
+            poke_i64(mb, i * 8, (peek_i64(mb, i * 8) + 1) / 2)
+            i: i + 1
+        tot: 0
+        i: 0
+        as long as i < 256
+            tot: tot + peek_i64(mb, i * 8)
+            i: i + 1
+    return tot
+
+# --- pack: lz2 stream, then every byte through the model ---
+lz2r_pack p n:
+    inner: lz2_pack(p, n)
+    plen: lz2_size(p, n)
+    out: mem_new(plen + 65536)
+    poke_byte(out, 0, n % 256)
+    poke_byte(out, 1, (n / 256) % 256)
+    poke_byte(out, 2, (n / 65536) % 256)
+    poke_byte(out, 3, (n / 16777216) % 256)
+    poke_byte(out, 4, 2)
+    poke_byte(out, 5, plen % 256)
+    poke_byte(out, 6, (plen / 256) % 256)
+    poke_byte(out, 7, (plen / 65536) % 256)
+    poke_byte(out, 8, (plen / 16777216) % 256)
+    ob: mem_new(48)
+    lz2r_enc_init(ob)
+    poke_i64(ob, 32, 12)
+    poke_i64(ob, 40, out)
+    mb: mem_new(2048 + 64)
+    tot: lz2r_mod_init(mb)
+    i: 0
+    as long as i < plen
+        v: peek_byte(inner, i)
+        cum: 0
+        k: 0
+        as long as k < v
+            cum: cum + peek_i64(mb, k * 8)
+            k: k + 1
+        dummy: lz2r_enc(ob, cum, peek_i64(mb, v * 8), tot)
+        tot: lz2r_mod_hit(mb, v, tot)
+        i: i + 1
+    k: 0
+    as long as k < 5
+        lz2r_shift_low(ob)
+        k: k + 1
+    w: peek_i64(ob, 32)
+    poke_byte(out, 9, (w - 12) % 256)
+    poke_byte(out, 10, ((w - 12) / 256) % 256)
+    poke_byte(out, 11, ((w - 12) / 65536) % 256)
+    if w < 13
+        return 0
+    return out
+
+# stored length of a lz2r stream: header plus the counted rc bytes
+lz2r_plen p:
+    return 12 + peek_byte(p, 9) + peek_byte(p, 10) * 256 + peek_byte(p, 11) * 65536
+
+# read one rc byte, zero past the end of the stored stream
+lz2r_peek p rcpos lim:
+    if rcpos < lim
+        return peek_byte(p, rcpos)
+    return 0
+
+# --- unpack: the decoder walks the same model the same way ---
+lz2r_unpack p:
+    if peek_byte(p, 4) is not 2
+        return ""
+    claim: peek_byte(p, 5) + peek_byte(p, 6) * 256 + peek_byte(p, 7) * 65536 + peek_byte(p, 8) * 16777216
+    if claim > 16777216
+        return ""
+    rcpos: 12
+    lim: 12 + peek_byte(p, 9) + peek_byte(p, 10) * 256 + peek_byte(p, 11) * 65536
+    dcode: 0
+    k: 0
+    as long as k < 5
+        dcode: (dcode * 256) % 4294967296 + lz2r_peek(p, rcpos, lim)
+        rcpos: rcpos + 1
+        k: k + 1
+    drange: 4294967295
+    mb: mem_new(2048 + 64)
+    tot: lz2r_mod_init(mb)
+    inner: mem_new(claim + 16)
+    i: 0
+    as long as i < claim
+        as long as drange < LZ2R_TOP
+            drange: drange * 256
+            dcode: (dcode * 256) % 4294967296 + lz2r_peek(p, rcpos, lim)
+            rcpos: rcpos + 1
+        drange: drange / tot
+        v: dcode / drange
+        cum: 0
+        s: 0
+        found: 0
+        as long as found is 0
+            f: peek_i64(mb, s * 8)
+            if v < cum + f
+                found: 1
+            if not
+                cum: cum + f
+                s: s + 1
+                if s > 255
+                    found: 2
+        if found is 2
+            return ""
+        poke_byte(inner, i, s)
+        dcode: dcode - cum * drange
+        drange: drange * f
+        tot: lz2r_mod_hit(mb, s, tot)
+        i: i + 1
+    return lz2_unpack(inner)

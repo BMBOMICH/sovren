@@ -1,0 +1,45 @@
+# ci1 - leaf8 slots 5-8 (r8-r11) vs 8-bit immediates, every fused
+# compare op, taken/untaken arms as distinct digit positions.
+# the function must stay print-free (leaf8_scan), so results fold
+# into a digit accumulator and main prints it.
+ci1:
+    n0: 3
+    n1: 14
+    n2: 25
+    n3: 36
+    n4: -47
+    n5: 60
+    n6: -70
+    n7: 80
+    n8: -90
+    r: 0
+    if n5 > 59
+        r: r + 1
+    if n5 < 61
+        r: r + 10
+    if n5 is 60
+        r: r + 100
+    if n5 is not 60
+        r: r + 1000
+    if n6 < -69
+        r: r + 10000
+    if n6 is -70
+        r: r + 100000
+    if n6 > -60
+        r: r + 1000000
+    if n7 >= 80
+        r: r + 10000000
+    if n7 <= 79
+        r: r + 100000000
+    if n7 > 79
+        r: r + 1000000000
+    if n8 <= -90
+        r: r + 10000000000
+    if n8 is not -90
+        r: r + 100000000000
+    if n8 < -89
+        r: r + 1000000000000
+    return r
+
+main:
+    print ci1()

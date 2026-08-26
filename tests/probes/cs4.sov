@@ -1,0 +1,20 @@
+# scaled peek > name - swap_op gt, both outcomes
+main:
+    arr: _sov_alloc(8000)
+    r: 4
+    poke_raw64(arr, r * 8, 100)
+    v: 78
+    if peek_raw64(arr, r * 8) > v
+        print 401
+    if not
+        print 402
+    v: 100
+    if peek_raw64(arr, r * 8) > v
+        print 403
+    if not
+        print 404
+    v: 222
+    if peek_raw64(arr, r * 8) > v
+        print 405
+    if not
+        print 406

@@ -22,6 +22,44 @@ use sys
 RP_SRC: "/tmp/repl_run.sov"
 RP_BIN: "/tmp/repl_run.bin"
 RP_EOF: 0
+RP_FILE: 0
+RP_LTXT: ""
+RP_LPOS: 0
+
+# next line of the script file, with the newline taken off. the
+# end of the file sets the same EOF the keyboard path uses
+rp_fline:
+    t: RP_LTXT
+    n: str_len(t)
+    if RP_LPOS >= n
+        RP_EOF: 1
+        return ""
+    i: RP_LPOS
+    j: i
+    more: 1
+    as long as more is 1
+        if j >= n
+            more: 0
+        if not
+            if peek_byte(t, j) is 10
+                more: 0
+            if not
+                j: j + 1
+    end: j
+    line: str_cut(t, i, end)
+    ln: str_len(line)
+    if ln > 0
+        if peek_byte(line, ln - 1) is 13
+            line: str_cut(line, 0, ln - 1)
+    RP_LPOS: end + 1
+    return line
+
+# one line from wherever it comes from: the script file named on
+# the command line, or the keyboard
+rp_src:
+    if RP_FILE is 1
+        return rp_fline()
+    return rp_line()
 
 # one line from the keyboard, with the newline taken off. nought
 # means the input ran out.
@@ -108,13 +146,13 @@ rp_compile uses line want:
 rp_compiler:
     me: arg_at(0)
     root: rp_dir(me)
-    if file_exists(str_cat(str_cat(root, "/linux/compiler"), "")) is 1
-        return str_cat(str_cat(root, "/linux/compiler"), "")
-    if file_exists(str_cat(str_cat(root, "/mac/compiler"), "")) is 1
-        return str_cat(str_cat(root, "/mac/compiler"), "")
-    if file_exists(str_cat(str_cat(root, "/windows/compiler"), "")) is 1
-        return str_cat(str_cat(root, "/windows/compiler"), "")
-    return "linux/compiler"
+    if file_exists(str_cat(str_cat(root, "/compilers/linux/compiler"), "")) is 1
+        return str_cat(str_cat(root, "/compilers/linux/compiler"), "")
+    if file_exists(str_cat(str_cat(root, "/compilers/macos/compiler"), "")) is 1
+        return str_cat(str_cat(root, "/compilers/macos/compiler"), "")
+    if file_exists(str_cat(str_cat(root, "/compilers/windows/compiler"), "")) is 1
+        return str_cat(str_cat(root, "/compilers/windows/compiler"), "")
+    return "compilers/linux/compiler"
 
 # the folder a path lives in
 rp_dir p:
@@ -172,11 +210,17 @@ rp_try uses line:
 
 main:
     uses: ""
-    write_out("Sovren. An expression a line; `use name` opens a library; `quit` leaves.\n")
+    sc: arg_at(1)
+    if str_len(sc) > 0
+        RP_LTXT: file_read_all(sc)
+        RP_FILE: 1
+    if RP_FILE is 0
+        write_out("Sovren. An expression a line; `use name` opens a library; `quit` leaves.\n")
     more: 1
     as long as more is 1
-        write_out("sovren> ")
-        line: rp_line()
+        if RP_FILE is 0
+            write_out("sovren> ")
+        line: rp_src()
         if RP_EOF is 1
             write_out("\n")
             more: 0

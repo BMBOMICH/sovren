@@ -23,10 +23,12 @@
 #   304          how much output
 #   312          the exit code
 
+use lz2
 use mem
 use file
 use string
 use num
+use bit32
 
 ARM_MEM: 268435456
 ARM_OUT: 1048576
@@ -86,20 +88,101 @@ arm_base m:
 
 # guest addresses are real ones, so take the load point off first
 arm_r8 m a:
+    if arm_in(m, a) is 0
+        arm_fault(m, a, 11)
+        return 0
     return peek_byte(arm_base(m), a - peek_i64(m, 328))
 
+
+# fill eight bytes of guest memory with real host entropy, and say
+# how many bytes landed
+arm_fill_rand m a:
+    p: arm_base(m) + a - peek_i64(m, 328)
+    if sys_getrandom(p, 8) is 8
+        return 8
+    return 0
+
+# pass S6: every guest access is checked against the guest's own
+# memory. a touch outside it is a fault, not a wild host write: the
+# machine either hands the fault to the guest's own crash handler or
+# refuses and says where.
+arm_in m a:
+    d: a - peek_i64(m, 328)
+    if d < 0
+        return 0
+    if d >= peek_i64(m, 288)
+        return 0
+    return 1
+
+# the qword slots a signal's handler lives in: 360, 368, 376, 384,
+# 392 for ill, abrt, bus, fpe, segv. every one is eight aligned,
+# because these offsets are byte addresses into the machine
+arm_sig_slot sig:
+    if sig is 4
+        return 360
+    if sig is 6
+        return 368
+    if sig is 7
+        return 376
+    if sig is 8
+        return 384
+    return 392
+
+# latch the fault: 1 = no handler, stop; 2 = handler armed, deliver
+arm_fault m a sig:
+    poke_i64(m, 400, 1)
+    poke_i64(m, 408, sig)
+    poke_i64(m, 416, a)
+    if peek_i64(m, arm_sig_slot(sig)) > 0
+        poke_i64(m, 400, 2)
+    return 0
+
+# hand a latched fault over: call the guest handler, or refuse.
+# 0 nothing pending, 1 delivered, 2 refusal
+arm_deliver m:
+    f: peek_i64(m, 400)
+    if f is 0
+        return 0
+    poke_i64(m, 400, 0)
+    sg: peek_i64(m, 408)
+    if f is 2
+        # the handler gets a real frame of its own on the guest
+        # stack, the way a kernel call would: its prologue, wipe,
+        # and frame pointer must not be the smashed caller's
+        nsp: arm_reg(m, 31) - 64
+        arm_set(m, 31, nsp)
+        arm_set(m, 29, nsp)
+        arm_set(m, 0, sg)
+        arm_set_pc(m, peek_i64(m, arm_sig_slot(sg)))
+        return 1
+    poke_i64(m, 272, 2)
+    poke_i64(m, 336, peek_i64(m, 416))
+    return 2
+
 arm_w8 m a v:
+    if arm_in(m, a) is 0
+        arm_fault(m, a, 11)
+        return 0
     poke_byte(arm_base(m), a - peek_i64(m, 328), v)
     return 0
 
 arm_r64 m a:
+    if arm_in(m, a) is 0
+        arm_fault(m, a, 11)
+        return 0
     return peek_i64(arm_base(m) + a - peek_i64(m, 328), 0)
 
 arm_w64 m a v:
+    if arm_in(m, a) is 0
+        arm_fault(m, a, 11)
+        return 0
     poke_i64(arm_base(m) + a - peek_i64(m, 328), 0, v)
     return 0
 
 arm_r32 m a:
+    if arm_in(m, a) is 0
+        arm_fault(m, a, 11)
+        return 0
     b: arm_base(m) - peek_i64(m, 328)
     v: peek_byte(b, a)
     v: v + peek_byte(b, a + 1) * 256
@@ -203,6 +286,17 @@ arm_cond m c:
         if arm_flag_a(m) < arm_flag_b(m)
             return 1
         return 0
+    # b.hi / b.ls: unsigned above / lower-or-same. the same raw flag
+    # pair the hs/lo cases above use, with equality folded into ls
+    # the way a real cpu folds the zero flag in
+    if c is 8
+        if arm_flag_a(m) > arm_flag_b(m)
+            return 1
+        return 0
+    if c is 9
+        if arm_flag_a(m) <= arm_flag_b(m)
+            return 1
+        return 0
     if c is 10
         if a >= b
             return 1
@@ -230,10 +324,29 @@ arm_load m path:
     d: file_read_all(path)
     if d is 0
         return 0
+    # compressed executables: a stream that does not begin with
+    # the ELF magic is lz2h and unpacks to the ELF itself, zeros
+    # and all; anything that will not unpack is refused
+    if peek_byte(d, 0) is not 127
+        d2: lz2h_unpack(d)
+        if peek_byte(d2, 0) is not 127
+            return 0
+        d: d2
     entry: peek_i64(d, 24)
     phoff: peek_i64(d, 32)
     phnum: peek_byte(d, 56) + peek_byte(d, 57) * 256
     phsz: peek_byte(d, 54) + peek_byte(d, 55) * 256
+    # pass S7: a DYN header makes the load random, the way the
+    # kernel does it: a page-multiple bias from real entropy
+    slide: 0
+    etype: peek_byte(d, 16) + peek_byte(d, 17) * 256
+    if etype is 3
+        rb: _sov_alloc(8)
+        if sys_getrandom(rb, 8) is 8
+            v: peek_i64(rb, 0)
+            if v < 0
+                v: 0 - v
+            slide: (v - (v / 512) * 512) * 4096
     lo: 0
     i: 0
     as long as i < phnum
@@ -246,17 +359,76 @@ arm_load m path:
             if lo is 0
                 lo: va
                 # remember it now: every memory access takes it off
-                poke_i64(m, 328, lo)
+                poke_i64(m, 328, lo + slide)
             k: 0
             as long as k < fsz
-                arm_w8(m, va + k, peek_byte(d, off + k))
+                arm_w8(m, va + slide + k, peek_byte(d, off + k))
                 k: k + 1
         i: i + 1
-    poke_i64(m, 328, lo)
-    arm_set_pc(m, entry)
-    arm_set_sp(m, lo + ARM_MEM - 65536)
+    poke_i64(m, 328, lo + slide)
+    arm_set_pc(m, entry + slide)
+    arm_set_sp(m, lo + slide + ARM_MEM - 65536)
     # argc = 1 on the stack
     arm_w64(m, arm_sp(m), 1)
+    # pass S7: loader-applied relocations, the windows model. The
+    # table at e_shoff holds a count, then (offset, kind) pairs:
+    # kind 2/3/4 is a movz/movk run, 80 a raw qword, 40 a dword
+    if slide > 0
+        tab: peek_i64(d, 40)
+        if tab > 0
+            rn: peek_byte(d, 60) + peek_byte(d, 61) * 256
+            ri: 0
+            as long as ri < rn
+                fo: peek_byte(d, tab + 8 + ri * 8) + peek_byte(d, tab + 9 + ri * 8) * 256 + peek_byte(d, tab + 10 + ri * 8) * 65536 + peek_byte(d, tab + 11 + ri * 8) * 16777216
+                nw: peek_byte(d, tab + 12 + ri * 8) + peek_byte(d, tab + 13 + ri * 8) * 256 + peek_byte(d, tab + 14 + ri * 8) * 65536 + peek_byte(d, tab + 15 + ri * 8) * 16777216
+                if nw is 80
+                    qv: peek_i64(d, fo) + slide
+                    arm_w64(m, lo + slide + fo, qv)
+                if not
+                    if nw is 40
+                        dv: peek_byte(d, fo) + peek_byte(d, fo + 1) * 256 + peek_byte(d, fo + 2) * 65536 + peek_byte(d, fo + 3) * 16777216 + slide
+                        b: 0
+                        as long as b < 4
+                            arm_w8(m, lo + slide + fo + b, dv % 256)
+                            dv: dv / 256
+                            b: b + 1
+                    if not
+                        # a movz/movk run: pull the absolute out of
+                        # the immediate fields, add the slide, put
+                        # it back word by word
+                        v: 0
+                        w: 0
+                        as long as w < nw
+                            wd: peek_byte(d, fo + w * 4) + peek_byte(d, fo + w * 4 + 1) * 256 + peek_byte(d, fo + w * 4 + 2) * 65536 + peek_byte(d, fo + w * 4 + 3) * 16777216
+                            sc: 1
+                            if (wd / 2097152) % 4 is 1
+                                sc: 65536
+                            if (wd / 2097152) % 4 is 2
+                                sc: 4294967296
+                            if (wd / 2097152) % 4 is 3
+                                sc: 281474976710656
+                            v: v + ((wd / 32) % 65536) * sc
+                            w: w + 1
+                        v: v + slide
+                        w: 0
+                        as long as w < nw
+                            wd: peek_byte(d, fo + w * 4) + peek_byte(d, fo + w * 4 + 1) * 256 + peek_byte(d, fo + w * 4 + 2) * 65536 + peek_byte(d, fo + w * 4 + 3) * 16777216
+                            sc: 1
+                            if (wd / 2097152) % 4 is 1
+                                sc: 65536
+                            if (wd / 2097152) % 4 is 2
+                                sc: 4294967296
+                            if (wd / 2097152) % 4 is 3
+                                sc: 281474976710656
+                            chunk: (v / sc) % 65536
+                            wd: wd - ((wd / 32) % 65536) * 32 + chunk * 32
+                            b: 0
+                            as long as b < 4
+                                arm_w8(m, lo + slide + fo + w * 4 + b, wd % 256)
+                                wd: wd / 256
+                                b: b + 1
+                            w: w + 1
+                ri: ri + 1
     return 1
 
 arm_low m:
@@ -266,8 +438,18 @@ arm_low m:
 
 # take one instruction apart and do it. returns 1 to keep going.
 arm_step m:
+    dv: arm_deliver(m)
+    if dv is 1
+        return 1
+    if dv is 2
+        return 0
     pc: arm_pc(m)
     w: arm_r32(m, pc)
+    if peek_i64(m, 400) > 0
+        dv2: arm_deliver(m)
+        if dv2 is 1
+            return 1
+        return 0
     nx: pc + 4
 
     top: w / 16777216
@@ -344,22 +526,48 @@ arm_step m:
 
     # cmp, register and immediate, in both widths.
     # the 32 bit forms compare only the low half.
+    # cmp and subs share a top byte: rd 31 discards the difference and
+    # only the flags live, any other rd keeps it. Dropping that
+    # writeback turns a countdown loop (subs xN, xN, #1) into one that
+    # never ends, which no real arm cpu does.
     if top is 235
         arm_cmp(m, arm_rz(m, rn), arm_rz(m, rm))
+        if rd < 31
+            arm_set(m, rd, arm_wrap(arm_rz(m, rn) - arm_rz(m, rm)))
         arm_set_pc(m, nx)
         return 1
     if top is 241
         im: (w / 1024) % 4096
+        if (w / 4194304) % 2 is 1
+            im: im * 4096
         arm_cmp(m, arm_reg(m, rn), im)
+        if rd < 31
+            arm_set(m, rd, arm_wrap(arm_reg(m, rn) - im))
         arm_set_pc(m, nx)
         return 1
     if top is 107
         arm_cmp(m, arm_rz(m, rn) % 4294967296, arm_rz(m, rm) % 4294967296)
+        if rd < 31
+            arm_set(m, rd, (arm_rz(m, rn) % 4294967296 + 4294967296 - arm_rz(m, rm) % 4294967296) % 4294967296)
         arm_set_pc(m, nx)
         return 1
     if top is 113
         im: (w / 1024) % 4096
+        if (w / 4194304) % 2 is 1
+            im: im * 4096
         arm_cmp(m, arm_reg(m, rn) % 4294967296, im)
+        if rd < 31
+            arm_set(m, rd, (arm_reg(m, rn) % 4294967296 + 4294967296 - im % 4294967296) % 4294967296)
+        arm_set_pc(m, nx)
+        return 1
+
+    # adr rd, pc + imm. the try/except frame walks off its own address.
+    if (top % 32) is 16
+        im: (w / 32) % 524288 * 4 + (w / 536870912) % 4
+        if im > 1048575
+            im: im - 2097152
+        if rd < 31
+            arm_set(m, rd, arm_wrap(pc + im))
         arm_set_pc(m, nx)
         return 1
 
@@ -429,10 +637,17 @@ arm_step m:
 
     # blr
     if top is 214
-        if (w / 4096) % 4096 is 1023
+        # this family is br / blr / ret with the register in rn.
+        # blr links x30 first; br and any-width ret do not. The old
+        # 1023 test never matched any encoding in this family, so br
+        # (and therefore raise/except) stopped as unknown.
+        if (w / 2097152) % 2 is 1
             tgt: arm_rz(m, rn)
             arm_set(m, 30, nx)
             arm_set_pc(m, tgt)
+            return 1
+        if not
+            arm_set_pc(m, arm_rz(m, rn))
             return 1
 
     # conditional branch
@@ -546,6 +761,35 @@ arm_step2 m w nx:
     if top is 168
         return arm_pair(m, w, nx, 0)
 
+    # and, shifted register shape with no shift: the heap walk
+    # masks page numbers with it
+    if top is 138
+        rm: (w / 65536) % 32
+        arm_set(m, rd, wand(arm_reg(m, rn), arm_rz(m, rm)))
+        arm_set_pc(m, nx)
+        return 1
+
+    # movz in the 32-bit register form, the small counts the walk
+    # carries in single registers
+    if top is 82
+        sh: ((w / 2097152) % 4) * 16
+        im: (w / 32) % 65536
+        arm_set(m, rd, arm_shl(im, sh) % 4294967296)
+        arm_set_pc(m, nx)
+        return 1
+
+    # cbnz in the 32-bit form, the walk's loop test
+    if top is 53
+        t: arm_rz(m, rd) % 4294967296
+        if t is not 0
+            rel: ((w / 32) % 524288) * 4
+            if rel > 1048572
+                rel: rel - 2097152
+            arm_set_pc(m, peek_i64(m, 256) + rel)
+            return 1
+        arm_set_pc(m, nx)
+        return 1
+
     # wfi and the interrupt words: nothing to do here
     if w is 3573751935
         arm_set_pc(m, nx)
@@ -554,7 +798,12 @@ arm_step2 m w nx:
         arm_set_pc(m, nx)
         return 1
 
-    # anything else stops the machine and says so
+    # anything else is an illegal instruction. a guest that armed
+    # an ill handler gets the call; otherwise the machine refuses
+    if peek_i64(m, 360) > 0
+        arm_set(m, 0, 4)
+        arm_set_pc(m, peek_i64(m, 360))
+        return 1
     poke_i64(m, 272, 2)
     poke_i64(m, 336, w)
     return 0
@@ -631,10 +880,13 @@ arm_clear_field v sh:
             lowmask: lowmask * 2
             i: i + 1
     low: v % lowmask
-    highstart: lowmask * 65536
     high: 0
-    if v >= highstart
-        high: (v / highstart) * highstart
+    # a lsl#48 field is the top sixteen bits: lowmask * 65536 would
+    # overflow the word, and the high part is nothing anyway
+    if lowmask < 281474976710656
+        highstart: lowmask * 65536
+        if v >= highstart
+            high: (v / highstart) * highstart
     return low + high
 
 # the only immediate masks the back end emits are small low masks
@@ -688,6 +940,45 @@ arm_svc m nx:
         return 1
     if nr is 214
         arm_set(m, 0, arm_give(m))
+        arm_set_pc(m, nx)
+        return 1
+    if nr is 278
+        # getrandom: a real fill straight into guest memory, the
+        # same honesty as the x86 side. the fill lives in its own
+        # tiny task: a raw host syscall from inside this very large
+        # frame is what crashes, so keep the call out of it
+        arm_set(m, 0, arm_fill_rand(m, a0))
+        arm_set_pc(m, nx)
+        return 1
+    if nr is 226
+        # mprotect: grant inside the guest image, refuse below it.
+        # the wipe walks downward on exactly this refusal, the way
+        # it would stop at the bottom of a real mapping
+        if arm_in(m, a0) is 1
+            if arm_in(m, a0 + a1 - 1) is 1
+                arm_set(m, 0, 0)
+                arm_set_pc(m, nx)
+                return 1
+        arm_set(m, 0, 0 - 12)
+        arm_set_pc(m, nx)
+        return 1
+    if nr is 232
+        # the heap walk's probe: no page above the program is backed,
+        # which is exactly what the loader left there
+        arm_set(m, 0, 0 - 12)
+        arm_set_pc(m, nx)
+        return 1
+    if nr is 134
+        # rt_sigaction: the guest arms a crash handler. the emulator
+        # remembers it and delivers real faults as calls, the same
+        # contract the kernel honors on arm64. only real signals arm
+        if a0 > 3
+            if a0 < 12
+                poke_i64(m, arm_sig_slot(a0), arm_r64(m, a1))
+                arm_set(m, 0, 0)
+                arm_set_pc(m, nx)
+                return 1
+        arm_set(m, 0, 22)
         arm_set_pc(m, nx)
         return 1
     # anything else: say it worked and carry on

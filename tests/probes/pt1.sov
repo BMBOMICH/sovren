@@ -1,0 +1,21 @@
+# pt1 - pkacc base-first: T a pure register product (nbody's
+# shape), the base loads first and rax rides the add-to-memory,
+# no mov_rcx staging. values: v[1] 11 + 7*5 = 46, v[2] 23*3.
+use sys
+
+v: 0
+
+main:
+    v: _sov_alloc(640)
+    poke_i64(v, 8, 11)
+    poke_i64(v, 16, 23)
+    i: 1
+    dx: 7
+    f: 5
+    poke_i64(v, i * 8, peek_i64(v, i * 8) + dx * f)
+    i: 2
+    dx: 23
+    f: 3
+    poke_i64(v, i * 8, peek_i64(v, i * 8) + dx * f)
+    print peek_i64(v, 8)
+    print peek_i64(v, 16)

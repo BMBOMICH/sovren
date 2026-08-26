@@ -1,0 +1,18 @@
+# pa4 - decline controls: the fused arm must keep refusing these
+# (base mismatch and subtract instead of plus). generic path both
+# compilers; the binaries stay byte-identical.
+use sys
+
+b: 0
+c2: 0
+
+main:
+    b: _sov_alloc(640)
+    c2: _sov_alloc(640)
+    poke_i64(b, 0, 400)
+    poke_i64(c2, 0, 40)
+    i: 0
+    poke_i64(b, i * 8, peek_i64(c2, i * 8) + 6)
+    poke_i64(b, i * 8, peek_i64(b, i * 8) - 10)
+    print peek_i64(b, 0)
+    print peek_i64(c2, 0)

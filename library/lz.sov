@@ -1,0 +1,181 @@
+# lz.sov — real LZSS compression, pure Sovren
+#
+# window 1024 bytes, matches 3..66. the packed stream is a four
+# byte little-endian header with the original length, then groups
+# of eight items, each group led by one control byte: a set bit
+# means one literal byte, a clear bit means a two byte token,
+# ten bits of distance and six of (length - 3).
+#
+#   lz_size   p n   packed size of p's first n bytes
+#   lz_pack   p n   buffer holding the stream, lz_size bytes long
+#   lz_unpack p     the original bytes back, as text
+#
+# lz_size and lz_pack walk identically, so the size of the pack
+# is its length; lz_unpack stops exactly at the header count and
+# returns the empty string on a stream that lies about itself.
+# unpacked data comes back as text, so like rle it is meant for
+# streams without embedded zero bytes.
+use mem
+use string
+
+LZ_WIN: 1024
+LZ_MIN: 3
+LZ_MAX: 66
+
+# 2^i for the eight control-bit positions
+lz_bit i:
+    if i is 0
+        return 1
+    if i is 1
+        return 2
+    if i is 2
+        return 4
+    if i is 3
+        return 8
+    if i is 4
+        return 16
+    if i is 5
+        return 32
+    if i is 6
+        return 64
+    return 128
+
+# best match at pos: distance * 256 + length, distances
+# 1..min(LZ_WIN, pos), lengths 1..LZ_MAX
+lz_best p n pos:
+    bd: 1
+    bl: 0
+    lim: LZ_WIN
+    if lim > pos
+        lim: pos
+    d: 1
+    as long as d <= lim
+        if peek_byte(p, pos - d) is peek_byte(p, pos)
+            l: 1
+            done: 0
+            as long as done is 0
+                if l >= LZ_MAX
+                    done: 1
+                if not
+                    if pos + l >= n
+                        done: 1
+                    if not
+                        if peek_byte(p, pos + l) is peek_byte(p, pos - d + l)
+                            l: l + 1
+                        if not
+                            done: 1
+            if l > bl
+                bl: l
+                bd: d
+                if bl >= LZ_MAX
+                    d: lim
+        d: d + 1
+    return bd * 256 + bl
+
+# packed size: header + one control byte per eight items +
+# one byte per literal + two per token
+lz_size p n:
+    items: 0
+    groups: 0
+    lit: 0
+    tok: 0
+    pos: 0
+    as long as pos < n
+        r: lz_best(p, n, pos)
+        ml: r % 256
+        if ml >= LZ_MIN
+            tok: tok + 2
+            pos: pos + ml
+        if not
+            lit: lit + 1
+            pos: pos + 1
+        items: items + 1
+        if items % 8 is 0
+            groups: groups + 1
+    tail: 0
+    if items % 8 is not 0
+        tail: 1
+    return 4 + groups + tail + lit + tok
+
+lz_pack p n:
+    out: mem_new(lz_size(p, n) + 8)
+    poke_byte(out, 0, n % 256)
+    poke_byte(out, 1, (n / 256) % 256)
+    poke_byte(out, 2, (n / 65536) % 256)
+    poke_byte(out, 3, (n / 16777216) % 256)
+    o: 4
+    ctrl: 0
+    cnum: 0
+    cat: 0
+    pos: 0
+    as long as pos < n
+        if cnum is 0
+            cat: o
+            poke_byte(out, o, 0)
+            o: o + 1
+        r: lz_best(p, n, pos)
+        bd: r / 256
+        ml: r % 256
+        if ml >= LZ_MIN
+            t: (bd - 1) * 64 + (ml - 3)
+            poke_byte(out, o, t % 256)
+            poke_byte(out, o + 1, (t / 256) % 256)
+            o: o + 2
+            pos: pos + ml
+        if not
+            ctrl: ctrl + lz_bit(cnum)
+            poke_byte(out, o, peek_byte(p, pos))
+            o: o + 1
+            pos: pos + 1
+        cnum: cnum + 1
+        if cnum is 8
+            poke_byte(out, cat, ctrl)
+            ctrl: 0
+            cnum: 0
+    if cnum is not 0
+        poke_byte(out, cat, ctrl)
+    return out
+
+lz_unpack p:
+    n: peek_byte(p, 0) + peek_byte(p, 1) * 256 + peek_byte(p, 2) * 65536 + peek_byte(p, 3) * 16777216
+    if n is 0
+        return ""
+    out: mem_new(n + 1)
+    o: 0
+    i: 4
+    ctrl: 0
+    cnum: 8
+    bad: 0
+    as long as o < n
+        if bad is 1
+            o: n
+        if not
+            if cnum is 8
+                ctrl: peek_byte(p, i)
+                i: i + 1
+                cnum: 0
+            if (ctrl / lz_bit(cnum)) % 2 is 1
+                poke_byte(out, o, peek_byte(p, i))
+                o: o + 1
+                i: i + 1
+            if not
+                t: peek_byte(p, i) + peek_byte(p, i + 1) * 256
+                i: i + 2
+                d: t / 64 + 1
+                l: t % 64 + 3
+                if d > o
+                    bad: 1
+                if not
+                    if o + l > n
+                        bad: 1
+                    if not
+                        k: 0
+                        as long as k < l
+                            poke_byte(out, o, peek_byte(out, o - d))
+                            o: o + 1
+                            k: k + 1
+            cnum: cnum + 1
+    if bad is 1
+        return ""
+    poke_byte(out, o, 0)
+    return as text out

@@ -1,0 +1,15 @@
+# pt2 - three-atom pure term: a * b * c through the recurse.
+# v[3] 40 + 2*3*13 = 118.
+use sys
+
+v: 0
+
+main:
+    v: _sov_alloc(640)
+    poke_i64(v, 24, 40)
+    i: 3
+    a: 2
+    b: 3
+    c: 13
+    poke_i64(v, i * 8, peek_i64(v, i * 8) + a * b * c)
+    print peek_i64(v, 24)

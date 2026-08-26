@@ -1,0 +1,20 @@
+# name < scaled peek, both outcomes (lt arm)
+main:
+    arr: _sov_alloc(8000)
+    r: 3
+    poke_raw64(arr, r * 8, 9)
+    v: 7
+    if v < peek_raw64(arr, r * 8)
+        print 101
+    if not
+        print 102
+    v: 9
+    if v < peek_raw64(arr, r * 8)
+        print 103
+    if not
+        print 104
+    v: 41
+    if v < peek_raw64(arr, r * 8)
+        print 105
+    if not
+        print 106

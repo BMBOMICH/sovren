@@ -2,7 +2,7 @@
 # Proof that the libraries are enough to build Sovren Code.
 #
 #   arrows  move          typing  inserts
-#   ctrl-s  save          ctrl-q  quit
+#   ctrl-s save  ctrl-r run  ctrl-q quit
 #   enter   split line    backspace joins
 
 use tui
@@ -12,6 +12,7 @@ use list
 use string
 use num
 use arg
+use run
 
 rows: 0
 dirty: 0
@@ -147,6 +148,19 @@ main:
             going: 0
         if c is 19
             save(fname)
+        if c is 18
+            save(fname)
+            tui_leave()
+            write_out("--- run ---\n")
+            msg: compile_sov(fname, "/tmp/sov-edit-run.bin")
+            if str_has(msg, "Error") is 1
+                write_out(msg)
+            if not
+                write_out(run_out("/tmp/sov-edit-run.bin", "", ""))
+            write_out("--- any key ---\n")
+            rk: key_read()
+            tui_enter()
+            tui_clear()
         if c is 13
             newline()
         if c is 10

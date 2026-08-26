@@ -1,0 +1,155 @@
+# tests/arm64/check_sig.sov — validate the ad-hoc code signature Sovren
+# writes into --ios binaries. This is tests/arm64/check_sig.py, rewritten
+# in Sovren: same walk of the load commands, same SuperBlob and
+# CodeDirectory parse, same page-by-page SHA-256, same words out.
+#
+#   ./sovren tests/arm64/check_sig.sov -o /tmp/check_sig
+#   /tmp/check_sig app.ios
+#
+# It prints the same lines the reference implementation printed and exits 0 when the
+# signature is valid, 1 when it is not, 2 on a bad argument.
+
+use arg
+use file
+use hex
+use num
+use sha256
+use string
+use sys
+
+# ---- little- and big-endian reads over raw bytes ----
+cs_le32 p i:
+    return peek_byte(p, i) + peek_byte(p, i + 1) * 256 + peek_byte(p, i + 2) * 65536 + peek_byte(p, i + 3) * 16777216
+
+cs_be32 p i:
+    return peek_byte(p, i) * 16777216 + peek_byte(p, i + 1) * 65536 + peek_byte(p, i + 2) * 256 + peek_byte(p, i + 3)
+
+# a number as 0x12345678, with no leading zeros, with no leading zeros
+cs_hx v:
+    b: _sov_alloc(8)
+    poke_byte(b, 0, (v / 16777216) % 256)
+    poke_byte(b, 1, (v / 65536) % 256)
+    poke_byte(b, 2, (v / 256) % 256)
+    poke_byte(b, 3, v % 256)
+    hx: hex_from_bytes(b, 4)
+    n: _sov_strlen(hx)
+    pos: 0
+    st: 1
+    as long as st is 1
+        if pos >= n - 1
+            st: 0
+        if not
+            if peek_byte(hx, pos) is not 48
+                st: 0
+            if not
+                pos: pos + 1
+    if pos >= n - 1
+        if peek_byte(hx, pos) is 48
+            return "0x0"
+    return str_cat("0x", str_cut(hx, pos, n))
+
+# the NUL-terminated identifier inside the CodeDirectory
+cs_ident cd ioff:
+    n: 0
+    as long as peek_byte(cd, ioff + n) is not 0
+        n: n + 1
+    b: _sov_alloc(n + 1)
+    k: 0
+    as long as k < n
+        poke_byte(b, k, peek_byte(cd, ioff + k))
+        k: k + 1
+    poke_byte(b, n, 0)
+    return as text b
+
+# byte k of a sha256_bytes digest: the words are stored little
+# -endian, the digest is printed big-endian, so flip within each word
+cs_hb hs k:
+    w: k / 4
+    j: k % 4
+    v: peek_i64(hs, w * 8)
+    return wand(shr(v, (3 - j) * 8), 255)
+
+main:
+    p: arg_at(1)
+    if str_len(p) is 0
+        print "Usage: check_sig <file>"
+        sys_exit(2)
+    d: file_read_all(p)
+    if d is 0
+        print "cannot read file"
+        sys_exit(2)
+    ncmds: cs_le32(d, 16)
+    off: 32
+    i: 0
+    sigoff: 0 - 1
+    as long as i < ncmds
+        cmd: cs_le32(d, off)
+        sz: cs_le32(d, off + 4)
+        if cmd is 29
+            sigoff: cs_le32(d, off + 8)
+        off: off + sz
+        i: i + 1
+    if sigoff < 0
+        print "no LC_CODE_SIGNATURE"
+        sys_exit(1)
+    blob: d + sigoff
+    magic: cs_be32(blob, 0)
+    # the SuperBlob index starts at 12: each entry is (type, offset),
+    # and the CodeDirectory entry is first, so its offset is at 16
+    cd_off: cs_be32(blob, 16)
+    cd: blob + cd_off
+    cmagic: cs_be32(cd, 0)
+    ver: cs_be32(cd, 8)
+    flags: cs_be32(cd, 12)
+    hoff: cs_be32(cd, 16)
+    ioff: cs_be32(cd, 20)
+    ncs: cs_be32(cd, 28)
+    climit: cs_be32(cd, 32)
+    hsize: peek_byte(cd, 36)
+    htype: peek_byte(cd, 37)
+    ok: 1
+    if magic is not 4208856256
+        ok: 0
+    if cmagic is not 4208856066
+        ok: 0
+    if wand(flags, 2) is 0
+        ok: 0
+    if htype is not 2
+        ok: 0
+    if hsize is not 32
+        ok: 0
+    ident: cs_ident(cd, ioff)
+    pg: 0
+    as long as pg < ncs
+        plen: 4096
+        left: climit - pg * 4096
+        if left < 4096
+            plen: left
+        hs: _sov_alloc(64)
+        sha256_bytes(d + pg * 4096, plen, hs)
+        k: 0
+        as long as k < 32
+            want: peek_byte(cd, hoff + pg * 32 + k)
+            if cs_hb(hs, k) is not want
+                ok: 0
+            k: k + 1
+        pg: pg + 1
+    print str_join3("SuperBlob     ", cs_hx(magic), "")
+    l: cs_hx(flags)
+    l: str_join3(" flags ", l, "")
+    l: str_join3(cs_hx(ver), l, "")
+    l: str_join3(" version ", l, "")
+    l: str_join3(cs_hx(cmagic), l, "")
+    l: str_join3("CodeDirectory ", l, "")
+    print l
+    l: "  SHA-256"
+    l: str_join3("  codeLimit ", num_text(climit), l)
+    l: str_join3("'  pages ", num_text(ncs), l)
+    l: str_join3(ident, l, "")
+    l: str_join3("identifier '", l, "")
+    print l
+    if ok is 1
+        print "VALID AD-HOC SIGNATURE"
+        sys_exit(0)
+    print "INVALID"
+    sys_exit(1)

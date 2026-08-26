@@ -1,0 +1,122 @@
+# cp.sov — AEAD_CHACHA20_POLY1305 (RFC 8439 2.8)
+#
+#   use cp
+#   cp_seal(key, nonce, aad, aad_n, pt, pt_n, ct)   tag -> cp_tag
+#   cp_verify(key, nonce, aad, aad_n, ct, ct_n, tag)  1 good, 0 bad
+#
+# decryption after a good verify is cc_crypt(key, nonce, 1, ct, n, pt)
+# - the same call that encrypted, the stream is symmetric
+#
+# One-time Poly1305 key from block zero, message from counter one,
+# tag over aad | pad | ct | pad | len(aad) | len(ct). The open side
+# verifies with ct_eq before decrypting; the one-time key and the
+# keystream block are wiped after use, and both functions declare
+# private so their frames are wiped too.
+
+use chacha20
+use poly1305
+use ct
+use secret
+use mem
+
+cp_tag: 0
+
+# the mac buffer: aad, ct, each padded to 16, then both lengths
+# as 64-bit little-endians
+cp_mac_len aad_n ct_n:
+    return aad_n + 16 - aad_n % 16 + ct_n + 16 - ct_n % 16 + 16
+
+cp_seal key nonce aad aad_n pt pt_n ct:
+    private
+    b0: _sov_alloc(64)
+    chacha_block(key, 0, nonce, b0)
+    otk: _sov_alloc(32)
+    i: 0
+    as long as i < 32
+        poke_byte(otk, i, peek_byte(b0, i))
+        i: i + 1
+    secret_wipe_bytes(b0, 64)
+    cc_crypt(key, nonce, 1, pt, pt_n, ct)
+    ml: cp_mac_len(aad_n, pt_n)
+    md: _sov_alloc(ml)
+    i: 0
+    as long as i < aad_n
+        poke_byte(md, i, peek_byte(aad, i))
+        i: i + 1
+    i: aad_n
+    as long as i < aad_n + 16 - aad_n % 16
+        poke_byte(md, i, 0)
+        i: i + 1
+    base: aad_n + 16 - aad_n % 16
+    i: 0
+    as long as i < pt_n
+        poke_byte(md, base + i, peek_byte(ct, i))
+        i: i + 1
+    i: pt_n
+    as long as i < pt_n + 16 - pt_n % 16
+        poke_byte(md, base + i, 0)
+        i: i + 1
+    base: base + pt_n + 16 - pt_n % 16
+    la: aad_n
+    i: 0
+    as long as i < 8
+        poke_byte(md, base + i, la % 256)
+        la: la / 256
+        i: i + 1
+    lc: pt_n
+    i: 0
+    as long as i < 8
+        poke_byte(md, base + 8 + i, lc % 256)
+        lc: lc / 256
+        i: i + 1
+    cp_tag: _sov_alloc(16)
+    p1305(otk, md, ml, cp_tag)
+    secret_wipe_bytes(otk, 32)
+    return 0
+
+cp_verify key nonce aad aad_n ct ct_n tag:
+    private
+    b0: _sov_alloc(64)
+    chacha_block(key, 0, nonce, b0)
+    otk: _sov_alloc(32)
+    i: 0
+    as long as i < 32
+        poke_byte(otk, i, peek_byte(b0, i))
+        i: i + 1
+    secret_wipe_bytes(b0, 64)
+    ml: cp_mac_len(aad_n, ct_n)
+    md: _sov_alloc(ml)
+    i: 0
+    as long as i < aad_n
+        poke_byte(md, i, peek_byte(aad, i))
+        i: i + 1
+    i: aad_n
+    as long as i < aad_n + 16 - aad_n % 16
+        poke_byte(md, i, 0)
+        i: i + 1
+    base: aad_n + 16 - aad_n % 16
+    i: 0
+    as long as i < ct_n
+        poke_byte(md, base + i, peek_byte(ct, i))
+        i: i + 1
+    i: ct_n
+    as long as i < ct_n + 16 - ct_n % 16
+        poke_byte(md, base + i, 0)
+        i: i + 1
+    base: base + ct_n + 16 - ct_n % 16
+    la: aad_n
+    i: 0
+    as long as i < 8
+        poke_byte(md, base + i, la % 256)
+        la: la / 256
+        i: i + 1
+    lc: ct_n
+    i: 0
+    as long as i < 8
+        poke_byte(md, base + 8 + i, lc % 256)
+        lc: lc / 256
+        i: i + 1
+    want: _sov_alloc(16)
+    p1305(otk, md, ml, want)
+    secret_wipe_bytes(otk, 32)
+    return ct_eq(want, tag, 16)

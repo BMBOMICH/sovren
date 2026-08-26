@@ -1,27 +1,75 @@
-# auth.sov — password lines. Uses SHA-256.
-# NOTE: salted SHA-256 is NOT a slow password hash.
-# For real deployments use a memory-hard KDF.
-# original header:
-# auth.sov — name|salt|hash lines in a file
-# needs _sov_list
+# auth.sov — name|salt|iters|hash lines in a file
+#
+# pass 120: password records are PBKDF2-HMAC-SHA256 now, salted
+# 16 random bytes, work-factored, and compared constant-time on
+# the raw digest. The old mix was one salted SHA-256 and its own
+# header said it: "NOT a slow password hash". The line carries
+# its iteration count, so the cost can rise record by record
+# without breaking the file format. Old three-field lines fail
+# to parse and read as wrong password - re-add the user once.
+#
+#   use auth
+#   auth_add(path, name, pass)            1000 iterations
+#   auth_add_iters(path, name, pass, n)   your own work factor
+#   auth_check(path, name, pass)          1 or 0
+#
+# 1000 iterations is about five seconds here - pure-Sovren SHA-256
+# is slower than a C library's, so the default trades hardness for
+# patience. Raise it for real use; the record remembers what you
+# picked, and checking an old record at a higher global default
+# still works because the count travels with the hash.
+
 use file
 use string
-use sha256
+use pbkdf2
+use hex
+use ct
 use token
 use store
+use mem
+use secret
 use num
+use bit32
 
-auth_mix salt pass:
-    return sha256_hex(str_cat(salt, pass))
+# digits-only text to a number; anything else reads as 0
+auth_num s:
+    v: 0
+    i: 0
+    n: str_len(s)
+    as long as i < n
+        c: peek_byte(s, i)
+        if c < 48
+            return 0
+        if c > 57
+            return 0
+        v: v * 10 + c - 48
+        i: i + 1
+    return v
 
-auth_line name pass:
-    salt: token_hex(8)
-    h: auth_mix(salt, pass)
+# the PBKDF2 digest as hex text, keyed by salt text and pass text
+auth_mix salt pass iters:
+    o: _sov_alloc(32)
+    private
+    pbkdf2_sha256(pass, _sov_strlen(pass), salt, _sov_strlen(salt), iters, 32, o)
+    r: hex_from_bytes(o, 32)
+    secret_wipe_bytes(o, 32)
+    return r
+
+auth_line name pass iters:
+    salt: token_hex(32)
+    h: auth_mix(salt, pass, iters)
     a: str_join3(name, "|", salt)
-    return as text str_join3(a, "|", h)
+    b: str_cat(a, "|")
+    c: str_cat(b, num_text(iters))
+    d: str_cat(c, "|")
+    return as text str_cat(d, h)
+
+auth_add_iters path name pass iters:
+    x: str_cat(auth_line(name, pass, iters), "\n")
+    return file_append_secret(path, x)
 
 auth_add path name pass:
-    return store_put(path, auth_line(name, pass))
+    return auth_add_iters(path, name, pass, 1000)
 
 auth_find text name:
     want: str_cat(name, "|")
@@ -40,6 +88,7 @@ auth_find text name:
     return blank
 
 auth_check path name pass:
+    private
     text: file_read_all(path)
     if text is 0
         return 0
@@ -54,6 +103,38 @@ auth_check path name pass:
     if p2 < 0
         return 0
     salt: str_cut(rest, 0, p2)
-    want: str_cut(rest, p2 + 1, str_len(rest))
-    got: auth_mix(salt, pass)
-    return str_eq(got, want)
+    rest2: str_cut(rest, p2 + 1, str_len(rest))
+    p3: str_find(rest2, "|")
+    if p3 < 0
+        return 0
+    iters: auth_num(str_cut(rest2, 0, p3))
+    if iters < 1
+        return 0
+    want_hex: str_cut(rest2, p3 + 1, str_len(rest2))
+    # validate on the TEXT, never on the decoded bytes: a digest is
+    # binary and may hold a zero byte (about one record in nine),
+    # and strlen on binary stops at the first one - that guard used
+    # to reject one valid password in nine at random
+    if str_len(want_hex) is not 64
+        return 0
+    hexn: 0
+    q: 0
+    as long as q < 64
+        cc: peek_byte(want_hex, q)
+        good: 0
+        if cc >= 48
+            if cc <= 57
+                good: 1
+        if cc >= 97
+            if cc <= 102
+                good: 1
+        hexn: hexn + good
+        q: q + 1
+    if hexn is not 64
+        return 0
+    want: hex_to_bytes(want_hex)
+    o: _sov_alloc(32)
+    pbkdf2_sha256(pass, _sov_strlen(pass), salt, _sov_strlen(salt), iters, 32, o)
+    r: ct_eq(want, o, 32)
+    secret_wipe_bytes(o, 32)
+    return r

@@ -1,0 +1,13 @@
+# non-leaf function: slot 5 stays on the frame, old path locked
+ten a:
+    m1: a + 1
+    m2: a + 2
+    m3: a + 3
+    m4: a + 4
+    m5: a + 5
+    print m5
+    return m1 + m5
+
+main:
+    print ten(20)
+    print ten(41)

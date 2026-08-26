@@ -1,0 +1,31 @@
+# dp3 - def-fusion into leaf8 homes r8-r11 (locals 5-8 of a
+# leaf): results fold into a digit accumulator, main prints.
+use sys
+
+g: 0
+
+lf:
+    i: 1
+    j: 2
+    k: 3
+    m: 0
+    n: 4
+    d1: 0
+    d2: 0
+    d3: 0
+    d4: 0
+    d1: peek_i64(g, i * 8) - peek_i64(g, m * 8)
+    d2: peek_i64(g, j * 8) - peek_i64(g, i * 8)
+    d3: peek_i64(g, k * 8) - peek_i64(g, j * 8)
+    d4: peek_i64(g, n * 8) - peek_i64(g, k * 8)
+    r: d1 + d2 * 10 + d3 * 100 + d4 * 1000
+    return r
+
+main:
+    g: _sov_alloc(640)
+    poke_i64(g, 0, 5)
+    poke_i64(g, 8, 19)
+    poke_i64(g, 16, 37)
+    poke_i64(g, 24, 53)
+    poke_i64(g, 32, 7)
+    print lf()

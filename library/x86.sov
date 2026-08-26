@@ -4,7 +4,7 @@
 # out what it means, change some registers, move on. This one covers
 # the instructions Sovren's x86-64 back end emits, which is what the
 # checks need in order to run a Windows .exe or a Mac binary here
-# without Wine and without Python.
+# self-contained, Sovren end to end.
 #
 #   use x86
 #   main:
@@ -15,7 +15,7 @@
 #
 # It is deliberately strict. A Windows program that reaches a raw
 # `syscall` instruction is stopped, because real Windows has no Linux
-# kernel behind it. Wine hides that; this does not. A Mac program
+# kernel behind it. A compatibility layer hides that; this does not. A Mac program
 # that uses a Linux syscall number is stopped for the same reason.
 #
 # The machine is a block of memory:
@@ -71,6 +71,8 @@ X_TOOLONG: 3
 X_RAWSYS: 4
 X_FAULT: 5
 X_OOB: 6
+X_NOWRITE: 7
+X_NOEXEC: 8
 
 x86_new:
     m: mem_new(1024)
@@ -99,6 +101,14 @@ x86_new:
     poke_i64(m, 616, 0)
     poke_i64(m, 176, mem_new(X_MEM))
     poke_i64(m, 184, X_MEM)
+    # pass S8: real memory. every 4k page carries rwx bits
+    # (4 read, 2 write, 1 execute - the ELF PF_ encoding). the
+    # table starts untouched; untouched reads as READ+WRITE, the
+    # way an anonymous mapping behaves. the loaders stamp each
+    # image segment's true permissions over it, and the access
+    # helpers enforce them: a write to a no-write page and a jump
+    # to a no-execute page are faults with their own reasons.
+    poke_i64(m, 664, mem_new(X_MEM / 4096))
     poke_i64(m, 192, mem_new(X_OUT))
     poke_i64(m, 296, mem_new(X_OUT))
     poke_i64(m, 256, list_new())
@@ -635,31 +645,89 @@ x_ok m a:
         return lo
     return a
 
+# the rwx bits of the page holding a, after the sentinels
+x86_perm_at m a:
+    lo: peek_i64(m, 216)
+    off: a - lo
+    if off < 0
+        return 0
+    if off >= X_MEM - 16
+        return 0
+    pv: peek_byte(peek_i64(m, 664), off / 4096)
+    if pv is 0
+        return 6
+    if pv is 8
+        return 0
+    return pv
+
+# stamp bits over a span; prot 0 is stored as the none sentinel
+x_perm_set m a len prot:
+    lo: peek_i64(m, 216)
+    p: peek_i64(m, 664)
+    fo: (a - lo) / 4096
+    fn: (len + 4095) / 4096
+    st: prot
+    if st is 0
+        st: 8
+    i: 0
+    as long as i < fn
+        poke_byte(p, fo + i, st)
+        i: i + 1
+    return 0
+
+# bounds plus permission. want is 4 read, 2 write, 1 execute
+x_okp m a want:
+    lo: peek_i64(m, 216)
+    off: a - lo
+    if off < 0
+        poke_i64(m, 168, X_OOB)
+        poke_i64(m, 232, a)
+        return lo
+    if off >= X_MEM - 16
+        poke_i64(m, 168, X_OOB)
+        poke_i64(m, 232, a)
+        return lo
+    pv: peek_byte(peek_i64(m, 664), off / 4096)
+    if pv is 0
+        pv: 6
+    if pv is 8
+        pv: 0
+    if x_and(pv, want) is not want
+        if want is 2
+            poke_i64(m, 168, X_NOWRITE)
+        if want is 1
+            poke_i64(m, 168, X_NOEXEC)
+        if want is 4
+            poke_i64(m, 168, X_OOB)
+        poke_i64(m, 232, a)
+        return lo
+    return a
+
 x_r8 m a:
-    return peek_byte(peek_i64(m, 336), x_ok(m, a))
+    return peek_byte(peek_i64(m, 336), x_okp(m, a, 4))
 
 x_w8 m a v:
-    poke_byte(peek_i64(m, 336), x_ok(m, a), x_mask(v, 1))
+    poke_byte(peek_i64(m, 336), x_okp(m, a, 2), x_mask(v, 1))
     return 0
 
 x_r16 m a:
     return x_r8(m, a) + x_r8(m, a + 1) * 256
 
 x_r32 m a:
-    o: x_ok(m, a)
+    o: x_okp(m, a, 4)
     b: peek_i64(m, 336)
     return peek_byte(b, o) + peek_byte(b, o + 1) * 256 + peek_byte(b, o + 2) * 65536 + peek_byte(b, o + 3) * 16777216
 
 x_r64 m a:
-    return peek_i64(peek_i64(m, 336) + x_ok(m, a), 0)
+    return peek_i64(peek_i64(m, 336) + x_okp(m, a, 4), 0)
 
 x_w64 m a v:
-    poke_i64(peek_i64(m, 336) + x_ok(m, a), 0, v)
+    poke_i64(peek_i64(m, 336) + x_okp(m, a, 2), 0, v)
     return 0
 
 x_w32 m a v:
     u: x_lo(v)
-    o: x_ok(m, a)
+    o: x_okp(m, a, 2)
     b: peek_i64(m, 336)
     poke_byte(b, o, u % 256)
     poke_byte(b, o + 1, (u / 256) % 256)
@@ -737,6 +805,26 @@ x_grumble m p n:
 x86_out m:
     return as text peek_i64(m, 192)
 
+# the qword at a guest address, after a run - for tests that prove
+# what a wiped process does not contain
+x86_peek_q m a:
+    o: x_ok(m, a)
+    b: peek_i64(m, 336)
+    v: 0
+    i: 0
+    as long as i < 8
+        v: v + peek_byte(b, o + i) * pw(i)
+        i: i + 1
+    return v
+
+pw i:
+    r: 1
+    j: 0
+    as long as j < i
+        r: r * 256
+        j: j + 1
+    return r
+
 x86_err m:
     return as text peek_i64(m, 296)
 
@@ -746,8 +834,17 @@ x86_code m:
 x86_why m:
     return peek_i64(m, 168)
 
+# a raw machine-state word, for debugging a stopped guest
+x86_state_q m a:
+    return peek_i64(m, a)
+
 x86_bad m:
     return peek_i64(m, 232)
+
+# a direct write into machine state, for tests that need to steer it
+x86_state_w m a v:
+    poke_i64(m, a, v)
+    return 0
 
 x86_used_syscall m:
     return peek_i64(m, 272)
@@ -5849,11 +5946,11 @@ x_vec m b p rex size:
             return x_go(m, q)
         return x_vmov_out(m, q, n, pre)
     if b is 127
-        # 7F with F3 in front is movdqu, a LOAD of sixteen bytes.
-        # With 66 in front it is movdqa, a STORE. F3 arrives here as
-        # pre 3, not pre 2: F2 is the wide-decimal prefix.
-        if pre is 3
-            return x_vmov_in(m, q, n, pre)
+        # 7F is a STORE of sixteen bytes with any data prefix: with
+        # F3 it is movdqu [rm], xmm; with 66 it is movdqa [rm], xmm.
+        # The LOAD is 6F. (This arm once read F3 7F as a load, which
+        # made every unaligned vector store a silent no-op: a sieve
+        # fill ran nine laps on a real guest and wrote nothing.)
         return x_vmov_out(m, q, n, pre)
     if b is 41
         return x_vmov_out(m, q, n, pre)
@@ -5975,7 +6072,7 @@ x_vec m b p rex size:
     if b is 254
         return x_padd(m, q, n, 4, 0)
     # 0xD4, not 0xF4: 0xF4 is not a real instruction and a real
-    # processor refuses it. glibc's static start of life reaches for
+    # processor refuses it. a typical static runtime's start of life reaches for
     # paddq, and this being wrong stopped every Ubuntu 24.04 build.
     if b is 212
         return x_padd(m, q, n, 8, 0)
@@ -9273,7 +9370,7 @@ x_sqrt_loop m ee hi lo:
 #
 # Sixteen registers of sixteen bytes each, held as two halves so an
 # ordinary Sovren number can carry each one. Real programs reach for
-# these constantly: glibc searches and copies memory sixteen bytes
+# these constantly: typical static binaries search and copy memory sixteen bytes
 # at a time, so a general-purpose emulator cannot skip them.
 #
 # Only the whole-number instructions are here. The floating point
@@ -9371,7 +9468,7 @@ x_pminmax_half a b big:
 
 # gather the top bit of all sixteen bytes into one number. This is
 # how a program turns a vector compare into something it can branch
-# on, and it is everywhere in glibc.
+# on, and it is everywhere in those binaries.
 x_pmovmskb m n:
     r: 0
     i: 0
@@ -9466,8 +9563,8 @@ x_syscall m nx:
     poke_i64(m, 272, 1)
     os: peek_i64(m, 240)
     if os is X_WIN
-        # real Windows has no Linux kernel behind it. Wine hides this
-        # because Wine runs on Linux. This does not hide it.
+        # real Windows has no Linux kernel behind it. A compatibility layer hides this
+        # because the compatibility layer runs on Linux. This does not hide it.
         poke_i64(m, 168, X_RAWSYS)
         return 0
     nr: x_reg(m, 0)
@@ -9511,6 +9608,14 @@ x_mac_to_linux n:
         return 21
     if n is 54
         return 16
+    if n is 78
+        return 27
+    if n is 74
+        return 10
+    if n is 195
+        return 160
+    if n is 500
+        return 318
     return 0 - 1
 
 x_do_call m nx nr:
@@ -9518,6 +9623,25 @@ x_do_call m nx nr:
     a1: x_reg(m, 6)
     a2: x_reg(m, 2)
     a3: x_reg(m, 10)
+    if nr is 27
+        # mincore, for the compiler's exit walk. the emulator has
+        # one stack region; a page inside it answers mapped, and
+        # anything else answers ENOMEM so the guest loop stops
+        # before it leaves the stack.
+        sb: peek_i64(m, 216) + X_STACK_AT
+        if a0 < sb
+            x_setr(m, 0, 0 - 12)
+            return x_go(m, nx)
+        if a0 > sb + 1048576 - 4096
+            x_setr(m, 0, 0 - 12)
+            return x_go(m, nx)
+        x_w32(m, a2, 1)
+        x_setr(m, 0, 0)
+        return x_go(m, nx)
+    if nr is 160
+        # setrlimit(RLIMIT_CORE, 0): accepted, nothing to limit here
+        x_setr(m, 0, 0)
+        return x_go(m, nx)
     if nr is 1
         if a0 is 1
             x_say(m, a1, a2)
@@ -9563,7 +9687,33 @@ x_do_call m nx nr:
         x_setr(m, 0, 0)
         return x_go(m, nx)
     if nr is 10
-        x_setr(m, 0, 0)
+        # mprotect is the up-walk's and the heap walk's probe.
+        # grant it inside the stack region, and inside the mapping
+        # arena strictly below the bump top (every page there was
+        # handed out); refuse with ENOMEM everywhere else so the
+        # guest walks terminate exactly where mapped memory ends.
+        msb: peek_i64(m, 216) + X_STACK_AT
+        mtop: peek_i64(m, 224)
+        mok: 0
+        if a0 >= msb
+            if a0 <= msb + 1048576 - 4096
+                mok: 1
+        if a0 >= msb + 33554432
+            if a0 <= mtop - 4096
+                mok: 1
+        # pass S7: the image itself is mapped memory; the slide walk
+        # opens its text page and closes it back, exactly like the
+        # kernel would
+        if a0 >= peek_i64(m, 216)
+            if a0 < msb
+                mok: 1
+        if mok is 1
+            # pass S8: a granted mprotect SETS the page bits, the
+            # way the real kernel does
+            x_perm_set(m, a0, a1, a2)
+            x_setr(m, 0, 0)
+            return x_go(m, nx)
+        x_setr(m, 0, 0 - 12)
         return x_go(m, nx)
     if nr is 60
         poke_i64(m, 208, x_mask(a0, 1))
@@ -9575,7 +9725,7 @@ x_do_call m nx nr:
         return 0
     # ---- the calls a C library makes before it will start ----
     if nr is 158
-        # set or read the thread pointer. glibc asks for this early.
+        # set or read the thread pointer. those binaries ask for this early.
         if a0 is 4098
             poke_i64(m, 440, a1)
             x_setr(m, 0, 0)
@@ -9665,6 +9815,18 @@ x_do_call m nx nr:
             x_w32(m, a2 + 24, 8630)
             x_w64(m, a2 + 48, 4096)
         x_setr(m, 0, 0)
+        return x_go(m, nx)
+
+    if nr is 318
+        # getrandom: a real fill. the pattern is fixed and mixed, not
+        # secret - an emulator is not an entropy source, and the
+        # guest only needs a value that behaves like one, changing
+        # run to run is the kernel's job, not the emulator's
+        gi: 0
+        as long as gi < a1
+            x_w8(m, a0 + gi, x_and(x_shr64(88172645463325252, (gi % 8) * 8), 255))
+            gi: gi + 1
+        x_setr(m, 0, a1)
         return x_go(m, nx)
 
     # anything else: say it worked and carry on
@@ -9764,6 +9926,20 @@ x_win_call m which:
             got: 0
         x_setr(m, 0, got)
         return 1
+    if str_eq(nm, "VirtualQuery") is 1
+        # the exit walk's probe. one fixed stack region: inside it
+        # the page is committed, outside it the query fails and the
+        # guest stops walking. State sits at offset 32.
+        sb2: peek_i64(m, 216) + X_STACK_AT
+        if a1 < sb2
+            x_setr(m, 0, 0)
+            return 1
+        if a1 > sb2 + 1048576 - 4096
+            x_setr(m, 0, 0)
+            return 1
+        x_w32(m, a2 + 32, 4096)
+        x_setr(m, 0, 28)
+        return 1
     if str_eq(nm, "ExitProcess") is 1
         poke_i64(m, 208, x_mask(a1, 1))
         poke_i64(m, 168, X_EXITED)
@@ -9801,10 +9977,43 @@ x_win_call m which:
         # made-up handle comes back and any function asked for
         # inside it is answered with nought. A program checks for
         # that and says it cannot draw, which is the truth here.
+        ln: x_cstr(m, a1)
+        if str_has(ln, "ADVAPI") is 1
+            x_setr(m, 0, 305419897)
+            return 1
         x_setr(m, 0, 305419896)
         return 1
     if str_eq(nm, "GetProcAddress") is 1
+        pn: x_cstr(m, a2)
+        if str_starts(pn, "SystemFunction036") is 1
+            names2: list_add(peek_i64(m, 288), "SystemFunction036")
+            poke_i64(m, 288, names2)
+            cnt: peek_i64(m, 312) + 1
+            poke_i64(m, 312, cnt)
+            x_setr(m, 0, peek_i64(m, 280) + (cnt - 1) * 16)
+            return 1
+        if str_starts(pn, "AddVectoredExceptionHandler") is 1
+            names3: list_add(peek_i64(m, 288), "AddVectoredExceptionHandler")
+            poke_i64(m, 288, names3)
+            cnt2: peek_i64(m, 312) + 1
+            poke_i64(m, 312, cnt2)
+            x_setr(m, 0, peek_i64(m, 280) + (cnt2 - 1) * 16)
+            return 1
         x_setr(m, 0, 0)
+        return 1
+    if str_eq(nm, "SystemFunction036") is 1
+        # real entropy, straight from the host kernel
+        if a2 >= 8
+            if sys_getrandom(x_here(m, a1), 8) is 8
+                x_setr(m, 0, 1)
+                return 1
+            x_setr(m, 0, 0)
+            return 1
+        x_setr(m, 0, 0)
+        return 1
+    if str_eq(nm, "AddVectoredExceptionHandler") is 1
+        poke_i64(m, 1000, a2)
+        x_setr(m, 0, 1)
         return 1
     if str_eq(nm, "DeleteFileA") is 1
         x_setr(m, 0, 1)
@@ -9844,7 +10053,6 @@ x86_run_for m limit:
     n: 0
     going: 1
     tb: peek_i64(m, 280)
-    nt: peek_i64(m, 312)
     as long as going is 1
         if n >= limit
             poke_i64(m, 168, X_TOOLONG)
@@ -9852,18 +10060,53 @@ x86_run_for m limit:
         if not
             pc: peek_i64(m, 128)
             hit: 0
-            if nt > 0
+            # pass S5: the count is read live - GetProcAddress can
+            # grow the stand-in import set while the program runs
+            if peek_i64(m, 312) > 0
                 if pc >= tb
-                    if pc < tb + nt * 16
+                    if pc < tb + peek_i64(m, 312) * 16
                         hit: 1
             if hit is 1
                 going: x_win_call(m, (pc - tb) / 16)
                 if going is 1
                     x_set_rip(m, x_pop(m))
             if not
-                going: x_step(m)
+                if x_and(x86_perm_at(m, pc), 1) is 1
+                    going: x_step(m)
+                if not
+                    # pass S8: running a page the image never marked
+                    # executable is a fault, not an accident
+                    poke_i64(m, 168, X_NOEXEC)
+                    poke_i64(m, 232, pc)
+                    going: 0
             # a read or write outside the block is a fault, and the
             # step that caused it must not be allowed to continue
+            wdel: 0
+            if peek_i64(m, 168) is X_FAULT
+                wdel: 1
+            if peek_i64(m, 168) is X_OOB
+                wdel: 1
+            if peek_i64(m, 168) is X_NOWRITE
+                wdel: 1
+            if wdel is 1
+                if peek_i64(m, 1000) is not 0
+                    if peek_i64(m, 1008) is 0
+                        poke_i64(m, 1008, 1)
+                        veh: peek_i64(m, 1000)
+                        sp2: x_sp(m)
+                        er: sp2 - 256
+                        x_w32(m, er, 3221225477)
+                        x_w64(m, er + 24, peek_i64(m, 128))
+                        x_w32(m, er + 32, 2)
+                        x_w64(m, er + 40, 8)
+                        x_w64(m, er + 48, peek_i64(m, 232))
+                        ep: sp2 - 512
+                        x_w64(m, ep, 0)
+                        x_w64(m, ep + 8, er)
+                        x_setr(m, 1, ep)
+                        x_set_rip(m, veh)
+                        poke_i64(m, 168, X_RUNNING)
+                        going: 1
             if peek_i64(m, 168) is not X_RUNNING
                 going: 0
             n: n + 1
@@ -9922,6 +10165,8 @@ x86_load_elf m path:
             as long as k < msz
                 x_w8(m, va + k, 0)
                 k: k + 1
+            # pass S8: the segment's own flags become the page bits
+            x_perm_set(m, va, msz, peek_byte(d, o + 4) + peek_byte(d, o + 5) * 256 + peek_byte(d, o + 6) * 65536 + peek_byte(d, o + 7) * 16777216)
             if va + msz > top
                 top: va + msz
         # the thread-local piece, which is copied fresh per thread
@@ -9945,7 +10190,7 @@ x86_load_elf m path:
 # ---- thread-local storage ----
 #
 # A real program keeps per-thread things behind the fs register:
-# the stack guard, the thread pointer, errno. glibc reads fs:[0x10]
+# the stack guard, the thread pointer, errno. typical runtimes read fs:[0x10]
 # before it does anything else. Give it a block, with the thread
 # pointer at nought pointing back at itself, which is the shape the
 # system sets up.
@@ -10093,6 +10338,18 @@ x86_load_macho m path:
         i: i + 1
     if lo is 0
         lo: 4294967296
+    # pass S7: a PIE header makes the load random, the way the kernel
+    # does it: a page-multiple bias from real entropy, none without
+    slide: 0
+    flg: peek_byte(d, 24) + peek_byte(d, 25) * 256 + peek_byte(d, 26) * 65536 + peek_byte(d, 27) * 16777216
+    if x_and(flg, 2097152) is 2097152
+        rb: _sov_alloc(8)
+        if sys_getrandom(rb, 8) is 8
+            v: peek_i64(rb, 0)
+            if v < 0
+                v: 0 - v
+            slide: (v - (v / 512) * 512) * 4096
+    lo: lo + slide
     poke_i64(m, 216, lo)
     x_rebase(m)
     off: 32
@@ -10104,12 +10361,24 @@ x86_load_macho m path:
             vmaddr: peek_i64(d, off + 24)
             fileoff: peek_i64(d, off + 40)
             filesz: peek_i64(d, off + 48)
+            vmszz: peek_i64(d, off + 32)
             k: 0
             as long as k < filesz
-                x_w8(m, vmaddr + k, peek_byte(d, fileoff + k))
+                x_w8(m, vmaddr + slide + k, peek_byte(d, fileoff + k))
                 k: k + 1
+            # pass S8: the segment's initprot becomes the page bits
+            # (macho read 1, write 2, execute 4 -> PF read 4, write 2, execute 1)
+            ipr: peek_byte(d, off + 60) + peek_byte(d, off + 61) * 256
+            pf: 0
+            if x_and(ipr, 1) is not 0
+                pf: pf + 4
+            if x_and(ipr, 2) is not 0
+                pf: pf + 2
+            if x_and(ipr, 4) is not 0
+                pf: pf + 1
+            x_perm_set(m, vmaddr + slide, vmszz, pf)
         if cmd is 5
-            entry: peek_i64(d, off + 144)
+            entry: peek_i64(d, off + 144) + slide
         if cmd is 2147483688
             entry: x_add(lo, peek_i64(d, off + 8))
         off: off + sz
@@ -10159,11 +10428,27 @@ x86_load_pe m path:
         va: x_u32d(d, o + 12)
         rs: x_u32d(d, o + 16)
         ra: x_u32d(d, o + 20)
+        vs: x_u32d(d, o + 8)
         k: 0
         as long as k < rs
             x_w8(m, base + va + k, peek_byte(d, ra + k))
             k: k + 1
+        # pass S8: the section's own characteristics become the
+        # page bits; the headers page below stays read-only
+        ch: x_u32d(d, o + 36)
+        pf: 0
+        if x_and(ch, 1073741824) is not 0
+            pf: pf + 4
+        if x_and(ch, 2147483648) is not 0
+            pf: pf + 2
+        if x_and(ch, 536870912) is not 0
+            pf: pf + 1
+        ext: vs
+        if rs > ext
+            ext: rs
+        x_perm_set(m, base + va, ext, pf)
         i: i + 1
+    x_perm_set(m, base, hsz, 4)
     x86_bind_imports(m, base, imp_rva)
     # the command line, and a return address that means "all done"
     cmd: base + X_MEM - 65536
@@ -10206,6 +10491,9 @@ x86_bind_imports m base imp_rva:
         return 0
     tb: base + 201326592
     poke_i64(m, 280, tb)
+    # pass S8: the emulator's own stand-in slots are real code to
+    # the guest - they carry all three bits
+    x_perm_set(m, tb, 1048576, 7)
     names: peek_i64(m, 288)
     count: 0
     k: 0
@@ -10290,4 +10578,8 @@ x86_reason m:
         return "it divided by nothing"
     if w is X_OOB
         return "it reached outside its own memory"
+    if w is 7
+        return "it wrote a page it may not write"
+    if w is 8
+        return "it ran a page it may not execute"
     return "still running"
