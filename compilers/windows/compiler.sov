@@ -3743,6 +3743,8 @@ main argc argv:
         if rt is 0
             rt: load_file(join(self_dir, "/../runtime.sov"))
         if rt is 0
+            rt: load_file(join(dirname(dirname(self_dir)), "/runtime.sov"))
+        if rt is 0
             print "Error: cannot read runtime"
             fail()
         # the windows thread bridge: the runtime's clone/fork and

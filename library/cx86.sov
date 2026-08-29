@@ -10724,9 +10724,13 @@ use_one name:
     r: load_file(path)
     if r is not 0
         return r
-    # the compiler binary usually sits one level down, in linux/ or
-    # windows/, with library/ next to that folder
-    path: join(self_dir, join("/../library/", tail))
+    # one folder up (compiler in linux/ or windows/ at the root)
+    path: join(dirname(self_dir), join("/library/", tail))
+    r: load_file(path)
+    if r is not 0
+        return r
+    # two folders up (compiler in compilers/linux or compilers/windows)
+    path: join(dirname(dirname(self_dir)), join("/library/", tail))
     return load_file(path)
 
 xor_rax:
