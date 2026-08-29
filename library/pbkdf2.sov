@@ -1,4 +1,5 @@
 # pbkdf2.sov — PBKDF2-HMAC-SHA256 (RFC 8018) in pure Sovren
+# Batteries, not certified: review before production crypto.
 #
 # The password-to-key stretcher. c iterations of HMAC, the classic
 # work factor: pick c so a guess costs the attacker a year and the
@@ -17,10 +18,8 @@ use bit32
 
 pbkdf2_sha256 pw pw_n salt salt_n iters n out:
     sb: _sov_alloc(salt_n + 4)
-    j: 0
-    as long as j < salt_n
-        poke_byte(sb, j, peek_byte(salt, j))
-        j: j + 1
+    j: salt_n
+    mem_copy(sb, salt, salt_n)
     u: _sov_alloc(32)
     t: _sov_alloc(32)
     done: 0
@@ -33,10 +32,8 @@ pbkdf2_sha256 pw pw_n salt salt_n iters n out:
         poke_byte(sb, salt_n + 2, wand(shr(i, 8), 255))
         poke_byte(sb, salt_n + 3, wand(i, 255))
         hmac_raw(pw, pw_n, sb, salt_n + 4, u)
-        j: 0
-        as long as j < 32
-            poke_byte(t, j, peek_byte(u, j))
-            j: j + 1
+        j: 32
+        mem_copy(t, u, 32)
         c: 1
         as long as c < iters
             hmac_raw(pw, pw_n, u, 32, u)

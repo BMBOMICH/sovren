@@ -8,3 +8,81 @@ fmt_int n:
 
 fmt_join a n b:
     return str_join3(a, num_text(n), b)
+
+# swap the first {} in s for the text of v and leave the rest alone,
+# so fmt_s can walk a string feeding it one value at a time
+fmt_rep s v:
+    p: str_find(s, "{}")
+    if p < 0
+        return s
+    return str_join3(str_cut(s, 0, p), num_text(v), str_cut(s, p + 2, str_len(s)))
+
+fmt_s s a b:
+    return fmt_rep(fmt_rep(s, a), b)
+
+# numbers right aligned in a field of w, zero filled, the shape you
+# want for hex dumps and timestamps
+fmt_pad n w:
+    t: num_text(n)
+    s: str_len(t)
+    if s >= w
+        return t
+    out: _sov_alloc(w + 1)
+    k: 0
+    as long as k < w - s
+        poke_byte(out, k, 48)
+        k: k + 1
+    j: 0
+    as long as j < s
+        poke_byte(out, k, peek_byte(t, j))
+        k: k + 1
+        j: j + 1
+    poke_byte(out, k, 0)
+    return out
+
+# and the same field padded on the right with spaces, for columns.
+# built out of str_cat rather than poke_byte: the compiler decides a
+# task hands back text by looking for a text literal or a known text
+# task in one of its returns, and a bare _sov_alloc buffer reads as a
+# number to it, so print showed the pointer instead of the padding
+fmt_col t w:
+    s: str_len(t)
+    if s >= w
+        return t
+    pad: ""
+    k: s
+    as long as k < w
+        pad: str_cat(pad, " ")
+        k: k + 1
+    return str_cat(t, pad)
+
+fmt_hex n:
+    dig: "0123456789abcdef"
+    if n is 0
+        return "0"
+    # the most negative number has no positive twin, and negating it
+    # hands back the same value, so the loop below would never run
+    if n is 0 - 9223372036854775807 - 1
+        return "-8000000000000000"
+    neg: 0
+    x: n
+    if x < 0
+        neg: 1
+        x: 0 - x
+    tmp: _sov_alloc(20)
+    i: 0
+    as long as x > 0
+        poke_byte(tmp, i, peek_byte(dig, x % 16))
+        i: i + 1
+        x: x / 16
+    if neg is 1
+        poke_byte(tmp, i, 45)
+        i: i + 1
+    out: _sov_alloc(i + 1)
+    j: 0
+    as long as i > 0
+        i: i - 1
+        poke_byte(out, j, peek_byte(tmp, i))
+        j: j + 1
+    poke_byte(out, j, 0)
+    return out

@@ -1,4 +1,5 @@
 # gcm.sov — AES-128-GCM, encrypt and decrypt, in Sovren.
+# Batteries, not certified: review before production crypto.
 #
 # The authenticated mode TLS uses. Everything is built on the AES in
 # aes.sov and a GHASH over GF(2^128). The field values are kept as
@@ -179,10 +180,8 @@ gm_tag_out:
 # encrypt one counter block into out at o (n bytes)
 gm_ctr rk j0 k out o n:
     cb: _sov_alloc(16)
-    i: 0
-    as long as i < 16
-        poke_byte(cb, i, peek_byte(j0, i))
-        i: i + 1
+    i: 16
+    mem_copy(cb, j0, 16)
     v: k
     i: 0
     as long as i < 4
@@ -224,10 +223,8 @@ gm_finish key iv aad aad_n ct ct_n:
     h2: rw2
     h3: rw3
     j0: _sov_alloc(16)
-    i: 0
-    as long as i < 12
-        poke_byte(j0, i, peek_byte(iv, i))
-        i: i + 1
+    i: 12
+    mem_copy(j0, iv, 12)
     poke_byte(j0, 12, 0)
     poke_byte(j0, 13, 0)
     poke_byte(j0, 14, 0)
@@ -239,10 +236,8 @@ gm_finish key iv aad aad_n ct ct_n:
     as long as cb % 16 is not 0
         cb: cb + 1
     buf: _sov_alloc(ab + cb + 16)
-    i: 0
-    as long as i < aad_n
-        poke_byte(buf, i, peek_byte(aad, i))
-        i: i + 1
+    i: aad_n
+    mem_copy(buf, aad, aad_n)
     i: aad_n
     as long as i < ab
         poke_byte(buf, i, 0)
@@ -260,10 +255,8 @@ gm_finish key iv aad aad_n ct ct_n:
     gm_ghash(buf, ab + cb + 16, h0, h1, h2, h3)
     gb: _sov_alloc(16)
     gm_tag_out()
-    i: 0
-    as long as i < 16
-        poke_byte(gb, i, peek_byte(gm_tag, i))
-        i: i + 1
+    i: 16
+    mem_copy(gb, gm_tag, 16)
     eb: _sov_alloc(16)
     ae_enc_block(rk, j0, eb)
     i: 0
@@ -291,18 +284,14 @@ gm_enc key iv aad aad_n pt pt_n ct:
     rk: _sov_alloc(176)
     ae_expand(key, rk)
     j0: _sov_alloc(16)
-    i: 0
-    as long as i < 12
-        poke_byte(j0, i, peek_byte(iv, i))
-        i: i + 1
+    i: 12
+    mem_copy(j0, iv, 12)
     poke_byte(j0, 12, 0)
     poke_byte(j0, 13, 0)
     poke_byte(j0, 14, 0)
     poke_byte(j0, 15, 1)
-    i: 0
-    as long as i < pt_n
-        poke_byte(ct, i, peek_byte(pt, i))
-        i: i + 1
+    i: pt_n
+    mem_copy(ct, pt, pt_n)
     k: 2
     i: 0
     as long as i < pt_n
@@ -325,18 +314,14 @@ gm_ctr_dec key iv ct ct_n pt:
     rk: _sov_alloc(176)
     ae_expand(key, rk)
     j0: _sov_alloc(16)
-    i: 0
-    as long as i < 12
-        poke_byte(j0, i, peek_byte(iv, i))
-        i: i + 1
+    i: 12
+    mem_copy(j0, iv, 12)
     poke_byte(j0, 12, 0)
     poke_byte(j0, 13, 0)
     poke_byte(j0, 14, 0)
     poke_byte(j0, 15, 1)
-    i: 0
-    as long as i < ct_n
-        poke_byte(pt, i, peek_byte(ct, i))
-        i: i + 1
+    i: ct_n
+    mem_copy(pt, ct, ct_n)
     k: 2
     i: 0
     as long as i < ct_n

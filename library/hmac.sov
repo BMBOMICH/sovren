@@ -1,4 +1,5 @@
 # hmac.sov — HMAC-SHA256 (RFC 2104) in pure Sovren
+# Batteries, not certified: review before production crypto.
 #
 # Nothing here hands a pointer back from a call: every buffer is
 # made by the caller and passed in, because a pointer that arrives
@@ -32,10 +33,7 @@ hmac_block key klen b:
             poke_byte(b, i * 4 + 3, wand(v, 255))
             i: i + 1
     if not
-        i: 0
-        as long as i < klen
-            poke_byte(b, i, peek_byte(key, i))
-            i: i + 1
+        mem_copy(b, key, klen)
     poke_byte(b, 64, 0)
     return 0
 

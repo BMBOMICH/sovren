@@ -48,10 +48,8 @@ vault_save path data password iters:
     ctb: _sov_alloc(n)
     gm_enc(key, nonce, 0, 0, data, n, ctb)
     blob: _sov_alloc(53 + n)
-    i: 0
-    as long as i < 5
-        poke_byte(blob, i, peek_byte("SVLT1", i))
-        i: i + 1
+    i: 5
+    mem_copy(blob, "SVLT1", 5)
     poke_byte(blob, 5, wand(shr(iters, 24), 255))
     poke_byte(blob, 6, wand(shr(iters, 16), 255))
     poke_byte(blob, 7, wand(shr(iters, 8), 255))

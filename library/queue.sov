@@ -1,33 +1,35 @@
-# queue.sov — first in, first out (head index + list)
-# memory: [head i64][list ptr]
-# needs _sov_list
-use list
+# queue.sov — first in, first out
+# the old head-index list version leaked on every get; this is the
+# queue2 (vec-based) implementation under the plain name
+use vec
 
 queue_new:
-    q: _sov_alloc(16)
-    poke_i64(q, 0, 0)
-    poke_i64(q, 8, list_new())
-    return q
+    return vec_new(8)
 
 queue_put q v:
-    lst: peek_i64(q, 8)
-    lst: list_add(lst, v)
-    poke_i64(q, 8, lst)
-    return q
+    return vec_push(q, v)
 
 queue_len q:
-    lst: peek_i64(q, 8)
-    h: peek_i64(q, 0)
-    n: list_len(lst) - h
-    if n < 0
-        return 0
-    return n
+    return vec_len(q)
 
 queue_get q:
-    lst: peek_i64(q, 8)
-    h: peek_i64(q, 0)
-    if h >= list_len(lst)
+    n: vec_len(q)
+    if n is 0
         return 0
-    v: list_get(lst, h)
-    poke_i64(q, 0, h + 1)
-    return v
+    f: vec_get(q, 0)
+    i: 1
+    as long as i < n
+        vec_set(q, i - 1, vec_get(q, i))
+        i: i + 1
+    poke_i64(q, 0, n - 1)
+    return f
+
+queue_peek q:
+    if vec_len(q) is 0
+        return 0
+    return vec_get(q, 0)
+
+queue_empty q:
+    if vec_len(q) is 0
+        return 1
+    return 0

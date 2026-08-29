@@ -1,4 +1,5 @@
 # hkdf.sov — HKDF-SHA256 (RFC 5869) in pure Sovren
+# Batteries, not certified: review before production crypto.
 #
 # Extract-then-expand on top of hmac.sov. Nothing hands a pointer
 # back; the caller makes every buffer and passes it in.
@@ -33,10 +34,8 @@ hkdf_expand prk info info_n n okm:
     as long as done < n
         blen: 0
         if have_t is 1
-            j: 0
-            as long as j < 32
-                poke_byte(blk, j, peek_byte(t, j))
-                j: j + 1
+            j: 32
+            mem_copy(blk, t, 32)
             blen: 32
         j: 0
         as long as j < info_n

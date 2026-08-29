@@ -6,12 +6,83 @@
 
 use file
 use tool
+use sys
 use string
 use num
 use x86
+use time
 
 tr_pass: 0
 tr_fail: 0
+tr_skip: 0
+
+# ---- what the suite actually spends its time on ----
+# tr_mark starts the clock for one check; tr_ok and tr_stop close it.
+# Set tr_time to 1 and the tally names the slowest checks, so "make
+# the suite faster" is a fact about a check and not a guess. The
+# timings are the guest's own, taken around the check that ran it.
+tr_time: 0
+tr_t0: 0
+tr_tn: 0
+tr_slow_n: 0
+tr_slow_ms: 0
+
+tr_mark:
+    tr_t0: time_ms()
+    return 1
+
+tr_stop name:
+    if tr_time is 0
+        return 1
+    if tr_tn is 0
+        return 1
+    d: time_ms() - tr_t0
+    tr_tn: 0
+    if d <= 0
+        return 1
+    i: 0
+    as long as i < 20
+        if peek_i64(tr_slow_ms, i * 8) < d
+            j: 19
+            as long as j > i
+                poke_i64(tr_slow_ms, j * 8, peek_i64(tr_slow_ms, (j - 1) * 8))
+                poke_i64(tr_slow_n, j * 8, peek_i64(tr_slow_n, (j - 1) * 8))
+                j: j - 1
+            poke_i64(tr_slow_ms, i * 8, d)
+            poke_i64(tr_slow_n, i * 8, name)
+            i: 20
+        i: i + 1
+    return 1
+
+tr_slowest:
+    print ""
+    print "the slowest checks"
+    i: 0
+    as long as i < 20
+        if peek_i64(tr_slow_ms, i * 8) > 0
+            write_out("  ")
+            write_out(num_text(peek_i64(tr_slow_ms, i * 8)))
+            write_out("ms  ")
+            print as text peek_i64(tr_slow_n, i * 8)
+        i: i + 1
+    return 1
+
+# Names in this list are not run. The suite is one source; a tier is
+# the same source with the slow part of it switched off, so a fast run
+# can never drift away from the full one - there is only one list of
+# checks to keep honest.
+tr_skips: 0
+
+tr_skipped name:
+    if tr_skips is 0
+        return 0
+    i: 0
+    n: list_len(tr_skips)
+    as long as i < n
+        if str_eq(as text list_get(tr_skips, i), as text name) is 1
+            return 1
+        i: i + 1
+    return 0
 
 # where the compiler is. set this once at the start.
 tr_sov: 0
@@ -20,16 +91,39 @@ tr_use compiler:
     tr_sov: compiler
     return 1
 
+# Every scratch path is per-process. The battery runs one process at a
+# time, but tests/par.sov runs N of them at once against the same
+# library, and a shared scratch file is how one worker ends up reading
+# another worker's program.
+tr_scr:
+    return str_join3("/tmp/sov-tr-", num_text(sys_getpid()), ".sov")
+
+tr_bin:
+    return str_join3("/tmp/sov-tr-", num_text(sys_getpid()), ".bin")
+
+tr_out:
+    return str_join3("/tmp/sov-tr-", num_text(sys_getpid()), ".out")
+
 # a shell line, written to a file and run, so we get its output.
 # tool_out hands the child one argument only, hence the script.
 tr_shell line:
-    body: "#!/bin/sh\n"
+    # set +m: a guest that dies on a signal is often the point of the
+    # check (crash path wipes, canary trips), and without this the
+    # shell prints "Segmentation fault" into the captured output,
+    # where it lands on the next check's answer instead of its own
+    body: "#!/bin/sh\nset +m\n"
     body: str_cat(body, line)
     body: str_cat(body, "\n")
-    file_write_all("/tmp/sov-tr.sh", body)
-    return as text tool_out("/bin/sh", "/tmp/sov-tr.sh")
+    # per-process, so two workers of tests/par.sov never share the
+    # one script file every check is run through
+    sh: str_join3("/tmp/sov-tr-", num_text(sys_getpid()), ".sh")
+    file_write_all(sh, body)
+    return as text tool_out("/bin/sh", sh)
 
 # compile a source file, return what the compiler said
+# compile directly: fork+exec the launcher with an argument list.
+# no /bin/sh and no temp script per check, which is most of what
+# the battery used to spend its time on.
 tr_build src out:
     line: as text tr_sov
     line: str_cat(line, " ")
@@ -57,12 +151,21 @@ tr_run path:
 
 # say how it went
 tr_ok name:
+    if tr_skipped(name) is 1
+        tr_skip: tr_skip + 1
+        return 1
+    dummy: tr_stop(name)
     write_out("ok ")
     print as text name
     tr_pass: tr_pass + 1
+    dummy: tr_mark()
     return 1
 
 tr_bad name got want:
+    if tr_skipped(name) is 1
+        tr_skip: tr_skip + 1
+        return 1
+    dummy: tr_stop(name)
     write_out("FAIL ")
     print as text name
     write_out("  got  ")
@@ -70,32 +173,33 @@ tr_bad name got want:
     write_out("  want ")
     print as text want
     tr_fail: tr_fail + 1
+    dummy: tr_mark()
     return 0
 
 # the common case: this source should print this
 tr_expect name src want:
-    file_write_all("/tmp/sov-tr.sov", src)
-    msg: tr_build("/tmp/sov-tr.sov", "/tmp/sov-tr.bin")
+    file_write_all(tr_scr(), src)
+    msg: tr_build(tr_scr(), tr_bin())
     if str_has(msg, "Error") is 1
         tr_bad(name, msg, want)
         return 0
-    got: str_trim(tr_run("/tmp/sov-tr.bin"))
+    got: str_trim(tr_run(tr_bin()))
     if str_eq(got, want) is 1
         return tr_ok(name)
     return tr_bad(name, got, want)
 
 # this source must be refused by the compiler
 tr_reject name src:
-    file_write_all("/tmp/sov-tr.sov", src)
-    msg: tr_build("/tmp/sov-tr.sov", "/tmp/sov-tr.bin")
+    file_write_all(tr_scr(), src)
+    msg: tr_build(tr_scr(), tr_bin())
     if str_has(msg, "Error") is 1
         return tr_ok(name)
     return tr_bad(name, "it compiled", "an error")
 
 # this source must build without complaint
 tr_builds name src:
-    file_write_all("/tmp/sov-tr.sov", src)
-    msg: tr_build("/tmp/sov-tr.sov", "/tmp/sov-tr.bin")
+    file_write_all(tr_scr(), src)
+    msg: tr_build(tr_scr(), tr_bin())
     if str_has(msg, "Error") is 1
         return tr_bad(name, msg, "a clean build")
     if str_has(msg, "Warning") is 1
@@ -104,8 +208,8 @@ tr_builds name src:
 
 # and for another machine
 tr_builds_for name src flag:
-    file_write_all("/tmp/sov-tr.sov", src)
-    msg: tr_build_for("/tmp/sov-tr.sov", "/tmp/sov-tr.bin", flag)
+    file_write_all(tr_scr(), src)
+    msg: tr_build_for(tr_scr(), tr_bin(), flag)
     if str_has(msg, "Error") is 1
         return tr_bad(name, msg, "a clean build")
     return tr_ok(name)
@@ -117,6 +221,11 @@ tr_report:
     write_out(" passed, ")
     write_out(num_text(tr_fail))
     print " failed"
+    if tr_time is 1
+        dummy: tr_slowest()
+    if tr_skip > 0
+        write_out(num_text(tr_skip))
+        print " not run"
     if tr_fail is 0
         print "all checks passed"
         return 0
@@ -131,12 +240,12 @@ tr_report:
 # running it.
 
 tr_emu name src want flag:
-    file_write_all("/tmp/sov-tr.sov", src)
-    msg: tr_build_for("/tmp/sov-tr.sov", "/tmp/sov-tr.out", flag)
+    file_write_all(tr_scr(), src)
+    msg: tr_build_for(tr_scr(), tr_out(), flag)
     if str_has(msg, "Error") is 1
         return tr_bad(name, msg, "a clean build")
     m: x86_new()
-    if x86_load(m, "/tmp/sov-tr.out") is 0
+    if x86_load(m, tr_out()) is 0
         return tr_bad(name, "could not load it", want)
     x86_run(m)
     if x86_why(m) is not 1
@@ -149,10 +258,10 @@ tr_emu name src want flag:
 # this source, built for that machine, must be REFUSED by the
 # emulator. Used to prove the strict rules really bite.
 tr_emu_reject name src flag why:
-    file_write_all("/tmp/sov-tr.sov", src)
-    tr_build_for("/tmp/sov-tr.sov", "/tmp/sov-tr.out", flag)
+    file_write_all(tr_scr(), src)
+    tr_build_for(tr_scr(), tr_out(), flag)
     m: x86_new()
-    x86_load(m, "/tmp/sov-tr.out")
+    x86_load(m, tr_out())
     x86_run(m)
     if x86_why(m) is why
         return tr_ok(name)

@@ -35,17 +35,11 @@ c_realloc p n:
     q: _sov_alloc(n)
     if p is 0
         return q
-    i: 0
-    as long as i < n
-        poke_byte(q, i, peek_byte(p, i))
-        i: i + 1
+    mem_copy(q, p, n)
     return q
 
 c_memcpy d s n:
-    i: 0
-    as long as i < n
-        poke_byte(d, i, peek_byte(s, i))
-        i: i + 1
+    mem_copy(d, s, n)
     return d
 
 # may overlap, so copy backwards when the target is above the source

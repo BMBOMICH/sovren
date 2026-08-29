@@ -1,0 +1,33 @@
+# bench.sov — the loop workload: sum of the squares 1..n.
+#
+# This is the workload used for the speed comparison against C:
+# a tight integer loop with a multiply and an accumulate, no
+# memory traffic. the CI step builds this and the matching
+# tests/bench.c, runs each five times, and prints the best of
+# the five in milliseconds.
+#
+#   ./sovren tests/bench.sov -o /tmp/bench-sov
+#   /tmp/bench-sov 2900000
+#
+# n defaults to 2,900,000: the largest whole run whose answer
+# still fits in one signed 64-bit integer (the sum of the squares
+# to 10,000,000 does not). the answer is n(n+1)(2n+1)/6, so a run
+# is wrong if the number is not that; for 2,900,000 it is
+# 8129670871667150000.
+#
+# use file is not for the files: it is the lightest library, and a
+# program that touches the runtime (atoi, argv) must name a
+# library or the compiler leaves the runtime out.
+
+use file
+
+main argc argv:
+    n: 2900000
+    if argc > 1
+        n: _sov_atoi(as text peek_ptr(argv, 1))
+    s: 0
+    i: 1
+    as long as i < n + 1
+        s: s + i * i
+        i: i + 1
+    print s

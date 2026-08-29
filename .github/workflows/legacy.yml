@@ -1,0 +1,22 @@
+# the legacy full suite. CI runs only tests/all.sov for speed;
+# run.sov stays local, so this weekly job is what stops it rotting.
+name: legacy
+on:
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+jobs:
+  run-sov:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: make things runnable
+        run: |
+          git ls-files -z 'sovren' 'sovren.exe' 'compilers/' 'tests/macos-check' 'tests/macos/hello' 'tests/arm64/check' 'tests/arm64/hello' \
+            | grep -zv '\.sov$' | xargs -0 chmod +x
+      - name: the full legacy suite
+        run: |
+          ./sovren tests/run.sov -o /tmp/legacy
+          /tmp/legacy

@@ -1,0 +1,124 @@
+# bounds.sov — checked indexing
+#
+# every read and write in the language is unchecked: an index past
+# the end returns whatever sits there, and a write past the end
+# quietly damages a neighbour. that is the right default for a
+# language with no collector and no runtime to pay for the check, and
+# the wrong default while a program is being written.
+#
+# so the checks live here, on by default, and a program that has
+# earned its speed calls bounds_off() once at the top of main. the
+# flag is a plain global rather than a compile-time switch because
+# the check has to stay in the binary for the message to name the
+# index and the length that disagreed.
+#
+# a failed check prints what was accessed, the index and the length,
+# then exits 1. it does not try to continue: the value at that index
+# is meaningless and every use of it after this point is a guess.
+use string
+use list
+use num
+use sys
+
+bounds_live: 1
+
+bounds_on:
+    bounds_live: 1
+    return 1
+
+bounds_off:
+    bounds_live: 0
+    return 0
+
+bounds_fail what i n:
+    write_out("bounds: ")
+    write_out(what)
+    write_out(" index ")
+    write_out(num_text(i))
+    write_out(" of length ")
+    write_out(num_text(n))
+    write_out("\n")
+    sys_exit(1)
+    return 0
+
+# one check shared by every accessor below, so adding a checked form
+# cannot forget the negative-index half
+bounds_ok what i n:
+    if bounds_live is 0
+        return 1
+    if i < 0
+        bounds_fail(what, i, n)
+    if i >= n
+        bounds_fail(what, i, n)
+    return 1
+
+bounds_list lst i:
+    n: list_len(lst)
+    dummy: bounds_ok("list", i, n)
+    if i < 0
+        return ""
+    if i >= n
+        return ""
+    # through str_cat rather than straight out of list_get: the
+    # compiler decides a task hands back text by finding a text
+    # literal or a known text task in one of its returns, and a bare
+    # list element reads as a number to it, so print showed the
+    # pointer instead of the element
+    return str_cat(list_get(lst, i), "")
+
+bounds_set lst i v:
+    n: list_len(lst)
+    dummy: bounds_ok("list", i, n)
+    if i < 0
+        return 0
+    if i >= n
+        return 0
+    return list_set(lst, i, v)
+
+# a block of 8-byte slots, which is what struct.sov and array.sov use
+bounds_i64 p i n:
+    dummy: bounds_ok("i64", i, n)
+    if i < 0
+        return 0
+    if i >= n
+        return 0
+    off: i * 8
+    return peek_i64(p, off)
+
+bounds_poke p i n v:
+    dummy: bounds_ok("i64", i, n)
+    if i < 0
+        return 0
+    if i >= n
+        return 0
+    off: i * 8
+    poke_i64(p, off, v)
+    return 1
+
+bounds_byte p i n:
+    dummy: bounds_ok("byte", i, n)
+    if i < 0
+        return 0
+    if i >= n
+        return 0
+    return peek_byte(p, i)
+
+bounds_poke_byte p i n v:
+    dummy: bounds_ok("byte", i, n)
+    if i < 0
+        return 0
+    if i >= n
+        return 0
+    poke_byte(p, i, v)
+    return 1
+
+# a text is a block of bytes whose length is its own, so the count
+# comes from the value rather than the caller
+bounds_char s i:
+    n: str_len(s)
+    dummy: bounds_ok("text", i, n)
+    if i < 0
+        return 0
+    if i >= n
+        return 0
+    return peek_byte(s, i)

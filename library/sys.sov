@@ -45,8 +45,13 @@ sys_fork:
 sys_exec path argv envp:
     return syscall(59, path, argv, envp, 0, 0, 0)
 
+# wait for a child. the status must go somewhere the kernel can
+# write it: with a null pointer, wait4 replies with the child's
+# id, not its exit code.
 sys_wait pid:
-    return syscall(61, pid, 0, 0, 0, 0, 0)
+    st: _sov_alloc(8)
+    pid2: syscall(61, pid, st, 0, 0, 0, 0)
+    return peek_i64(st, 0)
 
 sys_getpid:
     return syscall(39, 0, 0, 0, 0, 0, 0)

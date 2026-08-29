@@ -1,4 +1,5 @@
 # sha256.sov — real SHA-256 in pure Sovren
+# Batteries, not certified: review before production crypto.
 use bit32
 use string
 use mem
@@ -157,10 +158,8 @@ sha256_bytes data n out:
     as long as tot % 64 is not 0
         tot: tot + 1
     buf: _sov_alloc(tot + 8)
-    i: 0
-    as long as i < n
-        poke_byte(buf, i, peek_byte(data, i))
-        i: i + 1
+    i: n
+    mem_copy(buf, data, n)
     poke_byte(buf, n, 128)
     i: n + 1
     as long as i < tot

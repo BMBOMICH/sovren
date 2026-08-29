@@ -108,10 +108,7 @@ c_open path:
             off: c_u64(raw, o + 8)
             va: c_u64(raw, o + 16)
             fsz: c_u64(raw, o + 32)
-            k: 0
-            as long as k < fsz
-                poke_byte(base + va, k, peek_byte(raw + off, k))
-                k: k + 1
+            mem_copy(base + va, raw + off, fsz)
         i: i + 1
 
     h: _sov_alloc(64)

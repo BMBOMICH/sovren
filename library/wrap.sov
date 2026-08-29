@@ -1,4 +1,5 @@
 # wrap.sov — break text into lines of a given width
+use mem
 use string
 use list
 
@@ -28,10 +29,8 @@ wrap_pad s width:
     if n >= width
         return as text s
     out: _sov_alloc(width + 1)
-    i: 0
-    as long as i < n
-        poke_byte(out, i, peek_byte(s, i))
-        i: i + 1
+    i: n
+    mem_copy(out, s, n)
     as long as i < width
         poke_byte(out, i, 32)
         i: i + 1

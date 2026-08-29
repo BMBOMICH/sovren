@@ -1,4 +1,6 @@
 # string.sov — text
+use mem
+use list
 # needs _sov_list
 
 str_len s:
@@ -53,10 +55,7 @@ str_ends s p:
 str_copy s:
     n: str_len(s)
     o: _sov_alloc(n + 1)
-    i: 0
-    as long as i < n
-        poke_byte(o, i, peek_byte(s, i))
-        i: i + 1
+    mem_copy(o, s, n)
     poke_byte(o, n, 0)
     return as text o
 
@@ -87,3 +86,69 @@ str_less a b:
     if la < lb
         return 1
     return 0
+
+# a text cut at every one of a separator, as a list. needs list
+str_split s sep:
+    out: list_new()
+    n: str_len(s)
+    m: str_len(sep)
+    cur: blank
+    i: 0
+    if m is 0
+        out: list_add(out, s)
+        return out
+    as long as i < n
+        if str_at(s, i) is str_at(sep, 0)
+            if i + m <= n
+                j: 1
+                hit: 1
+                as long as j < m
+                    if str_at(s, i + j) is not str_at(sep, j)
+                        hit: 0
+                        j: m
+                    j: j + 1
+                if hit is 1
+                    out: list_add(out, cur)
+                    cur: blank
+                    i: i + m
+                if not
+                    cur: str_cat(cur, str_chr(str_at(s, i)))
+                    i: i + 1
+            if not
+                cur: str_cat(cur, str_chr(str_at(s, i)))
+                i: i + 1
+        if not
+            cur: str_cat(cur, str_chr(str_at(s, i)))
+            i: i + 1
+    out: list_add(out, cur)
+    return out
+
+# the lines of a text, as a list. the copy of this that lived inside
+# carm.sov and cx86.sov stayed where it was; this one is for the rest
+str_lines s:
+    return str_split(s, "\n")
+
+# a piece of a text, from i up to but not including j. a negative or
+# over-long j means "to the end", which is what every caller wants
+str_sub s i j:
+    n: str_len(s)
+    if i < 0
+        i: 0
+    if i > n
+        i: n
+    e: j
+    if e < i
+        e: i
+    if e > n
+        e: n
+    out: blank
+    as long as i < e
+        out: str_cat(out, str_chr(str_at(s, i)))
+        i: i + 1
+    return out
+
+# one letter on its own, which is what a byte-at-a-time build really
+# wanted to say
+str_push s c:
+    return str_cat(s, str_chr(c))
+

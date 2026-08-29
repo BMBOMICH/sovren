@@ -1,0 +1,47 @@
+# fast.sov — the same battery, without the slow tier.
+#
+#   ./sovren tests/fast.sov -o /tmp/fast && /tmp/fast
+#
+# This is not a second suite and not a subset written out by hand: it
+# sets a skip list and calls suite(), the very job tests/all.sov
+# calls. Nothing here lists the checks that DO run - only the fourteen
+# that are too slow for the edit-run-see loop - so a check added to
+# library/suite.sov runs in both tiers the day it is written.
+#
+# What is skipped, and why that is safe:
+#
+#   - the emulator runs of heavy guests (sha256, fib, the wipe and
+#     canary scanners). Sixty of the 105 seconds, and they exercise
+#     library/x86.sov stepping a real guest rather than the compiler.
+#   - the two byte-freshness rebuilds of the launcher and the seed
+#     compiler. bootstrap.sov proves the same thing harder: it
+#     rebuilds all ten artifacts and the fixed point.
+#
+# Both run in tests/all.sov, and CI runs tests/all.sov on every push.
+# So: this is the loop you edit in; run the full suite before you push.
+
+use suite
+use list
+
+slow_list:
+    l: list_new()
+    l: list_add(l, "mac sha256")
+    l: list_add(l, "mac recognized fib with alloc")
+    l: list_add(l, "mac wipe runs clean")
+    l: list_add(l, "heap wiped at exit")
+    l: list_add(l, "heap canary control: the scanner sees unwiped heaps")
+    l: list_add(l, "windows sha256")
+    l: list_add(l, "canary trips when smashed on mac")
+    l: list_add(l, "windows guest thread write reaches the joiner")
+    l: list_add(l, "launcher binaries are byte-fresh")
+    l: list_add(l, "windows a file")
+    l: list_add(l, "wipe builds on windows")
+    l: list_add(l, "seed compiler is byte-fresh")
+    l: list_add(l, "windows wipe runs clean")
+    l: list_add(l, "windows recognized fib with alloc")
+    return l
+
+main:
+    tr_use("./sovren")
+    tr_skips: slow_list()
+    sys_exit(suite())

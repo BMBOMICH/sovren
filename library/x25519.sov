@@ -1,4 +1,5 @@
 # x25519.sov — the X25519 key agreement (RFC 7748), in Sovren.
+# Batteries, not certified: review before production crypto.
 #
 # The first attempt died on two compiler bugs: bit extraction
 # (value >> i) & 1 went wrong at the top bit, and the big ladder
@@ -409,10 +410,7 @@ wor_byte a b:
 #   st + 272: x3
 #   st + 352: z3
 x_setup scalar u st:
-    i: 0
-    as long as i < 32
-        poke_byte(st, i, peek_byte(scalar, i))
-        i: i + 1
+    mem_copy(st, scalar, 32)
     poke_byte(st, 0, peek_byte(st, 0) - (peek_byte(st, 0) % 8))
     poke_byte(st, 31, peek_byte(st, 31) % 128)
     poke_byte(st, 31, peek_byte(st, 31) % 64 + 64)

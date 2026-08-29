@@ -25,12 +25,26 @@ rt_init argc argv:
     g_argv: argv
     return rt_heap()
 
+# lock word for the bump. a spawned job may allocate, so the
+# pointer move has to be one atomic step, not a load-add-store.
+g_alloc_lk: 0
+
 _sov_alloc size:
     if heap_ptr is 0
         rt_heap()
-    n: size + 16
+        if g_alloc_lk is 0
+            g_alloc_lk: heap_ptr
+            heap_ptr: heap_ptr + 8
+            poke_i64(g_alloc_lk, 0, 0)
+    w: 1
+    as long as w is 1
+        old: atomic_swap(g_alloc_lk, 1)
+        if old is 0
+            w: 0
+    n: size
     p: heap_ptr
     heap_ptr: heap_ptr + n
+    atomic_store(g_alloc_lk, 0)
     return p
 
 _sov_strlen s:
@@ -88,9 +102,15 @@ _sov_print_int n:
         return 0
     if x < 0
         neg: 1
-        x: 0 - x
-    as long as x > 0
+    # no "x: 0 - x" here. the most negative number has no positive
+    # twin - negating it gives back itself - so the old form left x
+    # negative and every digit came out as 48 minus its value. taking
+    # the sign off each digit instead works for every value, and
+    # division truncates toward zero so the loop still ends
+    as long as x is not 0
         d: x % 10
+        if d < 0
+            d: 0 - d
         dummy: _sov_set_byte(buf, i, d + 48)
         i: i + 1
         x: x / 10
@@ -542,3 +562,124 @@ _sov_buf_write path buf:
     if buf is 0
         return 0
     return _sov_write_n(path, buf + 16, peek_i64(buf, 8))
+
+# ---- threads: spawn a job on a new thread, join it -------------
+#
+# spawn work(slot, 5)   start work on a new thread, gives a handle
+# join h                block until the thread has finished
+# thread_slot i         a shared result slot for the job to poke
+#
+# a spawned job takes at most six values. the first one should be a
+# slot: the job pokes its result there and the parent reads it after
+# the join. a spawned job must not allocate from the heap yet - the
+# bump pointer is not thread-safe, and the race detector round is
+# what fixes that. integer work and poking a slot are safe.
+#
+# the block and the slots live in a shared mapping: if the host
+# refuses clone (the sandbox does), spawn falls back to fork and the
+# child still sees the parent's slots, and the futex word the parent
+# sleeps on. on a normal host clone wins and you get a real thread.
+#
+# one shared source, every os: the compiler's syscall bridge turns
+# the numbers below (9, 56, 202, 57, 60) into whatever the os does -
+# mmap/clone-or-fork/futex on linux and android, CreateThread and
+# WaitForSingleObject on windows, vm_allocate, thread_create and a
+# semaphore on macos. the bridge hands back the same control block
+# either way, so a handle means the same thing everywhere: the
+# block's status word, then the job, then its values.
+#
+# _sov_thread_exit is injected by each compiler: on linux a thread
+# is a detached clone or a forked process, so ending it is the exit
+# syscall; on windows it is ExitThread; on macos a thread return.
+
+g_thread_cb: 0
+t_pool_base: 0
+t_pool_end: 0
+
+thread_slot i:
+    # slots come from one shared 64K pool: eight thousand of them,
+    # visible to a forked child as well as a cloned thread
+    if t_pool_base is 0
+        b: syscall(9, 0, 65536, 3, 33, 0 - 1, 0)
+        if b < 0
+            return b
+        t_pool_base: b
+        t_pool_end: b + 65536
+    p: t_pool_base + i * 8
+    if p > t_pool_end
+        return 0 - 1
+    return p
+
+_sov_thread_spawn fn a0 a1 a2 a3 a4 a5:
+    base: syscall(9, 0, 262272, 3, 33, 0 - 1, 0)
+    if base < 0
+        return base
+    top: base + 262272
+    poke_i64(base, 0, 0)
+    poke_i64(base, 8, fn)
+    poke_i64(base, 16, a0)
+    poke_i64(base, 24, a1)
+    poke_i64(base, 32, a2)
+    poke_i64(base, 40, a3)
+    poke_i64(base, 48, a4)
+    poke_i64(base, 56, a5)
+    # 12032 = CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_DETACHED
+    # clone(fn, stack, flags, parent_tid, child_tid, tls)
+    e: addr_of _sov_thread_entry_stack
+    r: syscall(56, e, top, 12032, 0, 0, 0)
+    if r < 0
+        # clone is refused (the sandbox does this): fork instead.
+        # the child finds the block through the global, runs the
+        # job, sets the shared status and wakes the shared futex.
+        g_thread_cb: base
+        p: syscall(57, 0, 0, 0, 0, 0, 0)
+        if p is 0
+            cb: g_thread_cb
+            f: peek_i64(cb, 8)
+            dummy: cfunc(f, peek_i64(cb, 16), peek_i64(cb, 24), peek_i64(cb, 32), peek_i64(cb, 40), peek_i64(cb, 48), peek_i64(cb, 56))
+            poke_i64(cb, 0, 1)
+            dummy: syscall(202, cb, 1, 1, 0, 0, 0)
+            dummy: _sov_thread_exit()
+        if p < 0
+            return p
+    # the handle is the control block's base on every os: join
+    # reads its status word. the clone model's pid stays internal.
+    return base
+
+# entry for the clone model: the child's stack pointer is the exact
+# top that spawn passed to clone, so the control block sits a known
+# distance below it
+_sov_thread_entry_stack:
+    # clone model: the child's stack pointer is the exact top that
+    # spawn passed to clone, so the block sits a known distance down
+    s: sp()
+    cb: s - 262272
+    f: peek_i64(cb, 8)
+    dummy: cfunc(f, peek_i64(cb, 16), peek_i64(cb, 24), peek_i64(cb, 32), peek_i64(cb, 40), peek_i64(cb, 48), peek_i64(cb, 56))
+    poke_i64(cb, 0, 1)
+    dummy: syscall(202, cb, 1, 1, 0, 0, 0)
+    dummy: _sov_thread_exit()
+    return 0
+
+# entry for the create model (windows, macos): the os calls this
+# with the control block as its one argument, and returning from it
+# is what ends the thread
+_sov_thread_entry_param base:
+    f: peek_i64(base, 8)
+    dummy: cfunc(f, peek_i64(base, 16), peek_i64(base, 24), peek_i64(base, 32), peek_i64(base, 40), peek_i64(base, 48), peek_i64(base, 56))
+    poke_i64(base, 0, 1)
+    dummy: syscall(202, base, 1, 1, 0, 0, 0)
+    return 0
+
+# wait for a thread to finish: read the status, and when it is still
+# running, sleep until the thread's wake lands
+_sov_thread_join h:
+    s: peek_i64(h, 0)
+    g: 1
+    as long as g is 1
+        if s is 1
+            g: 0
+        if not
+            dummy: syscall(202, h, 0, s, 0, 0, 0)
+            s: peek_i64(h, 0)
+    return 0

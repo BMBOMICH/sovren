@@ -31,18 +31,14 @@ cp_seal key nonce aad aad_n pt pt_n ct:
     b0: _sov_alloc(64)
     chacha_block(key, 0, nonce, b0)
     otk: _sov_alloc(32)
-    i: 0
-    as long as i < 32
-        poke_byte(otk, i, peek_byte(b0, i))
-        i: i + 1
+    i: 32
+    mem_copy(otk, b0, 32)
     secret_wipe_bytes(b0, 64)
     cc_crypt(key, nonce, 1, pt, pt_n, ct)
     ml: cp_mac_len(aad_n, pt_n)
     md: _sov_alloc(ml)
-    i: 0
-    as long as i < aad_n
-        poke_byte(md, i, peek_byte(aad, i))
-        i: i + 1
+    i: aad_n
+    mem_copy(md, aad, aad_n)
     i: aad_n
     as long as i < aad_n + 16 - aad_n % 16
         poke_byte(md, i, 0)
@@ -79,17 +75,13 @@ cp_verify key nonce aad aad_n ct ct_n tag:
     b0: _sov_alloc(64)
     chacha_block(key, 0, nonce, b0)
     otk: _sov_alloc(32)
-    i: 0
-    as long as i < 32
-        poke_byte(otk, i, peek_byte(b0, i))
-        i: i + 1
+    i: 32
+    mem_copy(otk, b0, 32)
     secret_wipe_bytes(b0, 64)
     ml: cp_mac_len(aad_n, ct_n)
     md: _sov_alloc(ml)
-    i: 0
-    as long as i < aad_n
-        poke_byte(md, i, peek_byte(aad, i))
-        i: i + 1
+    i: aad_n
+    mem_copy(md, aad, aad_n)
     i: aad_n
     as long as i < aad_n + 16 - aad_n % 16
         poke_byte(md, i, 0)

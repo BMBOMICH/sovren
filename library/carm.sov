@@ -9,6 +9,17 @@ use mem
 # set while main's own statements emit
 carm_main_now: 0
 
+# per-OS syscall table. defaults are Linux arm64; the ios file
+# re-points them at the XNU arm64 table.
+sc_write: 64
+sc_exit: 93
+sc_mmap: 222
+mmap_flags: 34
+sc_mincore: 232
+sc_rand: 278
+sc_nodump: 167
+sc_sigact: 134
+
 use file
 use string
 use num
@@ -254,14 +265,30 @@ repl text old new:
                 j: j + 1
                 p: p + 1
             if not
-                if starts(cut(text, p, n), old) is 1
+                # match old at p one byte at a time, the way cx86's
+                # repl now does. cut(text, p, n) copies the whole tail
+                # at every position, which is quadratic - the arm
+                # compilers replace far less text than the x86 ones,
+                # but the same trap was sitting here
+                rp_m: 0
+                if p + o <= n
+                    rp_m: 1
+                rp_k: 0
+                as long as rp_k < o
+                    if rp_m is 1
+                        if _sov_byte_at(text, p + rp_k) is _sov_byte_at(old, rp_k)
+                            dummy: 0
+                        if not
+                            rp_m: 0
+                    rp_k: rp_k + 1
+                if rp_m is 1
                     k: 0
                     as long as k < gn
                         poke_byte(r, j, _sov_byte_at(new, k))
                         j: j + 1
                         k: k + 1
                     p: p + o
-                if not
+                if rp_m is 0
                     poke_byte(r, j, b)
                     j: j + 1
                     p: p + 1
@@ -389,6 +416,61 @@ fop e op:
                         i: i + 1
     return f
 
+# fop, except a match followed by `nxt` does not count - the same
+# guard cx86 has, so the less-than comparison walks past a shift
+fopn e op nxt:
+    n: length(e)
+    d: 0
+    ins: 0
+    f: 0 - 1
+    i: 0
+    as long as i < n
+        c: letter(e, i)
+        if ins is 1
+            if _sov_byte_at(e, i) is 92
+                i: i + 1
+                if i < n
+                    i: i + 1
+            if not
+                if _sov_byte_at(e, i) is 34
+                    ins: 0
+                i: i + 1
+        if not
+            if _sov_byte_at(e, i) is 34
+                ins: 1
+                i: i + 1
+            if not
+                if same(c, "(") is 1
+                    d: d + 1
+                    i: i + 1
+                if not
+                    if same(c, ")") is 1
+                        d: d - 1
+                        i: i + 1
+                    if not
+                        if d is 0
+                            if starts(cut(e, i, n), op) is 1
+                                fhit: 1
+                                if i + length(op) < n
+                                    if same(letter(e, i + length(op)), nxt) is 1
+                                        fhit: 0
+                                # and the character before it, so the
+                                # second half of a shift is not read
+                                # as a comparison
+                                if i > 0
+                                    if same(letter(e, i - 1), nxt) is 1
+                                        fhit: 0
+                                if fhit is 1
+                                    f: i
+                        i: i + 1
+    return f
+
+# "a & b" becomes "band(a, b)" and goes back through expr. the arm
+# builtins and/orr/eor/lslv/lsrv/asrv are already there, so the
+# operator costs one call and no new emit path
+bitop e p opn wide:
+    return expr(join(join(join(join(opn, "("), cut(e, 0, p)), ","), join(cut(e, p + wide, length(e)), ")")))
+
 find_sep text:
     i: 0
     n: length(text)
@@ -460,14 +542,19 @@ dec_txt v:
     if v is 0
         return "0\n"
     neg: 0
-    if v < 0
+    dv: v
+    if dv < 0
         neg: 1
-        v: 0 - v
+    # see cx86's dec_txt: negating the most negative value gives back
+    # itself, and the digit loop then indexed "0123456789" with a
+    # negative d
     r: ""
-    as long as v > 0
-        d: v % 10
+    as long as dv is not 0
+        d: dv % 10
+        if d < 0
+            d: 0 - d
         r: join(cut("0123456789", d, d + 1), r)
-        v: v / 10
+        dv: dv / 10
     if neg is 1
         r: join("-", r)
     return join(r, "\n")
@@ -498,6 +585,13 @@ print_const arg:
                         if fv < 93
                             v: fib_of(fv)
                             ok: 1
+    if ok is 0
+        if starts(arg, "const(") is 1
+            if length(arg) > 7
+                if same(letter(arg, length(arg) - 1), ")") is 1
+                    if ceval(cut(arg, 6, length(arg) - 1)) is 1
+                        v: cval
+                        ok: 1
     if ok is 0
         return 0
     emit_write_lit(dec_txt(v))
@@ -634,6 +728,16 @@ expr_body e0:
     if length(e) is 0
         xor_rax()
         return 0
+    # postfix cast: <expr> as text / <expr> as ptr. must run before
+    # the literal check, which would swallow the cast as string text
+    if length(e) >= 8
+        if same(cut(e, length(e) - 8, length(e)), " as text") is 1
+            expr(cut(e, 0, length(e) - 8))
+            return 1
+    if length(e) >= 7
+        if same(cut(e, length(e) - 7, length(e)), " as ptr") is 1
+            expr(cut(e, 0, length(e) - 7))
+            return 1
     if length(e) > 0
         if _sov_byte_at(e, 0) is 34
             if length(e) > 1
@@ -644,6 +748,21 @@ expr_body e0:
     if starts(e, "as text ") is 1
         expr(cut(e, 8, length(e)))
         return 1
+    if starts(e, "as ptr ") is 1
+        expr(cut(e, 7, length(e)))
+        return 1
+    # const(expr) - folded to a literal while compiling
+    if starts(e, "const(") is 1
+        if length(e) > 7
+            if same(letter(e, length(e) - 1), ")") is 1
+                if ceval(cut(e, 6, length(e) - 1)) is 1
+                    rax_imm(cval)
+                    return 0
+                print "Error: const: not a compile-time number"
+                print err_line
+                had_err: 1
+                xor_rax()
+                return 0
     # addr_of name -- where a job lives, so a C library can call back
     if starts(e, "addr_of ") is 1
         aat: here()
@@ -690,6 +809,16 @@ expr_body e0:
         xor_rax()
         patch(d)
         return 0
+    # bit operators, loosest first, the way C orders them
+    p: fop(e, "|")
+    if p > 0 - 1
+        return bitop(e, p, "bor", 1)
+    p: fop(e, "^")
+    if p > 0 - 1
+        return bitop(e, p, "bxor", 1)
+    p: fop(e, "&")
+    if p > 0 - 1
+        return bitop(e, p, "band", 1)
     p: fop(e, "==")
     if p > 0 - 1
         bin(cut(e, 0, p), cut(e, p + 2, length(e)), "eq")
@@ -706,14 +835,25 @@ expr_body e0:
     if p > 0 - 1
         bin(cut(e, 0, p), cut(e, p + 2, length(e)), "ge")
         return 0
-    p: fop(e, "<")
+    p: fopn(e, "<", "<")
     if p > 0 - 1
         bin(cut(e, 0, p), cut(e, p + 1, length(e)), "lt")
         return 0
-    p: fop(e, ">")
+    p: fopn(e, ">", ">")
     if p > 0 - 1
         bin(cut(e, 0, p), cut(e, p + 1, length(e)), "gt")
         return 0
+    # >>> before >>, because >> matches the first two characters of
+    # it. >> is arithmetic on a signed value; >>> fills from the top
+    p: fop(e, ">>>")
+    if p > 0 - 1
+        return bitop(e, p, "bshr", 3)
+    p: fop(e, ">>")
+    if p > 0 - 1
+        return bitop(e, p, "bsar", 2)
+    p: fop(e, "<<")
+    if p > 0 - 1
+        return bitop(e, p, "bshl", 2)
     p: fop2(e, "+", "-")
     if p > 0
         if same(letter(e, p), "+") is 1
@@ -745,12 +885,26 @@ expr_body e0:
             return 1
     if starts(e, "(") is 1
         if same(letter(e, length(e) - 1), ")") is 1
-            expr(cut(e, 1, length(e) - 1))
-            return 0
+            t: expr(cut(e, 1, length(e) - 1))
+            return t
     lp: look(e, "(")
     if lp > 0
         if same(letter(e, length(e) - 1), ")") is 1
             name: strip(cut(e, 0, lp))
+            # spawn work(x, y) = start a thread running work(x, y).
+            # parsed here, the same shape cx86 parses, so a library
+            # can use it and still build for an arm target; what it
+            # emits is each machine's own answer, in spawn_emit
+            is_spawn: 0
+            if starts(name, "spawn ") is 1
+                name: strip(cut(name, 6, length(name)))
+                if length(name) is 0
+                    print "Error: spawn needs a task name"
+                    print err_line
+                    had_err: 1
+                    set_reg(0, 0)
+                    return 0
+                is_spawn: 1
             inside: cut(e, lp + 1, length(e) - 1)
             if length(fib_nm) > 0
                 if same(name, fib_nm) is 1
@@ -804,7 +958,10 @@ expr_body e0:
                     _sov_print(name)
                     print err_line
                     had_err: 1
-            call_args(name, argc)
+            if is_spawn is 1
+                spawn_emit(name, argc)
+            if not
+                call_args(name, argc)
             if same(name, "cat") is 1
                 return 1
             if same(name, "strcat") is 1
@@ -853,12 +1010,19 @@ expr_body e0:
         return 1
     return 0
 
+# immutable: names declared `immutable name: value` may not be
+# assigned again anywhere in the file
+im_names: 0
+im_skip: 0
+
 stmt line:
+    im_skip: 0
     s: strip(line)
     if length(s) is 0
         return
     if starts(s, "#") is 1
         return
+    s: compound(s)
     q: 0
     qi: 0
     as long as qi < length(s)
@@ -881,6 +1045,17 @@ stmt line:
         return
     if starts(s, "use ") is 1
         return
+    if starts(s, "immutable ") is 1
+        rest: strip(cut(s, 10, length(s)))
+        t: find_col(rest)
+        if t < 1
+            print "Error: immutable needs a name and a value"
+            print err_line
+            had_err: 1
+            return
+        im_names: _sov_list_add(im_names, strip(cut(rest, 0, t)))
+        im_skip: 1
+        s: rest
     if same(s, "private") is 1
         # pass 118 (a64): a function that declares private zeroes its
         # frame at every return - see frame_wipe_a64. the marker also
@@ -905,6 +1080,10 @@ stmt line:
         put_here(wend)
         patch(wsk)
         return
+    if starts(s, "join ") is 1
+        expr(strip(cut(s, 5, length(s))))
+        stmt_join_op()
+        return
     if starts(s, "print ") is 1
         arg: strip(cut(s, 6, length(s)))
         if ends_times(arg) is 1
@@ -912,6 +1091,21 @@ stmt line:
             sp: find_last_sp(head)
             if sp > 0 - 1
                 do_print_times(strip(cut(head, 0, sp)), strip(cut(head, sp + 1, length(head))))
+                return
+        # a postfix cast on a print: force the text path
+        if length(arg) >= 8
+            if same(cut(arg, length(arg) - 8, length(arg)), " as text") is 1
+                expr(cut(arg, 0, length(arg) - 8))
+                mov_rdi_rax()
+                used_pr: 1
+                calln("_sov_print")
+                return
+        if length(arg) >= 7
+            if same(cut(arg, length(arg) - 7, length(arg)), " as ptr") is 1
+                expr(cut(arg, 0, length(arg) - 7))
+                mov_rdi_rax()
+                used_pr: 1
+                calln("_sov_print")
                 return
         if length(arg) > 1
             if _sov_byte_at(arg, 0) is 34
@@ -924,6 +1118,14 @@ stmt line:
                 return
         if print_const(arg) is 1
             return
+        # pass 115: a pending constant under a name folds to the
+        # same literal write as print 123 - no division loop
+        pci: idx(cnms, arg)
+        if pci > 0 - 1
+            if _sov_list_get(cemt, pci) is 0
+                emit_write_lit(dec_txt(_sov_list_get(cvls, pci)))
+                cemt: _sov_list_set(cemt, pci, 1)
+                return
         typ: expr(arg)
         mov_rdi_rax()
         if typ is 1
@@ -951,6 +1153,14 @@ stmt line:
         if t > 0 - 1
             var: repl(strip(cut(rest, 0, t)), " ", "_")
             rhs: strip(cut(rest, t + 4, length(rest)))
+            if idx(im_names, var) > 0 - 1
+                if im_skip is 0
+                    print join("Error: ", join(var, " is immutable, it cannot be assigned again"))
+                    _sov_print(s)
+                    print err_line
+                    had_err: 1
+                    return
+                im_skip: 0
             if same(rhs, join(var, " + 1")) is 1
                 inc_var(var)
                 return
@@ -1012,7 +1222,7 @@ stmt line:
     if same(s, "return") is 1
         if carm_main_now is 1
             set_reg(0, 0)
-            set_reg(8, 93)
+            set_reg(8, sc_exit)
             sysc()
             return
         xor_rax()
@@ -1028,7 +1238,7 @@ stmt line:
         if typ is 1
             saw_str: 1
         if carm_main_now is 1
-            set_reg(8, 93)
+            set_reg(8, sc_exit)
             sysc()
             return
         if fw_on is 1
@@ -1040,7 +1250,7 @@ stmt line:
         return
     if same(s, "stop") is 1
         set_reg(0, 0)
-        set_reg(8, 93)
+        set_reg(8, sc_exit)
         sysc()
         return
     if look(s, "(") < 0
@@ -1163,9 +1373,6 @@ try_alloc_imm var rhs:
                 storev(var)
                 return 1
     return 0
-
-emit_cmp_jge cond:
-    return 0 - 1
 
 collect_body lines start bind:
     out: _sov_list_new()
@@ -1342,10 +1549,17 @@ i2s n:
     v: n
     if v is 0
         return "0\n"
-    as long as v > 0
+    neg: 0
+    if v < 0
+        neg: 1
+    as long as v is not 0
         d: v % 10
+        if d < 0
+            d: 0 - d
         r: join(cut("0123456789", d, d + 1), r)
         v: v / 10
+    if neg is 1
+        r: join("-", r)
     return join(r, "\n")
 
 intern_nz s:
@@ -1472,8 +1686,13 @@ warn_unused:
         if length(nm) > 0
             if same(nm, "main") is 0
                 if starts(nm, "_sov_") is 0
-                    if _sov_list_get(task_user, ui) is 1
-                        do_w: 1
+                    # spawn_emit is machine interface, the same way
+                    # cx86 treats it: every back end defines it, and a
+                    # back end built from its own source has no spawn
+                    # to reach it, so it is not a finding
+                    if same(nm, "spawn_emit") is 0
+                        if _sov_list_get(task_user, ui) is 1
+                            do_w: 1
         if do_w is 1
             if fib_drop is 1
                 if same(nm, fib_nm) is 1
@@ -1486,6 +1705,9 @@ warn_unused:
                     if same(_sov_list_get(patch_val, uj), nm) is 1
                         used: 1
                 if same(_sov_list_get(patch_kind, uj), "rel26") is 1
+                    if same(_sov_list_get(patch_val, uj), nm) is 1
+                        used: 1
+                if same(_sov_list_get(patch_kind, uj), "fnaddr64") is 1
                     if same(_sov_list_get(patch_val, uj), nm) is 1
                         used: 1
                 uj: uj + 1
@@ -1772,23 +1994,25 @@ emitw w:
     emit((v / 16777216) % 256)
 
 movz_x d imm sh:
-    emitw(3531603968 + sh * 2097152 + (imm % 65536) * 32 + d)
+    emitw(3531603968 + sh * 2097152 + band(imm, 65535) * 32 + d)
 
 movk_x d imm sh:
-    emitw(4068474880 + sh * 2097152 + (imm % 65536) * 32 + d)
+    emitw(4068474880 + sh * 2097152 + band(imm, 65535) * 32 + d)
 
 set_reg d n:
-    v: n
-    if v < 0
-        v: v + 18446744073709551616
-    movz_x(d, v % 65536, 0)
-    p1: (v / 65536) % 65536
+    # a negative n is already two's complement, so the chunks come
+    # straight off it with a logical shift. the old form added 2^64
+    # first to make it unsigned - and 2^64 does not fit in the type it
+    # was filling, so the add wrapped and every negative immediate
+    # came out as its top chunk alone: -1 loaded as 0xFFFF000000000000
+    movz_x(d, band(n, 65535), 0)
+    p1: band(bshr(n, 16), 65535)
     if p1 is not 0
         movk_x(d, p1, 1)
-    p2: (v / 4294967296) % 65536
+    p2: band(bshr(n, 32), 65535)
     if p2 is not 0
         movk_x(d, p2, 2)
-    p3: (v / 281474976710656) % 65536
+    p3: band(bshr(n, 48), 65535)
     if p3 is not 0
         movk_x(d, p3, 3)
 
@@ -1926,7 +2150,7 @@ emit_canary_fail:
     fn_offs: _sov_list_add(fn_offs, here())
     emit_write_lit("stack\n")
     set_reg(0, 60)
-    set_reg(8, 93)
+    set_reg(8, sc_exit)
     sysc()
 
 emit_crash_handler:
@@ -1959,7 +2183,7 @@ emit_crash_handler:
         emitw(3943760415)
         emitw(1409286210)
         set_reg(0, 100 + sgv)
-        set_reg(8, 93)
+        set_reg(8, sc_exit)
         sysc()
         chi: chi + 1
     # the sigreturn trampoline the act points at
@@ -1985,6 +2209,71 @@ store_glob name:
     emitw(4177527072)
 
 calln name:
+    # bitwise, native: one opcode each, a in x0, b in x1, answer x0.
+    # the words are the shifted-register logical form with Rd=x0 Rn=x0
+    # Rm=x1 - and/orr/eor from opc 00/01/10, and lslv/lsrv/asrv from
+    # the data-processing 2-register form with type2 00/01/10
+    if same(name, "band") is 1
+        cflush_globs()
+        emitw(2315321344)
+        return
+    if same(name, "bor") is 1
+        cflush_globs()
+        emitw(2852192256)
+        return
+    if same(name, "bxor") is 1
+        cflush_globs()
+        emitw(3389063168)
+        return
+    if same(name, "bsar") is 1
+        cflush_globs()
+        emitw(2596349952)
+        return
+    if same(name, "bshl") is 1
+        cflush_globs()
+        emitw(2596347904)
+        return
+    if same(name, "bshr") is 1
+        cflush_globs()
+        emitw(2596348928)
+        return
+    # atomics: x0 is the slot, x1 the value, x2 the cas desired.
+    # ldaxr/stlxr retry, ldar/stlr for load/store. words computed
+    # from the armv8 encoding, not from an aarch64 assembler.
+    if same(name, "atomic_add") is 1
+        cflush_globs()
+        emitw(3361733634)
+        emitw(2332098627)
+        emitw(3355769859)
+        emitw(905969572)
+        emitw(2852258784)
+        return
+    if same(name, "atomic_swap") is 1
+        cflush_globs()
+        emitw(3361733634)
+        emitw(3355704321)
+        emitw(905969603)
+        emitw(2852258784)
+        return
+    if same(name, "atomic_load") is 1
+        cflush_globs()
+        emitw(3370122240)
+        return
+    if same(name, "atomic_store") is 1
+        cflush_globs()
+        emitw(3365927937)
+        emitw(2852193248)
+        return
+    if same(name, "atomic_cas") is 1
+        cflush_globs()
+        emitw(3361733635)
+        emitw(3942711423)
+        emitw(1409286241)
+        emitw(3355769858)
+        emitw(905969540)
+        emitw(3573755999)
+        emitw(2852324320)
+        return
     cflush_globs()
     at: here()
     emitw(2483027968)
@@ -2136,23 +2425,29 @@ emit_mmap:
     set_reg(0, 0)
     set_reg(1, mmap_sz)
     set_reg(2, 3)
-    set_reg(3, 34)
+    set_reg(3, mmap_flags)
     emitw(2457862148)
     set_reg(5, 0)
-    set_reg(8, 222)
+    set_reg(8, sc_mmap)
     sysc()
 
 emit_mmap_k n:
     set_reg(0, 0)
     set_reg(1, n + 2097152)
     set_reg(2, 3)
-    set_reg(3, 34)
+    set_reg(3, mmap_flags)
     emitw(2457862148)
     set_reg(5, 0)
-    set_reg(8, 222)
+    set_reg(8, sc_mmap)
     sysc()
 
 # _start: x0 = argc from [sp], x1 = argv = sp+8
+
+# the pie flag: 1 makes the compiler emit the self-relocating
+# walk as the first code. each os file defines its own emit_walk
+pie_walk: 0
+# where the start stub landed, past the walk when there is one
+start_off: 0
 
 emit_start:
     emitw(4181722080)
@@ -2161,7 +2456,7 @@ emit_start:
     emitw(2483027968)
     addp(at, "rel26", "main")
     set_reg(0, 0)
-    set_reg(8, 93)
+    set_reg(8, sc_exit)
     sysc()
 
 emit_trap_stub:
@@ -2169,7 +2464,7 @@ emit_trap_stub:
     fn_offs: _sov_list_add(fn_offs, here())
     emit_write_lit("trap\n")
     set_reg(0, 1)
-    set_reg(8, 93)
+    set_reg(8, sc_exit)
     sysc()
 # patch_arm64.sov — AArch64 branch patching
 # x86 writes a flat 32-bit offset. ARM packs the offset into instruction bits:
@@ -2331,7 +2626,207 @@ is_imm s:
             return 0
         i: i + 1
     return 1
+# ---- const: compile-time evaluation of numeric expressions ----
+# const(2 + 3 * 4) folds to a literal while the program is compiled:
+# the value never touches the machine. What ceval cannot prove
+# (names, calls, strings, a zero divisor) is a compile error, so a
+# const is never silently a runtime value.
+#
+# Sovren names are file-global, so a recursive call overwrites every
+# "local". ceval therefore reads no plain name after a call returns;
+# ceval2 rides its operands on the cstk frame list so deeper frames
+# cannot clobber them.
 
+cval: 0
+cvop: 0
+cspl: 0
+cstk: 0
+
+lcut lst n:
+    out: _sov_list_new()
+    i: 0
+    as long as i < n
+        out: _sov_list_add(out, _sov_list_get(lst, i))
+        i: i + 1
+    return out
+
+cnum s:
+    e: strip(s)
+    if length(e) is 0
+        return 0
+    i: 0
+    if same(letter(e, 0), "-") is 1
+        i: 1
+    if i >= length(e)
+        return 0
+    as long as i < length(e)
+        if digit(letter(e, i)) is 0
+            return 0
+        i: i + 1
+    cval: _sov_atoi(e)
+    return 1
+
+# evaluate ls and rs, combine with op2 (10..15 compares, 20/21
+# add/sub, 30/31/32 mul/div/mod). The frame rides cstk: nothing is
+# read from a plain name after a recursive ceval returns.
+
+cwrap s:
+    e: strip(s)
+    n: length(e)
+    if n < 2
+        return 0
+    if same(letter(e, 0), "(") is 0
+        return 0
+    if same(letter(e, n - 1), ")") is 0
+        return 0
+    d: 1
+    i: 1
+    as long as i < n - 1
+        if same(letter(e, i), "(") is 1
+            d: d + 1
+        if not
+            if same(letter(e, i), ")") is 1
+                d: d - 1
+                if d is 0
+                    return 0
+        i: i + 1
+    return 1
+
+ceval2 ls rs op2:
+    cstk: _sov_list_add(cstk, ls)
+    cstk: _sov_list_add(cstk, rs)
+    cstk: _sov_list_add(cstk, op2)
+    if ceval(_sov_list_get(cstk, _sov_list_len(cstk) - 3)) is 0
+        cstk: lcut(cstk, _sov_list_len(cstk) - 3)
+        return 0
+    cstk: _sov_list_add(cstk, cval)
+    if ceval(_sov_list_get(cstk, _sov_list_len(cstk) - 3)) is 0
+        cstk: lcut(cstk, _sov_list_len(cstk) - 4)
+        return 0
+    lv: _sov_list_get(cstk, _sov_list_len(cstk) - 1)
+    rv: cval
+    o2: _sov_list_get(cstk, _sov_list_len(cstk) - 2)
+    cstk: lcut(cstk, _sov_list_len(cstk) - 4)
+    if o2 is 10
+        cval: 0
+        if lv is rv
+            cval: 1
+    if not
+        if o2 is 11
+            cval: 0
+            if lv is not rv
+                cval: 1
+        if not
+            if o2 is 12
+                cval: 0
+                if lv < rv
+                    cval: 1
+            if not
+                if o2 is 13
+                    cval: 0
+                    if lv >= rv
+                        cval: 1
+                if not
+                    if o2 is 14
+                        cval: 0
+                        if lv < rv
+                            cval: 1
+                    if not
+                        if o2 is 15
+                            cval: 0
+                            if lv > rv
+                                cval: 1
+                        if not
+                            if o2 is 20
+                                cval: lv + rv
+                            if not
+                                if o2 is 21
+                                    cval: lv - rv
+                                if not
+                                    if o2 is 30
+                                        cval: lv * rv
+                                    if not
+                                        if o2 is 31
+                                            if rv is 0
+                                                return 0
+                                            cval: lv / rv
+                                        if not
+                                            if o2 is 32
+                                                if rv is 0
+                                                    return 0
+                                            cval: lv % rv
+    return 1
+
+ceval s:
+    e: strip(s)
+    if length(e) is 0
+        return 0
+    if starts(e, "const(") is 1
+        if same(letter(e, length(e) - 1), ")") is 1
+            return ceval(cut(e, 6, length(e) - 1))
+    if cnum(e) is 1
+        return 1
+    if cwrap(e) is 1
+        return ceval(cut(e, 1, length(e) - 1))
+    if same(letter(e, 0), "-") is 1
+        if ceval(cut(e, 1, length(e))) is 1
+            cval: 0 - cval
+            return 1
+    op: fop(e, "==")
+    cvop: 10
+    if op < 0
+        op: fop(e, "!=")
+        cvop: 11
+    if op < 0
+        op: fop(e, "<=")
+        cvop: 12
+    if op < 0
+        op: fop(e, ">=")
+        cvop: 13
+    if op < 0
+        op: fop(e, "<")
+        cvop: 14
+    if op < 0
+        op: fop(e, ">")
+        cvop: 15
+    if op > 0 - 1
+        if ceval2(cut(e, 0, op), cut(e, op + 2, length(e)), cvop) is 0
+            return 0
+        return 1
+    cspl: 0
+    pa: fop(e, "+")
+    if pa > 0
+        cspl: pa
+        cvop: 20
+    if cspl <= 0
+        pm: fop(e, "-")
+        if pm > 0
+            cspl: pm
+            cvop: 21
+    if cspl > 0
+        if ceval2(cut(e, 0, cspl), cut(e, cspl + 1, length(e)), cvop) is 0
+            return 0
+        return 1
+    cspl: 0
+    px: fop(e, "*")
+    if px > 0
+        cspl: px
+        cvop: 30
+    if cspl <= 0
+        pd: fop(e, "/")
+        if pd > 0
+            cspl: pd
+            cvop: 31
+    if cspl <= 0
+        pm: fop(e, "%")
+        if pm > 0
+            cspl: pm
+            cvop: 32
+    if cspl > 0
+        if ceval2(cut(e, 0, cspl), cut(e, cspl + 1, length(e)), cvop) is 0
+            return 0
+        return 1
+    return 0
 fib_of n:
     if n < 2
         return n
@@ -2455,7 +2950,7 @@ emit_stack_wipe:
     emitw(1384644617)
     sw_loop: here()
     set_reg(1, 4096)
-    set_reg(8, 232)
+    set_reg(8, sc_mincore)
     sysc()
     emitw(889192800)
     emitw(2852126723)
@@ -2535,11 +3030,13 @@ emit_stack_wipe:
     return
 
 emit_nodump:
+    if sc_nodump is 0
+        return
     # prctl(PR_SET_DUMPABLE, 0) - aarch64 prctl is 167. the x86 side
     # had this since pass 116; the arm stub sat empty.
     set_reg(0, 4)
     set_reg(1, 0)
-    set_reg(8, 167)
+    set_reg(8, sc_nodump)
     sysc()
     return
 
@@ -2631,6 +3128,17 @@ emit_print_int:
     d: here()
     emitw(2597062957)
     emitw(2601297326)
+    # x14 now holds the remainder, and the remainder of a negative
+    # number is negative. the negate at the top of this task cannot
+    # fix that for the most negative value - negating it hands back
+    # the same value - so every digit reached the add below as 48
+    # minus itself. take the sign off the digit instead: cmp x14, #0
+    # then b.ge over a sub x14, xzr, x14, the same pair the top uses
+    emitw(4043309535)
+    nq: here()
+    emitw(1409286154)
+    emitw(3406693358)
+    put_here(nq)
     emitw(2432745934)
     emitw(3506439498)
     emitw(956301646)
@@ -2650,7 +3158,7 @@ emit_print_int:
     mov_reg(1, 10)
     emitw(2432746466)
     emitw(3406430274)
-    set_reg(8, 64)
+    set_reg(8, sc_write)
     sysc()
     emitw(2432746495)
     ret()
@@ -2767,16 +3275,11 @@ body lines:
                             bk: _sov_list_set(bk, last, "else")
                             bj: _sov_list_set(bj, last, 0 - 1)
                 if not
-                    if same(s, "\x00__removed_and_if_not") is 1
-                        last: _sov_list_len(bk) - 1
-                        if last > 0 - 1
-                            je: jmp()
-                            patch(_sov_list_get(bj, last))
-                            old: _sov_list_get(be, last)
-                            old: _sov_list_add(old, je)
-                            be: _sov_list_set(be, last, old)
-                            bk: _sov_list_set(bk, last, "else")
-                            bj: _sov_list_set(bj, last, 0 - 1)
+                    # the if-not chain resets here: an always-false gate keeps
+                    # the next if-not a plain "keep going", the way the old
+                    # and-if-not token did
+                    if 0 is 1
+                        last: 0
                     if not
                         if starts(s, "do while ") is 1
                             bln: collect_body(lines, i + 1, ind)
@@ -2786,11 +3289,9 @@ body lines:
                             if not
                                 cflush_all()
                                 st: here()
-                                z: emit_cmp_jge(cut(s, 9, length(s)))
-                                if z is 0 - 1
-                                    expr(cut(s, 9, length(s)))
-                                    test_rax()
-                                    z: jz()
+                                expr(cut(s, 9, length(s)))
+                                test_rax()
+                                z: jz()
                                 bk: _sov_list_add(bk, "while")
                                 bi: _sov_list_add(bi, ind)
                                 bj: _sov_list_add(bj, z)
@@ -2807,11 +3308,9 @@ body lines:
                                 if not
                                     cflush_all()
                                     st: here()
-                                    z: emit_cmp_jge(cut(s, 6, length(s)))
-                                    if z is 0 - 1
-                                        expr(cut(s, 6, length(s)))
-                                        test_rax()
-                                        z: jz()
+                                    expr(cut(s, 6, length(s)))
+                                    test_rax()
+                                    z: jz()
                                     bk: _sov_list_add(bk, "while")
                                     bi: _sov_list_add(bi, ind)
                                     bj: _sov_list_add(bj, z)
@@ -2830,37 +3329,9 @@ body lines:
                                     br: _sov_list_add(br, 0)
                                     br_depth: br_depth + 1
                                 if not
-                                    if starts(s, "\x00__removed_repeat ") is 1
-                                        cflush_all()
-                                        tmp: cut(s, 7, length(s))
-                                        tp: look(tmp, " times")
-                                        if tp > 0 - 1
-                                            tmp: cut(tmp, 0, tp)
-                                        expr(tmp)
-                                        cn: "__rep_c"
-                                        inn: "__rep_i"
-                                        storev(cn)
-                                        xor_rax()
-                                        storev(inn)
-                                        rs: idx(locals, inn)
-                                        cs: idx(locals, cn)
-                                        st: here()
-                                        load_loc(rs)
-                                        push_rax()
-                                        load_loc(cs)
-                                        mov_rcx_rax()
-                                        pop_rax()
-                                        cmp_rax_rcx()
-                                        setcc("lt")
-                                        test_rax()
-                                        z: jz()
-                                        bk: _sov_list_add(bk, "repeat")
-                                        bi: _sov_list_add(bi, ind)
-                                        bj: _sov_list_add(bj, z)
-                                        bs: _sov_list_add(bs, st)
-                                        be: _sov_list_add(be, _sov_list_new())
-                                        br: _sov_list_add(br, rs)
-                                        br_depth: br_depth + 1
+                                    # chain reset, as above (the repeat token is gone)
+                                    if 0 is 1
+                                        last: 0
                                     if not
                                         if same(s, "try") is 1
                                             cflush_all()
@@ -2966,7 +3437,7 @@ body lines:
                                                     used_pi: 1
                                                     calln("_sov_print_int")
                                                     set_reg(0, 1)
-                                                    set_reg(8, 93)
+                                                    set_reg(8, sc_exit)
                                                     sysc()
                                                 if not
                                                     stmt(s)
@@ -3003,6 +3474,16 @@ compile source:
     str_fns: _sov_list_add(str_fns, "trim")
     str_fns: _sov_list_add(str_fns, "ch")
     str_fns: _sov_list_add(str_fns, "_sov_substring")
+    str_fns: _sov_list_add(str_fns, "str_cat")
+    str_fns: _sov_list_add(str_fns, "str_cut")
+    str_fns: _sov_list_add(str_fns, "str_trim")
+    str_fns: _sov_list_add(str_fns, "str_join3")
+    str_fns: _sov_list_add(str_fns, "_sov_trim")
+    str_fns: _sov_list_add(str_fns, "join")
+    str_fns: _sov_list_add(str_fns, "strip")
+    str_fns: _sov_list_add(str_fns, "cut")
+    str_fns: _sov_list_add(str_fns, "repl")
+    str_fns: _sov_list_add(str_fns, "letter")
     pre_lns: lines_of(source)
     pre_i: 0
     pre_cur: blank
@@ -3054,6 +3535,18 @@ compile source:
                     if starts(pre_r, "as text ") is 1
                         if length(pre_cur) > 0
                             mark_fn_str(pre_cur)
+                    if starts(pre_r, "as ptr ") is 1
+                        if length(pre_cur) > 0
+                            mark_fn_str(pre_cur)
+                    # the documented form is the postfix cast: return "x" as text
+                    if length(pre_r) >= 8
+                        if same(cut(pre_r, length(pre_r) - 8, length(pre_r)), " as text") is 1
+                            if length(pre_cur) > 0
+                                mark_fn_str(pre_cur)
+                    if length(pre_r) >= 7
+                        if same(cut(pre_r, length(pre_r) - 7, length(pre_r)), " as ptr") is 1
+                            if length(pre_cur) > 0
+                                mark_fn_str(pre_cur)
                     if length(pre_r) > 0
                         if _sov_byte_at(pre_r, 0) is 34
                             if length(pre_cur) > 0
@@ -3094,15 +3587,16 @@ compile source:
                         pre_r: strip(cut(pre_t2, 7, length(pre_t2)))
                         if idx(str_fns, pre_cur) < 0
                             if starts(pre_r, "as text ") is 0
-                                if length(pre_r) > 0
-                                    if _sov_byte_at(pre_r, 0) is not 34
-                                        if same(pre_r, "blank") is 0
-                                            pre_lp: look(pre_r, "(")
-                                            if pre_lp > 0
-                                                pre_f: strip(cut(pre_r, 0, pre_lp))
-                                                if idx(str_fns, pre_f) > 0 - 1
-                                                    mark_fn_str(pre_cur)
-                                                    changed: 1
+                                if starts(pre_r, "as ptr ") is 0
+                                    if length(pre_r) > 0
+                                        if _sov_byte_at(pre_r, 0) is not 34
+                                            if same(pre_r, "blank") is 0
+                                                pre_lp: look(pre_r, "(")
+                                                if pre_lp > 0
+                                                    pre_f: strip(cut(pre_r, 0, pre_lp))
+                                                    if idx(str_fns, pre_f) > 0 - 1
+                                                        mark_fn_str(pre_cur)
+                                                        changed: 1
             pre_i: pre_i + 1
     # a program that wipes or marks private data must not core-dump it.
     # match the statements, not the substring: look() must not match
@@ -3241,6 +3735,9 @@ compile source:
         fli: fli + 1
     if has_vm is 1
         glob_names: _sov_list_add(glob_names, "heap_ptr")
+        if pie_walk is 1
+            emit_walk()
+        start_off: here()
         emit_start()
         emit_alloc()
         emit_strlen()
@@ -3249,7 +3746,10 @@ compile source:
         emit_print_int()
         thin_main: 0
     if not
+        if pie_walk is 1
+            emit_walk()
         if thin_main is 0
+            start_off: here()
             emit_start()
     fi: 0
     as long as fi < _sov_list_len(names)
@@ -3300,7 +3800,7 @@ compile source:
                     if need_priv is 1
                         emit_stack_wipe()
                     set_reg(0, 0)
-                    set_reg(8, 93)
+                    set_reg(8, sc_exit)
                     sysc()
                 if not
                     isfib: fiblike(nm, ps, _sov_list_get(bodies, fi))
@@ -3362,7 +3862,7 @@ compile source:
                         if need_priv is 1
                             emit_stack_wipe()
                         set_reg(0, 0)
-                        set_reg(8, 93)
+                        set_reg(8, sc_exit)
                         sysc()
                     if not
                         # the fib fast path ends in its own ret; a
@@ -3411,7 +3911,7 @@ emit_canary_seed:
     addp(at, "glob64", "g_canary")
     mov_reg(0, 9)
     set_reg(1, 8)
-    set_reg(8, 278)
+    set_reg(8, sc_rand)
     sysc()
 
 # pass S6: crash handlers, arm64 shape. rt_sigaction arms five
@@ -3419,6 +3919,8 @@ emit_canary_seed:
 # SA_RESTORER set, the restorer pointer in the act.
 
 emit_crash_install:
+    if sc_sigact is 0
+        return
     # rt_sigaction for ill, abrt, bus, fpe, segv. the act lives at
     # [sp]: handler, restorer, an empty mask, SA_RESTORER
     emitw(3506471935)
@@ -3459,7 +3961,7 @@ emit_crash_install:
         emitw(2432697313)
         set_reg(2, 0)
         set_reg(3, 8)
-        set_reg(8, 134)
+        set_reg(8, sc_sigact)
         sysc()
         csi: csi + 1
     emitw(2432730111)
@@ -3484,3 +3986,40 @@ emit_fib_iter_a64:
     emitw(1426063244)
     mov_reg(0, 10)
     ret()
+
+compound s:
+    i: 0
+    n: length(s)
+    intext: 0
+    as long as i + 1 < n
+        c: _sov_byte_at(s, i)
+        if c is 34
+            if intext is 0
+                intext: 1
+            if not
+                intext: 0
+        if intext is 0
+            if _sov_byte_at(s, i + 1) is 61
+                op: 0
+                if c is 43
+                    op: 1
+                if c is 45
+                    op: 1
+                if c is 42
+                    op: 1
+                if c is 47
+                    op: 1
+                if c is 38
+                    op: 1
+                if c is 124
+                    op: 1
+                if c is 94
+                    op: 1
+                if op is 1
+                    lhs: strip(cut(s, 0, i))
+                    rhs: strip(cut(s, i + 2, n))
+                    if length(lhs) > 0
+                        if length(rhs) > 0
+                            return join(join(lhs, ": "), join(join(lhs, " "), join(join(cut(s, i, i + 1), " "), rhs)))
+        i: i + 1
+    return s

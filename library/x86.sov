@@ -47,7 +47,6 @@
 use mem
 use file
 use string
-use num
 use sys
 use list
 
@@ -99,7 +98,17 @@ x86_new:
         i: i + 1
     poke_i64(m, 608, X_FCW)
     poke_i64(m, 616, 0)
-    poke_i64(m, 176, mem_new(X_MEM))
+    # the guest's memory must be a SHARED mapping. A guest thread
+    # is a host thread (or a forked child where the host refuses
+    # clone) stepping the same guest addresses; with a private
+    # block the thread's writes would land in a copy the main
+    # never sees, and every join would hang. MAP_SHARED anonymous
+    # (33) is shared by clone, by fork, and on the create-model
+    # hosts the block simply is the one mapping.
+    gb: syscall(9, 0, X_MEM, 3, 33, 0 - 1, 0)
+    if gb < 0
+        gb: mem_new(X_MEM)
+    poke_i64(m, 176, gb)
     poke_i64(m, 184, X_MEM)
     # pass S8: real memory. every 4k page carries rwx bits
     # (4 read, 2 write, 1 execute - the ELF PF_ encoding). the
@@ -108,7 +117,11 @@ x86_new:
     # image segment's true permissions over it, and the access
     # helpers enforce them: a write to a no-write page and a jump
     # to a no-execute page are faults with their own reasons.
-    poke_i64(m, 664, mem_new(X_MEM / 4096))
+    # shared, for the same reason as the block itself.
+    pt: syscall(9, 0, X_MEM / 4096, 3, 33, 0 - 1, 0)
+    if pt < 0
+        pt: mem_new(X_MEM / 4096)
+    poke_i64(m, 664, pt)
     poke_i64(m, 192, mem_new(X_OUT))
     poke_i64(m, 296, mem_new(X_OUT))
     poke_i64(m, 256, list_new())
@@ -142,18 +155,11 @@ X_2_62: 4611686018427387904
 
 # the low thirty-two bits, always counted upwards
 x_lo v:
-    r: v % X_2_32
-    if r < 0
-        r: r + X_2_32
-    return r
+    return band(v, 4294967295)
 
 # the high thirty-two bits, always counted upwards
 x_hiu v:
-    l: x_lo(v)
-    h: (v - l) / X_2_32
-    if h < 0
-        h: h + X_2_32
-    return h
+    return bshr(v, 32)
 
 # put two halves back together
 x_make hi lo:
@@ -242,9 +248,7 @@ x_ult a b:
 
 # shift one place right, counting upwards
 x_shr1 a:
-    if a >= 0
-        return a / 2
-    return (a + 9223372036854775807 + 1) / 2 + X_2_62
+    return bsar(a, 1)
 
 # divide counting upwards
 x_udiv a b:
@@ -384,44 +388,13 @@ x_bit v n:
 # ---------------------------------------------------------------
 
 x_and32 a b:
-    r: 0
-    p: 1
-    i: 0
-    as long as i < 32
-        if a % 2 is 1
-            if b % 2 is 1
-                r: r + p
-        a: a / 2
-        b: b / 2
-        p: p * 2
-        i: i + 1
-    return r
+    return band(a, b)
 
 x_or32 a b:
-    r: 0
-    p: 1
-    i: 0
-    as long as i < 32
-        if a % 2 + b % 2 > 0
-            r: r + p
-        a: a / 2
-        b: b / 2
-        p: p * 2
-        i: i + 1
-    return r
+    return bor(a, b)
 
 x_xor32 a b:
-    r: 0
-    p: 1
-    i: 0
-    as long as i < 32
-        if a % 2 is not b % 2
-            r: r + p
-        a: a / 2
-        b: b / 2
-        p: p * 2
-        i: i + 1
-    return r
+    return bxor(a, b)
 
 x_and a b:
     if a is b
@@ -434,7 +407,7 @@ x_and a b:
         return b
     if b is 0 - 1
         return a
-    return x_make(x_and32(x_hiu(a), x_hiu(b)), x_and32(x_lo(a), x_lo(b)))
+    return band(a, b)
 
 x_or a b:
     if a is b
@@ -443,7 +416,7 @@ x_or a b:
         return b
     if b is 0
         return a
-    return x_make(x_or32(x_hiu(a), x_hiu(b)), x_or32(x_lo(a), x_lo(b)))
+    return bor(a, b)
 
 x_xor a b:
     if a is b
@@ -452,7 +425,7 @@ x_xor a b:
         return b
     if b is 0
         return a
-    return x_make(x_xor32(x_hiu(a), x_hiu(b)), x_xor32(x_lo(a), x_lo(b)))
+    return bxor(a, b)
 
 x_not a:
     return x_xor(a, 0 - 1)
@@ -9859,6 +9832,40 @@ x_fd h:
         return 2
     return h
 
+# ---------------------------------------------------------------
+# guest threads
+# ---------------------------------------------------------------
+#
+# A guest CreateThread is answered with a real host thread: a clone
+# of this machine, stepping the same guest memory, from its own
+# place in the host. The Windows handle the guest keeps is a slot
+# number in the table below; the table row holds the host thread
+# handle, then whether the thread has finished.
+
+x_thr_tbl: 0
+
+x_thr_slot:
+    t: x_thr_tbl
+    i: 0
+    as long as i < 63
+        if peek_i64(t, i * 16) is 0
+            return i
+        i: i + 1
+    return 0 - 1
+
+# step a guest thread until it exits. the guest memory is the
+# shared mapping, so every write the thread makes is the one the
+# main thread will read.
+x_thread_step m2 v:
+    k: 0
+    as long as k < 20
+        x86_run_for(m2, 10000)
+        if peek_i64(m2, 168) is not 0
+            return 0
+        k: k + 1
+    x86_run_for(m2, 400000000)
+    return 0
+
 x_win_call m which:
     nm: list_get(peek_i64(m, 288), which)
     a1: x_reg(m, 1)
@@ -9867,6 +9874,7 @@ x_win_call m which:
     a4: x_reg(m, 9)
     sp: x_sp(m)
     a5: x_r64(m, x_add(sp, 40))
+
     if str_eq(nm, "GetStdHandle") is 1
         h: x_lo(a1)
         if h is 4294967286
@@ -10021,6 +10029,81 @@ x_win_call m which:
     if str_eq(nm, "CreateDirectoryA") is 1
         x_setr(m, 0, 1)
         return 1
+    if str_eq(nm, "CreateThread") is 1
+        # clone this machine for the new guest thread. it shares
+        # the guest memory, the stand-in library and the output,
+        # but brings its own registers, flags and floating point.
+        #
+        # the guest owns the thread's memory: the runtime allocates
+        # a 262272-byte control block with VirtualAlloc and passes
+        # its base as the thread parameter. the block's first 128
+        # bytes are the control block (status, fn, values); the
+        # stack grows down from the top, 262144 bytes, and never
+        # reaches the control block. a4 is that base.
+        if x_thr_tbl is 0
+            x_thr_tbl: mem_zero(mem_new(1024), 1024)
+        m2: mem_new(1024)
+        i: 1024
+        mem_copy(m2, m, 1024)
+        i: 0
+        as long as i < 21
+            poke_i64(m2, i * 8, 0)
+            i: i + 1
+        poke_i64(m2, 488, mem_zero(mem_new(512), 512))
+        poke_i64(m2, 624, mem_zero(mem_new(128), 128))
+        x_setr(m2, 1, a4)
+        # the stack is the block's upper 262144 bytes; the 128-byte
+        # control block at the base stays untouched
+        x_setr(m2, 4, a4 + 262272 - 16)
+        # the same return sentinel the loader gives the main thread:
+        # when the trampoline's final ret pops it, the thread is done
+        x_push(m2, peek_i64(m2, 320))
+        x_set_rip(m2, a3)
+        poke_i64(m2, 168, X_RUNNING)
+        poke_i64(m2, 208, 0)
+        sl: x_thr_slot()
+        if sl < 0
+            x_setr(m, 0, 0)
+            return 1
+        # tag the clone with its slot id: ExitThread reads it back
+        poke_i64(m2, 512, sl + 1)
+        hh: spawn x_thread_step(m2, sl)
+        if hh < 0
+            x_setr(m, 0, 0)
+            return 1
+        poke_i64(x_thr_tbl, sl * 16, hh)
+        # the guest's handle is the control block's base; the wait
+        # looks the host thread up by it
+        poke_i64(x_thr_tbl, sl * 16 + 8, a4)
+        x_setr(m, 0, a4)
+        return 1
+    if str_eq(nm, "WaitForSingleObject") is 1
+        # a1 is the guest's handle: the control block's base, which
+        # the runtime parked in its own threadtable. find the slot
+        # that recorded it and join that host thread
+        # The table only exists once a thread has been made. A
+        # program that waits on anything else arrives here with no
+        # table at all, and walking a null pointer takes the host
+        # down with it - there is simply nothing to join.
+        i: 0
+        hh: 0
+        if x_thr_tbl is not 0
+            as long as i < 64
+                if peek_i64(x_thr_tbl, i * 16 + 8) is a1
+                    hh: peek_i64(x_thr_tbl, i * 16)
+                i: i + 1
+        if hh is not 0
+            join hh
+        x_setr(m, 0, 0)
+        return 1
+    if str_eq(nm, "ExitThread") is 1
+        sl: peek_i64(m, 512) - 1
+        if sl >= 0
+            if x_thr_tbl is not 0
+                poke_i64(x_thr_tbl, sl * 16 + 8, 1)
+        poke_i64(m, 208, x_lo(a1))
+        poke_i64(m, 168, X_EXITED)
+        return 0
     # a name nobody taught it: say nothing happened, note it, carry on
     x_note_missing(m, nm)
     x_setr(m, 0, 0)
@@ -10128,6 +10211,74 @@ x86_load_elf m path:
     phoff: peek_i64(d, 32)
     phnum: peek_byte(d, 56) + peek_byte(d, 57) * 256
     phsz: peek_byte(d, 54) + peek_byte(d, 55) * 256
+    # loader truth (2026-08-27): these are the checks the real
+    # kernel runs before it maps an ELF. The emulator was built from
+    # the same spec the compiler emits, so it used to accept images
+    # hardware refuses (CI run #2, the S7 PIE builds).
+    fszn: file_size(path)
+    if fszn < 64
+        print "x86_load: refused - elf is smaller than its own header"
+        return 0
+    if phnum < 1
+        print "x86_load: refused - no program headers"
+        return 0
+    if phnum > 32
+        print "x86_load: refused - absurd program header count"
+        return 0
+    if phoff + phnum * phsz > fszn
+        print "x86_load: refused - program header table runs past the file"
+        return 0
+    shoff: peek_i64(d, 40)
+    shnum: peek_byte(d, 60) + peek_byte(d, 61) * 256
+    if shoff > 0
+        if shoff + shnum * 64 > fszn
+            print "x86_load: refused - section header table runs past the file"
+            return 0
+    exlo: 0
+    exhi: 0
+    i: 0
+    as long as i < phnum
+        o: phoff + i * phsz
+        t: peek_byte(d, o) + peek_byte(d, o + 1) * 256
+        if t is 1
+            off2: peek_i64(d, o + 8)
+            va2: peek_i64(d, o + 16)
+            fsz2: peek_i64(d, o + 32)
+            msz2: peek_i64(d, o + 40)
+            if off2 + fsz2 > fszn
+                print "x86_load: refused - a load piece runs past the file"
+                return 0
+            if msz2 < fsz2
+                print "x86_load: refused - a piece maps more file than memory"
+                return 0
+            fl: peek_byte(d, o + 4)
+            if fl - (fl / 2) * 2 is 1
+                if exlo is 0
+                    exlo: va2
+                exhi: va2 + msz2
+        i: i + 1
+    if exlo is 0
+        print "x86_load: refused - no executable piece to start from"
+        return 0
+    if entry < exlo
+        print "x86_load: refused - entry outside the executable piece"
+        return 0
+    if entry > exhi - 1
+        print "x86_load: refused - entry outside the executable piece"
+        return 0
+    # an ET_DYN header means the kernel loads it anywhere. The
+    # emulator does the same, and applies nothing else: the kernel
+    # runs no private relocation table for a static image. If the
+    # image needs rebasing it must walk itself.
+    slide: 0
+    ety: peek_byte(d, 16) + peek_byte(d, 17) * 256
+    if ety is 3
+        rb: _sov_alloc(8)
+        if sys_getrandom(rb, 8) is 8
+            v: peek_i64(rb, 0)
+            if v < 0
+                v: 0 - v
+            slide: (v - (v / 512) * 512) * 4096
     # the lowest address any piece wants to sit at
     lo: 0
     i: 0
@@ -10143,6 +10294,7 @@ x86_load_elf m path:
         i: i + 1
     if lo is 0
         lo: 4194304
+    lo: lo + slide
     poke_i64(m, 216, lo)
     x_rebase(m)
     # copy each piece in, and zero whatever it asked for beyond what
@@ -10160,15 +10312,15 @@ x86_load_elf m path:
             msz: peek_i64(d, o + 40)
             k: 0
             as long as k < fsz
-                x_w8(m, va + k, peek_byte(d, off + k))
+                x_w8(m, va + slide + k, peek_byte(d, off + k))
                 k: k + 1
             as long as k < msz
-                x_w8(m, va + k, 0)
+                x_w8(m, va + slide + k, 0)
                 k: k + 1
             # pass S8: the segment's own flags become the page bits
-            x_perm_set(m, va, msz, peek_byte(d, o + 4) + peek_byte(d, o + 5) * 256 + peek_byte(d, o + 6) * 65536 + peek_byte(d, o + 7) * 16777216)
-            if va + msz > top
-                top: va + msz
+            x_perm_set(m, va + slide, msz, peek_byte(d, o + 4) + peek_byte(d, o + 5) * 256 + peek_byte(d, o + 6) * 65536 + peek_byte(d, o + 7) * 16777216)
+            if va + slide + msz > top
+                top: va + slide + msz
         # the thread-local piece, which is copied fresh per thread
         if t is 7
             poke_i64(m, 496, peek_i64(d, o + 8))
@@ -10181,9 +10333,9 @@ x86_load_elf m path:
     # what the auxiliary table needs to say about this program
     poke_i64(m, 528, lo + phoff)
     poke_i64(m, 536, phnum)
-    poke_i64(m, 544, entry)
+    poke_i64(m, 544, entry + slide)
     x_setup_tls_elf(m, d)
-    x_set_rip(m, entry)
+    x_set_rip(m, entry + slide)
     x_start_stack(m, path)
     return 1
 
@@ -10319,8 +10471,55 @@ x86_load_macho m path:
         return 0
     poke_i64(m, 240, X_MAC)
     ncmds: peek_byte(d, 16) + peek_byte(d, 17) * 256 + peek_byte(d, 18) * 65536 + peek_byte(d, 19) * 16777216
+    # loader truth (2026-08-27): dyld walks the command list and
+    # refuses an image whose commands do not fill sizeofcmds exactly,
+    # or whose pieces run outside the file. And a PIE without a code
+    # signature is killed by every Apple loader, Rosetta included -
+    # that is exactly what CI run #2 caught.
+    fszn: file_size(path)
+    szcmds: peek_byte(d, 20) + peek_byte(d, 21) * 256 + peek_byte(d, 22) * 65536 + peek_byte(d, 23) * 16777216
+    if 32 + szcmds > fszn
+        print "x86_load: refused - load commands run past the file"
+        return 0
+    if ncmds < 1
+        print "x86_load: refused - no load commands"
+        return 0
+    if ncmds > 64
+        print "x86_load: refused - absurd load command count"
+        return 0
+    off: 32
+    i: 0
+    as long as i < ncmds
+        sz2: peek_byte(d, off + 4) + peek_byte(d, off + 5) * 256 + peek_byte(d, off + 6) * 65536 + peek_byte(d, off + 7) * 16777216
+        if sz2 < 8
+            print "x86_load: refused - a load command smaller than its own head"
+            return 0
+        off: off + sz2
+        if off > 32 + szcmds
+            print "x86_load: refused - a load command walks past sizeofcmds"
+            return 0
+        i: i + 1
+    if off is not 32 + szcmds
+        print "x86_load: refused - the command list does not fill sizeofcmds"
+        return 0
+    flg0: peek_byte(d, 24) + peek_byte(d, 25) * 256 + peek_byte(d, 26) * 65536 + peek_byte(d, 27) * 16777216
+    if x_and(flg0, 2097152) is 2097152
+        havesig: 0
+        off: 32
+        i: 0
+        as long as i < ncmds
+            cmd0: peek_byte(d, off) + peek_byte(d, off + 1) * 256 + peek_byte(d, off + 2) * 65536 + peek_byte(d, off + 3) * 16777216
+            if cmd0 is 29
+                havesig: 1
+            sz0: peek_byte(d, off + 4) + peek_byte(d, off + 5) * 256 + peek_byte(d, off + 6) * 65536 + peek_byte(d, off + 7) * 16777216
+            off: off + sz0
+            i: i + 1
+        if havesig is 0
+            print "x86_load: refused - MH_PIE with no code signature, Apple loaders kill it"
+            return 0
     entry: 0
     lo: 0
+    tf: 0
     off: 32
     i: 0
     as long as i < ncmds
@@ -10329,6 +10528,16 @@ x86_load_macho m path:
         if cmd is 25
             vmaddr: peek_i64(d, off + 24)
             filesz: peek_i64(d, off + 48)
+            fileoff2: peek_i64(d, off + 40)
+            vmsz2: peek_i64(d, off + 32)
+            if fileoff2 + filesz > fszn
+                print "x86_load: refused - a segment runs past the file"
+                return 0
+            if vmsz2 < filesz
+                print "x86_load: refused - a segment maps more file than memory"
+                return 0
+            if fileoff2 is 0
+                tf: filesz
             if filesz > 0
                 if lo is 0
                     lo: vmaddr
@@ -10380,7 +10589,11 @@ x86_load_macho m path:
         if cmd is 5
             entry: peek_i64(d, off + 144) + slide
         if cmd is 2147483688
-            entry: x_add(lo, peek_i64(d, off + 8))
+            eo: peek_i64(d, off + 8)
+            if eo > tf - 1
+                print "x86_load: refused - entry outside __TEXT"
+                return 0
+            entry: x_add(lo, eo)
         off: off + sz
         i: i + 1
     if entry is 0
@@ -10393,6 +10606,24 @@ x86_load_macho m path:
 # ---------------------------------------------------------------
 # loading a PE, the Windows shape
 # ---------------------------------------------------------------
+
+# an RVA to a raw file offset, the way the loader maps sections
+pe_rva_raw d pe nsec rva:
+    i: 0
+    as long as i < nsec
+        o: pe + 24 + 240 + i * 40
+        va: x_u32d(d, o + 12)
+        vs: x_u32d(d, o + 8)
+        ra: x_u32d(d, o + 20)
+        rs: x_u32d(d, o + 16)
+        ext: vs
+        if rs > ext
+            ext: rs
+        if rva >= va
+            if rva < va + ext
+                return ra + (rva - va)
+        i: i + 1
+    return 0 - 1
 
 x86_load_pe m path:
     d: file_read_all(path)
@@ -10409,6 +10640,130 @@ x86_load_pe m path:
     entry_rva: x_u32d(d, opt + 16)
     base: peek_i64(d, opt + 24)
     imp_rva: x_u32d(d, opt + 112 + 8)
+    # loader truth (2026-08-27): the checks the real loader runs
+    # before it will map the image. CI run #2 shipped an exe whose
+    # .reloc section ran past SizeOfImage: windows said "not a valid
+    # application" and this emulator loaded it happily.
+    fszn: file_size(path)
+    machw: peek_byte(d, pe + 4) + peek_byte(d, pe + 5) * 256
+    if machw is not 34404
+        print "x86_load: refused - the PE is not an amd64 image"
+        return 0
+    omgw: peek_byte(d, opt) + peek_byte(d, opt + 1) * 256
+    if omgw is not 523
+        print "x86_load: refused - the optional header is not PE32+"
+        return 0
+    sohw: peek_byte(d, pe + 20) + peek_byte(d, pe + 21) * 256
+    if sohw is not 240
+        print "x86_load: refused - the optional header is not 240 bytes"
+        return 0
+    if nsec < 1
+        print "x86_load: refused - the PE has no sections"
+        return 0
+    if nsec > 96
+        print "x86_load: refused - absurd section count"
+        return 0
+    if pe + 24 + 240 + nsec * 40 > fszn
+        print "x86_load: refused - the section table runs past the file"
+        return 0
+    imgsz: x_u32d(d, opt + 56)
+    entok: 0
+    i: 0
+    as long as i < nsec
+        o2: pe + 24 + 240 + i * 40
+        va2: x_u32d(d, o2 + 12)
+        vs2: x_u32d(d, o2 + 8)
+        ra2: x_u32d(d, o2 + 20)
+        rs2: x_u32d(d, o2 + 16)
+        ch2: x_u32d(d, o2 + 36)
+        if va2 % 4096 is not 0
+            print "x86_load: refused - a section is not page aligned"
+            return 0
+        if ra2 % 512 is not 0
+            print "x86_load: refused - a section's raw data is not file aligned"
+            return 0
+        if ra2 + rs2 > fszn
+            print "x86_load: refused - a section's raw run is past the file end"
+            return 0
+        ext2: vs2
+        if rs2 > ext2
+            ext2: rs2
+        if va2 + ext2 > imgsz
+            print "x86_load: refused - a section runs past SizeOfImage"
+            return 0
+        if x_and(ch2, 536870912) is 536870912
+            if entry_rva >= va2
+                if entry_rva < va2 + ext2
+                    entok: 1
+        i: i + 1
+    if entok is 0
+        print "x86_load: refused - the entry point is outside an executable section"
+        return 0
+    # the relocation contract: RELOCS_STRIPPED means the image only
+    # works at its preferred base, DYNAMIC_BASE claims it does not
+    # need to. Either alone is fine. Both at once, or a stripped
+    # image with a table, or an ASLR image without one, is refused.
+    chars2: peek_byte(d, pe + 22) + peek_byte(d, pe + 23) * 256
+    dllc2: peek_byte(d, opt + 70) + peek_byte(d, opt + 71) * 256
+    relrva: x_u32d(d, opt + 112 + 40)
+    relsz2: x_u32d(d, opt + 112 + 44)
+    traw: 0
+    if x_and(chars2, 1) is 1
+        if x_and(dllc2, 64) is 64
+            print "x86_load: refused - RELOCS_STRIPPED and DYNAMIC_BASE at once"
+            return 0
+        if relsz2 > 0
+            print "x86_load: refused - RELOCS_STRIPPED with a relocation table"
+            return 0
+    if not
+        if x_and(dllc2, 64) is 64
+            if relsz2 is 0
+                print "x86_load: refused - DYNAMIC_BASE with no relocation table"
+                return 0
+    if relsz2 > 0
+        traw: pe_rva_raw(d, pe, nsec, relrva)
+        if traw < 0
+            print "x86_load: refused - the relocation table is not inside a section"
+            return 0
+        if traw + relsz2 > fszn
+            print "x86_load: refused - the relocation table runs past the file"
+            return 0
+        posn: 0
+        as long as posn + 8 < relsz2 + 1
+            prva: x_u32d(d, traw + posn)
+            bsz: x_u32d(d, traw + posn + 4)
+            if bsz < 8
+                print "x86_load: refused - a relocation block smaller than its head"
+                return 0
+            if prva >= imgsz
+                print "x86_load: refused - a relocation block page is outside the image"
+                return 0
+            j2: 0
+            as long as j2 < (bsz - 8) / 2
+                ew: peek_byte(d, traw + posn + 8 + j2 * 2) + peek_byte(d, traw + posn + 9 + j2 * 2) * 256
+                tyw: ew / 4096
+                if tyw is not 0
+                    if tyw is not 3
+                        if tyw is not 10
+                            print "x86_load: refused - a relocation type the loader does not know"
+                            return 0
+                j2: j2 + 1
+            posn: posn + bsz
+        if posn is not relsz2
+            print "x86_load: refused - the relocation blocks do not fill the table"
+            return 0
+    # windows-truth ASLR: DYNAMIC_BASE makes the loader pick its own
+    # base and apply the table itself. The emulator does both, so a
+    # broken table shows up here instead of on a real machine
+    aslr: 0
+    if x_and(dllc2, 64) is 64
+        rb: _sov_alloc(8)
+        if sys_getrandom(rb, 8) is 8
+            v: peek_i64(rb, 0)
+            if v < 0
+                v: 0 - v
+            aslr: ((v - (v / 511) * 511) + 1) * 65536
+        base: base + aslr
     poke_i64(m, 216, base)
     x_rebase(m)
     # Real Windows maps the headers at the load address as well as
@@ -10449,6 +10804,40 @@ x86_load_pe m path:
         x_perm_set(m, base + va, ext, pf)
         i: i + 1
     x_perm_set(m, base, hsz, 4)
+    # the loader's own relocation pass, before imports resolve:
+    # DIR64 moves a qword, HIGHLOW a dword, ABSOLUTE pads
+    if aslr > 0
+        posn2: 0
+        as long as posn2 + 8 < relsz2 + 1
+            prva2: x_u32d(d, traw + posn2)
+            bsz2: x_u32d(d, traw + posn2 + 4)
+            # the loader applies relocations before protections are
+            # final; open the page for writing, then restore its bits
+            sv: x86_perm_at(m, base + prva2)
+            x_perm_set(m, base + prva2, 4096, sv + 2)
+            j3: 0
+            as long as j3 < (bsz2 - 8) / 2
+                ew2: peek_byte(d, traw + posn2 + 8 + j3 * 2) + peek_byte(d, traw + posn2 + 9 + j3 * 2) * 256
+                ty2: ew2 / 4096
+                qa: base + prva2 + ew2 % 4096
+                if ty2 is 10
+                    qv: x_r64(m, qa) + aslr
+                    b2: 0
+                    as long as b2 < 8
+                        x_w8(m, qa + b2, qv % 256)
+                        qv: qv / 256
+                        b2: b2 + 1
+                if not
+                    if ty2 is 3
+                        dv: x_r8(m, qa) + x_r8(m, qa + 1) * 256 + x_r8(m, qa + 2) * 65536 + x_r8(m, qa + 3) * 16777216 + aslr
+                        b3: 0
+                        as long as b3 < 4
+                            x_w8(m, qa + b3, dv % 256)
+                            dv: dv / 256
+                            b3: b3 + 1
+                j3: j3 + 1
+            x_perm_set(m, base + prva2, 4096, sv)
+            posn2: posn2 + bsz2
     x86_bind_imports(m, base, imp_rva)
     # the command line, and a return address that means "all done"
     cmd: base + X_MEM - 65536

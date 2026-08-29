@@ -1,0 +1,244 @@
+# race.sov — a static race detector
+#
+# spawn gives a task its own stack, but globals stay shared, so two
+# spawned tasks assigning the same name is a race unless something
+# serialises them. nothing in the language says which globals a task
+# touches, so this reads the source the way the compiler does — a
+# header is a line at column 0 ending in a bare colon, its body is
+# the indented lines below it — collects what each task assigns and
+# what it calls, closes that over the call graph, and reports every
+# name two tasks that can run at the same time are able to write.
+#
+# it is deliberately conservative. a task whose body mentions lock,
+# mutex or atomic is treated as serialised and left out, main is
+# never reported against a task it spawned because it joins it, and a
+# name only one task writes is never reported even if that task is
+# spawned twice, because the second spawn's writes look exactly like
+# the first's in the source.
+use string
+use list
+
+# a header ends in a bare colon at column 0. an assignment has a
+# colon too but always with a value after it, so ": " cannot appear
+# in a header, and that is the whole test
+race_is_head l:
+    if str_len(l) is 0
+        return 0
+    if peek_byte(l, 0) is 32
+        return 0
+    if str_ends(l, ":") is 0
+        return 0
+    if str_find(l, ": ") > 0 - 1
+        return 0
+    if str_starts(l, "#") is 1
+        return 0
+    if str_starts(l, "use ") is 1
+        return 0
+    if str_starts(l, "immutable ") is 1
+        return 0
+    return 1
+
+# the name a header declares, which is only the first word of it:
+# "workA n:" declares workA and takes n, and the parameter list has
+# to come off or every lookup below compares against "workA n"
+race_head_name l:
+    t: str_trim(str_cut(l, 0, str_len(l) - 1))
+    c: str_find(t, " ")
+    if c > 0
+        return str_cut(t, 0, c)
+    return t
+
+# the name an indented line assigns to, or "" when it assigns nothing
+race_lhs l:
+    t: str_trim(l)
+    if str_len(t) is 0
+        return ""
+    if str_starts(t, "#") is 1
+        return ""
+    c: str_find(t, ": ")
+    if c < 1
+        return ""
+    return str_trim(str_cut(t, 0, c))
+
+race_in lst v:
+    i: 0
+    as long as i < list_len(lst)
+        if str_eq(list_get(lst, i), v) is 1
+            return 1
+        i: i + 1
+    return 0
+
+# the lines of one task back as a single text, so the call scan below
+# can ask about it with one str_find instead of walking lines
+race_body ls st en:
+    out: ""
+    i: st
+    as long as i < en
+        out: str_cat(out, list_get(ls, i))
+        out: str_cat(out, "\n")
+        i: i + 1
+    return out
+
+race_writes ls st en:
+    w: list_new()
+    i: st
+    as long as i < en
+        nm: race_lhs(list_get(ls, i))
+        if str_len(nm) > 0
+            if race_in(w, nm) is 0
+                w: list_add(w, nm)
+        i: i + 1
+    return w
+
+# a task that reaches for a lock, a mutex or an atomic is assumed to
+# know what it is doing and is left out of the report entirely
+race_guarded body:
+    if str_find(body, "lock(") > 0 - 1
+        return 1
+    if str_find(body, "mutex") > 0 - 1
+        return 1
+    if str_find(body, "atomic") > 0 - 1
+        return 1
+    return 0
+
+race_calls body tn:
+    c: list_new()
+    i: 0
+    as long as i < list_len(tn)
+        nm: list_get(tn, i)
+        if str_find(body, str_cat(nm, "(")) > 0 - 1
+            c: list_add(c, nm)
+        i: i + 1
+    return c
+
+# merge b into a in place, returning a
+race_merge a b:
+    i: 0
+    as long as i < list_len(b)
+        v: list_get(b, i)
+        if race_in(a, v) is 0
+            a: list_add(a, v)
+        i: i + 1
+    return a
+
+# everything two write sets have in common
+race_both a b:
+    s: list_new()
+    i: 0
+    as long as i < list_len(a)
+        v: list_get(a, i)
+        if race_in(b, v) is 1
+            s: list_add(s, v)
+        i: i + 1
+    return s
+
+# the report, one "a and b both write x" line per finding, and ""
+# when the source is clean
+race_scan src:
+    ls: str_lines(src)
+    n: list_len(ls)
+    tn: list_new()
+    st: list_new()
+    en: list_new()
+    i: 0
+    as long as i < n
+        if race_is_head(list_get(ls, i)) is 1
+            if list_len(en) > 0
+                en: list_set(en, list_len(en) - 1, i)
+            tn: list_add(tn, race_head_name(list_get(ls, i)))
+            st: list_add(st, i + 1)
+            en: list_add(en, n)
+        i: i + 1
+    nt: list_len(tn)
+    if nt is 0
+        return ""
+    # what each task assigns itself, what it calls, and whether it
+    # holds a lock, all indexed the same way as tn
+    dw: list_new()
+    cl: list_new()
+    gd: list_new()
+    sp: list_new()
+    k: 0
+    as long as k < nt
+        bd: race_body(ls, list_get(st, k), list_get(en, k))
+        dw: list_add(dw, race_writes(ls, list_get(st, k), list_get(en, k)))
+        cl: list_add(cl, race_calls(bd, tn))
+        gd: list_add(gd, race_guarded(bd))
+        # a task counts as concurrent only when some task spawns it.
+        # main is left out on purpose: it spawns and then joins, so
+        # its own writes are sequenced against the task it started,
+        # and telling that apart from a genuine overlap needs control
+        # flow this pass does not have. what gets reported is one
+        # spawned task against another
+        s: 0
+        if 1 is 1
+            # the pattern is built once outside the comparison. the
+            # nested call in the test itself read as no match at all,
+            # which left every task looking unspawned
+            pj: str_cat("spawn ", list_get(tn, k))
+            j: 0
+            as long as j < nt
+                bj: race_body(ls, list_get(st, j), list_get(en, j))
+                if str_find(bj, pj) > 0 - 1
+                    s: 1
+                j: j + 1
+        sp: list_add(sp, s)
+        k: k + 1
+    # close the write sets over the call graph: a task can write
+    # anything the tasks it calls can write. five passes is enough
+    # for any call chain the tree actually has, and a fixpoint loop
+    # would need a changed flag the list api does not hand back
+    tw: list_new()
+    k: 0
+    as long as k < nt
+        tw: list_add(tw, list_get(dw, k))
+        k: k + 1
+    p: 0
+    as long as p < 5
+        k: 0
+        as long as k < nt
+            c: list_get(cl, k)
+            j: 0
+            as long as j < list_len(c)
+                ix: 0
+                m: 0
+                as long as ix < nt
+                    if str_eq(list_get(tn, ix), list_get(c, j)) is 1
+                        m: ix
+                    ix: ix + 1
+                acc: list_get(tw, k)
+                acc: race_merge(acc, list_get(tw, m))
+                tw: list_set(tw, k, acc)
+                j: j + 1
+            k: k + 1
+        p: p + 1
+    out: ""
+    a: 0
+    as long as a < nt
+        if list_get(sp, a) is 1
+            if list_get(gd, a) is 0
+                b: 0
+                as long as b < nt
+                    if b > a
+                        if list_get(sp, b) is 1
+                            if list_get(gd, b) is 0
+                                sh: race_both(list_get(tw, a), list_get(tw, b))
+                                q: 0
+                                as long as q < list_len(sh)
+                                    line: str_cat(list_get(tn, a), " and ")
+                                    line: str_cat(line, list_get(tn, b))
+                                    line: str_cat(line, " both write ")
+                                    line: str_cat(line, list_get(sh, q))
+                                    line: str_cat(line, "\n")
+                                    if str_find(out, line) < 0
+                                        out: str_cat(out, line)
+                                    q: q + 1
+                    b: b + 1
+        a: a + 1
+    return out
+
+# one when the source has a race the detector can see
+race_dirty src:
+    if str_len(race_scan(src)) is 0
+        return 0
+    return 1

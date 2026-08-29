@@ -1039,7 +1039,7 @@ ck_editor:
         cr_ok("tui-goto")
     if not
         cr_bad("tui-goto")
-    cr_build("edit.sov", "/tmp/sov-edit", "")
+    cr_build("apps/edit.sov", "/tmp/sov-edit", "")
     if file_exists("/tmp/sov-ed.txt") is 1
         file_delete("/tmp/sov-ed.txt")
     a: _sov_alloc(16)

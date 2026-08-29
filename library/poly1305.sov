@@ -1,4 +1,5 @@
 # poly1305.sov — the Poly1305 one-time authenticator (RFC 8439)
+# Batteries, not certified: review before production crypto.
 #
 #   use poly1305
 #   p1305(key, msg, mlen, tag)   16-byte tag into your buffer
@@ -32,10 +33,8 @@ p1305 key msg mlen tag:
     # limbs out by absolute bit position - a byte can straddle a
     # limb boundary, so bits are the honest way
     rb: _sov_alloc(16)
-    i: 0
-    as long as i < 16
-        poke_byte(rb, i, peek_byte(key, i))
-        i: i + 1
+    i: 16
+    mem_copy(rb, key, 16)
     poke_byte(rb, 3, wand(peek_byte(rb, 3), 15))
     poke_byte(rb, 7, wand(peek_byte(rb, 7), 15))
     poke_byte(rb, 11, wand(peek_byte(rb, 11), 15))

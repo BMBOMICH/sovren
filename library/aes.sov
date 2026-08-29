@@ -1,4 +1,5 @@
 # aes.sov — AES-128, encrypt and decrypt, in Sovren.
+# Batteries, not certified: review before production crypto.
 #
 # There was no AES anywhere in the language, so the TLS work starts
 # here. The S-box and its inverse are built from the field arithmetic
@@ -119,10 +120,8 @@ ae_si b:
 # the 176-byte round-key schedule for a 16-byte key
 ae_expand key rk:
     ae_build()
-    i: 0
-    as long as i < 16
-        poke_byte(rk, i, peek_byte(key, i))
-        i: i + 1
+    i: 16
+    mem_copy(rk, key, 16)
     i: 16
     rcon: 1
     as long as i < 176
@@ -219,10 +218,8 @@ ae_addkey st rk r:
 ae_enc_block rk in out:
     ae_build()
     st: _sov_alloc(16)
-    i: 0
-    as long as i < 16
-        poke_byte(st, i, peek_byte(in, i))
-        i: i + 1
+    i: 16
+    mem_copy(st, in, 16)
     ae_addkey(st, rk, 0)
     r: 1
     as long as r < 10
@@ -243,19 +240,14 @@ ae_enc_block rk in out:
         i: i + 1
     ae_shift(st)
     ae_addkey(st, rk, 10)
-    i: 0
-    as long as i < 16
-        poke_byte(out, i, peek_byte(st, i))
-        i: i + 1
+    mem_copy(out, st, 16)
     return 0
 
 ae_dec_block rk in out:
     ae_build()
     st: _sov_alloc(16)
-    i: 0
-    as long as i < 16
-        poke_byte(st, i, peek_byte(in, i))
-        i: i + 1
+    i: 16
+    mem_copy(st, in, 16)
     ae_addkey(st, rk, 10)
     r: 9
     as long as r > 0
@@ -276,8 +268,5 @@ ae_dec_block rk in out:
         poke_byte(st, i, ae_si(peek_byte(st, i)))
         i: i + 1
     ae_addkey(st, rk, 0)
-    i: 0
-    as long as i < 16
-        poke_byte(out, i, peek_byte(st, i))
-        i: i + 1
+    mem_copy(out, st, 16)
     return 0

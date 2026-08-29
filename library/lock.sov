@@ -1,4 +1,4 @@
-# lock.sov — a lock file
+# lock.sov — a lock file, and an in-process mutex on an atomic
 use file
 use sys
 
@@ -9,3 +9,29 @@ lock_take path:
 
 lock_drop path:
     return file_delete(path)
+
+# one word, 0 free / 1 held. swap 1 in; if the old value was 0 the
+# caller owns it. unlock stores 0. no wait queue: a holder is
+# preempted, a spinner notices. mutex_new lives on the bump heap,
+# which a forked spawn does not share - a thread_slot word is the
+# fork-safe mutex, and that is what the two-thread check uses.
+mutex_new:
+    p: _sov_alloc(8)
+    atomic_store(p, 0)
+    return p
+
+mutex_try m:
+    old: atomic_swap(m, 1)
+    if old is 0
+        return 1
+    return 0
+
+mutex_lock m:
+    old: atomic_swap(m, 1)
+    as long as old is 1
+        old: atomic_swap(m, 1)
+    return 0
+
+mutex_unlock m:
+    atomic_store(m, 0)
+    return 0

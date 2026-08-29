@@ -3,16 +3,18 @@
 mem_new n:
     return _sov_alloc(n)
 
+# both of these were byte-at-a-time loops. _sov_mem_copy and
+# _sov_mem_set are one rep movsb / rep stosb on x86, and an injected
+# task on the arm targets, so a library can call them and build
+# everywhere - which is the rule: a shared library may only use a
+# builtin that every target has.
+# _sov_mem_set hands the destination back the way memset does. This
+# keeps its own copy of the pointer anyway: everyone writes
+# mem_zero(mem_new(n), n), and a zero returned here is a null
+# pointer waiting to be read through - too quiet a way to fail.
 mem_zero p n:
-    i: 0
-    as long as i < n
-        poke_byte(p, i, 0)
-        i: i + 1
+    dummy: _sov_mem_set(p, 0, n)
     return p
 
 mem_copy dst src n:
-    i: 0
-    as long as i < n
-        poke_byte(dst, i, peek_byte(src, i))
-        i: i + 1
-    return dst
+    return _sov_mem_copy(dst, src, n)

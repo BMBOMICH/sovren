@@ -179,6 +179,15 @@ arm_w64 m a v:
     poke_i64(arm_base(m) + a - peek_i64(m, 328), 0, v)
     return 0
 
+# write a 32-bit word byte by byte
+arm_w32c m a v:
+    q: v % 4294967296
+    arm_w8(m, a, q % 256)
+    arm_w8(m, a + 1, (q / 256) % 256)
+    arm_w8(m, a + 2, (q / 65536) % 256)
+    arm_w8(m, a + 3, (q / 16777216) % 256)
+    return 0
+
 arm_r32 m a:
     if arm_in(m, a) is 0
         arm_fault(m, a, 11)
@@ -327,7 +336,9 @@ arm_load m path:
     # compressed executables: a stream that does not begin with
     # the ELF magic is lz2h and unpacks to the ELF itself, zeros
     # and all; anything that will not unpack is refused
+    fszn: file_size(path)
     if peek_byte(d, 0) is not 127
+        fszn: peek_i64(d, 0) % 4294967296
         d2: lz2h_unpack(d)
         if peek_byte(d2, 0) is not 127
             return 0
@@ -336,8 +347,63 @@ arm_load m path:
     phoff: peek_i64(d, 32)
     phnum: peek_byte(d, 56) + peek_byte(d, 57) * 256
     phsz: peek_byte(d, 54) + peek_byte(d, 55) * 256
-    # pass S7: a DYN header makes the load random, the way the
-    # kernel does it: a page-multiple bias from real entropy
+    # loader truth (2026-08-27): the kernel's own checks. The old
+    # emulator slid a DYN image and then quietly applied the e_shoff
+    # table no kernel reads - that is how the S7 android builds
+    # passed here and died on real hardware (CI run #2).
+    if fszn < 64
+        print "arm_load: refused - elf is smaller than its own header"
+        return 0
+    if phnum < 1
+        print "arm_load: refused - no program headers"
+        return 0
+    if phnum > 32
+        print "arm_load: refused - absurd program header count"
+        return 0
+    if phoff + phnum * phsz > fszn
+        print "arm_load: refused - program header table runs past the file"
+        return 0
+    shoff2: peek_i64(d, 40)
+    shnum2: peek_byte(d, 60) + peek_byte(d, 61) * 256
+    if shoff2 > 0
+        if shoff2 + shnum2 * 64 > fszn
+            print "arm_load: refused - section header table runs past the file"
+            return 0
+    exlo: 0
+    exhi: 0
+    i2: 0
+    as long as i2 < phnum
+        o2: phoff + i2 * phsz
+        t2: peek_byte(d, o2) + peek_byte(d, o2 + 1) * 256
+        if t2 is 1
+            off2: peek_i64(d, o2 + 8)
+            fsz2: peek_i64(d, o2 + 32)
+            msz2: peek_i64(d, o2 + 40)
+            if off2 + fsz2 > fszn
+                print "arm_load: refused - a load piece runs past the file"
+                return 0
+            if msz2 < fsz2
+                print "arm_load: refused - a piece maps more file than memory"
+                return 0
+            fl2: peek_byte(d, o2 + 4)
+            if fl2 - (fl2 / 2) * 2 is 1
+                if exlo is 0
+                    exlo: peek_i64(d, o2 + 16)
+                exhi: peek_i64(d, o2 + 16) + msz2
+        i2: i2 + 1
+    if exlo is 0
+        print "arm_load: refused - no executable piece"
+        return 0
+    if entry < exlo
+        print "arm_load: refused - entry outside the executable piece"
+        return 0
+    if entry > exhi - 1
+        print "arm_load: refused - entry outside the executable piece"
+        return 0
+    # a DYN header makes the load random, the way the kernel does
+    # it: a page-multiple bias from real entropy, never nought, and
+    # nothing else moves. The kernel applies no private relocation
+    # table to a static image
     slide: 0
     etype: peek_byte(d, 16) + peek_byte(d, 17) * 256
     if etype is 3
@@ -346,7 +412,7 @@ arm_load m path:
             v: peek_i64(rb, 0)
             if v < 0
                 v: 0 - v
-            slide: (v - (v / 512) * 512) * 4096
+            slide: ((v - (v / 511) * 511) + 1) * 4096
     lo: 0
     i: 0
     as long as i < phnum
@@ -370,65 +436,9 @@ arm_load m path:
     arm_set_sp(m, lo + slide + ARM_MEM - 65536)
     # argc = 1 on the stack
     arm_w64(m, arm_sp(m), 1)
-    # pass S7: loader-applied relocations, the windows model. The
-    # table at e_shoff holds a count, then (offset, kind) pairs:
-    # kind 2/3/4 is a movz/movk run, 80 a raw qword, 40 a dword
-    if slide > 0
-        tab: peek_i64(d, 40)
-        if tab > 0
-            rn: peek_byte(d, 60) + peek_byte(d, 61) * 256
-            ri: 0
-            as long as ri < rn
-                fo: peek_byte(d, tab + 8 + ri * 8) + peek_byte(d, tab + 9 + ri * 8) * 256 + peek_byte(d, tab + 10 + ri * 8) * 65536 + peek_byte(d, tab + 11 + ri * 8) * 16777216
-                nw: peek_byte(d, tab + 12 + ri * 8) + peek_byte(d, tab + 13 + ri * 8) * 256 + peek_byte(d, tab + 14 + ri * 8) * 65536 + peek_byte(d, tab + 15 + ri * 8) * 16777216
-                if nw is 80
-                    qv: peek_i64(d, fo) + slide
-                    arm_w64(m, lo + slide + fo, qv)
-                if not
-                    if nw is 40
-                        dv: peek_byte(d, fo) + peek_byte(d, fo + 1) * 256 + peek_byte(d, fo + 2) * 65536 + peek_byte(d, fo + 3) * 16777216 + slide
-                        b: 0
-                        as long as b < 4
-                            arm_w8(m, lo + slide + fo + b, dv % 256)
-                            dv: dv / 256
-                            b: b + 1
-                    if not
-                        # a movz/movk run: pull the absolute out of
-                        # the immediate fields, add the slide, put
-                        # it back word by word
-                        v: 0
-                        w: 0
-                        as long as w < nw
-                            wd: peek_byte(d, fo + w * 4) + peek_byte(d, fo + w * 4 + 1) * 256 + peek_byte(d, fo + w * 4 + 2) * 65536 + peek_byte(d, fo + w * 4 + 3) * 16777216
-                            sc: 1
-                            if (wd / 2097152) % 4 is 1
-                                sc: 65536
-                            if (wd / 2097152) % 4 is 2
-                                sc: 4294967296
-                            if (wd / 2097152) % 4 is 3
-                                sc: 281474976710656
-                            v: v + ((wd / 32) % 65536) * sc
-                            w: w + 1
-                        v: v + slide
-                        w: 0
-                        as long as w < nw
-                            wd: peek_byte(d, fo + w * 4) + peek_byte(d, fo + w * 4 + 1) * 256 + peek_byte(d, fo + w * 4 + 2) * 65536 + peek_byte(d, fo + w * 4 + 3) * 16777216
-                            sc: 1
-                            if (wd / 2097152) % 4 is 1
-                                sc: 65536
-                            if (wd / 2097152) % 4 is 2
-                                sc: 4294967296
-                            if (wd / 2097152) % 4 is 3
-                                sc: 281474976710656
-                            chunk: (v / sc) % 65536
-                            wd: wd - ((wd / 32) % 65536) * 32 + chunk * 32
-                            b: 0
-                            as long as b < 4
-                                arm_w8(m, lo + slide + fo + w * 4 + b, wd % 256)
-                                wd: wd / 256
-                                b: b + 1
-                            w: w + 1
-                ri: ri + 1
+    # the kernel applies no relocation table to a static image.
+    # If the image needs rebasing it must walk itself, or carry
+    # real loader relocations - the emulator now refuses to fake it
     return 1
 
 arm_low m:
@@ -494,7 +504,25 @@ arm_step m:
 
     # orr xd, xzr, xm  -- the usual mov between registers
     if top is 170
-        arm_set(m, rd, arm_rz(m, rm))
+        # orr: register 31 in the source slot is the mov form; any
+        # other source is a real bitwise or
+        if rn is 31
+            arm_set(m, rd, arm_rz(m, rm))
+            arm_set_pc(m, nx)
+            return 1
+        arm_set(m, rd, arm_wrap(arm_rz(m, rn) + arm_rz(m, rm) - wand(arm_rz(m, rn), arm_rz(m, rm))))
+        arm_set_pc(m, nx)
+        return 1
+
+    # eor xd, xn, xm -- bitwise exclusive or, a + b - 2*(a and b)
+    if top is 202
+        if rn is 31
+            arm_set(m, rd, arm_rz(m, rm))
+            arm_set_pc(m, nx)
+            return 1
+        ea: arm_rz(m, rn)
+        eb: arm_rz(m, rm)
+        arm_set(m, rd, arm_wrap(ea + eb - 2 * wand(ea, eb)))
         arm_set_pc(m, nx)
         return 1
 
@@ -585,6 +613,27 @@ arm_step m:
         return 1
     if top is 154
         op: (w / 1024) % 64
+        if op is 8
+            # lslv, lsrv, asrv - the native shift builtins, which are
+            # exact. the old form made the value unsigned by adding
+            # 2^64 and then multiplied or divided by 2^sh: 2^64 is one
+            # more than the type holds, so the add wrapped and every
+            # negative came back wrong, and arm_shl(1, 63) overflowed
+            # on its own
+            sh: arm_rz(m, rm) % 64
+            arm_set(m, rd, bshl(arm_rz(m, rn), sh))
+            arm_set_pc(m, nx)
+            return 1
+        if op is 9
+            sh2: arm_rz(m, rm) % 64
+            arm_set(m, rd, bshr(arm_rz(m, rn), sh2))
+            arm_set_pc(m, nx)
+            return 1
+        if op is 10
+            sh3: arm_rz(m, rm) % 64
+            arm_set(m, rd, bsar(arm_rz(m, rn), sh3))
+            arm_set_pc(m, nx)
+            return 1
         a: arm_signed(arm_rz(m, rn))
         b: arm_signed(arm_rz(m, rm))
         if op is 3
@@ -692,13 +741,18 @@ arm_step2 m w nx:
     if top is 248
         kind: (w / 1024) % 4
         opc: (w / 4194304) % 4
-        # register offset form: bit 21 set and option bits present
+        # register offset form: bit 21 set and option bits present.
+        # option 3 with the S bit scales the index by the width
         if (w / 2097152) % 2 is 1
+            sc2: 1
+            if (w / 8192) % 8 is 3
+                if (w / 4096) % 2 is 1
+                    sc2: 8
             if opc is 1
-                arm_set(m, rd, arm_r64(m, arm_reg(m, rn) + arm_rz(m, rm)))
+                arm_set(m, rd, arm_r64(m, arm_reg(m, rn) + arm_rz(m, rm) * sc2))
                 arm_set_pc(m, nx)
                 return 1
-            arm_w64(m, arm_reg(m, rn) + arm_rz(m, rm), arm_rz(m, rd))
+            arm_w64(m, arm_reg(m, rn) + arm_rz(m, rm) * sc2, arm_rz(m, rd))
             arm_set_pc(m, nx)
             return 1
         off: arm_sx((w / 4096) % 512, 9)
@@ -743,6 +797,41 @@ arm_step2 m w nx:
         arm_set_pc(m, nx)
         return 1
 
+    # ldr / str, 32-bit words, register offset and scaled offset
+    # (0xB8 unscaled / register, 0xB9 scaled twelve bit)
+    if top is 184
+        opc: (w / 4194304) % 4
+        if (w / 2097152) % 2 is 1
+            sc3: 1
+            if (w / 8192) % 8 is 3
+                if (w / 4096) % 2 is 1
+                    sc3: 4
+            aa: arm_reg(m, rn) + arm_rz(m, rm) * sc3
+            if opc is 1
+                arm_set(m, rd, arm_r32(m, aa))
+            if not
+                arm_w32c(m, aa, arm_rz(m, rd))
+            arm_set_pc(m, nx)
+            return 1
+        off3: arm_sx((w / 4096) % 512, 9)
+        aa2: arm_reg(m, rn) + off3
+        if opc is 1
+            arm_set(m, rd, arm_r32(m, aa2))
+        if not
+            arm_w32c(m, aa2, arm_rz(m, rd))
+        arm_set_pc(m, nx)
+        return 1
+    if top is 185
+        im3: ((w / 1024) % 4096) * 4
+        opc3: (w / 4194304) % 4
+        aa3: arm_reg(m, rn) + im3
+        if opc3 is 1
+            arm_set(m, rd, arm_r32(m, aa3))
+        if not
+            arm_w32c(m, aa3, arm_rz(m, rd))
+        arm_set_pc(m, nx)
+        return 1
+
     # ldr / str with a scaled twelve bit offset
     if top is 249
         im: ((w / 1024) % 4096) * 8
@@ -768,6 +857,39 @@ arm_step2 m w nx:
         arm_set(m, rd, wand(arm_reg(m, rn), arm_rz(m, rm)))
         arm_set_pc(m, nx)
         return 1
+
+    # ubfm x: ubfx extracts a bit field, and the lsl/lsr immediate
+    # forms are the same opcode. imms 63 is a logical shift right by
+    # immr; immr+imms 127 is a left shift; anything else extracts
+    # (imms - immr + 1) bits at immr
+    if top is 211
+        immr: (w / 65536) % 64
+        imms: (w / 1024) % 64
+        vv: arm_rz(m, rn)
+        if vv < 0
+            vv: vv + 18446744073709551616
+        if imms is 63
+            arm_set(m, rd, arm_wrap(vv / arm_shl(1, immr)))
+            arm_set_pc(m, nx)
+            return 1
+        # a left shift is the mirror pair: immr one above imms
+        if imms < 63
+            if immr is imms + 1
+                arm_set(m, rd, arm_wrap(vv * arm_shl(1, 63 - imms)))
+                arm_set_pc(m, nx)
+                return 1
+        if imms >= immr
+            wd: imms - immr + 1
+            # the mask is 2 to the width, not 2 to the width minus
+            # one: modulo of a power of two is the bit mask
+            msk: arm_shl(1, wd)
+            arm_set(m, rd, (vv / arm_shl(1, immr)) % msk)
+            arm_set_pc(m, nx)
+            return 1
+        print "arm: refused an unknown ubfm shape"
+        poke_i64(m, 272, 2)
+        poke_i64(m, 336, w)
+        return 0
 
     # movz in the 32-bit register form, the small counts the walk
     # carries in single registers

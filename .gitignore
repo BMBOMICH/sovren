@@ -2,8 +2,14 @@
 scratch/
 *.out
 
-# local notes stay local; the one book is the exception
+# docs are local work in progress - the book and readme come back later
 *.md
 *.txt
-!README.md
-!docs/BOOK.md
+
+# a stray from a mistyped -o: the android-so back end is compiler-so,
+# and nothing in the tree writes this name. if it comes back, it was
+# a command line, not a build step
+compilers/android-so/compiler
+
+# the handoff for whoever picks this up next is not a local note
+!HANDOFF.md

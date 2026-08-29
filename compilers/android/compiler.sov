@@ -1,4 +1,7 @@
 use carm
+stmt_join_op:
+    calln("_sov_thread_join")
+    return 0
 oc: 0
 strb: 0
 str_keys: 0
@@ -38,6 +41,7 @@ iota_lim: 0
 mmap_sz: 1073741824
 used_libs: blank
 err_line: 0
+src_name: blank
 kn: blank
 kv: 0
 pro_at: 0
@@ -53,6 +57,7 @@ used_pr: 0
 used_pi: 0
 did_stos: 0
 thin_main: 0
+pie_walk: 1
 has_vm: 0
 need_priv: 0
 used_tr: 0
@@ -202,10 +207,146 @@ call_args name argc:
         chk_mem(8)
         str_x2_x0x1()
         return
+    if same(name, "sp") is 1
+        # mov x0, sp: orr x0, xzr, sp (the shared runtime's thread
+        # entry asks for the stack pointer; dead on machines without
+        # threads, valid a64 either way)
+        emitw(2854159328)
+        return
     calln(name)
 poke2 p off v:
     dummy: _sov_set_byte(p, off, v % 256)
     dummy: _sov_set_byte(p, off + 1, (v / 256) % 256)
+# pass S7, re-landed: the self-relocating walk. The image is ET_DYN
+# and the kernel lands it anywhere; the walk - the first code in the
+# file - finds the slide from its own anchor, opens the text page
+# briefly, adds the slide to every absolute the compiler recorded,
+# and closes the page again. The kernel applies nothing else.
+emit_walk:
+    emitw(268435456)
+    # the anchor's own link address: the walk starts the code,
+    # so this is the image base plus the whole header
+    set_reg(1, BASE + HDR)
+    emitw(3405840385)
+    wz: here()
+    emitw(3025893377)
+    # the code page: the walk starts HDR bytes into the first page,
+    # so its own address minus HDR is the page base, and a page
+    # base is what mprotect takes
+    emitw(3506675715)
+    # the mprotect call clobbers x1 (its length argument); keep
+    # the slide in x9 and restore it after the call, because the
+    # loop needs the slide in x1
+    emitw(2852193257)
+    l1: here()
+    emitw(3531603972)
+    addp(l1, "wlen16", 0)
+    l2: here()
+    emitw(4070572036)
+    addp(l2, "wlen32", 0)
+    emitw(2852324339)
+    emitw(2852389876)
+    emitw(3531604194)
+    emitw(2852324320)
+    emitw(2852389857)
+    emitw(3531611208)
+    sysc()
+    emitw(2852717537)
+    tt: here()
+    emitw(268435458)
+    addp(tt, "tadr", 2)
+    emitw(4181721155)
+    emitw(2432704578)
+    wz3: here()
+    emitw(3025893379)
+    lp: here()
+    emitw(4181721156)
+    emitw(3107981381)
+    emitw(2432712770)
+    emitw(2332098692)
+    emitw(3531606538)
+    emitw(1795817663)
+    be_q: here()
+    emitw(1409286144)
+    emitw(3531605258)
+    emitw(1795817663)
+    be_d: here()
+    emitw(1409286144)
+    emitw(3531603974)
+    emitw(3531603975)
+    acc: here()
+    emitw(3942973695)
+    bg_r: here()
+    emitw(1409286154)
+    emitw(3093788808)
+    emitw(3545585929)
+    emitw(3548179753)
+    emitw(3544535306)
+    emitw(2596872522)
+    emitw(2332688582)
+    emitw(2432697575)
+    b_acc: here()
+    emitw(335544320)
+    fx: here()
+    # acc leaves x7 at the run's end and x6 at the link-time value:
+    # add the slide and restart the counter, so rw rewrites every
+    # word of the run with the live value
+    emitw(2332098758)
+    emitw(3531603975)
+    rw: here()
+    emitw(3942973695)
+    bg_n: here()
+    emitw(1409286154)
+    emitw(3093788808)
+    emitw(3545585929)
+    emitw(3548179753)
+    emitw(2596873418)
+    emitw(3544202570)
+    emitw(3544191243)
+    emitw(3545595148)
+    emitw(3547048332)
+    emitw(3548113229)
+    emitw(2852913512)
+    emitw(2852978952)
+    emitw(3089594504)
+    emitw(2432697575)
+    b_rw: here()
+    emitw(335544320)
+    qwd: here()
+    emitw(4181721222)
+    emitw(2332098758)
+    emitw(4177526918)
+    b_n1: here()
+    emitw(335544320)
+    dwl: here()
+    emitw(3107979398)
+    emitw(2332098758)
+    emitw(3103785094)
+    nxt: here()
+    emitw(3506439267)
+    wnz: here()
+    emitw(889192451)
+    rst: here()
+    emitw(2853372896)
+    emitw(2853438433)
+    emitw(3531604130)
+    emitw(3531611208)
+    sysc()
+    fin: here()
+    emitw(335544320)
+    addp(fin, "walk_jmp", 0)
+    put19(wz, fin - wz)
+    put19(wz3, rst - wz3)
+    put19(be_q, qwd - be_q)
+    put19(be_d, dwl - be_d)
+    put19(bg_r, fx - bg_r)
+    put19(bg_n, nxt - bg_n)
+    put26(b_acc, acc - b_acc)
+    put26(b_rw, rw - b_rw)
+    put26(b_n1, nxt - b_n1)
+    put19(wnz, lp - wnz)
+    return 0
+
 write_elf path:
     if had_err is 1
         return
@@ -253,7 +394,12 @@ write_elf path:
         if same(rk, "glob") is 1
             rel_n: rel_n + 1
         rc_i: rc_i + 1
-    relsz: 8 + rel_n * 8
+    # S7 android: the walk is built and runs clean for programs
+    # with no absolutes, but absolute-carrying programs still die
+    # with a corrupted text page. gated off until that is found.
+    if pie_walk is 0
+        rel_n: 0
+    relsz: 8 + rel_n * 16
     filesz: gfoff + sl8 + pad + relsz
     flat: _sov_alloc(filesz + 64)
     i: 0
@@ -267,23 +413,25 @@ write_elf path:
     dummy: _sov_set_byte(flat, 4, 2)
     dummy: _sov_set_byte(flat, 5, 1)
     dummy: _sov_set_byte(flat, 6, 1)
-    poke2(flat, 16, 3)
+    et: 2
+    if pie_walk is 1
+        et: 3
+    poke2(flat, 16, et)
     poke2(flat, 18, 183)
     poke4(flat, 20, 1)
-    moff: 0
+    moff: start_off
     if thin_main is 1
         mi: idx(fn_names, "main")
         if mi > 0 - 1
             moff: _sov_list_get(fn_offs, mi)
-    poke8(flat, 24, BASE + HDR + moff)
+    ent: BASE + HDR + moff
+    if pie_walk is 1
+        ent: BASE + HDR
+    poke8(flat, 24, ent)
     poke8(flat, 32, 64)
     poke2(flat, 52, 64)
     poke2(flat, 54, 56)
     poke2(flat, 56, 3)
-    # pass S7: the relocation table lives where a section table
-    # would, and its entry count rides e_shnum
-    poke8(flat, 40, gfoff + sl8 + pad)
-    poke2(flat, 60, rel_n)
     # seg1: headers + code, READ+EXECUTE, never writable
     poke4(flat, 64, 1)
     poke4(flat, 68, 5)
@@ -386,6 +534,28 @@ write_elf path:
             if rel < 0
                 rel: rel + 2097152
             poke4(flat, HDR + at, 268435456 + (rel % 4) * 536870912 + ((rel / 4) % 524288) * 32 + 1)
+        if same(kind, "tadr") is 1
+            # the walk's adr to the relocation table, rd in val
+            rel2: gfoff + sl8 + pad - (HDR + at)
+            if rel2 < 0
+                rel2: rel2 + 2097152
+            if rel2 >= 2097152
+                print "Error: the pie table is out of adr range"
+                had_err: 1
+            poke4(flat, HDR + at, 268435456 + (rel2 % 4) * 536870912 + ((rel2 / 4) % 524288) * 32 + val)
+        if same(kind, "walk_jmp") is 1
+            # an arm b targets the branch word itself plus imm*4,
+            # not the word after it
+            rl2: (moff - at) / 4
+            if rl2 < 0
+                rl2: rl2 + 67108864
+            poke4(flat, HDR + at, 335544320 + (rl2 % 67108864))
+        if same(kind, "wlen16") is 1
+            sp: (gfoff + 4095) / 4096 * 4096
+            poke4(flat, HDR + at, 3531603968 + (sp % 65536) * 32 + 4)
+        if same(kind, "wlen32") is 1
+            sp2: (gfoff + 4095) / 4096 * 4096
+            poke4(flat, HDR + at, 4070572036 + ((sp2 / 65536) % 65536) * 32)
         if same(kind, "cbz_trap") is 1
             ti: idx(fn_names, "_sov_trap")
             if ti > 0 - 1
@@ -450,14 +620,16 @@ write_elf path:
         i: i + 1
     if had_err is 1
         return
-    # pass S7: the relocation table - a count, then (offset, kind)
-    # pairs. kind 2/3/4 is a movz/movk run, 80 a raw qword, 40 a
-    # dword. The loader finds it through e_shoff/e_shnum
-    poke8(flat, gfoff + sl8 + pad, rel_n)
+    # the walk's table: a count, then (link address, kind, spare)
+    # triples. kind 80 heals a raw qword, 40 a dword, 2..4 a
+    # movz/movk run
+    tbl: gfoff + sl8 + pad
+    poke8(flat, tbl, rel_n)
     ri: 0
     as long as ri < rel_n
-        poke4(flat, gfoff + sl8 + pad + 8 + ri * 8, HDR + _sov_list_get(rel_at, ri))
-        poke4(flat, gfoff + sl8 + pad + 12 + ri * 8, _sov_list_get(rel_nw, ri))
+        poke8(flat, tbl + 8 + ri * 16, BASE + HDR + _sov_list_get(rel_at, ri))
+        poke4(flat, tbl + 8 + ri * 16 + 8, _sov_list_get(rel_nw, ri))
+        poke4(flat, tbl + 8 + ri * 16 + 12, 0)
         ri: ri + 1
     w: _sov_write_n(path, flat, filesz)
     if w is 0
@@ -503,6 +675,7 @@ main argc argv:
             outf: cut(inf, 0, d)
         if not
             outf: join(inf, ".out")
+    src_name: inf
     print "Compiling"
     _sov_print(inf)
     src: load_file(inf)
@@ -537,6 +710,10 @@ main argc argv:
         need: 1
     if look(src, "poke_byte") > 0 - 1
         need: 1
+    if look(src, "spawn ") > 0 - 1
+        need: 1
+    if look(src, "join ") > 0 - 1
+        need: 1
     rt: blank
     if bare_mode is 1
         need: 0
@@ -566,15 +743,18 @@ main argc argv:
     # function is appended to the program being built (not to the
     # shared runtime, so other targets never carry it) and the
     # syscall builtin routes every number through it.
-    if need is 1
-        all: join(all, nl)
-        all: join(all, "# x86 syscall number in, arm64 number out (the arm64 kernel\n# numbers its calls differently and has no plain open, pipe or\n# dup2; openat, pipe2 and dup3 stand in). Only the arm64 back end\n# calls this, so only arm64 builds carry it.\n_sov_sysnum n:\n    if n is 0\n        return 63\n    if n is 1\n        return 64\n    if n is 3\n        return 57\n    if n is 7\n        return 73\n    if n is 8\n        return 62\n    if n is 13\n        return 134\n    if n is 9\n        return 222\n    if n is 11\n        return 215\n    if n is 16\n        return 29\n")
-        all: join(all, "    if n is 22\n        return 59\n    if n is 33\n        return 24\n    if n is 35\n        return 101\n    if n is 39\n        return 172\n    if n is 41\n        return 198\n    if n is 42\n        return 203\n    if n is 43\n        return 202\n    if n is 44\n        return 206\n    if n is 45\n        return 207\n    if n is 49\n        return 200\n    if n is 50\n        return 201\n    if n is 57\n        return 220\n    if n is 59\n        return 221\n    if n is 60\n        return 93\n    if n is 61\n        return 260\n    if n is 62\n        return 129\n")
-        all: join(all, "    if n is 79\n        return 17\n    if n is 80\n        return 49\n    if n is 82\n        return 50\n    if n is 84\n        return 81\n    if n is 87\n        return 35\n    if n is 90\n        return 34\n    if n is 102\n        return 174\n    if n is 104\n        return 176\n    if n is 107\n        return 175\n    if n is 108\n        return 177\n    if n is 144\n        return 227\n    if n is 217\n        return 61\n    if n is 218\n        return 169\n    if n is 228\n        return 115\n    if n is 231\n        return 94\n    if n is 257\n        return 56\n    if n is 260\n        return 166\n    if n is 302\n        return 261\n    if n is 318\n        return 278\n    return n\n")
-        all: join(all, nl)
-        # these extra lines shift the error-line base, so the jobs
-        # after them still count as library jobs, not user jobs
-        src_base: src_base + 70
+        all: join(all, "# mem_copy and mem_set, injected for the arm targets: the x86 back\n# end has them as one rep movsb / rep stosb each, and a shared library\n# may not use a builtin that only one machine has. written with\n# peek_byte and poke_byte, which are builtins on every target.\n_sov_mem_copy d s n:\n    i: 0\n    as long as i < n\n        poke_byte(d, i, peek_byte(s, i))\n        i: i + 1\n    return d\n\n_sov_mem_set d v n:\n    j: 0\n    as long as j < n\n        poke_byte(d, j, v)\n        j: j + 1\n    return d\n")
+        src_base: src_base + 20
+    all: join(all, "# a thread ends itself through this injected task, emitted\n# unconditionally because runtime.sov calls it whether or not the program\n# ever makes a syscall. on arm64 a thread is a detached clone, so ending it\n# is the exit syscall\n_sov_thread_exit:\n    syscall(60, 0, 0, 0, 0, 0, 0)\n    return 0 - 1\n")
+    src_base: src_base + 6
+    all: join(all, nl)
+    all: join(all, "# x86 syscall number in, arm64 number out (the arm64 kernel\n# numbers its calls differently and has no plain open, pipe or\n# dup2; openat, pipe2 and dup3 stand in). Only the arm64 back end\n# calls this, so only arm64 builds carry it.\n_sov_sysnum n:\n    if n is 0\n        return 63\n    if n is 1\n        return 64\n    if n is 3\n        return 57\n    if n is 7\n        return 73\n    if n is 8\n        return 62\n    if n is 13\n        return 134\n    if n is 9\n        return 222\n    if n is 11\n        return 215\n    if n is 16\n        return 29\n")
+    all: join(all, "    if n is 22\n        return 59\n    if n is 33\n        return 24\n    if n is 35\n        return 101\n    if n is 39\n        return 172\n    if n is 41\n        return 198\n    if n is 42\n        return 203\n    if n is 43\n        return 202\n    if n is 44\n        return 206\n    if n is 45\n        return 207\n    if n is 49\n        return 200\n    if n is 50\n        return 201\n    if n is 57\n        return 220\n    if n is 59\n        return 221\n    if n is 60\n        return 93\n    if n is 61\n        return 260\n    if n is 62\n        return 129\n")
+    all: join(all, "    if n is 79\n        return 17\n    if n is 80\n        return 49\n    if n is 82\n        return 50\n    if n is 84\n        return 81\n    if n is 90\n        return 34\n    if n is 102\n        return 174\n    if n is 104\n        return 176\n    if n is 107\n        return 175\n    if n is 108\n        return 177\n    if n is 144\n        return 227\n    if n is 217\n        return 61\n    if n is 218\n        return 169\n    if n is 228\n        return 115\n    if n is 231\n        return 94\n    if n is 257\n        return 56\n    if n is 260\n        return 166\n    if n is 302\n        return 261\n    if n is 318\n        return 278\n    if n is 56\n        return 220\n    if n is 202\n        return 98\n    if n is 72\n        return 25\n    if n is 74\n        return 82\n    if n is 77\n        return 46\n    if n is 262\n        return 79\n    if n is 263\n        return 35\n    return n\n")
+    all: join(all, nl)
+    # these extra lines shift the error-line base, so the jobs
+    # after them still count as library jobs, not user jobs
+    src_base: src_base + 81
 
     all: join(all, src)
     compile(all)
@@ -595,7 +775,7 @@ emit_write_lit s:
     emitw(268435456 + 1)
     addp(at, "adr", off)
     set_reg(2, n)
-    set_reg(8, 64)
+    set_reg(8, sc_write)
     sysc()
 
 # mmap(0, sz, RW, PRIVATE|ANON, -1, 0) -> x0
@@ -633,14 +813,14 @@ emit_print:
     set_reg(0, 1)
     mov_reg(1, 19)
     mov_reg(2, 20)
-    set_reg(8, 64)
+    set_reg(8, sc_write)
     sysc()
     set_reg(0, 1)
     nl_at: here()
     emitw(268435456 + 1)
     addp(nl_at, "adr", intern_nz("\n"))
     set_reg(2, 1)
-    set_reg(8, 64)
+    set_reg(8, sc_write)
     sysc()
     emitw(2432697279)
     emitw(2839630835)
@@ -655,4 +835,52 @@ put_sub_sp at n:
     if v < 0
         v: 0
     oc_set_word(at, 3506439167 + (v % 4096) * 1024)
+    return 0
+
+spawn_emit name argc:
+    if argc is 1
+        pop_rax()
+    if not
+        if argc is 2
+            pop_reg(1)
+            pop_rax()
+        if not
+            if argc is 3
+                pop_reg(2)
+                pop_reg(1)
+                pop_rax()
+            if not
+                if argc is 4
+                    pop_reg(3)
+                    pop_reg(2)
+                    pop_reg(1)
+                    pop_rax()
+                if not
+                    if argc is 5
+                        pop_reg(4)
+                        pop_reg(3)
+                        pop_reg(2)
+                        pop_reg(1)
+                        pop_rax()
+                    if not
+                        if argc is 6
+                            pop_reg(5)
+                            pop_reg(4)
+                            pop_reg(3)
+                            pop_reg(2)
+                            pop_reg(1)
+                            pop_rax()
+    mov_reg(6, 5)
+    mov_reg(5, 4)
+    mov_reg(4, 3)
+    mov_reg(3, 2)
+    mov_reg(2, 1)
+    mov_reg(1, 0)
+    aat: here()
+    movz_x(0, 0, 0)
+    movk_x(0, 0, 1)
+    movk_x(0, 0, 2)
+    movk_x(0, 0, 3)
+    addp(aat, "fnaddr64", name)
+    calln("_sov_thread_spawn")
     return 0

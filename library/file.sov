@@ -141,7 +141,12 @@ file_shred path:
     syscall(77, fd, 0, 0, 0, 0, 0)
     syscall(74, fd, 0, 0, 0, 0, 0)
     sys_close(fd)
-    r: syscall(87, path, 0, 0, 0, 0, 0)
+    # unlinkat with AT_FDCWD, not unlink. arm64 has no unlink at all,
+    # only unlinkat, and the two take different arguments - mapping
+    # the number alone would have handed the path pointer to the
+    # kernel as a directory fd. unlinkat exists on both and reads
+    # the same way on both.
+    r: syscall(263, 0 - 100, path, 0, 0, 0, 0)
     # the parent directory, so the unlink itself survives a crash
     parent: file_dirname(path)
     dfd: sys_open(parent, 65536)

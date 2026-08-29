@@ -41,3 +41,81 @@ utf_ok s:
             k: k + 1
         i: i + w
     return 1
+
+# byte offset of character i, so the rest of the library can think
+# in letters and hand the byte world a plain range
+utf_off s i:
+    n: _sov_strlen(s)
+    p: 0
+    k: 0
+    as long as k < i
+        if p >= n
+            return n
+        p: p + utf_width(peek_byte(s, p))
+        k: k + 1
+    if p > n
+        return n
+    return p
+
+# the codepoint at character index i, or 0 past the end. decoding is
+# the width table walked backwards: drop the header bits, then pull
+# six bits out of every continuation byte
+utf_at s i:
+    p: utf_off(s, i)
+    n: _sov_strlen(s)
+    if p >= n
+        return 0
+    b: peek_byte(s, p)
+    if b < 128
+        return b
+    if b < 224
+        if p + 1 >= n
+            return b
+        return (b - 192) * 64 + (peek_byte(s, p + 1) - 128)
+    if b < 240
+        if p + 2 >= n
+            return b
+        return (b - 224) * 4096 + (peek_byte(s, p + 1) - 128) * 64 + (peek_byte(s, p + 2) - 128)
+    if p + 3 >= n
+        return b
+    return (b - 240) * 262144 + (peek_byte(s, p + 1) - 128) * 4096 + (peek_byte(s, p + 2) - 128) * 64 + (peek_byte(s, p + 3) - 128)
+
+# one codepoint on its own as text, the reverse of utf_at
+utf_enc cp:
+    if cp < 0
+        return ""
+    if cp < 128
+        o1: _sov_alloc(2)
+        poke_byte(o1, 0, cp)
+        poke_byte(o1, 1, 0)
+        return o1
+    if cp < 2048
+        o2: _sov_alloc(3)
+        poke_byte(o2, 0, 192 + cp / 64)
+        poke_byte(o2, 1, 128 + cp % 64)
+        poke_byte(o2, 2, 0)
+        return o2
+    if cp < 65536
+        o3: _sov_alloc(4)
+        poke_byte(o3, 0, 224 + cp / 4096)
+        poke_byte(o3, 1, 128 + (cp / 64) % 64)
+        poke_byte(o3, 2, 128 + cp % 64)
+        poke_byte(o3, 3, 0)
+        return o3
+    o4: _sov_alloc(5)
+    poke_byte(o4, 0, 240 + cp / 262144)
+    poke_byte(o4, 1, 128 + (cp / 4096) % 64)
+    poke_byte(o4, 2, 128 + (cp / 64) % 64)
+    poke_byte(o4, 3, 128 + cp % 64)
+    poke_byte(o4, 4, 0)
+    return o4
+
+# slice by characters, so a and b count letters like utf_len does
+utf_cut s a b:
+    return _sov_substring(s, utf_off(s, a), utf_off(s, b))
+
+utf_last s:
+    n: utf_len(s)
+    if n is 0
+        return 0
+    return utf_at(s, n - 1)

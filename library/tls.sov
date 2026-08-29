@@ -1,4 +1,6 @@
 # tls.sov — a TLS 1.2 client, in Sovren.
+# Batteries, not certified: review before production crypto.
+use mem
 #
 # Sovren speaks https itself: the record layer, the AES-128-GCM from gcm.sov, the
 # PRF on hmac.sov, and ECDHE key exchange on X25519 from
@@ -104,10 +106,8 @@ tl_prf out secret slen label llen seed slen2:
     # the P_hash seed is the label followed by the seed; the A chain
     # starts there
     a: _sov_alloc(32 + slen2)
-    j: 0
-    as long as j < llen
-        poke_byte(a, j, peek_byte(label, j))
-        j: j + 1
+    j: llen
+    mem_copy(a, label, llen)
     j: 0
     as long as j < slen2
         poke_byte(a, llen + j, peek_byte(seed, j))
@@ -118,16 +118,12 @@ tl_prf out secret slen label llen seed slen2:
     blk: _sov_alloc(32)
     as long as pos < tl_n
         hmac_raw(secret, slen, a, alen, na)
-        j: 0
-        as long as j < 32
-            poke_byte(a, j, peek_byte(na, j))
-            j: j + 1
+        j: 32
+        mem_copy(a, na, 32)
         alen: 32
         buf: _sov_alloc(32 + llen + slen2 + 1)
-        j: 0
-        as long as j < 32
-            poke_byte(buf, j, peek_byte(a, j))
-            j: j + 1
+        j: 32
+        mem_copy(buf, a, 32)
         j: 0
         as long as j < llen
             poke_byte(buf, 32 + j, peek_byte(label, j))
@@ -198,10 +194,8 @@ tl_rec_enc out typ body blen key iv:
     poke_byte(aad, 12, blen % 256)
     # nonce = iv(4) || explicit(8)
     nonce: _sov_alloc(16)
-    i: 0
-    as long as i < 4
-        poke_byte(nonce, i, peek_byte(iv, i))
-        i: i + 1
+    i: 4
+    mem_copy(nonce, iv, 4)
     i: 0
     as long as i < 8
         poke_byte(nonce, 4 + i, wand(shr(sq, (7 - i) * 8), 255))
@@ -226,10 +220,8 @@ tl_rec_enc out typ body blen key iv:
 tl_rec_dec in blen typ out key iv:
     ss: tl_seq_s
     nonce: _sov_alloc(16)
-    i: 0
-    as long as i < 4
-        poke_byte(nonce, i, peek_byte(iv, i))
-        i: i + 1
+    i: 4
+    mem_copy(nonce, iv, 4)
     i: 0
     as long as i < 8
         poke_byte(nonce, 4 + i, peek_byte(in, i))
@@ -539,14 +531,9 @@ tl_step_cert fd mb eb hs hlen:
     cert: cbody + 6
     tl_hs_add(hs, hlen, 11, cbody, tl_rlen - 4)
     tl_cert_key(cert, clen)
-    j: 0
-    as long as j < tl_modlen
-        poke_byte(mb, j, peek_byte(tl_mod, j))
-        j: j + 1
-    j: 0
-    as long as j < tl_explen
-        poke_byte(eb, j, peek_byte(tl_exp, j))
-        j: j + 1
+    j: tl_modlen
+    mem_copy(mb, tl_mod, tl_modlen)
+    mem_copy(eb, tl_exp, tl_explen)
     poke_i64(mb, 256, tl_modlen)
     poke_i64(mb, 264, tl_explen)
     return 1

@@ -37,8 +37,36 @@ jobs:
           $dll = [BitConverter]::ToUInt16($b, $pe + 24 + 70)
           "Characteristics    : 0x{0:X}" -f $chars
           "DllCharacteristics : 0x{0:X}" -f $dll
-          if (($chars -band 1) -ne 0) { throw "RELOCS_STRIPPED still set: the S7 exe must carry its relocs" }
-          if (($dll -band 0x40) -eq 0) { throw "DYNAMIC_BASE not set: ASLR is off; S7 promised it on" }
+          # S7 re-landed: PIE with a loader-applied .reloc table. The
+          # table must be named in DataDirectory[5] - the first
+          # landing missed the slot by one and windows refused it.
+          if (($chars -band 1) -ne 0) { throw "RELOCS_STRIPPED set: a PIE exe must carry its relocs" }
+          if (($dll -band 0x40) -eq 0) { throw "DYNAMIC_BASE not set: ASLR is off" }
+          $nsec = [BitConverter]::ToUInt16($b, $pe + 6)
+          "Sections           : $nsec"
+          if ($nsec -ne 3) { throw "expected three sections (.text/.rdata/.reloc), got $nsec" }
+          $r5off = $pe + 24 + 112 + 40
+          $r5r = [BitConverter]::ToUInt32($b, $r5off)
+          $r5s = [BitConverter]::ToUInt32($b, $r5off + 4)
+          "RelocDir[5]        : 0x$r5r / $r5s bytes"
+          if ($r5s -lt 12) { throw "DataDirectory[5] is empty: the reloc table is unnamed" }
+          # walk the blocks: they must fill the table exactly
+          $sec3 = $pe + 24 + 240 + 2 * 40
+          $raw3 = [BitConverter]::ToUInt32($b, $sec3 + 20)
+          $pos = 0; $dir64 = 0
+          while ($pos + 8 -le $r5s) {
+            $bsz = [BitConverter]::ToUInt32($b, $raw3 + $pos + 4)
+            if ($bsz -lt 8) { throw "a reloc block smaller than its head" }
+            for ($j = 0; $j -lt [int](($bsz - 8) / 2); $j++) {
+              $ew = [BitConverter]::ToUInt16($b, $raw3 + $pos + 8 + $j * 2)
+              if (($ew -shr 12) -eq 10) { $dir64 = 1 }
+            }
+            $pos += $bsz
+          }
+          if ($pos -ne $r5s) { throw "reloc blocks fill $pos of $r5s bytes" }
+          if ($dir64 -eq 0) { throw "no DIR64 entry in the table" }
+          "reloc blocks       : exact fill, DIR64 present"
+
           $n = 0
           for ($i = 0; $i -lt $b.Length - 1; $i++) { if ($b[$i] -eq 0x0F -and $b[$i+1] -eq 0x05) { $n++ } }
           "raw linux syscall instructions: $n"
@@ -227,7 +255,7 @@ jobs:
       - name: the example programs
         shell: pwsh
         run: |
-          foreach ($f in @("guess.sov", "show.sov", "play.sov", "mysite.sov", "edit.sov")) {
+          foreach ($f in @("examples/guess.sov", "examples/show.sov", "examples/play.sov", "examples/mysite.sov", "apps/edit.sov")) {
             if (-not (Test-Path $f)) { continue }
             .\sovren.exe $f -o ex.exe 2>&1 | Out-Null
             "{0,-14} exit={1}" -f $f, $LASTEXITCODE
@@ -293,17 +321,66 @@ jobs:
           grep -m1 "model name" /proc/cpuinfo
           echo "avx512 present:"; grep -o avx512f /proc/cpuinfo | head -1 || echo "  no"
       - name: make things runnable
-        run: chmod +x sovren compilers/linux/compiler compilers/macos/compiler compilers/windows/compiler compilers/android/compiler compilers/android-so/compiler compilers/ios/compiler tests/macos-check tests/macos/hello tests/arm64/check tests/arm64/hello
+        # generated from the index, so a renamed or added binary
+        # cannot fall off the list the way compiler_so did
+        run: |
+          git ls-files -z 'sovren' 'sovren.exe' 'compilers/' 'tests/macos-check' 'tests/macos/hello' 'tests/arm64/check' 'tests/arm64/hello' \
+            | grep -zv '\.sov$' | xargs -0 chmod +x
+      - name: "bootstrap: the tree rebuilds from one seed"
+        run: |
+          ./sovren bootstrap.sov -o /tmp/bootstrap
+          /tmp/bootstrap
       - name: a screen to draw on
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq xvfb x11-utils imagemagick python3-pil
       - name: the whole suite
-        # tests/run.sov is the test battery, written in Sovren
+        # tests/all.sov is the test battery, written in Sovren.
+        # 333 checks in about a minute; tests/run.sov stays local
+        # (it cross-builds every library for every target).
         run: |
-          ./sovren tests/run.sov -o /tmp/sov-run
+          ./sovren tests/all.sov -o /tmp/sov-run
           chmod +x /tmp/sov-run
           /tmp/sov-run
+      - name: benchmarks, against C
+        # The loop workload (sum of the squares 1..n) from
+        # tests/bench.sov and tests/bench.c: five runs each, best
+        # of five, milliseconds. The numbers are for the log; the
+        # gate is the known sum plus a 3x ceiling over C -O2,
+        # because runner-to-runner speed is not a fact about the
+        # language, but a tenfold regression is.
+        run: |
+          N=2900000
+          WANT=8129670871667150000
+          ./sovren tests/bench.sov -o /tmp/bench-sov
+          gcc -O0 -o /tmp/bench-c0 tests/bench.c
+          gcc -O2 -o /tmp/bench-c2 tests/bench.c
+          best() {
+            local b=999999999 i t0 t1 ms
+            for i in 1 2 3 4 5; do
+              t0=$(date +%s%N); "$@" >/dev/null; t1=$(date +%s%N)
+              ms=$(( (t1 - t0) / 1000000 ))
+              if [ "$ms" -lt "$b" ]; then b=$ms; fi
+            done
+            echo "$b"
+          }
+          s=$( /tmp/bench-sov $N )
+          a=$( /tmp/bench-c0 $N )
+          b=$( /tmp/bench-c2 $N )
+          test "$s" = "$WANT"
+          test "$a" = "$WANT"
+          test "$b" = "$WANT"
+          ms_sov=$(best /tmp/bench-sov $N)
+          ms_c0=$(best /tmp/bench-c0 $N)
+          ms_c2=$(best /tmp/bench-c2 $N)
+          echo "n = $N, sum of the squares, best of five runs"
+          printf "  sovren   %6d ms\n" "$ms_sov"
+          printf "  c -O0    %6d ms\n" "$ms_c0"
+          printf "  c -O2    %6d ms\n" "$ms_c2"
+          if [ "$ms_sov" -gt $(( ms_c2 * 3 + 1 )) ]; then
+            echo "Sovren is more than 3x slower than C -O2: a codegen regression?"
+            exit 1
+          fi
       - name: long double, on the processor written in Sovren
         run: |
           # The old stack-based maths unit. A compiler only reaches
@@ -345,7 +422,7 @@ jobs:
           # monitor behind it, draws on it, and then looks at what
           # actually landed there.
           export DISPLAY=:95
-          Xvfb :95 -screen 0 640x480x24 -nolisten tcp &
+          Xvfb :95 -nolisten tcp -screen 0 640x480x24 &
           xpid=$!
           sleep 3
           cat > /tmp/w.sov <<'WEOF'
@@ -584,6 +661,12 @@ jobs:
           for t in "" --windows --mac --android --ios --android-so; do
             for f in library/*.sov; do
               n=$(basename "$f" .sov)
+              # carm and cx86 are the shared compiler cores, not
+              # libraries: they reach globals the compiler source
+              # defines (oc, err_line and friends), so `use carm` on
+              # its own has nothing to resolve against. they are still
+              # compiled, three times over, by the self-host step
+              case "$n" in carm|cx86) continue;; esac
               printf 'use %s\nmain:\n    print 1\n' "$n" > /tmp/L.sov
               if ! ./sovren /tmp/L.sov $t -o /tmp/L.bin >/dev/null 2>&1; then
                 echo "  FAIL $n ${t:-linux}"; fail=$((fail+1))
@@ -595,7 +678,7 @@ jobs:
       - name: no warnings from any compiler
         run: |
           w=0
-          for c in linux windows mac android ios; do
+          for c in linux windows macos android ios; do
             n=$(./sovren compilers/$c/compiler.sov -o /tmp/c.bin 2>&1 | grep -ci warning || true)
             echo "$c: $n warnings"
             w=$((w+n))

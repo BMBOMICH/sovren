@@ -1,7 +1,8 @@
-# channel.sov — named rooms on disk
+# channel.sov — named rooms on disk, and an in-process ring
 use store
 use string
 use file
+use lock
 
 channel_path name:
     return str_cat("channel-", name)
@@ -15,3 +16,50 @@ channel_read name:
 
 channel_clear name:
     return store_clear(channel_path(name))
+
+# layout: lock, count, cap, head, tail, then cap slots of 8 bytes.
+# send and recv take the lock; a full send or empty recv drops it
+# and tries again so the other side can move. the ring is on the
+# bump heap, so it is not visible to a forked spawn.
+chan_new cap:
+    if cap < 1
+        cap: 1
+    n: 40 + cap * 8
+    p: _sov_alloc(n)
+    poke_i64(p, 0, 0)
+    poke_i64(p, 8, 0)
+    poke_i64(p, 16, cap)
+    poke_i64(p, 24, 0)
+    poke_i64(p, 32, 0)
+    return p
+
+chan_send ch v:
+    mutex_lock(ch)
+    cap: peek_i64(ch, 16)
+    count: peek_i64(ch, 8)
+    as long as count is cap
+        mutex_unlock(ch)
+        mutex_lock(ch)
+        cap: peek_i64(ch, 16)
+        count: peek_i64(ch, 8)
+    tail: peek_i64(ch, 32)
+    poke_i64(ch, 40 + tail * 8, v)
+    poke_i64(ch, 32, (tail + 1) % cap)
+    poke_i64(ch, 8, count + 1)
+    mutex_unlock(ch)
+    return 0
+
+chan_recv ch:
+    mutex_lock(ch)
+    count: peek_i64(ch, 8)
+    as long as count is 0
+        mutex_unlock(ch)
+        mutex_lock(ch)
+        count: peek_i64(ch, 8)
+    head: peek_i64(ch, 24)
+    v: peek_i64(ch, 40 + head * 8)
+    cap: peek_i64(ch, 16)
+    poke_i64(ch, 24, (head + 1) % cap)
+    poke_i64(ch, 8, count - 1)
+    mutex_unlock(ch)
+    return v

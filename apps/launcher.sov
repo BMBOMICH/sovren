@@ -34,6 +34,8 @@ lc_help:
     print "  --macos is another name for --mac."
     print ""
     print "Other:"
+    print "  --debug          Trace the program line by line"
+    print "                     (add --interactive to step)"
     print "  --version, -v  Print the version"
     print "  --help, -h     Print this"
     print ""
@@ -101,8 +103,29 @@ main:
             stop
         i: i + 1
 
-    # which compiler
+    # which compiler. the running launcher's own image says the host:
+    # MZ is Windows (PE compilers), Mach-O magic is macOS (.macho
+    # compilers), anything else is the ELF compilers Linux already has.
     which: "linux"
+    host_win: 0
+    host_mac: 0
+    me0: as text arg_at(0)
+    if str_ends(me0, ".exe") is 1
+        host_win: 1
+        which: "windows"
+    if not
+        hdr: file_read_all(me0)
+        if hdr is not 0
+            b0: peek_byte(hdr, 0)
+            if b0 is 77
+                host_win: 1
+                which: "windows"
+            if b0 is 207
+                host_mac: 1
+                which: "macos"
+            if b0 is 254
+                host_mac: 1
+                which: "macos"
     so: 0
     i: 1
     as long as i < n
@@ -129,16 +152,36 @@ main:
     me: as text arg_at(0)
     root: as text dir_of(me)
 
+    # --debug: hand the whole argument list to the debugger,
+    # which sits next to this launcher
+    dbg: 0
+    i: 1
+    as long as i < n
+        if str_eq(as text arg_at(i), "--debug") is 1
+            dbg: 1
+        i: i + 1
+    if dbg is 1
+        dbgpath: str_cat(root, "/sovren-dbg")
+        if file_exists(dbgpath) is 0
+            write_out("Error: no sovren-dbg at ")
+            print dbgpath
+            stop
+        lc_exec_dbg(dbgpath, n)
+
     if so is 1
         which: "android-so"
     path: str_cat(root, "/compilers/")
     path: str_cat(path, which)
     path: str_cat(path, "/")
     if so is 1
-        path: str_cat(path, "compiler_so")
+        path: str_cat(path, "compiler-so")
     if not
         path: str_cat(path, "compiler")
 
+    if host_win is 1
+        path: str_cat(path, ".exe")
+    if host_mac is 1
+        path: str_cat(path, ".macho")
     if file_exists(path) is 0
         write_out("Error: no compiler at ")
         print path
@@ -163,6 +206,20 @@ dir_of p:
                 return as text "/"
             return as text str_cut(p, 0, i)
     return as text "."
+
+# build the argument list and become the debugger; no filtering,
+# the debugger parses its own flags
+lc_exec_dbg path n:
+    argv: _sov_alloc(256)
+    poke_i64(argv, 0, path)
+    i: 1
+    as long as i < n
+        poke_i64(argv, i * 8, as text arg_at(i))
+        i: i + 1
+    poke_i64(argv, n * 8, 0)
+    syscall(59, path, argv, 0, 0, 0, 0)
+    print "Error: could not start the debugger"
+    return 1
 
 # build the argument list and become the compiler
 lc_exec path n:
