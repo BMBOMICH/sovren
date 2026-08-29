@@ -200,6 +200,13 @@ leave_handback:
     # register per call; popping from rbp instead clobbers the
     # return address. walk rsp down over the register slots, pop
     # them, then pop the saved rbp.
+    # fn_save_n 0: no register slots, but the prologue still did
+    # sub rsp, N. a bare pop rbp then ret pops the empty frame
+    # (zeros) and jumps to 0 - ACCESS_VIOLATION on Windows, which
+    # is how sovren.exe died on no-args (Usage calls _sov_argc).
+    if fn_save_n is 0
+        emit(201)
+        return 0
     if fn_save_n > 0
         # lea rsp, [rbp - 8n]: land exactly on the register slots,
         # whatever the frame size was. a sub rsp, 8n leaves the

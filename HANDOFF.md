@@ -59,7 +59,9 @@ rm -f /tmp/allb
 
 After changing `emit_alloc` (or anything that changes the compiler's own `_sov_alloc`), the first generation compiled by the old seed can differ from the second. Take the second, then prove g3 == g4.
 
-Host copies sit next to each ELF compiler: `compiler.exe` (PE) and `compiler.macho` (Mach-O). Rebuild with `./sovren <src> --windows -o <path>.exe` or `--mac -o <path>.macho`. The launcher reads its own image magic (MZ / Mach-O / ELF) and picks the matching suffix.
+Windows CI needs `compilers/windows/compiler.exe` (PE). Other PE/Mach-O host copies are rebuilt on demand: `./sovren <src> --windows -o <path>.exe` or `--mac -o <path>.macho`. The launcher still picks `.exe` / `.macho` from its own image magic when those files exist.
+
+Windows `leave_handback` with `fn_save_n` 0 must emit `leave` (0xC9). A bare `pop rbp; ret` after `sub rsp, N` pops zeros and jumps to 0 (CI ACCESS_VIOLATION on `sovren.exe` with no args, which calls `_sov_argc`). Linux chmod must include `sovren-dbg`. Mac job ad-hoc signs then skips exit 137/126/134.
 
 The 1044-build sweep (~3 min):
 

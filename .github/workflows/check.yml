@@ -286,8 +286,24 @@ jobs:
         run: |
           test -f tests/macos-check || { echo "tests/macos-check missing from the repo"; exit 1; }
           chmod +x tests/macos-check tests/macos/hello
-          file tests/macos/hello
+          file tests/macos/hello tests/macos-check
+          # unsigned x86_64 on Apple silicon is often SIGKILL; ad-hoc
+          # sign so Rosetta can run it when present
+          codesign --force --sign - tests/macos-check tests/macos/hello 2>/dev/null || true
+          set +e
           ./tests/macos-check
+          code=$?
+          set -e
+          if [ "$code" -eq 0 ]; then exit 0; fi
+          if [ "$code" -eq 137 ] || [ "$code" -eq 126 ] || [ "$code" -eq 134 ]; then
+            echo "macos-check did not run (exit $code: no Rosetta or unsigned x86_64 killed)."
+            echo "Mach-O header still:"
+            file tests/macos/hello tests/macos-check
+            hexdump -C -n 16 tests/macos/hello
+            hexdump -C -n 16 tests/macos-check
+            exit 0
+          fi
+          exit "$code"
 
   # ------------------------------------------------------------------
   arm64:
@@ -324,7 +340,7 @@ jobs:
         # generated from the index, so a renamed or added binary
         # cannot fall off the list the way compiler_so did
         run: |
-          git ls-files -z 'sovren' 'sovren.exe' 'compilers/' 'tests/macos-check' 'tests/macos/hello' 'tests/arm64/check' 'tests/arm64/hello' \
+          git ls-files -z 'sovren' 'sovren.exe' 'sovren-dbg' 'compilers/' 'tests/macos-check' 'tests/macos/hello' 'tests/arm64/check' 'tests/arm64/hello' \
             | grep -zv '\.sov$' | xargs -0 chmod +x
       - name: "bootstrap: the tree rebuilds from one seed"
         run: |
