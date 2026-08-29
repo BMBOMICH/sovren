@@ -10855,38 +10855,19 @@ x86_load_pe m path:
         va: x_u32d(d, o + 12)
         rs: x_u32d(d, o + 16)
         ra: x_u32d(d, o + 20)
-        vs: x_u32d(d, o + 8)
         k: 0
         as long as k < rs
             x_w8(m, base + va + k, peek_byte(d, ra + k))
             k: k + 1
-        # pass S8: the section's own characteristics become the
-        # page bits; the headers page below stays read-only
-        ch: x_u32d(d, o + 36)
-        pf: 0
-        if x_and(ch, 1073741824) is not 0
-            pf: pf + 4
-        if x_and(ch, 2147483648) is not 0
-            pf: pf + 2
-        if x_and(ch, 536870912) is not 0
-            pf: pf + 1
-        ext: vs
-        if rs > ext
-            ext: rs
-        x_perm_set(m, base + va, ext, pf)
         i: i + 1
-    x_perm_set(m, base, hsz, 4)
-    # the loader's own relocation pass, before imports resolve:
-    # DIR64 moves a qword, HIGHLOW a dword, ABSOLUTE pads
+    # Windows applies the table before it sets page bits. A DIR64
+    # sitting on the last bytes of a page spills into the next one,
+    # which is still writable here and not once NX is on.
     if aslr > 0
         posn2: 0
         as long as posn2 + 8 < relsz2 + 1
             prva2: x_u32d(d, traw + posn2)
             bsz2: x_u32d(d, traw + posn2 + 4)
-            # the loader applies relocations before protections are
-            # final; open the page for writing, then restore its bits
-            sv: x86_perm_at(m, base + prva2)
-            x_perm_set(m, base + prva2, 4096, sv + 2)
             j3: 0
             as long as j3 < (bsz2 - 8) / 2
                 ew2: peek_byte(d, traw + posn2 + 8 + j3 * 2) + peek_byte(d, traw + posn2 + 9 + j3 * 2) * 256
@@ -10908,8 +10889,27 @@ x86_load_pe m path:
                             dv: dv / 256
                             b3: b3 + 1
                 j3: j3 + 1
-            x_perm_set(m, base + prva2, 4096, sv)
             posn2: posn2 + bsz2
+    i: 0
+    as long as i < nsec
+        o: pe + 24 + 240 + i * 40
+        va: x_u32d(d, o + 12)
+        vs: x_u32d(d, o + 8)
+        rs: x_u32d(d, o + 16)
+        ch: x_u32d(d, o + 36)
+        pf: 0
+        if x_and(ch, 1073741824) is not 0
+            pf: pf + 4
+        if x_and(ch, 2147483648) is not 0
+            pf: pf + 2
+        if x_and(ch, 536870912) is not 0
+            pf: pf + 1
+        ext: vs
+        if rs > ext
+            ext: rs
+        x_perm_set(m, base + va, ext, pf)
+        i: i + 1
+    x_perm_set(m, base, hsz, 4)
     x86_bind_imports(m, base, imp_rva)
     # the command line, and a return address that means "all done"
     cmd: base + X_MEM - 65536
