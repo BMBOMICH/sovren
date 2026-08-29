@@ -9843,6 +9843,7 @@ x_fd h:
 # handle, then whether the thread has finished.
 
 x_thr_tbl: 0
+x_proc_exit: 0
 
 x_thr_slot:
     t: x_thr_tbl
@@ -9923,6 +9924,12 @@ x_win_call m which:
         x_setr(m, 0, X_HBASE + fd)
         return 1
     if str_eq(nm, "CloseHandle") is 1
+        if a1 is 2000
+            x_setr(m, 0, 1)
+            return 1
+        if a1 is 2001
+            x_setr(m, 0, 1)
+            return 1
         if a1 > 12
             sys_close(x_fd(a1))
         x_setr(m, 0, 1)
@@ -10104,6 +10111,71 @@ x_win_call m which:
         poke_i64(m, 208, x_lo(a1))
         poke_i64(m, 168, X_EXITED)
         return 0
+    if str_eq(nm, "CreateProcessA") is 1
+        pth: as text ""
+        if a1 is not 0
+            pth: x_cstr(m, a1)
+        if str_len(pth) is 0
+            if a2 is not 0
+                pth: x_cstr(m, a2)
+        n: str_len(pth)
+        hp: mem_new(n + 1)
+        i: 0
+        as long as i < n
+            b: peek_byte(pth, i)
+            if b is 92
+                b: 47
+            poke_byte(hp, i, b)
+            i: i + 1
+        poke_byte(hp, n, 0)
+        cmd: as text ""
+        if a2 is not 0
+            cmd: x_cstr(m, a2)
+        m2: x86_new()
+        if x86_load(m2, as text hp) is 0
+            x_setr(m, 0, 0)
+            return 1
+        if str_len(cmd) > 0
+            x_set_cmdline(m2, cmd)
+        x86_run_for(m2, 500000000)
+        x_proc_exit: peek_i64(m2, 208)
+        co: peek_i64(m2, 192)
+        cn: peek_i64(m2, 200)
+        po: peek_i64(m, 192)
+        pn: peek_i64(m, 200)
+        i: 0
+        as long as i < cn
+            if pn < X_OUT - 2
+                poke_byte(po, pn, peek_byte(co, i))
+                pn: pn + 1
+            i: i + 1
+        poke_byte(po, pn, 0)
+        poke_i64(m, 200, pn)
+        ce: peek_i64(m2, 296)
+        en: peek_i64(m2, 304)
+        pe: peek_i64(m, 296)
+        pn2: peek_i64(m, 304)
+        i: 0
+        as long as i < en
+            if pn2 < X_OUT - 2
+                poke_byte(pe, pn2, peek_byte(ce, i))
+                pn2: pn2 + 1
+            i: i + 1
+        poke_byte(pe, pn2, 0)
+        poke_i64(m, 304, pn2)
+        pi: x_r64(m, x_add(sp, 80))
+        if pi is not 0
+            x_w64(m, pi, 2000)
+            x_w64(m, x_add(pi, 8), 2001)
+            x_w32(m, x_add(pi, 16), 1)
+            x_w32(m, x_add(pi, 20), 1)
+        x_setr(m, 0, 1)
+        return 1
+    if str_eq(nm, "GetExitCodeProcess") is 1
+        if a2 is not 0
+            x_w32(m, a2, x_proc_exit)
+        x_setr(m, 0, 1)
+        return 1
     # a name nobody taught it: say nothing happened, note it, carry on
     x_note_missing(m, nm)
     x_setr(m, 0, 0)
@@ -10972,3 +11044,4 @@ x86_reason m:
     if w is 8
         return "it ran a page it may not execute"
     return "still running"
+turn "still running"

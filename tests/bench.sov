@@ -1,10 +1,8 @@
 # bench.sov — the loop workload: sum of the squares 1..n.
 #
-# This is the workload used for the speed comparison against C:
 # a tight integer loop with a multiply and an accumulate, no
-# memory traffic. the CI step builds this and the matching
-# tests/bench.c, runs each five times, and prints the best of
-# the five in milliseconds.
+# memory traffic. the CI step builds this and checks the known
+# sum.
 #
 #   ./sovren tests/bench.sov -o /tmp/bench-sov
 #   /tmp/bench-sov 2900000

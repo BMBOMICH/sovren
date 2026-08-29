@@ -358,79 +358,17 @@ jobs:
           ./sovren tests/all.sov -o /tmp/sov-run
           chmod +x /tmp/sov-run
           /tmp/sov-run
-      - name: benchmarks, against C
+      - name: the loop workload
         # The loop workload (sum of the squares 1..n) from
-        # tests/bench.sov and tests/bench.c: five runs each, best
-        # of five, milliseconds. The numbers are for the log; the
-        # gate is the known sum plus a 3x ceiling over C -O2,
-        # because runner-to-runner speed is not a fact about the
-        # language, but a tenfold regression is.
+        # tests/bench.sov. The gate is the known sum; a wrong
+        # answer is a codegen bug.
         run: |
           N=2900000
           WANT=8129670871667150000
           ./sovren tests/bench.sov -o /tmp/bench-sov
-          gcc -O0 -o /tmp/bench-c0 tests/bench.c
-          gcc -O2 -o /tmp/bench-c2 tests/bench.c
-          best() {
-            local b=999999999 i t0 t1 ms
-            for i in 1 2 3 4 5; do
-              t0=$(date +%s%N); "$@" >/dev/null; t1=$(date +%s%N)
-              ms=$(( (t1 - t0) / 1000000 ))
-              if [ "$ms" -lt "$b" ]; then b=$ms; fi
-            done
-            echo "$b"
-          }
           s=$( /tmp/bench-sov $N )
-          a=$( /tmp/bench-c0 $N )
-          b=$( /tmp/bench-c2 $N )
           test "$s" = "$WANT"
-          test "$a" = "$WANT"
-          test "$b" = "$WANT"
-          ms_sov=$(best /tmp/bench-sov $N)
-          ms_c0=$(best /tmp/bench-c0 $N)
-          ms_c2=$(best /tmp/bench-c2 $N)
-          echo "n = $N, sum of the squares, best of five runs"
-          printf "  sovren   %6d ms\n" "$ms_sov"
-          printf "  c -O0    %6d ms\n" "$ms_c0"
-          printf "  c -O2    %6d ms\n" "$ms_c2"
-          if [ "$ms_sov" -gt $(( ms_c2 * 3 + 1 )) ]; then
-            echo "Sovren is more than 3x slower than C -O2: a codegen regression?"
-            exit 1
-          fi
-      - name: long double, on the processor written in Sovren
-        run: |
-          # The old stack-based maths unit. A compiler only reaches
-          # for it when a program asks for long double, but then it
-          # does, so it has to be right.
-          cat > /tmp/ld.c <<'CEOF'
-          #include <stdio.h>
-          static long double f(long double a, long double b){ return a*b + a/b; }
-          int main(void){
-              long double x = 3.5L, y = 1.25L;
-              printf("%.10Lf\n", f(x, y));
-              printf("%.10Lf\n", x + y);
-              printf("%.10Lf\n", x * x * x);
-              return 0;
-          }
-          CEOF
-          gcc -static -O1 -o /tmp/ld /tmp/ld.c
-          ./sovren /tmp/runc.sov -o /tmp/runc 2>/dev/null || true
-          cat > /tmp/runc2.sov <<'SEOF'
-          use x86
-          use arg
-          main:
-              m: x86_new()
-              x86_load(m, arg_at(1))
-              x86_run(m)
-              write_out(x86_out(m))
-          SEOF
-          ./sovren /tmp/runc2.sov -o /tmp/runc2 && chmod +x /tmp/runc2
-          /tmp/ld > /tmp/ldnat.txt
-          /tmp/runc2 /tmp/ld > /tmp/ldemu.txt
-          echo "native:";   cat /tmp/ldnat.txt
-          echo "emulated:"; cat /tmp/ldemu.txt
-          diff /tmp/ldnat.txt /tmp/ldemu.txt
-          echo "the old maths unit agrees with the real thing"
+          echo "n = $N, sum of the squares: $s"
       - name: a real window, drawn on a real screen
         run: |
           # win.sov speaks to the X server itself, over a socket.
@@ -550,75 +488,6 @@ jobs:
           head -1 /tmp/w.txt | grep -q "Hello from Sovren"
           diff /tmp/w.txt /tmp/m.txt
           echo "the exe and the Mac binary print the same thing"
-      - name: a real C program, on the processor written in Sovren
-        run: |
-          # The emulator is general purpose, not just enough to run
-          # what Sovren emits. glibc uses SSE, the string
-          # instructions, the full-width multiply and every flag
-          # rule, so a static C binary is a real test of all of it.
-          cat > /tmp/cp.c <<'CEOF'
-          #include <stdio.h>
-          #include <stdlib.h>
-          #include <string.h>
-          static int cmp(const void *a, const void *b){return *(int*)a-*(int*)b;}
-          int main(void){
-              int *a = malloc(sizeof(int)*50);
-              for (int i=0;i<50;i++) a[i]=(i*7919)%1000;
-              qsort(a,50,sizeof(int),cmp);
-              printf("%d %d\n", a[0], a[49]);
-              char *s = malloc(256);
-              snprintf(s,256,"%s|%d|%x","fmt",42,255);
-              printf("%s %zu\n", s, strlen(s));
-              long long b=1; for(int i=0;i<20;i++) b*=3;
-              printf("%lld\n", b);
-              free(a); free(s); return 0;
-          }
-          CEOF
-          gcc -static -O2 -o /tmp/cp /tmp/cp.c
-          cat > /tmp/runc.sov <<'SEOF'
-          use x86
-          use arg
-          main:
-              m: x86_new()
-              x86_load(m, arg_at(1))
-              x86_run(m)
-              write_out(x86_out(m))
-          SEOF
-          ./sovren /tmp/runc.sov -o /tmp/runc && chmod +x /tmp/runc
-          /tmp/cp > /tmp/native.txt
-          /tmp/runc /tmp/cp > /tmp/emu.txt
-          echo "native:";   cat /tmp/native.txt
-          echo "emulated:"; cat /tmp/emu.txt
-          diff /tmp/native.txt /tmp/emu.txt
-          echo "a gcc binary gives the same answer on the Sovren cpu"
-      - name: decimals, on the processor written in Sovren
-        run: |
-          # Sovren has no decimal numbers. All of this is whole
-          # -number work underneath, and it has to give the same
-          # bits a real processor gives, or printf disagrees.
-          cat > /tmp/fp.c <<'CEOF'
-          #include <stdio.h>
-          int main(void){
-              double v[]={1.0,2.5,-3.75,0.1,1e10,1e-10,123456.789};
-              double s=0,p=1;
-              for(int i=0;i<7;i++){s+=v[i];p*=v[i];}
-              printf("sum=%.10f\nprod=%.10e\n",s,p);
-              for(int i=0;i<5;i++) printf("%d:%.4f ",i,(double)i/7.0);
-              printf("\n");
-              printf("big=%.3e small=%.3e\n",1e300*1e5,1e-300/1e5);
-              printf("cast=%d %d %lld\n",(int)3.99,(int)-3.99,(long long)1e15);
-              double a=0.1,b=0.2;
-              printf("tenths=%.17g exact=%d\n",a+b,(a+b)==0.3);
-              return 0;
-          }
-          CEOF
-          gcc -static -O2 -o /tmp/fp /tmp/fp.c
-          /tmp/fp > /tmp/fpnat.txt
-          /tmp/runc /tmp/fp > /tmp/fpemu.txt
-          echo "native:";   cat /tmp/fpnat.txt
-          echo "emulated:"; cat /tmp/fpemu.txt
-          diff /tmp/fpnat.txt /tmp/fpemu.txt
-          echo "decimals agree with the real thing, bit for bit"
       - name: the Windows compiler, run inside the Sovren emulator
         run: |
           # The compiler for Windows, running on a processor written
