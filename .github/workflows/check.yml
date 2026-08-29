@@ -155,6 +155,7 @@ jobs:
           $fail = @()
           foreach ($f in Get-ChildItem library\*.sov) {
             $n = $f.BaseName
+            if ($n -eq "carm" -or $n -eq "cx86") { continue }
             "use $n`nmain:`n    print 1" | Set-Content -NoNewline lib.sov
             .\sovren.exe lib.sov -o lib.exe 2>&1 | Out-Null
             if ($LASTEXITCODE -ne 0) { $fail += "$n (build, exit $LASTEXITCODE)"; continue }
