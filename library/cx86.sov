@@ -1973,14 +1973,16 @@ stmt line:
             if idx(names, s) > 0 - 1
                 expr(join(s, "()"))
                 return
+            # even if not in names, try to parse as zero-arg call
+            expr(join(s, "()"))
+            return
         # check if line starts with a function name (for paren-free calls as statements)
         sp: look(s, " ")
         if sp > 0
-            fname: strip(cut(s, 0, sp))
-            if idx(names, fname) > 0 - 1
-                # it's a function call, parse it as an expression
-                expr(s)
-                return
+            # it looks like a paren-free call, parse it as an expression
+            expr(s)
+            return
+        # not a function call, must be an error
         print "Error: bad line" : s
         print "line" : error_line
         saw_error: 1
