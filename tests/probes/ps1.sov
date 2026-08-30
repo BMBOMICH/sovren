@@ -4,12 +4,13 @@ use sys
 
 b: 0
 
-b: _sov_alloc(640)
-poke_i64(b, 8, 30)
-poke_i64(b, 16, 70)
-i: 1
-j: 2
-d: peek_i64(b, j * 8) - peek_i64(b, i * 8)
-print d
-d: peek_i64(b, i * 8) - peek_i64(b, j * 8)
-print d
+main:
+    b: _sov_alloc(640)
+    poke_i64(b, 8, 30)
+    poke_i64(b, 16, 70)
+    i: 1
+    j: 2
+    d: peek_i64(b, j * 8) - peek_i64(b, i * 8)
+    print d
+    d: peek_i64(b, i * 8) - peek_i64(b, j * 8)
+    print d

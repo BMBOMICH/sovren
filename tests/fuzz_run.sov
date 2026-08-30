@@ -1,10 +1,11 @@
 # fuzz_run.sov — run the Sovren-written fuzzer
 # check/fuzz.py is gone: this is its replacement, in Sovren.
 use fuzzlib
-fz_seed: 987654321
-bad: fz_run(300)
-if bad is 0
-    print "fuzz ok"
-if not
-    print "fuzz FAILED"
-    print bad
+main:
+    fz_seed: 987654321
+    bad: fz_run(300)
+    if bad is 0
+        print "fuzz ok"
+    if not
+        print "fuzz FAILED"
+        print bad

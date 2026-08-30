@@ -7,7 +7,8 @@
 #
 # line attribution: each recorded line owns the code from its start
 # offset up to the next recorded start. code that sits outside every
-# window (a called function body, emitted after the body code) = # attributed by walking the guest stack: the deepest return address
+# window (a called function body, emitted after the body code) is
+# attributed by walking the guest stack: the deepest return address
 # whose call sits in a window names the line that called it.
 
 use x86
@@ -16,143 +17,144 @@ use string
 use sys
 use tool
 
-if argument_count < 2
-    print "Usage: sovren <file.sov> --debug [--interactive]"
-    stop
-src: as text peek_ptr argument_list, 1
-interactive: 0
-if argument_count > 2
-    a2: as text peek_ptr argument_list, 2
-    if string_equal a2, "--debug" = 1
-        if argument_count > 3
-            if string_equal as text peek_ptr argument_list, 3, "--interactive" = 1
+main argc argv:
+    if argc < 2
+        print "Usage: sovren <file.sov> --debug [--interactive]"
+        stop
+    src: as text peek_ptr(argv, 1)
+    interactive: 0
+    if argc > 2
+        a2: as text peek_ptr(argv, 2)
+        if str_eq(a2, "--debug") is 1
+            if argc > 3
+                if str_eq(as text peek_ptr(argv, 3), "--interactive") is 1
+                    interactive: 1
+        if not
+            if str_eq(a2, "--interactive") is 1
                 interactive: 1
-    if not
-        if string_equal a2, "--interactive" = 1
-            interactive: 1
-me: as text peek_ptr argument_list, 0
-root: dir_of me
-cc: string_join root, "/compilers/linux/compiler"
-out: "/tmp/sov-dbg.out"
-args: heap_list_new 
-args: heap_list_add args, src
-args: heap_list_add args, "--debug"
-args: heap_list_add args, "-o"
-args: heap_list_add args, out
-msg: as text tool_outv cc, args
-if string_has msg, "Error" = 1
-    print msg
-    stop
-map: file_read_all string_join out, ".map"
-if map = 0
-    print "Error: no map - did the build fail?"
-    stop
-# the map header carries src_base for humans; the recorded line
-# numbers are already the guest's own lines, so it = unused here
-srcd: file_read_all src
-if srcd = 0
-    print "Error: cannot re-read the source"
-    stop
-m: x86_new 
-if x86_load m, out = 0
-    print "Error: could not load the build"
-    stop
-last: 0 - 1
-going: 1
-as long as going = 1
-    # one step = a block of machine code, not one instruction,
-    # so keep the stride tiny or a line = missed between stops.
-    # a run that only hits its stride limit reports "too long";
-    # that = not a real stop, so clear it and carry on.
-    x86_run_for m, 2
-    why: x86_why m
-    if why = 3
-        x86_state_w m, 168, 0
-        why: 0
-    ln: line_at m, map, x_rip m - x_low m
-    if ln = not last
-        if ln > 0 - 1
-            last: ln
-            print string_join string_join "L", n2t ln, ": "
-            print line_of srcd, ln
-            if interactive = 1
-                c: read_key 
-                if c = 113
-                    print "(quit)"
-                    stop
-    if why = not 0
-        going: 0
-print string_join string_join "(stopped: ", x86_reason m, ")"
-o: x86_out m
-if string_empty o = 0
-    print "(output)"
-    print o
-return 0
+    me: as text peek_ptr(argv, 0)
+    root: dir_of(me)
+    cc: str_cat(root, "/compilers/linux/compiler")
+    out: "/tmp/sov-dbg.out"
+    args: _sov_list_new()
+    args: _sov_list_add(args, src)
+    args: _sov_list_add(args, "--debug")
+    args: _sov_list_add(args, "-o")
+    args: _sov_list_add(args, out)
+    msg: as text tool_outv(cc, args)
+    if str_has(msg, "Error") is 1
+        print msg
+        stop
+    map: file_read_all(str_cat(out, ".map"))
+    if map is 0
+        print "Error: no map - did the build fail?"
+        stop
+    # the map header carries src_base for humans; the recorded line
+    # numbers are already the guest's own lines, so it is unused here
+    srcd: file_read_all(src)
+    if srcd is 0
+        print "Error: cannot re-read the source"
+        stop
+    m: x86_new()
+    if x86_load(m, out) is 0
+        print "Error: could not load the build"
+        stop
+    last: 0 - 1
+    going: 1
+    as long as going is 1
+        # one step is a block of machine code, not one instruction,
+        # so keep the stride tiny or a line is missed between stops.
+        # a run that only hits its stride limit reports "too long";
+        # that is not a real stop, so clear it and carry on.
+        x86_run_for(m, 2)
+        why: x86_why(m)
+        if why is 3
+            x86_state_w(m, 168, 0)
+            why: 0
+        ln: line_at(m, map, x_rip(m) - x_low(m))
+        if ln is not last
+            if ln > 0 - 1
+                last: ln
+                print str_cat(str_cat("L", n2t(ln)), ": ")
+                print line_of(srcd, ln)
+                if interactive is 1
+                    c: read_key()
+                    if c is 113
+                        print "(quit)"
+                        stop
+        if why is not 0
+            going: 0
+    print str_cat(str_cat("(stopped: ", x86_reason(m)), ")")
+    o: x86_out(m)
+    if str_empty(o) is 0
+        print "(output)"
+        print o
+    return 0
 
 # the line that owns off: the first recorded start at or before off
 # whose window (up to the next recorded start strictly after it)
-# contains it. a window with no next start = open-ended: the code
-# after the last line = either that line's own tail (the exit
+# contains it. a window with no next start is open-ended: the code
+# after the last line is either that line's own tail (the exit
 # sequence) or a called function body emitted after the body code,
 # so an open hit first asks the guest stack - the deepest return
 # address whose call sits in a window names the line that called
 # it - and only when the stack shows no such caller does the open
 # window win.
-line_at m, map, off
-    lns: lines_of map
-    n: heap_list_length lns
+line_at m map off:
+    lns: lines_of(map)
+    n: _sov_list_len(lns)
     i: 0
     as long as i < n
-        t: heap_list_get lns, i
-        if string_starts t, "# " = 0
-            sp: string_find t, " "
+        t: _sov_list_get(lns, i)
+        if str_starts(t, "# ") is 0
+            sp: str_find(t, " ")
             if sp > 0 - 1
-                pc: string_to_number string_slice t, 0, sp
-                ln: string_to_number string_slice t, sp + 1, string_length t
+                pc: str_num(str_cut(t, 0, sp))
+                ln: str_num(str_cut(t, sp + 1, str_len(t)))
                 if off >= pc
                     end: 0
                     open: 1
                     j: 0
                     as long as j < n
-                        u: heap_list_get lns, j
-                        if string_starts u, "# " = 0
-                            s2: string_find u, " "
+                        u: _sov_list_get(lns, j)
+                        if str_starts(u, "# ") is 0
+                            s2: str_find(u, " ")
                             if s2 > 0 - 1
-                                p2: string_to_number string_slice u, 0, s2
+                                p2: str_num(str_cut(u, 0, s2))
                                 if p2 > pc
-                                    if open = 1
+                                    if open is 1
                                         end: p2
                                         open: 0
                                     if not
                                         if p2 < end
                                             end: p2
                         j: j + 1
-                    if open = 0
+                    if open is 0
                         if off < end
                             return ln
                     if not
-                        sln: stack_ln m, map
+                        sln: stack_ln(m, map)
                         if sln > 0 - 1
                             return sln
                         return ln
         i: i + 1
     return 0 - 1
 
-# the guest stack decides what an open-ended region = doing: the
+# the guest stack decides what an open-ended region is doing: the
 # deepest return address whose call sits in a window names its line.
-# the byte before a return address = the last byte of the call.
-stack_ln m, map
-    sp0: x_sp m
+# the byte before a return address is the last byte of the call.
+stack_ln m map:
+    sp0: x_sp(m)
     k: 0
     as long as k < 24
         va: sp0 + k * 8
-        ra: x86_peek_q m, va
-        ro: ra - x_low m
+        ra: x86_peek_q(m, va)
+        ro: ra - x_low(m)
         if ro > 255
             if ro < 262144
-                ln: window_ln map, ro - 1
-                if ln = 0 - 1
-                    ln: window_ln map, ro
+                ln: window_ln(map, ro - 1)
+                if ln is 0 - 1
+                    ln: window_ln(map, ro)
                 if ln > 0 - 1
                     return ln
         k: k + 1
@@ -160,102 +162,103 @@ stack_ln m, map
 
 # a window lookup for a stack address: the first recorded start at
 # or before off whose window contains it. only closed windows count
-# - a start with no later start owns everything after it, which = # too wide a claim for a return address pulled out of the stack
+# - a start with no later start owns everything after it, which is
+# too wide a claim for a return address pulled out of the stack
 # (the startup stack holds argv/auxv garbage, and small auxv values
 # can fall in that tail region).
-window_ln map, off
-    lns: lines_of map
-    n: heap_list_length lns
+window_ln map off:
+    lns: lines_of(map)
+    n: _sov_list_len(lns)
     i: 0
     as long as i < n
-        t: heap_list_get lns, i
-        if string_starts t, "# " = 0
-            sp: string_find t, " "
+        t: _sov_list_get(lns, i)
+        if str_starts(t, "# ") is 0
+            sp: str_find(t, " ")
             if sp > 0 - 1
-                pc: string_to_number string_slice t, 0, sp
-                ln: string_to_number string_slice t, sp + 1, string_length t
+                pc: str_num(str_cut(t, 0, sp))
+                ln: str_num(str_cut(t, sp + 1, str_len(t)))
                 if off >= pc
                     end: 0
                     j: 0
                     as long as j < n
-                        u: heap_list_get lns, j
-                        if string_starts u, "# " = 0
-                            s2: string_find u, " "
+                        u: _sov_list_get(lns, j)
+                        if str_starts(u, "# ") is 0
+                            s2: str_find(u, " ")
                             if s2 > 0 - 1
-                                p2: string_to_number string_slice u, 0, s2
+                                p2: str_num(str_cut(u, 0, s2))
                                 if p2 > pc
-                                    if end = 0
+                                    if end is 0
                                         end: p2
                                     if not
                                         if p2 < end
                                             end: p2
                         j: j + 1
-                    if end = not 0
+                    if end is not 0
                         if off < end
                             return ln
         i: i + 1
     return 0 - 1
 
 # the folder a path lives in, or "." when it has no slash
-dir_of p
-    n: string_length p
+dir_of p:
+    n: str_len(p)
     found: 0 - 1
     i: n - 1
     going: 1
     as long as i > 0 - 1
-        if going = 1
-            if string_byte p, i = 47
+        if going is 1
+            if str_at(p, i) is 47
                 found: i
                 going: 0
         i: i - 1
     if found > 0 - 1
-        if found = 0
+        if found is 0
             return "/"
-        return string_slice p, 0, found
+        return str_cut(p, 0, found)
     return "."
 
 # split on newlines into a list
-lines_of s
-    lst: heap_list_new 
+lines_of s:
+    lst: _sov_list_new()
     start: 0
     i: 0
-    n: string_length s
+    n: str_len(s)
     as long as i < n
-        if string_byte s, i = 10
-            lst: heap_list_add lst, string_slice s, start, i
+        if str_at(s, i) is 10
+            lst: _sov_list_add(lst, str_cut(s, start, i))
             start: i + 1
         i: i + 1
     if start < n
-        lst: heap_list_add lst, string_slice s, start, n
+        lst: _sov_list_add(lst, str_cut(s, start, n))
     return lst
 
 # the kth line of a source text, blanks trimmed
-line_of s, k
-    lns: lines_of s
+line_of s k:
+    lns: lines_of(s)
     i: 0
-    as long as i < heap_list_length lns
-        t: heap_list_get lns, i
-        if i = k - 1
-            return string_trim t
+    as long as i < _sov_list_len(lns)
+        t: _sov_list_get(lns, i)
+        if i is k - 1
+            return str_trim(t)
         i: i + 1
     return ""
 
-# an integer as text; the core string library has no number_to_text
-n2t v
+# an integer as text; the core string library has no num_text
+n2t v:
     dig: "0123456789"
     st: ""
     sg: 1
-    as long as sg = 1
-        st: string_join string_slice dig, v % 10, v % 10 + 1, st
+    as long as sg is 1
+        st: str_cat(str_cut(dig, v % 10, v % 10 + 1), st)
         v: v / 10
-        if v = 0
+        if v is 0
             sg: 0
     return st
 
-# one byte from the keyboard; 0 when there = none
-read_key
-    b: heap_alloc 2
-    n: sys_read 0, b, 1
+# one byte from the keyboard; 0 when there is none
+read_key:
+    b: _sov_alloc(2)
+    n: sys_read(0, b, 1)
     if n < 1
         return 0
-    return peek_byte b, 0
+    return peek_byte(b, 0)

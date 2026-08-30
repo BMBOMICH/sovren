@@ -25,5 +25,6 @@ w:
     r: r + peek_i64(b, i * 8)
     return r
 
-b: _sov_alloc(640)
-print w()
+main:
+    b: _sov_alloc(640)
+    print w()

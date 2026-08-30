@@ -34,8 +34,6 @@ wa_ready: 0
 # twelfth is LoadLibraryA and the thirteenth is GetProcAddress.
 wa_init:
     if wa_ready is 1
-        if wa_loadlib is 0
-            return 0
         return 1
     wa_ready: 1
     base: wa_image_base()
@@ -59,18 +57,11 @@ wa_init:
         return 0
     return 1
 
-# Where this program was loaded. The windows compiler replaces
-# _sov_image_base with a PEB read, which is right under ASLR.
-# 4194304 is the ImageBase the header asks for, used when that
-# helper is not there.
-_sov_image_base:
-    return 0
-
-_sov_ccall fn argv:
-    return 0
-
+# Where this program was loaded. The compiler always asks for the
+# same address and the exe says it cannot be moved, so this is
+# known rather than looked up.
 wa_image_base:
-    return _sov_image_base()
+    return 4194304
 
 # These read the program's own memory at a fixed address, which is
 # not the same as reading inside a piece of memory it was given.
@@ -85,36 +76,11 @@ peek_u16 p off:
 dll_ok:
     return wa_init()
 
-# one argument block for _sov_ccall. That is the Windows calling
-# convention the compiler actually emits. cfunc is not used here:
-# a zero return is a real Windows answer (the window did not open,
-# the message loop ended) and must not be treated as a failed call.
-wa_pack a b c d e:
-    av: mem_new(96)
-    poke_i64(av, 0, a)
-    poke_i64(av, 8, b)
-    poke_i64(av, 16, c)
-    poke_i64(av, 24, d)
-    poke_i64(av, 32, e)
-    poke_i64(av, 40, 0)
-    poke_i64(av, 48, 0)
-    poke_i64(av, 56, 0)
-    poke_i64(av, 64, 0)
-    poke_i64(av, 72, 0)
-    poke_i64(av, 80, 0)
-    poke_i64(av, 88, 0)
-    return av
-
-wa_call f a b c d e:
-    if f is 0
-        return 0
-    return _sov_ccall(f, wa_pack(a, b, c, d, e))
-
 # open a library by name, or nought when it is not there
 dll_open name:
     if wa_init() is 0
         return 0
-    return wa_call(wa_loadlib, name, 0, 0, 0, 0)
+    return cfunc(wa_loadlib, name, 0, 0, 0, 0, 0)
 
 # find something inside one
 dll_find lib name:
@@ -122,28 +88,25 @@ dll_find lib name:
         return 0
     if wa_init() is 0
         return 0
-    return wa_call(wa_getproc, lib, name, 0, 0, 0)
+    return cfunc(wa_getproc, lib, name, 0, 0, 0, 0)
 
 # call it, with up to six values
 wincall f a b c d e:
-    return wa_call(f, a, b, c, d, e)
-
-wincall0 f:
-    return wa_call(f, 0, 0, 0, 0, 0)
-
-wincall1 f a:
-    return wa_call(f, a, 0, 0, 0, 0)
-
-wincall2 f a b:
-    return wa_call(f, a, b, 0, 0, 0)
-
-wincall3 f a b c:
-    return wa_call(f, a, b, c, 0, 0)
-
-wincall4 f a b c d:
-    return wa_call(f, a, b, c, d, 0)
-
-wincall12 f argv:
     if f is 0
         return 0
-    return _sov_ccall(f, argv)
+    return cfunc(f, a, b, c, d, e, 0)
+
+wincall0 f:
+    return cfunc(f, 0, 0, 0, 0, 0, 0)
+
+wincall1 f a:
+    return cfunc(f, a, 0, 0, 0, 0, 0)
+
+wincall2 f a b:
+    return cfunc(f, a, b, 0, 0, 0, 0)
+
+wincall3 f a b c:
+    return cfunc(f, a, b, c, 0, 0, 0)
+
+wincall4 f a b c d:
+    return cfunc(f, a, b, c, d, 0, 0)

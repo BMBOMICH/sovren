@@ -1,25 +1,26 @@
 # signed extremes: INT64_MIN / INT64_MAX through the arm
-arr: _sov_alloc(8000)
-r: 6
-poke_raw64(arr, r * 8, 0 - 9223372036854775808)
-v: 0
-if v < peek_raw64(arr, r * 8)
-    print 701
-if not
-    print 702
-v: 0 - 9223372036854775808
-if v < peek_raw64(arr, r * 8)
-    print 703
-if not
-    print 704
-v: 0
-if peek_raw64(arr, r * 8) < v
-    print 705
-if not
-    print 706
-poke_raw64(arr, r * 8, 9223372036854775807)
-v: 0 - 1
-if v < peek_raw64(arr, r * 8)
-    print 707
-if not
-    print 708
+main:
+    arr: _sov_alloc(8000)
+    r: 6
+    poke_raw64(arr, r * 8, 0 - 9223372036854775808)
+    v: 0
+    if v < peek_raw64(arr, r * 8)
+        print 701
+    if not
+        print 702
+    v: 0 - 9223372036854775808
+    if v < peek_raw64(arr, r * 8)
+        print 703
+    if not
+        print 704
+    v: 0
+    if peek_raw64(arr, r * 8) < v
+        print 705
+    if not
+        print 706
+    poke_raw64(arr, r * 8, 9223372036854775807)
+    v: 0 - 1
+    if v < peek_raw64(arr, r * 8)
+        print 707
+    if not
+        print 708

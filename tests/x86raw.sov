@@ -26,59 +26,60 @@ use sys
 X_START: 4194304
 X_STACK: 6291456
 
-p: arg_at(1)
-if str_len(p) is 0
-    print "Usage: x86raw <case.bin>"
-    sys_exit(1)
-d: file_read_all(p)
-if d is 0
-    print "cannot read that"
-    sys_exit(1)
+main:
+    p: arg_at(1)
+    if str_len(p) is 0
+        print "Usage: x86raw <case.bin>"
+        sys_exit(1)
+    d: file_read_all(p)
+    if d is 0
+        print "cannot read that"
+        sys_exit(1)
 
-m: x86_new()
-# a flat block with nothing in it, starting where the case says
-poke_i64(m, 216, X_START)
-x_rebase(m)
-poke_i64(m, 240, X_LINUX)
+    m: x86_new()
+    # a flat block with nothing in it, starting where the case says
+    poke_i64(m, 216, X_START)
+    x_rebase(m)
+    poke_i64(m, 240, X_LINUX)
 
-# the registers the case starts from
-i: 0
-as long as i < 16
-    x_setr(m, i, peek_i64(d, i * 8))
-    i: i + 1
+    # the registers the case starts from
+    i: 0
+    as long as i < 16
+        x_setr(m, i, peek_i64(d, i * 8))
+        i: i + 1
 
-# the scratch is filled with 1..128 so the string instructions
-# have something to copy and compare
-i: 0
-as long as i < 128
-    x_w8(m, X_STACK + i, i + 1)
-    i: i + 1
+    # the scratch is filled with 1..128 so the string instructions
+    # have something to copy and compare
+    i: 0
+    as long as i < 128
+        x_w8(m, X_STACK + i, i + 1)
+        i: i + 1
 
-# the instruction bytes go at the start
-n: peek_byte(d, 128) + peek_byte(d, 129) * 256
-i: 0
-as long as i < n
-    x_w8(m, X_START + i, peek_byte(d, 130 + i))
-    i: i + 1
-# a halt the emulator understands, right after them
-x_w8(m, X_START + n, 244)
+    # the instruction bytes go at the start
+    n: peek_byte(d, 128) + peek_byte(d, 129) * 256
+    i: 0
+    as long as i < n
+        x_w8(m, X_START + i, peek_byte(d, 130 + i))
+        i: i + 1
+    # a halt the emulator understands, right after them
+    x_w8(m, X_START + n, 244)
 
-x_set_rip(m, X_START)
-x86_run_for(m, 200)
+    x_set_rip(m, X_START)
+    x86_run_for(m, 200)
 
-# every register, then every flag
-i: 0
-as long as i < 16
-    print num_text(x_reg(m, i))
-    i: i + 1
-print num_text(x_zf(m))
-print num_text(x_sf(m))
-print num_text(x_cf(m))
-print num_text(x_of(m))
-# and the memory the case set aside, so stores can be checked
-i: 0
-as long as i < 16
-    print num_text(x_r64(m, X_STACK + i * 8))
-    i: i + 1
-print x86_reason(m)
-sys_exit(0)
+    # every register, then every flag
+    i: 0
+    as long as i < 16
+        print num_text(x_reg(m, i))
+        i: i + 1
+    print num_text(x_zf(m))
+    print num_text(x_sf(m))
+    print num_text(x_cf(m))
+    print num_text(x_of(m))
+    # and the memory the case set aside, so stores can be checked
+    i: 0
+    as long as i < 16
+        print num_text(x_r64(m, X_STACK + i * 8))
+        i: i + 1
+    print x86_reason(m)
+    sys_exit(0)

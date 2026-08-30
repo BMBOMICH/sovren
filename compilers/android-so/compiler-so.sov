@@ -1,130 +1,129 @@
 use carm
-do_wait_for_thread:
-    wait_for_thread
+stmt_join_op:
+    calln("_sov_thread_join")
     return 0
 
-# the .so image = fixed-base (no slide walk): the walk call
+# the .so image is fixed-base (no slide walk): the walk call
 # sites are pie_walk-gated and never fire, but the task
 # reference must exist - a no-op, the same way ios defines its own
 emit_walk:
     return
-fold_fib_name: 0
-used_guard: 0
-skip_fib: 0
-frame_holes: 0
-frame_open: 0
-code: 0
-letters: 0
-letter_keys: 0
-letters_at: 0
-task_names: 0
-at_top: 0
-task_at: 0
-global_names: 0
+fib_nm: 0
+can_used: 0
+fib_drop: 0
+fw_pos: 0
+fw_on: 0
+oc: 0
+strb: 0
+str_keys: 0
+str_pos: 0
+fn_names: 0
+fn_offs: 0
+glob_names: 0
 patch_at: 0
 patch_kind: 0
-patch_value: 0
+patch_val: 0
 patch_line: 0
-local_names: 0
-first_user_line: 0
-saw_error: 0
-try_depth: 0
-inside_if: 0
-no_runtime: 0
-line_of_stmt: 0
-line_of_body: 0
-line_of_task: 0
-user_tasks: 0
+locals: 0
+src_base: 0
+had_err: 0
+ex_depth: 0
+br_depth: 0
+bare_mode: 0
+stmt_lns: 0
+body_lns: 0
+task_lns: 0
+task_user: 0
 names: 0
-load_at: 4194304
-header_size: 232
-folded_number: 0
-folded_from: 0
-bump_ptr: 0
-bump_end: 0
-heap_size: 1073741824
-libraries: blank
-error_line: 0
-file_name: blank
-known_name: blank
-known_value: 0
-frame_at: 0
-dead_alloc_name: blank
-used_alloc: 0
-compiler_folder: 0
-used_text_length: 0
-used_texts_equal: 0
-used_print: 0
-used_print_number: 0
-used_fill: 0
-tiny_program: 0
-needs_heap: 0
-needs_private: 0
-used_crash: 0
-const_names: 0
-const_values: 0
-const_dirty: 0
-letter_boxes: 0
-letter_tasks: 0
-array_names: 0
-array_count: 0
-saw_letters: 0
+BASE: 4194304
+HDR: 232
+opt_imm: 0
+opt_src: 0
+iota_ptr: 0
+iota_lim: 0
+mmap_sz: 1073741824
+used_libs: blank
+err_line: 0
+src_name: blank
+kn: blank
+kv: 0
+pro_at: 0
+skip_al: blank
+used_al: 0
+self_dir: 0
+used_sl: 0
+used_eq: 0
+used_pr: 0
+used_pi: 0
+did_stos: 0
+thin_main: 0
+has_vm: 0
+need_priv: 0
+used_tr: 0
+cnms: 0
+cvls: 0
+cemt: 0
+str_vars: 0
+str_fns: 0
+ar_names: 0
+ar_cnt: 0
+saw_str: 0
 rax_str s:
     at: here()
     movz_x(0, 0, 0)
     movk_x(0, 0, 1)
     movk_x(0, 0, 2)
-    later_fill(at, "str64x0", intern(s))
-set_up_call name how_many already_set:
-    if how_many = 1
-        take_from_stack
+    addp(at, "str64x0", intern(s))
+call_args name argc:
+    if argc is 1
+        pop_rax()
         mov_reg(0, 0)
     if not
-        if how_many = 2
+        if argc is 2
             pop_reg(1)
-            take_from_stack
+            pop_rax()
         if not
-            if how_many = 3
+            if argc is 3
                 pop_reg(2)
                 pop_reg(1)
-                take_from_stack
+                pop_rax()
             if not
-                if how_many = 4
+                if argc is 4
                     pop_reg(3)
                     pop_reg(2)
                     pop_reg(1)
-                    take_from_stack
+                    pop_rax()
                 if not
-                    if how_many = 5
+                    if argc is 5
                         pop_reg(4)
                         pop_reg(3)
                         pop_reg(2)
                         pop_reg(1)
-                        take_from_stack
+                        pop_rax()
                     if not
-                        if how_many = 6
+                        if argc is 6
                             pop_reg(5)
                             pop_reg(4)
                             pop_reg(3)
                             pop_reg(2)
                             pop_reg(1)
-                            take_from_stack
+                            pop_rax()
                         if not
-                            if how_many = 7
+                            if argc is 7
                                 pop_reg(6)
                                 pop_reg(5)
                                 pop_reg(4)
                                 pop_reg(3)
                                 pop_reg(2)
                                 pop_reg(1)
-                                take_from_stack
-    if same(name, "_sov_alloc") = 1
-        used_alloc: 1
-    if same(name, "_sov_strlen") = 1
-        used_text_length: 1
-    if same(name, "_sov_str_eq") = 1
-        used_texts_equal: 1
-    if same(name, "cfunc") = 1
+                                pop_rax()
+    if same(name, "_sov_alloc") is 1
+        used_al: 1
+    if same(name, "_sov_strlen") is 1
+        used_sl: 1
+    if same(name, "_sov_str_eq") is 1
+        used_eq: 1
+    if same(name, "cfunc") is 1
         # x0 holds the address, x1..x6 the arguments. C wants the
         # arguments in x0..x5, so shift them down and call.
         mov_reg(9, 0)
@@ -136,7 +135,7 @@ set_up_call name how_many already_set:
         mov_reg(5, 6)
         emitw(3594453280)
         return
-    if same(name, "syscall") = 1
+    if same(name, "syscall") is 1
         # arm64 numbers its syscalls differently. the number in x0
         # goes through _sov_sysnum (a plain Sovren job in the
         # runtime) and the answer, in x0 again, becomes x8. The six
@@ -149,7 +148,7 @@ set_up_call name how_many already_set:
         push_reg(3)
         push_reg(2)
         push_reg(1)
-        call("_sov_sysnum")
+        calln("_sov_sysnum")
         mov_reg(8, 0)
         pop_reg(1)
         pop_reg(2)
@@ -163,90 +162,91 @@ set_up_call name how_many already_set:
         mov_reg(3, 4)
         mov_reg(4, 5)
         mov_reg(5, 6)
-        ask_kernel
+        sysc()
         return
-    if same(name, "hlt") = 1
+    if same(name, "hlt") is 1
         emitw(3573751935)
         return
-    if same(name, "cli") = 1
+    if same(name, "cli") is 1
         emitw(3573760735)
         return
-    if same(name, "sti") = 1
+    if same(name, "sti") is 1
         emitw(3573760767)
         return
-    if same(name, "peek_raw8") = 1
-        ldrb_x0_x0x1
+    if same(name, "peek_raw8") is 1
+        ldrb_x0_x0x1()
         return
-    if same(name, "peek_raw64") = 1
-        ldr_x0_x0x1
+    if same(name, "peek_raw64") is 1
+        ldr_x0_x0x1()
         return
-    if same(name, "poke_raw8") = 1
-        strb_x2_x0x1
+    if same(name, "poke_raw8") is 1
+        strb_x2_x0x1()
         return
-    if same(name, "poke_raw64") = 1
-        str_x2_x0x1
+    if same(name, "poke_raw64") is 1
+        str_x2_x0x1()
         return
-    if same(name, "peek_byte") = 1
+    if same(name, "peek_byte") is 1
         chk_mem(1)
-        ldrb_x0_x0x1
+        ldrb_x0_x0x1()
         return
-    if same(name, "peek_i64") = 1
+    if same(name, "peek_i64") is 1
         chk_mem(8)
-        ldr_x0_x0x1
+        ldr_x0_x0x1()
         return
-    if same(name, "peek_ptr") = 1
+    if same(name, "peek_ptr") is 1
         chk_mem(8)
-        ldr_x0_x0x1
+        ldr_x0_x0x1()
         return
-    if same(name, "poke_byte") = 1
+    if same(name, "poke_byte") is 1
         chk_mem(1)
-        strb_x2_x0x1
+        strb_x2_x0x1()
         return
-    if same(name, "poke_i64") = 1
+    if same(name, "poke_i64") is 1
         chk_mem(8)
-        str_x2_x0x1
+        str_x2_x0x1()
         return
-    if same(name, "stack_pointer") = 1
+    if same(name, "sp") is 1
         # mov x0, sp: orr x0, xzr, sp (the shared runtime's thread
         # entry asks for the stack pointer; dead on machines without
         # threads, valid a64 either way)
         emitw(2854159328)
         return
-    call(name)
+    calln(name)
 stmt_so line:
     s: strip(line)
-    if length(s) = 0
+    if length(s) is 0
         return
-    if starts(s, "#") = 1
+    if starts(s, "#") is 1
         return
     s: compound(s)
     q: 0
     qi: 0
     as long as qi < length(s)
-        if _sov_byte_at(s, qi) = 92
+        if _sov_byte_at(s, qi) is 92
             qi: qi + 1
         if not
-            if _sov_byte_at(s, qi) = 34
+            if _sov_byte_at(s, qi) is 34
                 q: q + 1
         qi: qi + 1
     if q % 2 is not 0
-        print "Error: unterminated text" : s
-        print "line" : error_line
-        saw_error: 1
+        print "Error: unterminated text"
+        _sov_print(s)
+        print err_line
+        had_err: 1
         return
     if length(s) > 1000
         print "Error: line too long, split it up"
-        print "line" : error_line
-        saw_error: 1
+        print err_line
+        had_err: 1
         return
-    if starts(s, "use ") = 1
+    if starts(s, "use ") is 1
         return
-    if same(s, "private") = 1
+    if same(s, "private") is 1
         return
-    if starts(s, "wipe ") = 1
+    if starts(s, "wipe ") is 1
         expr(strip(cut(s, 5, length(s))))
-        mov_rdi_rax
-        test_rax
+        mov_rdi_rax()
+        test_rax()
         wsk: jz()
         wtop: here()
         emitw(960495650)
@@ -261,37 +261,37 @@ stmt_so line:
         put_here(wend)
         patch(wsk)
         return
-    if starts(s, "join ") = 1
+    if starts(s, "join ") is 1
         # this file carries its own statement dispatcher, so the join
         # arm needs it here too, not only in carm: evaluate the
         # handle, wait for nothing. spawn answers -1 on this machine
         expr(strip(cut(s, 5, length(s))))
         return
-    if starts(s, "print ") = 1
+    if starts(s, "print ") is 1
         arg: strip(cut(s, 6, length(s)))
-        if ends_times(arg) = 1
+        if ends_times(arg) is 1
             head: strip(cut(arg, 0, length(arg) - 6))
             sp: find_last_sp(head)
             if sp > 0 - 1
                 do_print_times(strip(cut(head, 0, sp)), strip(cut(head, sp + 1, length(head))))
                 return
         if length(arg) > 1
-            if _sov_byte_at(arg, 0) = 34
+            if _sov_byte_at(arg, 0) is 34
                 lit: unesc(cut(arg, 1, length(arg) - 1))
                 emit_write_lit(join(lit, "\n"))
                 return
-        if starts(arg, "peek_byte(") = 1
-            if folded_number > 0
-                emit_write_lit(i2s(folded_number))
+        if starts(arg, "peek_byte(") is 1
+            if opt_imm > 0
+                emit_write_lit(i2s(opt_imm))
                 return
         typ: expr(arg)
-        mov_rdi_rax
-        if typ = 1
-            used_print: 1
-            print_text
+        mov_rdi_rax()
+        if typ is 1
+            used_pr: 1
+            calln("_sov_print")
         if not
-            used_print_number: 1
-            print_number
+            used_pi: 1
+            calln("_sov_print_int")
         return
     had_col: 0
     col: find_col(s)
@@ -299,30 +299,31 @@ stmt_so line:
         if col < length(s) - 1
             had_col: 1
             s: join("<-- ", join(strip(cut(s, 0, col)), join(" := ", strip(cut(s, col + 1, length(s))))))
-    if starts(s, "<-- ") = 1
-        if had_col = 0
-            print "Error: bad line" : s
-            print "line" : error_line
-            saw_error: 1
+    if starts(s, "<-- ") is 1
+        if had_col is 0
+            print "Error: bad line"
+            _sov_print(s)
+            print err_line
+            had_err: 1
             return
         rest: cut(s, 4, length(s))
         t: find_sep(rest)
         if t > 0 - 1
             var: repl(strip(cut(rest, 0, t)), " ", "_")
             rhs: strip(cut(rest, t + 4, length(rest)))
-            if same(rhs, join(var, " + 1")) = 1
+            if same(rhs, join(var, " + 1")) is 1
                 inc_var(var)
                 return
-            if same(rhs, join(var, " - 1")) = 1
+            if same(rhs, join(var, " - 1")) is 1
                 dec_var(var)
                 return
             pref: join(var, " + ")
-            if starts(rhs, pref) = 1
+            if starts(rhs, pref) is 1
                 other: strip(cut(rhs, length(pref), length(rhs)))
                 if length(other) > 0
                     if look(other, "(") < 0
                         if look(other, " ") < 0
-                            if digit(letter(other, 0)) = 1
+                            if digit(letter(other, 0)) is 1
                                 add_imm(var, _sov_atoi(other))
                                 drop_str(var)
                                 return
@@ -330,12 +331,12 @@ stmt_so line:
                             drop_str(var)
                             return
             pref: join(var, " + ")
-            if starts(rhs, pref) = 1
+            if starts(rhs, pref) is 1
                 other: strip(cut(rhs, length(pref), length(rhs)))
                 if length(other) > 0
                     if look(other, "(") < 0
                         if look(other, " ") < 0
-                            if digit(letter(other, 0)) = 1
+                            if digit(letter(other, 0)) is 1
                                 add_imm(var, _sov_atoi(other))
                                 drop_str(var)
                                 return
@@ -343,52 +344,53 @@ stmt_so line:
                             drop_str(var)
                             return
             if length(rhs) > 0
-                if digit(letter(rhs, 0)) = 1
+                if digit(letter(rhs, 0)) is 1
                     if look(rhs, " ") < 0
-                        if inside_if = 0
+                        if br_depth is 0
                             nv: _sov_atoi(rhs)
                             cset(var, nv)
                             if nv > 0
-                                known_name: var
-                                known_value: nv
+                                kn: var
+                                kv: nv
                             drop_str(var)
-                            if needs_heap = 0
+                            if has_vm is 0
                                 return
-            if try_alloc_imm(var, rhs) = 1
+            if try_alloc_imm(var, rhs) is 1
                 mark_str(var)
                 return
             typ: expr(rhs)
             storev(var)
-            if typ = 1
+            if typ is 1
                 mark_str(var)
             if not
                 drop_str(var)
-            if starts(rhs, "_sov_strlen(") = 1
-                if used_fill = 1
-                    if known_value > 0
-                        known_name: var
+            if starts(rhs, "_sov_strlen(") is 1
+                if did_stos is 1
+                    if kv > 0
+                        kn: var
         return
-    if same(s, "return") = 1
-        xor_rax_so
-        restore_frame
-        ret
+    if same(s, "return") is 1
+        xor_rax_so()
+        leave()
+        ret()
         return
-    if starts(s, "return ") = 1
+    if starts(s, "return ") is 1
         typ: expr(cut(s, 7, length(s)))
-        if typ = 1
-            saw_letters: 1
-        restore_frame
-        ret
+        if typ is 1
+            saw_str: 1
+        leave()
+        ret()
         return
-    if same(s, "stop") = 1
+    if same(s, "stop") is 1
         set_reg(0, 0)
         set_reg(8, sc_exit)
-        ask_kernel
+        sysc()
         return
     if look(s, "(") < 0
-        print "Error: bad line" : s
-        print "line" : error_line
-        saw_error: 1
+        print "Error: bad line"
+        _sov_print(s)
+        print err_line
+        had_err: 1
         return
     expr(s)
 so_body lines:
@@ -403,24 +405,24 @@ so_body lines:
     as long as i < n
         raw: _sov_list_get(lines, i)
         s: strip(raw)
-        error_line: i + 1
-        if _sov_list_len(line_of_stmt) > i
-            error_line: _sov_list_get(line_of_stmt, i)
+        err_line: i + 1
+        if _sov_list_len(stmt_lns) > i
+            err_line: _sov_list_get(stmt_lns, i)
         ind: nind(raw)
-        if length(s) = 0
+        if length(s) is 0
             i: i + 1
         if not
-            if starts(s, "#") = 1
+            if starts(s, "#") is 1
                 i: i + 1
             if not
                 isel: 0
-                if same(s, "if not") = 1
+                if same(s, "if not") is 1
                     isel: 1
-                if starts(s, "except") = 1
+                if starts(s, "except") is 1
                     isel: 1
                 popgo: 1
-                as long as popgo = 1
-                    if _sov_list_len(bk) = 0
+                as long as popgo is 1
+                    if _sov_list_len(bk) is 0
                         popgo: 0
                     if not
                         last: _sov_list_len(bk) - 1
@@ -428,25 +430,25 @@ so_body lines:
                             popgo: 0
                         if not
                             stay: 0
-                            if isel = 1
-                                if ind = _sov_list_get(bi, last)
-                                    if same(_sov_list_get(bk, last), "if") = 1
+                            if isel is 1
+                                if ind is _sov_list_get(bi, last)
+                                    if same(_sov_list_get(bk, last), "if") is 1
                                         stay: 1
-                                    if same(_sov_list_get(bk, last), "try") = 1
+                                    if same(_sov_list_get(bk, last), "try") is 1
                                         stay: 1
-                            if stay = 1
+                            if stay is 1
                                 popgo: 0
                             if not
-                                popblk
+                                popblk()
                 loop_ok: 0
-                if starts(s, "as long as ") = 1
+                if starts(s, "as long as ") is 1
                     s: join("while ", strip(cut(s, 11, length(s))))
                     loop_ok: 1
-                if starts(s, "if ") = 1
-                    if same(s, "if not") = 0
-                        if starts(s, "if not ") = 0
+                if starts(s, "if ") is 1
+                    if same(s, "if not") is 0
+                        if starts(s, "if not ") is 0
                             expr(cut(s, 3, length(s)))
-                            test_rax
+                            test_rax()
                             z: jz()
                             bk: _sov_list_add(bk, "if")
                             bi: _sov_list_add(bi, ind)
@@ -454,7 +456,7 @@ so_body lines:
                             bs: _sov_list_add(bs, 0)
                             be: _sov_list_add(be, _sov_list_new())
                             br: _sov_list_add(br, 0)
-                            inside_if: inside_if + 1
+                            br_depth: br_depth + 1
                         if not
                             stmt_so(s)
                     if not
@@ -468,7 +470,7 @@ so_body lines:
                             bk: _sov_list_set(bk, last, "else")
                             bj: _sov_list_set(bj, last, 0 - 1)
                 if not
-                    if same(s, "\x00__removed_and_if_not") = 1
+                    if same(s, "\x00__removed_and_if_not") is 1
                         last: _sov_list_len(bk) - 1
                         if last > 0 - 1
                             je: jmp()
@@ -479,17 +481,17 @@ so_body lines:
                             bk: _sov_list_set(bk, last, "else")
                             bj: _sov_list_set(bj, last, 0 - 1)
                     if not
-                        if starts(s, "do while ") = 1
+                        if starts(s, "do while ") is 1
                             bln: collect_body(lines, i + 1, ind)
-                            if try_opt_while(cut(s, 9, length(s)), bln) = 1
+                            if try_opt_while(cut(s, 9, length(s)), bln) is 1
                                 i: skip_body(lines, i + 1, ind)
                                 i: i - 1
                             if not
-                                cflush_all
+                                cflush_all()
                                 st: here()
                                 # emit_cmp_jge removed (always -1): general path
                                 expr(cut(s, 9, length(s)))
-                                test_rax
+                                test_rax()
                                 z: jz()
                                 bk: _sov_list_add(bk, "while")
                                 bi: _sov_list_add(bi, ind)
@@ -497,29 +499,29 @@ so_body lines:
                                 bs: _sov_list_add(bs, st)
                                 be: _sov_list_add(be, _sov_list_new())
                                 br: _sov_list_add(br, 0)
-                                inside_if: inside_if + 1
+                                br_depth: br_depth + 1
                         if not
-                            if loop_ok = 1
+                            if loop_ok is 1
                                 bln: collect_body(lines, i + 1, ind)
-                                if try_opt_while(cut(s, 6, length(s)), bln) = 1
+                                if try_opt_while(cut(s, 6, length(s)), bln) is 1
                                     i: skip_body(lines, i + 1, ind)
                                     i: i - 1
                                 if not
-                                    cflush_all
+                                    cflush_all()
                                     st: here()
                                     # emit_cmp_jge removed (always -1): general path
                                     expr(cut(s, 6, length(s)))
-                                    test_rax
+                                    test_rax()
                                     z: jz()
                                     bk: _sov_list_add(bk, "while")
                                     bi: _sov_list_add(bi, ind)
                                     bj: _sov_list_add(bj, z)
                                     bs: _sov_list_add(bs, st)
                                     be: _sov_list_add(be, _sov_list_new())
-                                          inside_if: inside_if + 1
+                                          br_depth: br_depth + 1
                               br: _sov_list_add(br, 0)
                             if not
-                                if same(s, "do forever") = 1
+                                if same(s, "do forever") is 1
                                     st: here()
                                     bk: _sov_list_add(bk, "forever")
                                     bi: _sov_list_add(bi, ind)
@@ -527,10 +529,10 @@ so_body lines:
                                     bs: _sov_list_add(bs, st)
                                     be: _sov_list_add(be, _sov_list_new())
                                     br: _sov_list_add(br, 0)
-                                    inside_if: inside_if + 1
+                                    br_depth: br_depth + 1
                                 if not
-                                    if starts(s, "\x00__removed_repeat ") = 1
-                                        cflush_all
+                                    if starts(s, "\x00__removed_repeat ") is 1
+                                        cflush_all()
                                         tmp: cut(s, 7, length(s))
                                         tp: look(tmp, " times")
                                         if tp > 0 - 1
@@ -539,19 +541,19 @@ so_body lines:
                                         cn: "__rep_c"
                                         inn: "__rep_i"
                                         storev(cn)
-                                        xor_rax_so
+                                        xor_rax_so()
                                         storev(inn)
-                                        rs: idx(local_names, inn)
-                                        cs: idx(local_names, cn)
+                                        rs: idx(locals, inn)
+                                        cs: idx(locals, cn)
                                         st: here()
                                         load_loc(rs)
-                                        push_rax
+                                        push_rax()
                                         load_loc(cs)
-                                        mov_rcx_rax
-                                        take_from_stack
-                                        cmp_rax_rcx
+                                        mov_rcx_rax()
+                                        pop_rax()
+                                        cmp_rax_rcx()
                                         setcc("lt")
-                                        test_rax
+                                        test_rax()
                                         z: jz()
                                         bk: _sov_list_add(bk, "repeat")
                                         bi: _sov_list_add(bi, ind)
@@ -559,14 +561,14 @@ so_body lines:
                                         bs: _sov_list_add(bs, st)
                                         be: _sov_list_add(be, _sov_list_new())
                                         br: _sov_list_add(br, rs)
-                                        inside_if: inside_if + 1
+                                        br_depth: br_depth + 1
                                     if not
-                                        if same(s, "try") = 1
-                                            cflush_all
-                                            if idx(global_names, "err_top") = 0 - 1
-                                                global_names: _sov_list_add(global_names, "err_top")
-                                            if idx(global_names, "err_val") = 0 - 1
-                                                global_names: _sov_list_add(global_names, "err_val")
+                                        if same(s, "try") is 1
+                                            cflush_all()
+                                            if idx(glob_names, "err_top") is 0 - 1
+                                                glob_names: _sov_list_add(glob_names, "err_top")
+                                            if idx(glob_names, "err_val") is 0 - 1
+                                                glob_names: _sov_list_add(glob_names, "err_val")
                                             # the frame: the error top, the frame
                                             # pointer, the stack, and where the handler
                                             # starts
@@ -586,23 +588,24 @@ so_body lines:
                                             bs: _sov_list_add(bs, 0)
                                             be: _sov_list_add(be, _sov_list_new())
                                             br: _sov_list_add(br, ta)
-                                            inside_if: inside_if + 1
+                                            br_depth: br_depth + 1
                                         if not
-                                            if starts(s, "except") = 1
+                                            if starts(s, "except") is 1
                                                 last: _sov_list_len(bk) - 1
                                                 if last > 0 - 1
-                                                    if same(_sov_list_get(bk, last), "try") = 1
+                                                    if same(_sov_list_get(bk, last), "try") is 1
                                                         ev: strip(cut(s, 6, length(s)))
                                                         # pass 68: a local may not share a global's name -
                                                         # the load/store ladders divert global-named names to
                                                         # the global until the moment a local appears, so the
-                                                        # one hole = an except name materialising a local
+                                                        # one hole is an except name materialising a local
                                                         # mid-function. refuse loudly.
-                                                        if idx(global_names, ev) > 0 - 1
-                                                            if idx(local_names, ev) < 0
-                                                                print "Error: the except name shadows a global" : ev
-                                                                print "line" : error_line
-                                                                saw_error: 1
+                                                        if idx(glob_names, ev) > 0 - 1
+                                                            if idx(locals, ev) < 0
+                                                                print "Error: the except name shadows a global"
+                                                                _sov_print(ev)
+                                                                print err_line
+                                                                had_err: 1
                                                         load_glob("err_top")
                                                         mov_reg(9, 0)
                                                         emitw(4181723424)
@@ -620,22 +623,24 @@ so_body lines:
                                                         bs: _sov_list_add(bs, 0)
                                                         be: _sov_list_add(be, _sov_list_new())
                                                         br: _sov_list_add(br, 0)
-                                                        inside_if: inside_if + 1
+                                                        br_depth: br_depth + 1
                                                     if not
-                                                        print "Error: except without try" : s
-                                                        print "line" : error_line
-                                                        saw_error: 1
+                                                        print "Error: except without try"
+                                                        _sov_print(s)
+                                                        print err_line
+                                                        had_err: 1
                                                 if not
-                                                    print "Error: except without try" : s
-                                                    print "line" : error_line
-                                                    saw_error: 1
+                                                    print "Error: except without try"
+                                                    _sov_print(s)
+                                                    print err_line
+                                                    had_err: 1
                                             if not
-                                                if starts(s, "raise ") = 1
+                                                if starts(s, "raise ") is 1
                                                     expr(cut(s, 6, length(s)))
-                                                    if idx(global_names, "err_val") = 0 - 1
-                                                        global_names: _sov_list_add(global_names, "err_val")
-                                                    if idx(global_names, "err_top") = 0 - 1
-                                                        global_names: _sov_list_add(global_names, "err_top")
+                                                    if idx(glob_names, "err_val") is 0 - 1
+                                                        glob_names: _sov_list_add(glob_names, "err_val")
+                                                    if idx(glob_names, "err_top") is 0 - 1
+                                                        glob_names: _sov_list_add(glob_names, "err_top")
                                                     store_glob("err_val")
                                                     load_glob("err_top")
                                                     # x10 keeps the frame: store_glob
@@ -659,64 +664,64 @@ so_body lines:
                                                     emitw(3592356160)
                                                     put_here(zz)
                                                     load_glob("err_val")
-                                                    used_print_number: 1
-                                                    print_number
+                                                    used_pi: 1
+                                                    calln("_sov_print_int")
                                                     set_reg(0, 1)
                                                     set_reg(8, sc_exit)
-                                                    ask_kernel
+                                                    sysc()
                                                 if not
                                                     stmt_so(s)
                 i: i + 1
     as long as _sov_list_len(bk) > 0
-        popblk
+        popblk()
 prep_main_so names params bodies:
-    tiny_program: 0
-    dead_alloc_name: blank
+    thin_main: 0
+    skip_al: blank
     fi: 0
     as long as fi < _sov_list_len(names)
-        if same(_sov_list_get(names, fi), "main") = 1
-            if _sov_list_len(_sov_list_get(params, fi)) = 0
-                tiny_program: 1
-            dead_alloc_name: drop_unused(_sov_list_get(bodies, fi))
+        if same(_sov_list_get(names, fi), "main") is 1
+            if _sov_list_len(_sov_list_get(params, fi)) is 0
+                thin_main: 1
+            skip_al: dead_iota(_sov_list_get(bodies, fi))
         fi: fi + 1
 so_compile source:
-    code: _sov_list_new()
-    bump_ptr: blank
-    bump_end: blank
-    known_name: blank
-    known_value: 0
-    dead_alloc_name: blank
-    used_alloc: 0
-    used_text_length: 0
-    used_texts_equal: 0
-    used_print: 0
-    used_print_number: 0
-    used_crash: 0
-    used_fill: 0
-    tiny_program: 0
-    needs_heap: 0
-    needs_private: 0
-    saw_letters: 0
-    letter_boxes: _sov_list_new()
-    letter_tasks: _sov_list_new()
-    array_names: _sov_list_new()
-    array_count: _sov_list_new()
-    letter_tasks: _sov_list_add(letter_tasks, "cat")
-    letter_tasks: _sov_list_add(letter_tasks, "strcat")
-    letter_tasks: _sov_list_add(letter_tasks, "_sov_strcat")
-    letter_tasks: _sov_list_add(letter_tasks, "sub")
-    letter_tasks: _sov_list_add(letter_tasks, "trim")
-    letter_tasks: _sov_list_add(letter_tasks, "ch")
-    letter_tasks: _sov_list_add(letter_tasks, "_sov_substring")
-    letter_tasks: _sov_list_add(letter_tasks, "str_cat")
-    letter_tasks: _sov_list_add(letter_tasks, "str_cut")
-    letter_tasks: _sov_list_add(letter_tasks, "str_trim")
-    letter_tasks: _sov_list_add(letter_tasks, "str_join3")
-    letter_tasks: _sov_list_add(letter_tasks, "join")
-    letter_tasks: _sov_list_add(letter_tasks, "strip")
-    letter_tasks: _sov_list_add(letter_tasks, "cut")
-    letter_tasks: _sov_list_add(letter_tasks, "repl")
-    letter_tasks: _sov_list_add(letter_tasks, "letter")
+    oc: _sov_list_new()
+    iota_ptr: blank
+    iota_lim: blank
+    kn: blank
+    kv: 0
+    skip_al: blank
+    used_al: 0
+    used_sl: 0
+    used_eq: 0
+    used_pr: 0
+    used_pi: 0
+    used_tr: 0
+    did_stos: 0
+    thin_main: 0
+    has_vm: 0
+    need_priv: 0
+    saw_str: 0
+    str_vars: _sov_list_new()
+    str_fns: _sov_list_new()
+    ar_names: _sov_list_new()
+    ar_cnt: _sov_list_new()
+    str_fns: _sov_list_add(str_fns, "cat")
+    str_fns: _sov_list_add(str_fns, "strcat")
+    str_fns: _sov_list_add(str_fns, "_sov_strcat")
+    str_fns: _sov_list_add(str_fns, "sub")
+    str_fns: _sov_list_add(str_fns, "trim")
+    str_fns: _sov_list_add(str_fns, "ch")
+    str_fns: _sov_list_add(str_fns, "_sov_substring")
+    str_fns: _sov_list_add(str_fns, "str_cat")
+    str_fns: _sov_list_add(str_fns, "str_cut")
+    str_fns: _sov_list_add(str_fns, "str_trim")
+    str_fns: _sov_list_add(str_fns, "str_join3")
+    str_fns: _sov_list_add(str_fns, "join")
+    str_fns: _sov_list_add(str_fns, "strip")
+    str_fns: _sov_list_add(str_fns, "cut")
+    str_fns: _sov_list_add(str_fns, "repl")
+    str_fns: _sov_list_add(str_fns, "letter")
     pre_lns: lines_of(source)
     pre_i: 0
     pre_cur: blank
@@ -724,13 +729,13 @@ so_compile source:
     as long as pre_i < pre_n
         pre_l: _sov_list_get(pre_lns, pre_i)
         if length(strip(pre_l)) > 0
-            if nind(pre_l) = 0
+            if nind(pre_l) is 0
                 pre_t: strip(pre_l)
-                if starts(pre_t, "#") = 0
-                    if starts(pre_t, "use ") = 0
+                if starts(pre_t, "#") is 0
+                    if starts(pre_t, "use ") is 0
                         pre_c: find_col(pre_t)
                         if pre_c > 0
-                            if pre_c = length(pre_t) - 1
+                            if pre_c is length(pre_t) - 1
                                 pre_h: strip(cut(pre_t, 0, pre_c))
                                 pre_sp: look(pre_h, " ")
                                 if pre_sp > 0 - 1
@@ -740,66 +745,67 @@ so_compile source:
                                     pre_k: 0
                                     pre_in: 0
                                     as long as pre_k < length(pre_ps)
-                                        if same(letter(pre_ps, pre_k), " ") = 1
+                                        if same(letter(pre_ps, pre_k), " ") is 1
                                             pre_in: 0
                                         if not
-                                            if pre_in = 0
+                                            if pre_in is 0
                                                 pre_na: pre_na + 1
                                                 pre_in: 1
                                         pre_k: pre_k + 1
-                                    # seven values = the most a job can
+                                    # seven values is the most a job can
                                     # take. more used to compile and then
                                     # go wrong while running.
                                     if pre_na > 7
-                                        print "Error: a job takes at most seven values" : pre_cur
+                                        print "Error: a job takes at most seven values"
+                                        _sov_print(pre_cur)
                                         print pre_na
-                                        saw_error: 1
-                                    array_names: _sov_list_add(array_names, pre_cur)
-                                    array_count: _sov_list_add(array_count, pre_na)
+                                        had_err: 1
+                                    ar_names: _sov_list_add(ar_names, pre_cur)
+                                    ar_cnt: _sov_list_add(ar_cnt, pre_na)
                                 if not
                                     pre_cur: pre_h
-                                    array_names: _sov_list_add(array_names, pre_cur)
-                                    array_count: _sov_list_add(array_count, 0)
+                                    ar_names: _sov_list_add(ar_names, pre_cur)
+                                    ar_cnt: _sov_list_add(ar_cnt, 0)
             if not
                 pre_t2: strip(pre_l)
-                if starts(pre_t2, "return ") = 1
+                if starts(pre_t2, "return ") is 1
                     pre_r: strip(cut(pre_t2, 7, length(pre_t2)))
-                    if starts(pre_r, "as text ") = 1
+                    if starts(pre_r, "as text ") is 1
                         if length(pre_cur) > 0
                             mark_fn_str(pre_cur)
-                    if starts(pre_r, "as ptr ") = 1
+                    if starts(pre_r, "as ptr ") is 1
                         if length(pre_cur) > 0
                             mark_fn_str(pre_cur)
                     if length(pre_r) > 0
-                        if _sov_byte_at(pre_r, 0) = 34
+                        if _sov_byte_at(pre_r, 0) is 34
                             if length(pre_cur) > 0
                                 mark_fn_str(pre_cur)
                         if not
-                            if same(pre_r, "blank") = 1
+                            if same(pre_r, "blank") is 1
                                 if length(pre_cur) > 0
                                     mark_fn_str(pre_cur)
         pre_i: pre_i + 1
     if look(source, "wipe ") > 0 - 1
-        needs_private: 1
+        need_priv: 1
     if look(source, "private") > 0 - 1
-        needs_private: 1
-    const_names: _sov_list_new()
-    const_values: _sov_list_new()
-    const_dirty: _sov_list_new()
-    letters: _sov_buf_new()
-    letter_keys: _sov_list_new()
-    letters_at: _sov_list_new()
-    task_names: _sov_list_new()
-    task_at: _sov_list_new()
-    global_names: _sov_list_new()
+        need_priv: 1
+    cnms: _sov_list_new()
+    cvls: _sov_list_new()
+    cemt: _sov_list_new()
+    strb: _sov_buf_new()
+    str_keys: _sov_list_new()
+    str_pos: _sov_list_new()
+    fn_names: _sov_list_new()
+    fn_offs: _sov_list_new()
+    glob_names: _sov_list_new()
     patch_at: _sov_list_new()
     patch_kind: _sov_list_new()
-    patch_value: _sov_list_new()
+    patch_val: _sov_list_new()
     patch_line: _sov_list_new()
-    line_of_stmt: _sov_list_new()
-    line_of_body: _sov_list_new()
-    line_of_task: _sov_list_new()
-    user_tasks: _sov_list_new()
+    stmt_lns: _sov_list_new()
+    body_lns: _sov_list_new()
+    task_lns: _sov_list_new()
+    task_user: _sov_list_new()
     lns: lines_of(source)
     bodies: _sov_list_new()
     params: _sov_list_new()
@@ -813,38 +819,39 @@ so_compile source:
         raw: _sov_list_get(lns, li)
         s: strip(raw)
         th: 0
-        if is_task_hdr(s) = 1
+        if is_task_hdr(s) is 1
             th: 1
-        if th = 1
-            if in_t = 1
+        if th is 1
+            if in_t is 1
                 bodies: _sov_list_add(bodies, cur)
-                line_of_body: _sov_list_add(line_of_body, cur_ln)
+                body_lns: _sov_list_add(body_lns, cur_ln)
             tn: tname(s)
             if idx(names, tn) > 0 - 1
-                print "Error: two with the same name" : tn
-                error_line: file_ln(li)
-                print "line" : error_line
-                saw_error: 1
+                print "Error: two with the same name"
+                _sov_print(tn)
+                err_line: file_ln(li)
+                print err_line
+                had_err: 1
             names: _sov_list_add(names, tn)
             params: _sov_list_add(params, tparams(s))
             tu: 0
-            if li + 1 > first_user_line
+            if li + 1 > src_base
                 tu: 1
-            user_tasks: _sov_list_add(user_tasks, tu)
-            line_of_task: _sov_list_add(line_of_task, file_ln(li))
+            task_user: _sov_list_add(task_user, tu)
+            task_lns: _sov_list_add(task_lns, file_ln(li))
             cur: _sov_list_new()
             cur_ln: _sov_list_new()
             in_t: 1
         if not
-            if nind(raw) = 0
+            if nind(raw) is 0
                 gok: 0
                 gc: find_col(s)
                 if gc > 0
                     if gc < length(s) - 1
                         gok: 1
-                if gok = 1
+                if gok is 1
                     gn: blank
-                    if starts(s, "<-- ") = 1
+                    if starts(s, "<-- ") is 1
                         rest: cut(s, 4, length(s))
                         t: find_sep(rest)
                         if t > 0 - 1
@@ -852,153 +859,155 @@ so_compile source:
                     if not
                         gn: repl(strip(cut(s, 0, gc)), " ", "_")
                     if length(gn) > 0
-                        if idx(global_names, gn) = 0 - 1
-                            global_names: _sov_list_add(global_names, gn)
+                        if idx(glob_names, gn) is 0 - 1
+                            glob_names: _sov_list_add(glob_names, gn)
                         tops: _sov_list_add(tops, raw)
             if not
-                if in_t = 1
+                if in_t is 1
                     cur: _sov_list_add(cur, raw)
                     cur_ln: _sov_list_add(cur_ln, file_ln(li))
         li: li + 1
-    if in_t = 1
+    if in_t is 1
         bodies: _sov_list_add(bodies, cur)
-        line_of_body: _sov_list_add(line_of_body, cur_ln)
-    needs_heap: 0
+        body_lns: _sov_list_add(body_lns, cur_ln)
+    has_vm: 0
     if look(source, "task _sov_alloc") > 0 - 1
-        needs_heap: 1
+        has_vm: 1
     if look(source, "_sov_alloc size:") > 0 - 1
-        needs_heap: 1
+        has_vm: 1
     prep_main_so(names, params, bodies)
-    if needs_heap = 1
-        global_names: _sov_list_add(global_names, "heap_ptr")
-        emit_start
-        emit_alloc
-        emit_strlen
-        emit_streq
-        emit_print
-        emit_print_int
-        tiny_program: 0
+    if has_vm is 1
+        glob_names: _sov_list_add(glob_names, "heap_ptr")
+        emit_start()
+        emit_alloc()
+        emit_strlen()
+        emit_streq()
+        emit_print()
+        emit_print_int()
+        thin_main: 0
     if not
-        if tiny_program = 0
-            emit_start
+        if thin_main is 0
+            emit_start()
     fi: 0
     as long as fi < _sov_list_len(names)
         nm: _sov_list_get(names, fi)
-        if idx(task_names, nm) < 0
-                task_names: _sov_list_add(task_names, nm)
-                task_at: _sov_list_add(task_at, here())
-                local_names: _sov_list_new()
-                letter_boxes: _sov_list_new()
-                saw_letters: 0
-                inside_if: 0
-                line_of_stmt: _sov_list_get(line_of_body, fi)
-                if _sov_list_len(_sov_list_get(bodies, fi)) = 0
-                    if _sov_list_get(user_tasks, fi) = 1
-                        print "Warning: empty" : nm
-                        print "line" : _sov_list_get(line_of_task, fi)
+        if idx(fn_names, nm) < 0
+                fn_names: _sov_list_add(fn_names, nm)
+                fn_offs: _sov_list_add(fn_offs, here())
+                locals: _sov_list_new()
+                str_vars: _sov_list_new()
+                saw_str: 0
+                br_depth: 0
+                stmt_lns: _sov_list_get(body_lns, fi)
+                if _sov_list_len(_sov_list_get(bodies, fi)) is 0
+                    if _sov_list_get(task_user, fi) is 1
+                        print "Warning: empty"
+                        _sov_print(nm)
+                        print _sov_list_get(task_lns, fi)
                 ps: _sov_list_get(params, fi)
                 pi: 0
                 as long as pi < _sov_list_len(ps)
-                    local_names: _sov_list_add(local_names, _sov_list_get(ps, pi))
+                    locals: _sov_list_add(locals, _sov_list_get(ps, pi))
                     pi: pi + 1
                 thin: 0
-                if same(nm, "main") = 1
-                    if _sov_list_len(ps) = 0
+                if same(nm, "main") is 1
+                    if _sov_list_len(ps) is 0
                         thin: 0
-                if thin = 1
-                    dead_alloc_name: drop_unused(_sov_list_get(bodies, fi))
-                    if needs_private = 1
-                        emit_nodump_so
+                if thin is 1
+                    skip_al: dead_iota(_sov_list_get(bodies, fi))
+                    if need_priv is 1
+                        emit_nodump_so()
                     so_body(tops)
-                    cflush_all
+                    cflush_all()
                     so_body(_sov_list_get(bodies, fi))
-                    if saw_letters = 1
+                    if saw_str is 1
                         mark_fn_str(nm)
                     set_reg(0, 0)
                     set_reg(8, sc_exit)
-                    ask_kernel
+                    sysc()
                 if not
                     isfib: fiblike(nm, ps, _sov_list_get(bodies, fi))
                     # frame-free: the fib walk lives in caller-saved
                     # registers only, so the frame and the arg copy
                     # are pure overhead for it
-                    if isfib = 0
-                        prolog
+                    if isfib is 0
+                        prolog()
                         copyargs(_sov_list_len(ps))
-                    if isfib = 1
-                        emit_fib_iter_a64
-                    if same(nm, "main") = 1
-                        dead_alloc_name: drop_unused(_sov_list_get(bodies, fi))
-                        if needs_private = 1
-                            emit_nodump_so
+                    if isfib is 1
+                        emit_fib_iter_a64()
+                    if same(nm, "main") is 1
+                        skip_al: dead_iota(_sov_list_get(bodies, fi))
+                        if need_priv is 1
+                            emit_nodump_so()
                         so_body(tops)
-                        cflush_all
-                    if isfib = 0
+                        cflush_all()
+                    if isfib is 0
                         so_body(_sov_list_get(bodies, fi))
-                    if saw_letters = 1
+                    if saw_str is 1
                         mark_fn_str(nm)
                     ns: 0
-                    if isfib = 0
+                    if isfib is 0
                         ns: 64
-                        if _sov_list_len(local_names) > 5
-                            ns: (_sov_list_len(local_names) - 5) * 8 + 64
+                        if _sov_list_len(locals) > 5
+                            ns: (_sov_list_len(locals) - 5) * 8 + 64
                             as long as ns % 16 is not 0
                                 ns: ns + 8
-                        put_sub_sp(frame_at, ns)
-                    if same(nm, "main") = 1
+                        put_sub_sp(pro_at, ns)
+                    if same(nm, "main") is 1
                         set_reg(0, 0)
                         set_reg(8, sc_exit)
-                        ask_kernel
+                        sysc()
                     if not
                         # the fib fast path ends in its own ret; a
                         # second epilogue here would be dead words
-                        if isfib = 0
-                            xor_rax_so
-                            restore_frame
-                            ret
+                        if isfib is 0
+                            xor_rax_so()
+                            leave()
+                            ret()
         fi: fi + 1
-    if needs_heap = 0
-        emit_used
-    warn_unused_so
+    if has_vm is 0
+        emit_used()
+    warn_unused_so()
 warn_unused_so:
     ui: 0
     as long as ui < _sov_list_len(names)
         nm: _sov_list_get(names, ui)
         do_w: 0
         if length(nm) > 0
-            if same(nm, "main") = 0
-                if starts(nm, "_sov_") = 0
-                    if _sov_list_get(user_tasks, ui) = 1
+            if same(nm, "main") is 0
+                if starts(nm, "_sov_") is 0
+                    if _sov_list_get(task_user, ui) is 1
                         do_w: 1
-        if do_w = 1
+        if do_w is 1
             used: 0
             uj: 0
             as long as uj < _sov_list_len(patch_kind)
-                if same(_sov_list_get(patch_kind, uj), "rel") = 1
-                    if same(_sov_list_get(patch_value, uj), nm) = 1
+                if same(_sov_list_get(patch_kind, uj), "rel") is 1
+                    if same(_sov_list_get(patch_val, uj), nm) is 1
                         used: 1
                 uj: uj + 1
-            if used = 0
-                print "Warning: never used" : nm
-                print _sov_list_get(line_of_task, ui)
+            if used is 0
+                print "Warning: never used"
+                _sov_print(nm)
+                print _sov_list_get(task_lns, ui)
         ui: ui + 1
 poke2 p off v:
     dummy: _sov_set_byte(p, off, v % 256)
     dummy: _sov_set_byte(p, off + 1, (v / 256) % 256)
-write_program path:
-    if saw_error = 1
+write_elf path:
+    if had_err is 1
         return
-    clen: _sov_list_len(code)
-    sl: _sov_buf_len(letters)
+    clen: _sov_list_len(oc)
+    sl: _sov_buf_len(strb)
     str_off: clen
-    if _sov_list_len(global_names) > 0
+    if _sov_list_len(glob_names) > 0
         as long as str_off % 8 is not 0
-            code: _sov_list_add(code, 0)
+            oc: _sov_list_add(oc, 0)
             str_off: str_off + 1
             clen: clen + 1
     glob_off: clen + sl
-    pad: _sov_list_len(global_names) * 8
-    dyn_base: header_size + clen + sl + pad
+    pad: _sov_list_len(glob_names) * 8
+    dyn_base: HDR + clen + sl + pad
     as long as dyn_base % 8 is not 0
         dyn_base: dyn_base + 1
     so_strtab: dyn_base
@@ -1023,11 +1032,11 @@ write_program path:
     poke2(flat, 18, 183)
     poke4(flat, 20, 1)
     moff: 0
-    if tiny_program = 1
-        mi: idx(task_names, "main")
+    if thin_main is 1
+        mi: idx(fn_names, "main")
         if mi > 0 - 1
-            moff: _sov_list_get(task_at, mi)
-    poke8(flat, 24, load_at + header_size + moff)
+            moff: _sov_list_get(fn_offs, mi)
+    poke8(flat, 24, BASE + HDR + moff)
     poke8(flat, 32, 64)
     poke2(flat, 52, 64)
     poke2(flat, 54, 56)
@@ -1035,135 +1044,138 @@ write_program path:
     poke4(flat, 64, 6)
     poke4(flat, 68, 4)
     poke8(flat, 72, 64)
-    poke8(flat, 80, load_at + 64)
-    poke8(flat, 88, load_at + 64)
+    poke8(flat, 80, BASE + 64)
+    poke8(flat, 88, BASE + 64)
     poke8(flat, 96, 168)
     poke8(flat, 104, 168)
     poke8(flat, 112, 8)
     poke4(flat, 120, 1)
     poke4(flat, 124, 7)
     poke8(flat, 128, 0)
-    poke8(flat, 136, load_at)
-    poke8(flat, 144, load_at)
+    poke8(flat, 136, BASE)
+    poke8(flat, 144, BASE)
     poke8(flat, 152, filesz)
     poke8(flat, 160, filesz + 65536)
     poke8(flat, 168, 4096)
     poke4(flat, 176, 2)
     poke4(flat, 180, 6)
     poke8(flat, 184, so_dyn)
-    poke8(flat, 192, load_at + so_dyn)
-    poke8(flat, 200, load_at + so_dyn)
+    poke8(flat, 192, BASE + so_dyn)
+    poke8(flat, 200, BASE + so_dyn)
     poke8(flat, 208, 112)
     poke8(flat, 216, 112)
     poke8(flat, 224, 8)
     i: 0
     as long as i < clen
-        dummy: _sov_set_byte(flat, header_size + i,  _sov_list_get(code, i))
+        dummy: _sov_set_byte(flat, HDR + i,  _sov_list_get(oc, i))
         i: i + 1
     si: 0
     as long as si < sl
-        dummy: _sov_set_byte(flat, header_size + str_off + si, _sov_buf_at(letters, si))
+        dummy: _sov_set_byte(flat, HDR + str_off + si, _sov_buf_at(strb, si))
         si: si + 1
-    str_addr: load_at + header_size + str_off
-    glob_addr: load_at + header_size + glob_off
+    str_addr: BASE + HDR + str_off
+    glob_addr: BASE + HDR + glob_off
     i: 0
     as long as i < _sov_list_len(patch_at)
         at: _sov_list_get(patch_at, i)
         kind: _sov_list_get(patch_kind, i)
-        val: _sov_list_get(patch_value, i)
-        if same(kind, "rel26") = 1
-            fi: idx(task_names, val)
+        val: _sov_list_get(patch_val, i)
+        if same(kind, "rel26") is 1
+            fi: idx(fn_names, val)
             if fi > 0 - 1
-                tgt: _sov_list_get(task_at, fi)
+                tgt: _sov_list_get(fn_offs, fi)
                 rel: (tgt - at) / 4
                 if rel < 0
                     rel: rel + 67108864
-                poke4(flat, header_size + at, 2483027968 + (rel % 67108864))
+                poke4(flat, HDR + at, 2483027968 + (rel % 67108864))
             if not
-                print "Error: no such task" : val
+                print "Error: no such task"
+                _sov_print(val)
                 print _sov_list_get(patch_line, i)
-                saw_error: 1
-        if same(kind, "b26") = 1
-            poke4(flat, header_size + at, 335544320 + (val % 67108864))
-        if same(kind, "glob64") = 1
-            gx: idx(global_names, val)
+                had_err: 1
+        if same(kind, "b26") is 1
+            poke4(flat, HDR + at, 335544320 + (val % 67108864))
+        if same(kind, "glob64") is 1
+            gx: idx(glob_names, val)
             ga: glob_addr + gx * 8
-            poke4(flat, header_size + at, 3531603968 + (ga % 65536) * 32 + 9)
-            poke4(flat, header_size + at + 4, 4070572032 + ((ga / 65536) % 65536) * 32 + 9)
-            poke4(flat, header_size + at + 8, 4072669184 + ((ga / 4294967296) % 65536) * 32 + 9)
-        if same(kind, "str64x0") = 1
+            poke4(flat, HDR + at, 3531603968 + (ga % 65536) * 32 + 9)
+            poke4(flat, HDR + at + 4, 4070572032 + ((ga / 65536) % 65536) * 32 + 9)
+            poke4(flat, HDR + at + 8, 4072669184 + ((ga / 4294967296) % 65536) * 32 + 9)
+        if same(kind, "str64x0") is 1
             sa: str_addr + val
-            poke4(flat, header_size + at, 3531603968 + (sa % 65536) * 32)
-            poke4(flat, header_size + at + 4, 4070572032 + ((sa / 65536) % 65536) * 32)
-            poke4(flat, header_size + at + 8, 4072669184 + ((sa / 4294967296) % 65536) * 32)
-        if same(kind, "task_address64") = 1
-            fi: idx(task_names, val)
+            poke4(flat, HDR + at, 3531603968 + (sa % 65536) * 32)
+            poke4(flat, HDR + at + 4, 4070572032 + ((sa / 65536) % 65536) * 32)
+            poke4(flat, HDR + at + 8, 4072669184 + ((sa / 4294967296) % 65536) * 32)
+        if same(kind, "fnaddr64") is 1
+            fi: idx(fn_names, val)
             if fi > 0 - 1
-                fa: load_at + header_size + _sov_list_get(task_at, fi)
-                poke4(flat, header_size + at, 3531603968 + (fa % 65536) * 32)
-                poke4(flat, header_size + at + 4, 4070572032 + ((fa / 65536) % 65536) * 32)
-                poke4(flat, header_size + at + 8, 4072669184 + ((fa / 4294967296) % 65536) * 32)
-                poke4(flat, header_size + at + 12, 4074766336 + ((fa / 281474976710656) % 65536) * 32)
+                fa: BASE + HDR + _sov_list_get(fn_offs, fi)
+                poke4(flat, HDR + at, 3531603968 + (fa % 65536) * 32)
+                poke4(flat, HDR + at + 4, 4070572032 + ((fa / 65536) % 65536) * 32)
+                poke4(flat, HDR + at + 8, 4072669184 + ((fa / 4294967296) % 65536) * 32)
+                poke4(flat, HDR + at + 12, 4074766336 + ((fa / 281474976710656) % 65536) * 32)
             if not
-                print "Error: no such task" : val
-                saw_error: 1
-        if same(kind, "str64") = 1
+                print "Error: no such task"
+                _sov_print(val)
+                had_err: 1
+        if same(kind, "str64") is 1
             sa: str_addr + val
-            poke4(flat, header_size + at, 3531603968 + (sa % 65536) * 32 + 1)
-            poke4(flat, header_size + at + 4, 4070572032 + ((sa / 65536) % 65536) * 32 + 1)
-            poke4(flat, header_size + at + 8, 4072669184 + ((sa / 4294967296) % 65536) * 32 + 1)
-        if same(kind, "cbz_trap") = 1
-            ti: idx(task_names, "_sov_trap")
+            poke4(flat, HDR + at, 3531603968 + (sa % 65536) * 32 + 1)
+            poke4(flat, HDR + at + 4, 4070572032 + ((sa / 65536) % 65536) * 32 + 1)
+            poke4(flat, HDR + at + 8, 4072669184 + ((sa / 4294967296) % 65536) * 32 + 1)
+        if same(kind, "cbz_trap") is 1
+            ti: idx(fn_names, "_sov_trap")
             if ti > 0 - 1
-                tg: _sov_list_get(task_at, ti)
+                tg: _sov_list_get(fn_offs, ti)
                 rl: (tg - at) / 4
                 if rl < 0
                     rl: rl + 524288
-                poke4(flat, header_size + at, 3019898880 + (rl % 524288) * 32 + val)
-        if same(kind, "b19_trap") = 1
-            ti: idx(task_names, "_sov_trap")
+                poke4(flat, HDR + at, 3019898880 + (rl % 524288) * 32 + val)
+        if same(kind, "b19_trap") is 1
+            ti: idx(fn_names, "_sov_trap")
             if ti > 0 - 1
-                tg: _sov_list_get(task_at, ti)
+                tg: _sov_list_get(fn_offs, ti)
                 rl: (tg - at) / 4
                 if rl < 0
                     rl: rl + 524288
-                poke4(flat, header_size + at, 1409286144 + (rl % 524288) * 32 + 2)
-        if same(kind, "rel") = 1
-            fi: idx(task_names, val)
+                poke4(flat, HDR + at, 1409286144 + (rl % 524288) * 32 + 2)
+        if same(kind, "rel") is 1
+            fi: idx(fn_names, val)
             if fi > 0 - 1
-                tgt: _sov_list_get(task_at, fi)
+                tgt: _sov_list_get(fn_offs, fi)
                 rel: tgt - (at + 4)
-                poke4(flat, header_size + at, rel)
+                poke4(flat, HDR + at, rel)
             if not
-                print "Error: no such task" : val
+                print "Error: no such task"
+                _sov_print(val)
                 print _sov_list_get(patch_line, i)
-                saw_error: 1
-        if same(kind, "str") = 1
-            poke8(flat, header_size + at, str_addr + val)
-        if same(kind, "str32") = 1
-            poke4(flat, header_size + at, str_addr + val)
-        if same(kind, "glob") = 1
-            gx: idx(global_names, val)
-            poke8(flat, header_size + at, glob_addr + gx * 8)
+                had_err: 1
+        if same(kind, "str") is 1
+            poke8(flat, HDR + at, str_addr + val)
+        if same(kind, "str32") is 1
+            poke4(flat, HDR + at, str_addr + val)
+        if same(kind, "glob") is 1
+            gx: idx(glob_names, val)
+            poke8(flat, HDR + at, glob_addr + gx * 8)
         i: i + 1
-    if saw_error = 1
+    if had_err is 1
         return
-    smi: idx(task_names, "main")
+    smi: idx(fn_names, "main")
     smoff: 0
     if smi > 0 - 1
-        smoff: _sov_list_get(task_at, smi)
+        smoff: _sov_list_get(fn_offs, smi)
     so_name("libsovren.so", flat, so_strtab + 1)
     so_name("sovren_main", flat, so_strtab + 14)
     so_name("Java_com_sovren_Native_run", flat, so_strtab + 26)
     poke4(flat, so_symtab + 24, 14)
     dummy: _sov_set_byte(flat, so_symtab + 28, 18)
     poke2(flat, so_symtab + 30, 1)
-    poke8(flat, so_symtab + 32, load_at + header_size + smoff)
+    poke8(flat, so_symtab + 32, BASE + HDR + smoff)
     poke8(flat, so_symtab + 40, clen)
     poke4(flat, so_symtab + 48, 26)
     dummy: _sov_set_byte(flat, so_symtab + 52, 18)
     poke2(flat, so_symtab + 54, 1)
-    poke8(flat, so_symtab + 56, load_at + header_size + smoff)
+    poke8(flat, so_symtab + 56, BASE + HDR + smoff)
     poke8(flat, so_symtab + 64, clen)
     poke4(flat, so_hash, 1)
     poke4(flat, so_hash + 4, 3)
@@ -1172,23 +1184,23 @@ write_program path:
     poke4(flat, so_hash + 16, 0)
     poke4(flat, so_hash + 20, 1)
     poke8(flat, so_dyn, 5)
-    poke8(flat, so_dyn + 8, load_at + so_strtab)
+    poke8(flat, so_dyn + 8, BASE + so_strtab)
     poke8(flat, so_dyn + 16, 10)
     poke8(flat, so_dyn + 24, so_strsz)
     poke8(flat, so_dyn + 32, 6)
-    poke8(flat, so_dyn + 40, load_at + so_symtab)
+    poke8(flat, so_dyn + 40, BASE + so_symtab)
     poke8(flat, so_dyn + 48, 11)
     poke8(flat, so_dyn + 56, 24)
     poke8(flat, so_dyn + 64, 4)
-    poke8(flat, so_dyn + 72, load_at + so_hash)
+    poke8(flat, so_dyn + 72, BASE + so_hash)
     poke8(flat, so_dyn + 80, 14)
     poke8(flat, so_dyn + 88, 1)
     poke8(flat, so_dyn + 96, 0)
     poke8(flat, so_dyn + 104, 0)
     w: _sov_write_n(path, flat, filesz)
-    if w = 0
+    if w is 0
         print "Error: cannot write output (is it running?)"
-        fail
+        fail()
     _sov_chmod(path, 493)
 so_name s flat at:
     i: 0
@@ -1197,47 +1209,50 @@ so_name s flat at:
         i: i + 1
     dummy: _sov_set_byte(flat, at + i, 0)
     return 0
-# remember where this compiler lives, so its library and runtime
-# are found no matter which folder you run it from
-start:
-    compiler_folder: dirname(tidy_path(peek_ptr(g_argv, 0)))
-    if g_argc < 2
+main argc argv:
+    # remember where this compiler lives, so its library and runtime
+    # are found no matter which folder you run it from
+    self_dir: dirname(tidy_path(peek_ptr(argv, 0)))
+    if argc < 2
         print "Usage: sovren <file.sov> [-o out]"
         print "sovren — native x86-64, self-contained"
-        fail
-    in_file: blank
-    out_file: blank
+        fail()
+    inf: blank
+    outf: blank
     i: 1
-    as long as i < g_argc
-        arg: peek_ptr(g_argv, i)
-        if same(arg, "--bare") = 1
-            no_runtime: 1
+    as long as i < argc
+        arg: peek_ptr(argv, i)
+        if same(arg, "--bare") is 1
+            bare_mode: 1
         if not
-            if same(arg, "-o") = 1
+            if same(arg, "-o") is 1
                 i: i + 1
-                if i < g_argc
-                    out_file: peek_ptr(g_argv, i)
+                if i < argc
+                    outf: peek_ptr(argv, i)
             if not
-                if same(arg, "build") = 0
-                    in_file: arg
+                if same(arg, "build") is 0
+                    inf: arg
         i: i + 1
-    if length(in_file) = 0
+    if length(inf) is 0
         print "Error: no input"
-        fail
-    if length(out_file) = 0
-        if holds(in_file, ".sov") = 1
-            out_file: cut(in_file, 0, look(in_file, ".sov"))
+        fail()
+    if length(outf) is 0
+        d: look(inf, ".sov")
+        if d > 0 - 1
+            outf: cut(inf, 0, d)
         if not
-            out_file: join(in_file, ".out")
-    print "Compiling" : in_file
-    src: load_file(in_file)
-    if src = 0
+            outf: join(inf, ".out")
+    print "Compiling"
+    _sov_print(inf)
+    src: load_file(inf)
+    if src is 0
         print "Error: cannot read input"
-        fail
-    newline: "\n"
-    src: join("# skip this line\n", src)
-    libraries: blank
-    src: expand_use_lines(src)
+        fail()
+    nl: _sov_alloc(2)
+    dummy: _sov_set_byte(nl, 0, 10)
+    dummy: _sov_set_byte(nl, 1, 0)
+    src: join(join("# pad line so main is not first", nl), src)
+    used_libs: blank
     extra: pull_uses(src)
     more: pull_uses(extra)
     as long as length(more) > 0
@@ -1245,57 +1260,77 @@ start:
         more: pull_uses(more)
     if length(extra) > 0
         src: join(extra, src)
-    heap_size: 12582912
-    needs_runtime: uses_runtime(src)
-    runtime: blank
-    if no_runtime = 1
-        needs_runtime: 0
-    if needs_runtime = 1
-        heap_size: 1073741824
-        runtime: load_file("runtime.sov")
-        if runtime = 0
-            runtime: load_file("linux/runtime.sov")
-        if runtime = 0
-            runtime: load_file(join(compiler_folder, "/runtime.sov"))
-        if runtime = 0
-            runtime: load_file(join(compiler_folder, "/../runtime.sov"))
-        if runtime = 0
-            runtime: load_file(join(dirname(dirname(compiler_folder)), "/runtime.sov"))
-        if runtime = 0
+    need: 0
+    mmap_sz: 12582912
+    if look(src, "_sov_list") > 0 - 1
+        need: 1
+    if look(src, "load_file") > 0 - 1
+        need: 1
+    if look(src, "_sov_buf") > 0 - 1
+        need: 1
+    if look(src, "_sov_alloc") > 0 - 1
+        need: 1
+    if look(src, "_sov_set_byte") > 0 - 1
+        need: 1
+    if look(src, "peek_byte") > 0 - 1
+        need: 1
+    if look(src, "poke_byte") > 0 - 1
+        need: 1
+    if look(src, "spawn ") > 0 - 1
+        need: 1
+    if look(src, "join ") > 0 - 1
+        need: 1
+    rt: blank
+    if bare_mode is 1
+        need: 0
+    if need is 1
+        mmap_sz: 1073741824
+        rt: load_file("runtime.sov")
+        if rt is 0
+            rt: load_file("linux/runtime.sov")
+        if rt is 0
+            rt: load_file(join(self_dir, "/runtime.sov"))
+        if rt is 0
+            rt: load_file(join(self_dir, "/../runtime.sov"))
+        if rt is 0
+            rt: load_file(join(dirname(dirname(self_dir)), "/runtime.sov"))
+        if rt is 0
             print "Error: cannot read runtime"
-            fail
-    first_user_line: 1
-    if length(runtime) > 0
-        first_user_line: first_user_line + _sov_list_len(lines_of(runtime))
+            fail()
+    src_base: 1
+    if length(rt) > 0
+        src_base: src_base + _sov_list_len(lines_of(rt))
     if length(extra) > 0
-        first_user_line: first_user_line + _sov_list_len(lines_of(extra))
-    newline: "\n"
-    all: join(runtime, newline)
-    first_user_line: first_user_line + 1
+        src_base: src_base + _sov_list_len(lines_of(extra))
+    nl: _sov_alloc(2)
+    dummy: _sov_set_byte(nl, 0, 10)
+    dummy: _sov_set_byte(nl, 1, 0)
+    all: join(rt, nl)
+    src_base: src_base + 1
     # the arm64 kernel numbers its syscalls differently. this
-    # function = appended to the program being built (not to the
+    # function is appended to the program being built (not to the
     # shared runtime, so other targets never carry it) and the
     # syscall builtin routes every number through it.
         all: join(all, "# mem_copy and mem_set, injected for the arm targets: the x86 back\n# end has them as one rep movsb / rep stosb each, and a shared library\n# may not use a builtin that only one machine has. written with\n# peek_byte and poke_byte, which are builtins on every target.\n_sov_mem_copy d s n:\n    i: 0\n    as long as i < n\n        poke_byte(d, i, peek_byte(s, i))\n        i: i + 1\n    return d\n\n_sov_mem_set d v n:\n    j: 0\n    as long as j < n\n        poke_byte(d, j, v)\n        j: j + 1\n    return d\n")
-        first_user_line: first_user_line + 20
-    all: join(all, "# a thread ends itself through this injected task, emitted\n# unconditionally because runtime.sov calls it whether or not the program\n# ever makes a syscall. on arm64 a thread = a detached clone, so ending it\n# = the exit syscall\n_sov_thread_exit:\n    syscall(60, 0, 0, 0, 0, 0, 0)\n    return 0 - 1\n")
-    first_user_line: first_user_line + 6
-    all: join(all, newline)
-    all: join(all, "# x86 syscall number in, arm64 number out (the arm64 kernel\n# numbers its calls differently and has no plain open, pipe or\n# dup2; openat, pipe2 and dup3 stand in). Only the arm64 back end\n# calls this, so only arm64 builds carry it.\n_sov_sysnum n:\n    if n = 0\n        return 63\n    if n = 1\n        return 64\n    if n = 3\n        return 57\n    if n = 7\n        return 73\n    if n = 8\n        return 62\n    if n = 13\n        return 134\n    if n = 9\n        return 222\n    if n = 11\n        return 215\n    if n = 16\n        return 29\n")
-    all: join(all, "    if n = 22\n        return 59\n    if n = 33\n        return 24\n    if n = 35\n        return 101\n    if n = 39\n        return 172\n    if n = 41\n        return 198\n    if n = 42\n        return 203\n    if n = 43\n        return 202\n    if n = 44\n        return 206\n    if n = 45\n        return 207\n    if n = 49\n        return 200\n    if n = 50\n        return 201\n    if n = 57\n        return 220\n    if n = 59\n        return 221\n    if n = 60\n        return 93\n    if n = 61\n        return 260\n    if n = 62\n        return 129\n")
-    all: join(all, "    if n = 79\n        return 17\n    if n = 80\n        return 49\n    if n = 82\n        return 50\n    if n = 84\n        return 81\n    if n = 90\n        return 34\n    if n = 102\n        return 174\n    if n = 104\n        return 176\n    if n = 107\n        return 175\n    if n = 108\n        return 177\n    if n = 144\n        return 227\n    if n = 217\n        return 61\n    if n = 218\n        return 169\n    if n = 228\n        return 115\n    if n = 231\n        return 94\n    if n = 257\n        return 56\n    if n = 260\n        return 166\n    if n = 302\n        return 261\n    if n = 318\n        return 278\n    if n = 56\n        return 220\n    if n = 202\n        return 98\n    if n = 72\n        return 25\n    if n = 74\n        return 82\n    if n = 77\n        return 46\n    if n = 262\n        return 79\n    if n = 263\n        return 35\n    return n\n")
-    all: join(all, newline)
+        src_base: src_base + 20
+    all: join(all, "# a thread ends itself through this injected task, emitted\n# unconditionally because runtime.sov calls it whether or not the program\n# ever makes a syscall. on arm64 a thread is a detached clone, so ending it\n# is the exit syscall\n_sov_thread_exit:\n    syscall(60, 0, 0, 0, 0, 0, 0)\n    return 0 - 1\n")
+    src_base: src_base + 6
+    all: join(all, nl)
+    all: join(all, "# x86 syscall number in, arm64 number out (the arm64 kernel\n# numbers its calls differently and has no plain open, pipe or\n# dup2; openat, pipe2 and dup3 stand in). Only the arm64 back end\n# calls this, so only arm64 builds carry it.\n_sov_sysnum n:\n    if n is 0\n        return 63\n    if n is 1\n        return 64\n    if n is 3\n        return 57\n    if n is 7\n        return 73\n    if n is 8\n        return 62\n    if n is 13\n        return 134\n    if n is 9\n        return 222\n    if n is 11\n        return 215\n    if n is 16\n        return 29\n")
+    all: join(all, "    if n is 22\n        return 59\n    if n is 33\n        return 24\n    if n is 35\n        return 101\n    if n is 39\n        return 172\n    if n is 41\n        return 198\n    if n is 42\n        return 203\n    if n is 43\n        return 202\n    if n is 44\n        return 206\n    if n is 45\n        return 207\n    if n is 49\n        return 200\n    if n is 50\n        return 201\n    if n is 57\n        return 220\n    if n is 59\n        return 221\n    if n is 60\n        return 93\n    if n is 61\n        return 260\n    if n is 62\n        return 129\n")
+    all: join(all, "    if n is 79\n        return 17\n    if n is 80\n        return 49\n    if n is 82\n        return 50\n    if n is 84\n        return 81\n    if n is 90\n        return 34\n    if n is 102\n        return 174\n    if n is 104\n        return 176\n    if n is 107\n        return 175\n    if n is 108\n        return 177\n    if n is 144\n        return 227\n    if n is 217\n        return 61\n    if n is 218\n        return 169\n    if n is 228\n        return 115\n    if n is 231\n        return 94\n    if n is 257\n        return 56\n    if n is 260\n        return 166\n    if n is 302\n        return 261\n    if n is 318\n        return 278\n    if n is 56\n        return 220\n    if n is 202\n        return 98\n    if n is 72\n        return 25\n    if n is 74\n        return 82\n    if n is 77\n        return 46\n    if n is 262\n        return 79\n    if n is 263\n        return 35\n    return n\n")
+    all: join(all, nl)
     # these extra lines shift the error-line base, so the jobs
     # after them still count as library jobs, not user jobs
-    first_user_line: first_user_line + 81
+    src_base: src_base + 81
 
     all: join(all, src)
     so_compile(all)
-    write_program(out_file)
-    if saw_error = 1
-        fail
-    print "Wrote" : out_file
-start
+    write_elf(outf)
+    if had_err is 1
+        fail()
+    print "Wrote"
+    _sov_print(outf)
 push_reg n:
     emitw(4162785248 + n)
 
@@ -1311,10 +1346,10 @@ emit_write_lit s:
     movz_x(1, 0, 0)
     movk_x(1, 0, 1)
     movk_x(1, 0, 2)
-    later_fill(at, "str64", off)
+    addp(at, "str64", off)
     set_reg(2, n)
     set_reg(8, sc_write)
-    ask_kernel
+    sysc()
 
 # mmap(0, sz, RW, PRIVATE|ANON, -1, 0) -> x0
 emit_nodump_so:
@@ -1323,16 +1358,16 @@ emit_nodump_so:
 # x86 string-instruction fast paths have no AArch64 form.
 # Returning 0 makes the caller emit an ordinary loop instead.
 emit_print:
-    task_names: _sov_list_add(task_names, "_sov_print")
-    task_at: _sov_list_add(task_at, here())
+    fn_names: _sov_list_add(fn_names, "_sov_print")
+    fn_offs: _sov_list_add(fn_offs, here())
     # a value under 65536 is not a real address. reading from it
     # would crash, so hand it to the number printer instead.
     emitw(4047519775)
     hi: here()
     emitw(1409286146)
-    used_print_number: 1
-    print_number
-    ret
+    used_pi: 1
+    calln("_sov_print_int")
+    ret()
     put_arm(hi, here() - hi)
     emitw(2847702013)
     emitw(2835436531)
@@ -1357,22 +1392,22 @@ emit_print:
     mov_reg(1, 19)
     mov_reg(2, 20)
     set_reg(8, sc_write)
-    ask_kernel
+    sysc()
     set_reg(0, 1)
     nl_at: here()
     movz_x(1, 0, 0)
     movk_x(1, 0, 1)
     movk_x(1, 0, 2)
-    later_fill(nl_at, "str64", intern_nz("\n"))
+    addp(nl_at, "str64", intern_nz("\n"))
     set_reg(2, 1)
     set_reg(8, sc_write)
-    ask_kernel
+    sysc()
     emitw(2432697279)
     emitw(2839630835)
     emitw(2839698421)
     emitw(4181728247)
     emitw(2831449085)
-    ret
+    ret()
 
 # x0 = number, writes it in decimal then a newline
 put_sub_sp at n:
@@ -1382,39 +1417,39 @@ put_sub_sp at n:
     oc_set_word(at, 3506439167 + (v % 4096) * 1024)
     return 0
 
-spawn_emit name how_many:
-    if how_many = 1
-        take_from_stack
+spawn_emit name argc:
+    if argc is 1
+        pop_rax()
     if not
-        if how_many = 2
+        if argc is 2
             pop_reg(1)
-            take_from_stack
+            pop_rax()
         if not
-            if how_many = 3
+            if argc is 3
                 pop_reg(2)
                 pop_reg(1)
-                take_from_stack
+                pop_rax()
             if not
-                if how_many = 4
+                if argc is 4
                     pop_reg(3)
                     pop_reg(2)
                     pop_reg(1)
-                    take_from_stack
+                    pop_rax()
                 if not
-                    if how_many = 5
+                    if argc is 5
                         pop_reg(4)
                         pop_reg(3)
                         pop_reg(2)
                         pop_reg(1)
-                        take_from_stack
+                        pop_rax()
                     if not
-                        if how_many = 6
+                        if argc is 6
                             pop_reg(5)
                             pop_reg(4)
                             pop_reg(3)
                             pop_reg(2)
                             pop_reg(1)
-                            take_from_stack
+                            pop_rax()
     mov_reg(6, 5)
     mov_reg(5, 4)
     mov_reg(4, 3)
@@ -1426,6 +1461,6 @@ spawn_emit name how_many:
     movk_x(0, 0, 1)
     movk_x(0, 0, 2)
     movk_x(0, 0, 3)
-    later_fill(aat, "task_address64", name)
-    start_thread
+    addp(aat, "fnaddr64", name)
+    calln("_sov_thread_spawn")
     return 0

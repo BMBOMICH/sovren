@@ -16,11 +16,12 @@ work:
         poke_i64(b, i * 8, peek_i64(b, i * 8) + (n0 + n1) * (n2 - n3) + n4)
         i: i + 1
 
-b: _sov_alloc(640)
-poke_i64(b, 0, 100)
-poke_i64(b, 8, 200)
-poke_i64(b, 16, 300)
-work()
-print peek_i64(b, 0)
-print peek_i64(b, 8)
-print peek_i64(b, 16)
+main:
+    b: _sov_alloc(640)
+    poke_i64(b, 0, 100)
+    poke_i64(b, 8, 200)
+    poke_i64(b, 16, 300)
+    work()
+    print peek_i64(b, 0)
+    print peek_i64(b, 8)
+    print peek_i64(b, 16)

@@ -15,7 +15,7 @@ bench_ms t0:
 bench_report name t0:
     ms: bench_ms(t0)
     line: str_join3(name, ": ", num_text(ms))
-    print "ms" : ms
+    _sov_print(str_cat(line, " ms"))
     return ms
 
 bench_secs t0:

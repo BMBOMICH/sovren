@@ -1,209 +1,198 @@
-code: 0
-letters: 0
-letter_keys: 0
-letters_at: 0
-task_names: 0
-task_at: 0
-global_names: 0
+oc: 0
+strb: 0
+str_keys: 0
+str_pos: 0
+fn_names: 0
+fn_offs: 0
+glob_names: 0
 patch_at: 0
 patch_kind: 0
-patch_value: 0
+patch_val: 0
 patch_line: 0
 # pass 69: branch registration for the relaxation pass
-jump_at: 0
-jump_pad: 0
-pad_version: 0
-jump_id: 0
-jump_state: 0
-local_names: 0
-first_user_line: 0
-saw_error: 0
-want_window: 0
-hold_value: 0
-try_depth: 0
-inside_if: 0
-no_runtime: 0
-fold_fib_name: blank
-skip_fib: 0
-line_of_stmt: 0
-line_of_body: 0
-line_of_task: 0
-user_tasks: 0
+br_at: 0
+br_pv: 0
+pad_ver: 0
+br_id: 0
+br_st: 0
+locals: 0
+src_base: 0
+had_err: 0
+push_live: 0
+ex_depth: 0
+br_depth: 0
+bare_mode: 0
+fib_nm: blank
+fib_drop: 0
+stmt_lns: 0
+body_lns: 0
+task_lns: 0
+task_user: 0
 names: 0
-load_at: 4194304
-header_size: 120
-folded_number: 0
-folded_from: 0
-bump_ptr: 0
-bump_end: 0
-heap_size: 1073741824
-libraries: blank
-error_line: 0
-file_name: blank
-known_name: blank
-known_value: 0
-frame_at: 0
-used_guard: 0
-guard_holes: 0
-frame_open: 0
-frame_holes: 0
-saved_locals: 0
-skip_frame: 0
-dead_alloc_name: blank
-used_alloc: 0
-windows_late: 0
-rare_windows: 0
-compiler_folder: 0
-needs_args: 0
-used_windows_call: 0
-used_thread: 0
-used_text_length: 0
-used_texts_equal: 0
-used_print: 0
-used_print_number: 0
-used_fill: 0
+BASE: 4194304
+HDR: 120
+opt_imm: 0
+opt_src: 0
+iota_ptr: 0
+iota_lim: 0
+mmap_sz: 1073741824
+used_libs: blank
+err_line: 0
+src_name: blank
+kn: blank
+kv: 0
+pro_at: 0
+can_used: 0
+cd_at: 0
+fw_on: 0
+fw_pos: 0
+fn_save_n: 0
+no_frame: 0
+skip_al: blank
+used_al: 0
+wc_dyn: 0
+wc_rare: 0
+self_dir: 0
+want_args: 0
+used_wc: 0
+used_thr: 0
+used_sl: 0
+used_eq: 0
+used_pr: 0
+used_pi: 0
+did_stos: 0
 use cx86
 
-this_is_mac:
+is_mac:
     return 0
-this_is_pie:
+is_rel:
     return 0
-use_rare_windows:
-    rare_windows: 1
-    return 0
-
-note_debug_place:
-    return 0
-forget_small:
-    return 0
-note_print:
-    return 0
-do_wait_for_thread:
-    mov_rdi_rax
-    wait_for_thread
-    return 0
-do_restore_frame:
-    leave_handback
+win_rare:
+    wc_rare: 1
     return 0
 
-try_static_block var rhs:
+stmt_dbg:
     return 0
-emit_platform:
-    if used_windows_call = 1
-        emit_wincall
-    if used_thread = 1
-        emit_win_thread
+stmt_reset_small:
     return 0
-emit_stack_guard:
+stmt_mark_print:
+    return 0
+stmt_join_op:
+    mov_rdi_rax()
+    calln("_sov_thread_join")
+    return 0
+stmt_leave_op:
+    leave_handback()
+    return 0
+
+try_sbss var rhs:
+    return 0
+plat_used:
+    if used_wc is 1
+        emit_wincall()
+    if used_thr is 1
+        emit_win_thread()
+    return 0
+plat_canary:
     return 0
 
 leave_reload:
-    if saved_locals > 4
-        bytes:
-            76
-            139
-            125
-            216
-    if saved_locals > 3
-        bytes:
-            76
-            139
-            117
-            224
-    if saved_locals > 2
-        bytes:
-            76
-            139
-            109
-            232
-    if saved_locals > 1
-        bytes:
-            76
-            139
-            101
-            240
+    if fn_save_n > 4
+        emit(76)
+        emit(139)
+        emit(125)
+        emit(216)
+    if fn_save_n > 3
+        emit(76)
+        emit(139)
+        emit(117)
+        emit(224)
+    if fn_save_n > 2
+        emit(76)
+        emit(139)
+        emit(109)
+        emit(232)
+    if fn_save_n > 1
+        emit(76)
+        emit(139)
+        emit(101)
+        emit(240)
     return 0
 canary_die:
     rdi_imm(60)
-    bytes:
-        106
-        60
-        88
-    ask_kernel
+    emit(106)
+    emit(60)
+    emit(88)
+    sysc()
     return 0
 spawn_arg ai:
-    if ai = 0
-        mov_rdi_rax
-    if ai = 1
-        mov_rsi_rax
-    if ai = 2
-        bytes:
-            72
-            137
-            194
-    if ai = 3
-        mov_rcx_rax
-    if ai = 4
-        bytes:
-            73
-            137
-            192
-    if ai = 5
-        bytes:
-            73
-            137
-            193
+    if ai is 0
+        mov_rdi_rax()
+    if ai is 1
+        mov_rsi_rax()
+    if ai is 2
+        emit(72)
+        emit(137)
+        emit(194)
+    if ai is 3
+        mov_rcx_rax()
+    if ai is 4
+        emit(73)
+        emit(137)
+        emit(192)
+    if ai is 5
+        emit(73)
+        emit(137)
+        emit(193)
     return 0
 spawn_finish name:
-    bytes:
-        76
-        137
-        200
-        73
-        137
-        194
-        77
-        137
-        193
-        73
-        137
-        200
-        72
-        137
-        209
-        72
-        137
-        242
-        72
-        137
-        254
-        72
-        191
-    # leave 8 empty bytes; later_fill writes the task's address here
-    hole: here()
-    put_8_bytes(0)
-    later_fill(hole, "task_address", name)
-    start_thread
+    emit(76)
+    emit(137)
+    emit(200)
+    emit(73)
+    emit(137)
+    emit(194)
+    emit(77)
+    emit(137)
+    emit(193)
+    emit(73)
+    emit(137)
+    emit(200)
+    emit(72)
+    emit(137)
+    emit(209)
+    emit(72)
+    emit(137)
+    emit(242)
+    emit(72)
+    emit(137)
+    emit(254)
+    emit(72)
+    emit(191)
+    fn_at: here()
+    emit8(0)
+    addp(fn_at, "fnaddr", name)
+    calln("_sov_thread_spawn")
     return 0
 
 # set while main's own statements emit
-at_top: 0
-tiny_program: 0
+in_main_now: 0
+thin_main: 0
 
 main: 0
-needs_heap: 0
+has_vm: 0
 leaf8: 0
-value_dead: 0
-needs_private: 0
-used_crash: 0
-const_names: 0
-const_values: 0
-const_dirty: 0
-letter_boxes: 0
-letter_tasks: 0
-array_names: 0
-array_count: 0
-saw_letters: 0
+val_dead: 0
+need_priv: 0
+used_tr: 0
+cnms: 0
+cvls: 0
+cemt: 0
+str_vars: 0
+str_fns: 0
+ar_names: 0
+ar_cnt: 0
+saw_str: 0
 leave_handback:
     # the prologue pushed the saved registers BELOW rbp (rbp-8 ..
     # rbp-8n) and the old rbp AT rbp. a bare x86 leave (mov rsp,
@@ -211,166 +200,155 @@ leave_handback:
     # register per call; popping from rbp instead clobbers the
     # return address. walk rsp down over the register slots, pop
     # them, then pop the saved rbp.
-    # saved_locals 0: no register slots, but the prologue still did
+    # fn_save_n 0: no register slots, but the prologue still did
     # sub rsp, N. a bare pop rbp then ret pops the empty frame
     # (zeros) and jumps to 0 - ACCESS_VIOLATION on Windows, which
-    # = how sovren.exe died on no-args (Usage calls _sov_argc).
-    if saved_locals = 0
-        put_in_program(201)
+    # is how sovren.exe died on no-args (Usage calls _sov_argc).
+    if fn_save_n is 0
+        emit(201)
         return 0
-    if saved_locals > 0
+    if fn_save_n > 0
         # lea rsp, [rbp - 8n]: land exactly on the register slots,
         # whatever the frame size was. a sub rsp, 8n leaves the
         # frame in place and the pop rbp lands inside the frame
-        bytes:
-            72
-            141
-            101
-        put_in_program(256 - saved_locals * 8)
-    if saved_locals > 4
-        bytes:
-            65
-            95
-    if saved_locals > 3
-        bytes:
-            65
-            94
-    if saved_locals > 2
-        bytes:
-            65
-            93
-    if saved_locals > 1
-        bytes:
-            65
-            92
-    if saved_locals > 0
-        put_in_program(91)
-    put_in_program(93)
+        emit(72)
+        emit(141)
+        emit(101)
+        emit(256 - fn_save_n * 8)
+    if fn_save_n > 4
+        emit(65)
+        emit(95)
+    if fn_save_n > 3
+        emit(65)
+        emit(94)
+    if fn_save_n > 2
+        emit(65)
+        emit(93)
+    if fn_save_n > 1
+        emit(65)
+        emit(92)
+    if fn_save_n > 0
+        emit(91)
+    emit(93)
     return 0
 
-ask_kernel:
-    used_windows_call: 1
-    call("_sov_wincall")
+sysc:
+    used_wc: 1
+    calln("_sov_wincall")
 
-set_up_call name how_many already_set:
-    # put this call's values in the places the machine wants
+call_args name argc direct:
     # cfunc(addr, a1..a6) calls a C function at a computed address.
     # C wants its arguments in rdi rsi rdx rcx r8 r9 and the stack
     # aligned to 16 bytes, and rax cleared for a variadic callee.
-    if same(name, "cfunc") = 1
+    if same(name, "cfunc") is 1
         # Windows hands arguments over differently from Linux: the
         # first four go in rcx, rdx, r8 and r9, the rest on the
         # stack, and the caller must leave thirty-two bytes of room
-        # above them that the called code = allowed to scribble in.
+        # above them that the called code is allowed to scribble in.
         # Calling a Windows library the Linux way puts every
         # argument in the wrong place.
-        bytes:
-            65
-            89
-            65
-            88
-            89
-            90
-            94
-            95
-            65
-            91
-            85
-            72
-            137
-            229
-            72
-            131
-            228
-            240
-            72
-            131
-            236
-            64
-            76
-            137
-            68
-            36
-            32
-            76
-            137
-            76
-            36
-            40
-            73
-            137
-            201
-            73
-            137
-            208
-            72
-            137
-            242
-            72
-            137
-            249
-            72
-            49
-            192
-            65
-            255
-            211
-            72
-            137
-            236
-            93
+        emit(65)
+        emit(89)
+        emit(65)
+        emit(88)
+        emit(89)
+        emit(90)
+        emit(94)
+        emit(95)
+        emit(65)
+        emit(91)
+        emit(85)
+        emit(72)
+        emit(137)
+        emit(229)
+        emit(72)
+        emit(131)
+        emit(228)
+        emit(240)
+        emit(72)
+        emit(131)
+        emit(236)
+        emit(64)
+        emit(76)
+        emit(137)
+        emit(68)
+        emit(36)
+        emit(32)
+        emit(76)
+        emit(137)
+        emit(76)
+        emit(36)
+        emit(40)
+        emit(73)
+        emit(137)
+        emit(201)
+        emit(73)
+        emit(137)
+        emit(208)
+        emit(72)
+        emit(137)
+        emit(242)
+        emit(72)
+        emit(137)
+        emit(249)
+        emit(72)
+        emit(49)
+        emit(192)
+        emit(65)
+        emit(255)
+        emit(211)
+        emit(72)
+        emit(137)
+        emit(236)
+        emit(93)
         return
     # the thread bridge builtins. the compiler rewrites the shared
     # runtime's clone/fork/futex syscalls into these (see the repl
-    # block below), so thread code = one shared source; this target
+    # block below), so thread code is one shared source; this target
     # answers them with CreateThread, WaitForSingleObject and
-    # ExitThread. wake = a no-op: a thread's own end signals its
-    # handle, which = all the wait side needs.
-    if same(name, "thread_create") = 1
-        used_thread: 1
-        put_in_program(94)
-        take_from_stack
-        mov_rdi_rax
-        call("_sov_win_create")
+    # ExitThread. wake is a no-op: a thread's own end signals its
+    # handle, which is all the wait side needs.
+    if same(name, "thread_create") is 1
+        used_thr: 1
+        emit(94)
+        pop_rax()
+        mov_rdi_rax()
+        calln("_sov_win_create")
         return
-    if same(name, "thread_wait") = 1
-        used_thread: 1
-        put_in_program(94)
-        take_from_stack
-        mov_rdi_rax
-        call("_sov_win_wait")
+    if same(name, "thread_wait") is 1
+        used_thr: 1
+        emit(94)
+        pop_rax()
+        mov_rdi_rax()
+        calln("_sov_win_wait")
         return
-    if same(name, "thread_wake") = 1
+    if same(name, "thread_wake") is 1
         # the base arrives in rdi; windows needs no wake at all -
         # the waiter blocks in WaitForSingleObject and wakes when
         # the host thread dies
-        used_thread: 1
-        bytes:
-            49
-            192
+        used_thr: 1
+        emit(49)
+        emit(192)
         return
-    if same(name, "thread_exit") = 1
-        used_thread: 1
-        bytes:
-            72
-            184
+    if same(name, "thread_exit") is 1
+        used_thr: 1
+        emit(72)
+        emit(184)
         at: here()
-        put_8_bytes(0)
-        later_fill(at, "iatslot", 16)
-        bytes:
-            255
-            16
+        emit8(0)
+        addp(at, "iatslot", 16)
+        emit(255)
+        emit(16)
         return
     # the shared runtime's clone entry asks for the stack pointer
     # (dead on windows, but the call must still compile)
-    if same(name, "stack_pointer") = 1
-        bytes:
-            72
-            137
-            224
+    if same(name, "sp") is 1
+        emit(72)
+        emit(137)
+        emit(224)
         return
-    if same(name, "syscall") = 1
-        windows_late: 1
+    if same(name, "syscall") is 1
+        wc_dyn: 1
         # pop exactly the values that were pushed, highest position
         # first: a7->r9, a6->r8, a5->rcx, a4->rdx, a3->rsi,
         # a2->rdi, a1(num)->rax. the kernel wants arg4 in r10, so
@@ -379,783 +357,700 @@ set_up_call name how_many already_set:
         # never touched. (the old code always popped seven; the
         # four-value print syscalls survived only because their
         # rbp frames absorbed three slots of drift.)
-        count: how_many
-        if count > 7
-            count: 7
-        if count > 6
-            bytes:
-                65
-                89
-        if count > 5
-            bytes:
-                65
-                88
-        if count > 4
-            put_in_program(89)
-        if count > 3
-            put_in_program(90)
-        if count > 2
-            put_in_program(94)
-        if count > 1
-            put_in_program(95)
-        take_from_stack
-        if how_many > 4
-            bytes:
-                65
-                82
-                73
-                137
-                202
-            ask_kernel
-            bytes:
-                65
-                90
+        sy: argc
+        if sy > 7
+            sy: 7
+        if sy > 6
+            emit(65)
+            emit(89)
+        if sy > 5
+            emit(65)
+            emit(88)
+        if sy > 4
+            emit(89)
+        if sy > 3
+            emit(90)
+        if sy > 2
+            emit(94)
+        if sy > 1
+            emit(95)
+        pop_rax()
+        if argc > 4
+            emit(65)
+            emit(82)
+            emit(73)
+            emit(137)
+            emit(202)
+            sysc()
+            emit(65)
+            emit(90)
         if not
-            ask_kernel
+            sysc()
         return
-    if already_set = 0
-        if how_many = 1
-            take_from_stack
-            mov_rdi_rax
+    if direct is 0
+        if argc is 1
+            pop_rax()
+            mov_rdi_rax()
         if not
-            if how_many = 2
-                put_in_program(94)
-                take_from_stack
-                mov_rdi_rax
+            if argc is 2
+                emit(94)
+                pop_rax()
+                mov_rdi_rax()
             if not
-                if how_many = 3
-                    bytes:
-                        90
-                        94
-                    take_from_stack
-                    mov_rdi_rax
+                if argc is 3
+                    emit(90)
+                    emit(94)
+                    pop_rax()
+                    mov_rdi_rax()
                 if not
-                    if how_many = 4
-                        bytes:
-                            89
-                            90
-                            94
-                        take_from_stack
-                        mov_rdi_rax
+                    if argc is 4
+                        emit(89)
+                        emit(90)
+                        emit(94)
+                        pop_rax()
+                        mov_rdi_rax()
                     if not
-                        if how_many = 5
-                            bytes:
-                                65
-                                88
-                                89
-                                90
-                                94
-                            take_from_stack
-                            mov_rdi_rax
+                        if argc is 5
+                            emit(65)
+                            emit(88)
+                            emit(89)
+                            emit(90)
+                            emit(94)
+                            pop_rax()
+                            mov_rdi_rax()
                         if not
-                            if how_many = 6
-                                bytes:
-                                    65
-                                    89
-                                    65
-                                    88
-                                    89
-                                    90
-                                    94
-                                take_from_stack
-                                mov_rdi_rax
+                            if argc is 6
+                                emit(65)
+                                emit(89)
+                                emit(65)
+                                emit(88)
+                                emit(89)
+                                emit(90)
+                                emit(94)
+                                pop_rax()
+                                mov_rdi_rax()
                             if not
-                                if how_many = 7
-                                    bytes:
-                                        65
-                                        90
-                                        65
-                                        89
-                                        65
-                                        88
-                                        89
-                                        90
-                                        94
-                                    take_from_stack
-                                    mov_rdi_rax
+                                if argc is 7
+                                    emit(65)
+                                    emit(90)
+                                    emit(65)
+                                    emit(89)
+                                    emit(65)
+                                    emit(88)
+                                    emit(89)
+                                    emit(90)
+                                    emit(94)
+                                    pop_rax()
+                                    mov_rdi_rax()
 
-    if same(name, "_sov_alloc") = 1
-        used_alloc: 1
-    if same(name, "_sov_strlen") = 1
-        used_text_length: 1
-    if same(name, "_sov_str_eq") = 1
-        used_texts_equal: 1
-    if same(name, "syscall") = 1
-        windows_late: 1
-        bytes:
-            65
-            89
-            65
-            88
-            65
-            90
-            65
-            91
-            90
-            94
-        take_from_stack
-        bytes:
-            72
-            137
-            247
-            72
-            137
-            214
-            76
-            137
-            218
-        ask_kernel
+    if same(name, "_sov_alloc") is 1
+        used_al: 1
+    if same(name, "_sov_strlen") is 1
+        used_sl: 1
+    if same(name, "_sov_str_eq") is 1
+        used_eq: 1
+    if same(name, "syscall") is 1
+        wc_dyn: 1
+        emit(65)
+        emit(89)
+        emit(65)
+        emit(88)
+        emit(65)
+        emit(90)
+        emit(65)
+        emit(91)
+        emit(90)
+        emit(94)
+        pop_rax()
+        emit(72)
+        emit(137)
+        emit(247)
+        emit(72)
+        emit(137)
+        emit(214)
+        emit(76)
+        emit(137)
+        emit(218)
+        sysc()
         return
-    if same(name, "port_out8") = 1
-        bytes:
-            72
-            137
-            248
-            137
-            214
-            137
-            240
-            72
-            137
-            250
-            137
-            208
-            238
+    if same(name, "port_out8") is 1
+        emit(72)
+        emit(137)
+        emit(248)
+        emit(137)
+        emit(214)
+        emit(137)
+        emit(240)
+        emit(72)
+        emit(137)
+        emit(250)
+        emit(137)
+        emit(208)
+        emit(238)
         return
-    if same(name, "port_in8") = 1
-        bytes:
-            72
-            137
-            250
-            49
-            192
-            236
+    if same(name, "port_in8") is 1
+        emit(72)
+        emit(137)
+        emit(250)
+        emit(49)
+        emit(192)
+        emit(236)
         return
-    if same(name, "hlt") = 1
-        put_in_program(244)
+    if same(name, "hlt") is 1
+        emit(244)
         return
-    if same(name, "cli") = 1
-        put_in_program(250)
+    if same(name, "cli") is 1
+        emit(250)
         return
-    if same(name, "sti") = 1
-        put_in_program(251)
+    if same(name, "sti") is 1
+        emit(251)
         return
-    if same(name, "peek_raw8") = 1
-        bytes:
-            72
-            15
-            182
-            4
-            55
+    if same(name, "peek_raw8") is 1
+        emit(72)
+        emit(15)
+        emit(182)
+        emit(4)
+        emit(55)
         return
-    if same(name, "peek_raw64") = 1
-        bytes:
-            72
-            139
-            4
-            55
+    if same(name, "peek_raw64") is 1
+        emit(72)
+        emit(139)
+        emit(4)
+        emit(55)
         return
-    if same(name, "poke_raw8") = 1
-        bytes:
-            136
-            20
-            55
-        mov_rax_rdi
+    if same(name, "poke_raw8") is 1
+        emit(136)
+        emit(20)
+        emit(55)
+        mov_rax_rdi()
         return
-    if same(name, "poke_raw64") = 1
-        bytes:
-            72
-            137
-            20
-            55
-        mov_rax_rdi
+    if same(name, "poke_raw64") is 1
+        emit(72)
+        emit(137)
+        emit(20)
+        emit(55)
+        mov_rax_rdi()
         return
-    if same(name, "peek_byte") = 1
+    if same(name, "peek_byte") is 1
         chk_mem(1)
-        bytes:
-            72
-            15
-            182
-            4
-            55
+        emit(72)
+        emit(15)
+        emit(182)
+        emit(4)
+        emit(55)
         return
-    if same(name, "peek_i64") = 1
+    if same(name, "peek_i64") is 1
         chk_mem(8)
-        bytes:
-            72
-            139
-            4
-            55
+        emit(72)
+        emit(139)
+        emit(4)
+        emit(55)
         return
-    if same(name, "peek_ptr") = 1
+    if same(name, "peek_ptr") is 1
         chk_mem(8)
-        bytes:
-            72
-            139
-            4
-            247
+        emit(72)
+        emit(139)
+        emit(4)
+        emit(247)
         return
-    if same(name, "poke_byte") = 1
+    if same(name, "poke_byte") is 1
         chk_mem(1)
-        bytes:
-            136
-            20
-            55
-        mov_rax_rdi
+        emit(136)
+        emit(20)
+        emit(55)
+        mov_rax_rdi()
         return
-    if same(name, "poke_i64") = 1
+    if same(name, "poke_i64") is 1
         chk_mem(8)
-        bytes:
-            72
-            137
-            20
-            55
-        mov_rax_rdi
+        emit(72)
+        emit(137)
+        emit(20)
+        emit(55)
+        mov_rax_rdi()
         return
-    # bitwise, native: one opcode each. a = rdi, b = rsi, answer rax.
+    # bitwise, native: one opcode each. a is rdi, b is rsi, answer rax.
     # the language had no bit operators, so every and/or/xor in every
     # library was a 32-step loop over % and /
-    if same(name, "band") = 1
-        mov_rax_rsi
-        bytes:
-            72
-            33
-            248
+    if same(name, "band") is 1
+        mov_rax_rsi()
+        emit(72)
+        emit(33)
+        emit(248)
         return
-    if same(name, "bor") = 1
-        mov_rax_rsi
-        bytes:
-            72
-            9
-            248
+    if same(name, "bor") is 1
+        mov_rax_rsi()
+        emit(72)
+        emit(9)
+        emit(248)
         return
-    if same(name, "bxor") = 1
-        mov_rax_rsi
-        bytes:
-            72
-            49
-            248
+    if same(name, "bxor") is 1
+        mov_rax_rsi()
+        emit(72)
+        emit(49)
+        emit(248)
         return
-    if same(name, "bshl") = 1
-        mov_rcx_rsi
-        mov_rax_rdi
-        bytes:
-            72
-            211
-            224
+    if same(name, "bshl") is 1
+        mov_rcx_rsi()
+        mov_rax_rdi()
+        emit(72)
+        emit(211)
+        emit(224)
         return
-    if same(name, "bshr") = 1
-        mov_rcx_rsi
-        mov_rax_rdi
-        bytes:
-            72
-            211
-            232
+    if same(name, "bshr") is 1
+        mov_rcx_rsi()
+        mov_rax_rdi()
+        emit(72)
+        emit(211)
+        emit(232)
         return
     # arithmetic shift right: the exact replacement for "a / 2", which
     # truncates toward zero and so keeps a negative's sign
-    if same(name, "bsar") = 1
-        mov_rcx_rsi
-        mov_rax_rdi
-        bytes:
-            72
-            211
-            248
+    if same(name, "bsar") is 1
+        mov_rcx_rsi()
+        mov_rax_rdi()
+        emit(72)
+        emit(211)
+        emit(248)
         return
     # ---- things every other language has as one instruction ----
-    # a = rdi, b = rsi, c = rdx, answer rax
-    if same(name, "_sov_mem_copy") = 1
-        mov_rax_rdi
-        mov_rcx_rdx
-        bytes:
-            243
-            164
+    # a is rdi, b is rsi, c is rdx, answer rax
+    if same(name, "_sov_mem_copy") is 1
+        mov_rax_rdi()
+        mov_rcx_rdx()
+        emit(243)
+        emit(164)
         return
-    if same(name, "_sov_mem_set") = 1
-        # rep stosb takes its byte from al, so rax = busy for the
+    if same(name, "_sov_mem_set") is 1
+        # rep stosb takes its byte from al, so rax is busy for the
         # whole fill and rdi walks off the end of the block. The
-        # destination = what a caller wants back - everyone writes
+        # destination is what a caller wants back - everyone writes
         # mem_zero(mem_new(n), n) - so park it on the stack and hand
         # it back, the way memset does. Returning the fill value
         # instead handed callers a null pointer.
-        put_in_program(87)
-        mov_rax_rsi
-        mov_rcx_rdx
-        bytes:
-            243
-            170
-            88
+        emit(87)
+        mov_rax_rsi()
+        mov_rcx_rdx()
+        emit(243)
+        emit(170)
+        emit(88)
         return
-    if same(name, "bswap64") = 1
-        mov_rax_rdi
-        bytes:
-            72
-            15
-            200
+    if same(name, "bswap64") is 1
+        mov_rax_rdi()
+        emit(72)
+        emit(15)
+        emit(200)
         return
-    if same(name, "iabs") = 1
-        mov_rax_rdi
-        bytes:
-            72
-            247
-            216
-            72
-            15
-            72
-            199
+    if same(name, "iabs") is 1
+        mov_rax_rdi()
+        emit(72)
+        emit(247)
+        emit(216)
+        emit(72)
+        emit(15)
+        emit(72)
+        emit(199)
         return
-    # atomics: rdi = the slot, rsi the value, rdx the cas desired.
+    # atomics: rdi is the slot, rsi the value, rdx the cas desired.
     # lock xadd/xchg/cmpxchg, verified with as+objdump. rax comes
-    # back as the old value, which = what a mutex_swap wants.
-    if same(name, "atomic_add") = 1
-        mov_rax_rsi
-        bytes:
-            240
-            72
-            15
-            193
-            7
+    # back as the old value, which is what a mutex_swap wants.
+    if same(name, "atomic_add") is 1
+        mov_rax_rsi()
+        emit(240)
+        emit(72)
+        emit(15)
+        emit(193)
+        emit(7)
         return
-    if same(name, "atomic_swap") = 1
-        mov_rax_rsi
-        bytes:
-            240
-            72
-            135
-            7
+    if same(name, "atomic_swap") is 1
+        mov_rax_rsi()
+        emit(240)
+        emit(72)
+        emit(135)
+        emit(7)
         return
-    if same(name, "atomic_load") = 1
-        bytes:
-            72
-            139
-            7
+    if same(name, "atomic_load") is 1
+        emit(72)
+        emit(139)
+        emit(7)
         return
-    if same(name, "atomic_store") = 1
-        bytes:
-            72
-            137
-            55
-        mov_rax_rsi
+    if same(name, "atomic_store") is 1
+        emit(72)
+        emit(137)
+        emit(55)
+        mov_rax_rsi()
         return
-    if same(name, "atomic_cas") = 1
-        mov_rax_rsi
-        bytes:
-            72
-            137
-            214
-            240
-            72
-            15
-            177
-            55
+    if same(name, "atomic_cas") is 1
+        mov_rax_rsi()
+        emit(72)
+        emit(137)
+        emit(214)
+        emit(240)
+        emit(72)
+        emit(15)
+        emit(177)
+        emit(55)
         return
-    call(name)
+    calln(name)
 # immutable: names declared `immutable name: value` may not be
 # assigned again anywhere in the file
-locked_names: 0
-skip_lock: 0
+im_names: 0
+im_skip: 0
 copyargs n:
     if n > 0
-        mov_rax_rdi
+        mov_rax_rdi()
         store_loc(0)
     if n > 1
-        bytes:
-            72
-            137
-            240
+        emit(72)
+        emit(137)
+        emit(240)
         store_loc(1)
     if n > 2
-        bytes:
-            72
-            137
-            208
+        emit(72)
+        emit(137)
+        emit(208)
         store_loc(2)
     if n > 3
-        bytes:
-            72
-            137
-            200
+        emit(72)
+        emit(137)
+        emit(200)
         store_loc(3)
     if n > 4
-        bytes:
-            76
-            137
-            192
+        emit(76)
+        emit(137)
+        emit(192)
         store_loc(4)
     if n > 5
-        bytes:
-            76
-            137
-            200
+        emit(76)
+        emit(137)
+        emit(200)
         store_loc(5)
     if n > 6
-        bytes:
-            76
-            137
-            208
+        emit(76)
+        emit(137)
+        emit(208)
         store_loc(6)
 emit_print_int:
-    task_names: _sov_list_add(task_names, "_sov_print_int")
-    task_at: _sov_list_add(task_at, here())
-    bytes:
-        83
-        72
-        137
-        248
-        72
-        131
-        236
-        32
-        72
-        141
-        92
-        36
-        32
-        72
-        255
-        203
-        198
-        3
-        10
-        106
-        10
-        89
-        69
-        49
-        201
-    test_rax
-    bytes:
-        15
-        141
+    fn_names: _sov_list_add(fn_names, "_sov_print_int")
+    fn_offs: _sov_list_add(fn_offs, here())
+    emit(83)
+    emit(72)
+    emit(137)
+    emit(248)
+    emit(72)
+    emit(131)
+    emit(236)
+    emit(32)
+    emit(72)
+    emit(141)
+    emit(92)
+    emit(36)
+    emit(32)
+    emit(72)
+    emit(255)
+    emit(203)
+    emit(198)
+    emit(3)
+    emit(10)
+    emit(106)
+    emit(10)
+    emit(89)
+    emit(69)
+    emit(49)
+    emit(201)
+    test_rax()
+    emit(15)
+    emit(141)
     ag: here()
-    jump_at: _sov_list_add(jump_at, ag)
-    jump_pad: _sov_list_add(jump_pad, pad_version)
-    jump_id: _sov_list_add(jump_id, ag)
-    jump_state: _sov_list_add(jump_state, 0)
-    put_4_bytes(0)
-    bytes:
-        65
-        177
-        1
-        72
-        247
-        216
+    br_at: _sov_list_add(br_at, ag)
+    br_pv: _sov_list_add(br_pv, pad_ver)
+    br_id: _sov_list_add(br_id, ag)
+    br_st: _sov_list_add(br_st, 0)
+    emit4(0)
+    emit(65)
+    emit(177)
+    emit(1)
+    emit(72)
+    emit(247)
+    emit(216)
     put(ag, here() - (ag + 4))
     dl: here()
-    bytes:
-        49
-        210
-        72
-        247
-        241
-        131
-        194
-        48
-        72
-        255
-        203
-        136
-        19
-        72
-        133
-        192
-        15
-        133
+    emit(49)
+    emit(210)
+    emit(72)
+    emit(247)
+    emit(241)
+    emit(131)
+    emit(194)
+    emit(48)
+    emit(72)
+    emit(255)
+    emit(203)
+    emit(136)
+    emit(19)
+    emit(72)
+    emit(133)
+    emit(192)
+    emit(15)
+    emit(133)
     aj: here()
-    jump_at: _sov_list_add(jump_at, aj)
-    jump_pad: _sov_list_add(jump_pad, pad_version)
-    jump_id: _sov_list_add(jump_id, aj)
-    jump_state: _sov_list_add(jump_state, 0)
-    put_4_bytes(0)
+    br_at: _sov_list_add(br_at, aj)
+    br_pv: _sov_list_add(br_pv, pad_ver)
+    br_id: _sov_list_add(br_id, aj)
+    br_st: _sov_list_add(br_st, 0)
+    emit4(0)
     put(aj, dl - (aj + 4))
-    bytes:
-        69
-        132
-        201
+    emit(69)
+    emit(132)
+    emit(201)
     zn: jz()
-    bytes:
-        72
-        255
-        203
-        198
-        3
-        45
+    emit(72)
+    emit(255)
+    emit(203)
+    emit(198)
+    emit(3)
+    emit(45)
     patch(zn)
-    bytes:
-        72
-        137
-        222
-        72
-        141
-        84
-        36
-        32
-        72
-        41
-        218
+    emit(72)
+    emit(137)
+    emit(222)
+    emit(72)
+    emit(141)
+    emit(84)
+    emit(36)
+    emit(32)
+    emit(72)
+    emit(41)
+    emit(218)
     rdi_imm(1)
-    bytes:
-        106
-        1
-        88
-    ask_kernel
-    bytes:
-        72
-        131
-        196
-        32
-        91
-    ret
+    emit(106)
+    emit(1)
+    emit(88)
+    sysc()
+    emit(72)
+    emit(131)
+    emit(196)
+    emit(32)
+    emit(91)
+    ret()
 emit_start:
     # windows gives no argv on the stack. ask the system for the
     # command line, then cut it into words ourselves.
-    bytes:
-        72
-        131
-        228
-        240
-        72
-        129
-        236
-        32
-        1
-        0
-        0
-        72
-        184
+    emit(72)
+    emit(131)
+    emit(228)
+    emit(240)
+    emit(72)
+    emit(129)
+    emit(236)
+    emit(32)
+    emit(1)
+    emit(0)
+    emit(0)
+    emit(72)
+    emit(184)
     iat_at: here()
-    put_8_bytes(0)
-    later_fill(iat_at, "iatslot", 7)
-    bytes:
-        255
-        16
-        73
-        137
-        192
-        76
-        141
-        76
-        36
-        64
-        49
-        201
-        65
-        138
-        16
-        128
-        250
-        32
-        117
-        5
-        73
-        255
-        192
-        235
-        243
-        132
-        210
-        116
-        32
-        77
-        137
-        4
-        201
-        255
-        193
-        65
-        138
-        16
-        132
-        210
-        116
-        19
-        128
-        250
-        32
-        116
-        5
-        73
-        255
-        192
-        235
-        239
-        65
-        198
-        0
-        0
-        73
-        255
-        192
-        235
-        207
-        137
-        207
-        76
-        137
-        206
-    # keep how_many and argv where the runtime can find them
-    if needs_args = 1
-        bytes:
-            72
-            184
+    emit8(0)
+    addp(iat_at, "iatslot", 7)
+    emit(255)
+    emit(16)
+    emit(73)
+    emit(137)
+    emit(192)
+    emit(76)
+    emit(141)
+    emit(76)
+    emit(36)
+    emit(64)
+    emit(49)
+    emit(201)
+    emit(65)
+    emit(138)
+    emit(16)
+    emit(128)
+    emit(250)
+    emit(32)
+    emit(117)
+    emit(5)
+    emit(73)
+    emit(255)
+    emit(192)
+    emit(235)
+    emit(243)
+    emit(132)
+    emit(210)
+    emit(116)
+    emit(32)
+    emit(77)
+    emit(137)
+    emit(4)
+    emit(201)
+    emit(255)
+    emit(193)
+    emit(65)
+    emit(138)
+    emit(16)
+    emit(132)
+    emit(210)
+    emit(116)
+    emit(19)
+    emit(128)
+    emit(250)
+    emit(32)
+    emit(116)
+    emit(5)
+    emit(73)
+    emit(255)
+    emit(192)
+    emit(235)
+    emit(239)
+    emit(65)
+    emit(198)
+    emit(0)
+    emit(0)
+    emit(73)
+    emit(255)
+    emit(192)
+    emit(235)
+    emit(207)
+    emit(137)
+    emit(207)
+    emit(76)
+    emit(137)
+    emit(206)
+    # keep argc and argv where the runtime can find them
+    if want_args is 1
+        emit(72)
+        emit(184)
         ga: here()
-        put_8_bytes(0)
-        later_fill(ga, "glob", "g_argc")
-        bytes:
-            72
-            137
-            56
-            72
-            184
+        emit8(0)
+        addp(ga, "glob", "g_argc")
+        emit(72)
+        emit(137)
+        emit(56)
+        emit(72)
+        emit(184)
         gv: here()
-        put_8_bytes(0)
-        later_fill(gv, "glob", "g_argv")
-        bytes:
-            72
-            137
-            48
-    if needs_private = 1
-        emit_canary_seed
-        emit_crash_install
-    bytes:
-        72
-        131
-        236
-        32
-        232
+        emit8(0)
+        addp(gv, "glob", "g_argv")
+        emit(72)
+        emit(137)
+        emit(48)
+    if need_priv is 1
+        emit_canary_seed()
+        emit_crash_install()
+    emit(72)
+    emit(131)
+    emit(236)
+    emit(32)
+    emit(233)
     at: here()
-    put_4_bytes(0)
-    later_fill(at, "rel", "main")
-    bytes:
-        137
-        193
-        72
-        184
-    xa: here()
-    put_8_bytes(0)
-    later_fill(xa, "iatslot", 6)
-    bytes:
-        255
-        16
+    emit4(0)
+    addp(at, "rel", "main")
 emit_write_lit s:
     n: length(s)
-    bytes:
-        106
-        1
-        95
+    emit(106)
+    emit(1)
+    emit(95)
     off: intern_nz(s)
-    bytes:
-        72
-        141
-        53
+    emit(72)
+    emit(141)
+    emit(53)
     at: here()
-    put_4_bytes(0)
-    later_fill(at, "ripstr", off)
+    emit4(0)
+    addp(at, "ripstr", off)
     if n < 128
-        put_in_program(106)
-        put_in_program(n)
-        put_in_program(90)
+        emit(106)
+        emit(n)
+        emit(90)
     if not
-        put_in_program(186)
-        put_4_bytes(n)
-    bytes:
-        106
-        1
-        88
-    ask_kernel
+        emit(186)
+        emit4(n)
+    emit(106)
+    emit(1)
+    emit(88)
+    sysc()
 # windows hands back argv[0] wrapped in quotes, as a drive path with
 # backslashes. turn it into the plain form the file calls understand.
 emit_stack_wipe:
-    # pass 139: the heap, first. heap_ptr = the program's own bump
+    # pass 139: the heap, first. heap_ptr is the program's own bump
     # frontier; every byte below it down to the mapping base was
     # allocated by the program, and a private program that never
     # called secret_die left it all in committed memory at exit.
     # the walk finds the base itself: VirtualQuery probing downward
     # - uncommitted or reserved pages refuse, every MEM_COMMIT page
     # takes the stosq. guard: heap_ptr zero means no heap started.
-    if idx(global_names, "heap_ptr") > 0 - 1
-        bytes:
-            72
-            184
+    if idx(glob_names, "heap_ptr") > 0 - 1
+        emit(72)
+        emit(184)
         hp_at: here()
-        put_8_bytes(0)
-        later_fill(hp_at, "glob", "heap_ptr")
-        bytes:
-            72
-            139
-            0
-            72
-            133
-            192
+        emit8(0)
+        addp(hp_at, "glob", "heap_ptr")
+        emit(72)
+        emit(139)
+        emit(0)
+        emit(72)
+        emit(133)
+        emit(192)
         hp_sk: jz()
-        bytes:
-            72
-            137
-            199
-            72
-            129
-            231
-        put_4_bytes(4294963200)
-        # pass 141: the heap mapping = 64MB - 16384 pages, a hard
+        emit(72)
+        emit(137)
+        emit(199)
+        emit(72)
+        emit(129)
+        emit(231)
+        emit4(4294963200)
+        # pass 141: the heap mapping is 64MB - 16384 pages, a hard
         # bound no gapless neighbor below can stretch
-        bytes:
-            65
-            185
-        put_4_bytes(16384)
+        emit(65)
+        emit(185)
+        emit4(16384)
         hw_loop: here()
-        bytes:
-            72
-            141
-            116
-            36
-            192
-            65
-            184
-        put_4_bytes(28)
-        bytes:
-            72
-            137
-            249
-            72
-            137
-            242
-            72
-            184
+        emit(72)
+        emit(141)
+        emit(116)
+        emit(36)
+        emit(192)
+        emit(65)
+        emit(184)
+        emit4(28)
+        emit(72)
+        emit(137)
+        emit(249)
+        emit(72)
+        emit(137)
+        emit(242)
+        emit(72)
+        emit(184)
         hw_at: here()
-        put_8_bytes(0)
-        later_fill(hw_at, "iatslot", 13)
-        bytes:
-            255
-            16
-            72
-            133
-            192
+        emit8(0)
+        addp(hw_at, "iatslot", 13)
+        emit(255)
+        emit(16)
+        emit(72)
+        emit(133)
+        emit(192)
         hw_q: jnz()
-        bytes:
-            129
-            124
-            36
-            192
-        put_4_bytes(4096)
+        emit(129)
+        emit(124)
+        emit(36)
+        emit(192)
+        emit4(4096)
         hw_s: jnz()
-        bytes:
-            49
-            192
-            185
-        put_4_bytes(512)
-        bytes:
-            252
-            243
-            72
-            171
-            72
-            129
-            239
-        put_4_bytes(8192)
-        bytes:
-            65
-            255
-            201
+        emit(49)
+        emit(192)
+        emit(185)
+        emit4(512)
+        emit(252)
+        emit(243)
+        emit(72)
+        emit(171)
+        emit(72)
+        emit(129)
+        emit(239)
+        emit4(8192)
+        emit(65)
+        emit(255)
+        emit(201)
         hw_cap: jz()
         hw_back: jmp()
         put(hw_back, hw_loop - (hw_back + 4))
@@ -1164,48 +1059,44 @@ emit_stack_wipe:
         patch(hw_cap)
         patch(hp_sk)
     # pass 136: the globals region first - one stosq, bounds patched
-    # at write time. 48 BF = movabs rdi (48 B8 = rax; the stosq
-    # would fire with a stale rdi, which = how the linux version
+    # at write time. 48 BF is movabs rdi (48 B8 is rax; the stosq
+    # would fire with a stale rdi, which is how the linux version
     # taught us the difference).
-    bytes:
-        72
-        191
+    emit(72)
+    emit(191)
     gwa: here()
-    put_8_bytes(0)
-    later_fill(gwa, "gwipe_a", 0)
-    put_in_program(185)
+    emit8(0)
+    addp(gwa, "gwipe_a", 0)
+    emit(185)
     gwn: here()
-    put_4_bytes(0)
-    later_fill(gwn, "gwipe_n", 0)
-    bytes:
-        49
-        192
-        252
-        243
-        72
-        171
+    emit4(0)
+    addp(gwn, "gwipe_n", 0)
+    emit(49)
+    emit(192)
+    emit(252)
+    emit(243)
+    emit(72)
+    emit(171)
     # pass 137: the string literals. a secret written as a constant
     # in the source lives in this span until now.
-    bytes:
-        72
-        191
+    emit(72)
+    emit(191)
     gsa: here()
-    put_8_bytes(0)
-    later_fill(gsa, "gwstr_a", 0)
-    put_in_program(185)
+    emit8(0)
+    addp(gsa, "gwstr_a", 0)
+    emit(185)
     gsn: here()
-    put_4_bytes(0)
-    later_fill(gsn, "gwstr_n", 0)
-    bytes:
-        49
-        192
-        252
-        243
-        72
-        171
+    emit4(0)
+    addp(gsn, "gwstr_n", 0)
+    emit(49)
+    emit(192)
+    emit(252)
+    emit(243)
+    emit(72)
+    emit(171)
     # pass 133: the windows twin. no mincore - the probe is
-    # VirtualQuery (import slot 13; the import table = written
-    # from imp_name at output time, so a slot = one line). walk
+    # VirtualQuery (import slot 13; the import table is written
+    # from imp_name at output time, so a slot is one line). walk
     # down from the page holding rsp: query it, stop when the
     # query fails or the page is not MEM_COMMIT (uncommitted stack
     # reserve reads as reserved, so the walk stops at the guard
@@ -1213,74 +1104,65 @@ emit_stack_wipe:
     # the 28-byte MEMORY_BASIC_INFORMATION lives at rsp-64: dead
     # space below the running frame, rewritten by every query and
     # overwritten by the first stosq pass. State sits at offset 32.
-    bytes:
-        72
-        137
-        231
-        72
-        129
-        231
-    put_4_bytes(4294963200)
-    # pass 141: 64MB of pages = a hard bound - no gapless
+    emit(72)
+    emit(137)
+    emit(231)
+    emit(72)
+    emit(129)
+    emit(231)
+    emit4(4294963200)
+    # pass 141: 64MB of pages is a hard bound - no gapless
     # neighbor below the stack takes the stosq
-    bytes:
-        65
-        185
-    put_4_bytes(16384)
+    emit(65)
+    emit(185)
+    emit4(16384)
     sw_head: here()
-    bytes:
-        72
-        141
-        116
-        36
-        192
-        65
-        184
-    put_4_bytes(28)
-    bytes:
-        72
-        137
-        249
-        72
-        137
-        242
-        72
-        184
+    emit(72)
+    emit(141)
+    emit(116)
+    emit(36)
+    emit(192)
+    emit(65)
+    emit(184)
+    emit4(28)
+    emit(72)
+    emit(137)
+    emit(249)
+    emit(72)
+    emit(137)
+    emit(242)
+    emit(72)
+    emit(184)
     sw_at: here()
-    put_8_bytes(0)
-    later_fill(sw_at, "iatslot", 13)
-    bytes:
-        255
-        16
-        72
-        133
-        192
+    emit8(0)
+    addp(sw_at, "iatslot", 13)
+    emit(255)
+    emit(16)
+    emit(72)
+    emit(133)
+    emit(192)
     sw_q: jnz()
-    bytes:
-        129
-        124
-        36
-        224
-    put_4_bytes(4096)
+    emit(129)
+    emit(124)
+    emit(36)
+    emit(224)
+    emit4(4096)
     sw_s: jnz()
-    bytes:
-        49
-        192
-        185
-    put_4_bytes(512)
-    bytes:
-        252
-        243
-        72
-        171
-        72
-        129
-        239
-    put_4_bytes(8192)
-    bytes:
-        65
-        255
-        201
+    emit(49)
+    emit(192)
+    emit(185)
+    emit4(512)
+    emit(252)
+    emit(243)
+    emit(72)
+    emit(171)
+    emit(72)
+    emit(129)
+    emit(239)
+    emit4(8192)
+    emit(65)
+    emit(255)
+    emit(201)
     sw_cap: jz()
     sw_back: jmp()
     put(sw_back, sw_head - (sw_back + 4))
@@ -1292,73 +1174,64 @@ emit_stack_wipe:
     # arrays. the same VirtualQuery probe gates it: uncommitted or
     # reserved stops the walk, MEM_COMMIT takes the stosq, and the
     # stosq itself steps rdi to the next page up.
-    bytes:
-        72
-        137
-        231
-        72
-        129
-        231
-    put_4_bytes(4294963200)
-    bytes:
-        72
-        129
-        199
-    put_4_bytes(4096)
+    emit(72)
+    emit(137)
+    emit(231)
+    emit(72)
+    emit(129)
+    emit(231)
+    emit4(4294963200)
+    emit(72)
+    emit(129)
+    emit(199)
+    emit4(4096)
     # pass 141: 16MB above the frame bounds the up-walk
-    bytes:
-        65
-        185
-    put_4_bytes(4096)
+    emit(65)
+    emit(185)
+    emit4(4096)
     up_head: here()
-    bytes:
-        72
-        141
-        116
-        36
-        192
-        65
-        184
-    put_4_bytes(28)
-    bytes:
-        72
-        137
-        249
-        72
-        137
-        242
-        72
-        184
+    emit(72)
+    emit(141)
+    emit(116)
+    emit(36)
+    emit(192)
+    emit(65)
+    emit(184)
+    emit4(28)
+    emit(72)
+    emit(137)
+    emit(249)
+    emit(72)
+    emit(137)
+    emit(242)
+    emit(72)
+    emit(184)
     up_at: here()
-    put_8_bytes(0)
-    later_fill(up_at, "iatslot", 13)
-    bytes:
-        255
-        16
-        72
-        133
-        192
+    emit8(0)
+    addp(up_at, "iatslot", 13)
+    emit(255)
+    emit(16)
+    emit(72)
+    emit(133)
+    emit(192)
     up_q: jnz()
-    bytes:
-        129
-        124
-        36
-        192
-    put_4_bytes(4096)
+    emit(129)
+    emit(124)
+    emit(36)
+    emit(192)
+    emit4(4096)
     up_s: jnz()
-    bytes:
-        49
-        192
-        185
-    put_4_bytes(512)
-    bytes:
-        252
-        243
-        72
-        171
-        65
-        255
-        201
+    emit(49)
+    emit(192)
+    emit(185)
+    emit4(512)
+    emit(252)
+    emit(243)
+    emit(72)
+    emit(171)
+    emit(65)
+    emit(255)
+    emit(201)
     up_cap: jz()
     up_back: jmp()
     put(up_back, up_head - (up_back + 4))
@@ -1370,1775 +1243,1533 @@ emit_stack_wipe:
     # zeroed, so even the exit trap hands the kernel a
     # clean register dump. rax/rdi are set fresh by the
     # exit that follows.
-    bytes:
-        49
-        219
-        49
-        237
-        49
-        246
-        49
-        210
-        49
-        201
-        69
-        49
-        192
-        69
-        49
-        201
-        69
-        49
-        210
-        69
-        49
-        219
-        69
-        49
-        228
-        69
-        49
-        237
-        69
-        49
-        246
-        69
-        49
-        255
-        49
-        192
+    emit(49)
+    emit(219)
+    emit(49)
+    emit(237)
+    emit(49)
+    emit(246)
+    emit(49)
+    emit(210)
+    emit(49)
+    emit(201)
+    emit(69)
+    emit(49)
+    emit(192)
+    emit(69)
+    emit(49)
+    emit(201)
+    emit(69)
+    emit(49)
+    emit(210)
+    emit(69)
+    emit(49)
+    emit(219)
+    emit(69)
+    emit(49)
+    emit(228)
+    emit(69)
+    emit(49)
+    emit(237)
+    emit(69)
+    emit(49)
+    emit(246)
+    emit(69)
+    emit(49)
+    emit(255)
+    emit(49)
+    emit(192)
     return
 emit_nodump:
     rax_imm(157)
     rdi_imm(4)
-    bytes:
-        49
-        246
-    ask_kernel
+    emit(49)
+    emit(246)
+    sysc()
 
 emit_canary_seed:
     dummy: imp_mark(11)
     dummy: imp_mark(12)
     dummy: imp_mark(7)
-    if idx(global_names, "g_canary") = 0 - 1
-        global_names: _sov_list_add(global_names, "g_canary")
+    if idx(glob_names, "g_canary") is 0 - 1
+        glob_names: _sov_list_add(glob_names, "g_canary")
     # pass S5 on windows: the canary seed. RtlGenRandom lives in
     # advapi32 under its export name SystemFunction036, asked for
     # at run time so the import table never changes. the two
     # qword string loads are gwstr_a sites - DIR64-relocated, so
     # the names travel with the image under ASLR
-    bytes:
-        72
-        184
+    emit(72)
+    emit(184)
     csa: here()
-    put_8_bytes(0)
-    later_fill(csa, "iatslot", 11)
-    bytes:
-        72
-        185
+    emit8(0)
+    addp(csa, "iatslot", 11)
+    emit(72)
+    emit(185)
     csb: here()
-    put_8_bytes(0)
-    later_fill(csb, "gwstr_a", intern_nz("ADVAPI32.DLL"))
-    bytes:
-        255
-        16
-        72
-        137
-        193
-        72
-        184
+    emit8(0)
+    addp(csb, "gwstr_a", intern_nz("ADVAPI32.DLL"))
+    emit(255)
+    emit(16)
+    emit(72)
+    emit(137)
+    emit(193)
+    emit(72)
+    emit(184)
     csc: here()
-    put_8_bytes(0)
-    later_fill(csc, "iatslot", 12)
-    bytes:
-        72
-        186
+    emit8(0)
+    addp(csc, "iatslot", 12)
+    emit(72)
+    emit(186)
     csd: here()
-    put_8_bytes(0)
-    later_fill(csd, "gwstr_a", intern_nz("SystemFunction036"))
-    bytes:
-        255
-        16
-        72
-        133
-        192
+    emit8(0)
+    addp(csd, "gwstr_a", intern_nz("SystemFunction036"))
+    emit(255)
+    emit(16)
+    emit(72)
+    emit(133)
+    emit(192)
     csz: jz()
     # rcx = &g_canary, rdx = 8, call SystemFunction036
-    bytes:
-        72
-        141
-        13
+    emit(72)
+    emit(141)
+    emit(13)
     cse: here()
-    put_4_bytes(0)
-    later_fill(cse, "grel", "g_canary")
-    put_in_program(186)
-    put_4_bytes(8)
-    bytes:
-        255
-        208
+    emit4(0)
+    addp(cse, "grel", "g_canary")
+    emit(186)
+    emit4(8)
+    emit(255)
+    emit(208)
     # SystemFunction036 wrote the entropy into [rcx] itself;
-    # its return value = only a yes/no, so this path skips the
-    # store - the canary = already in place
+    # its return value is only a yes/no, so this path skips the
+    # store - the canary is already in place
     csj: jmp()
     patch(csz)
-    # no advapi32, or the export = gone: mix three live ASLR
+    # no advapi32, or the export is gone: mix three live ASLR
     # values - the command line, the stack pointer, the canary's
     # own address. never a constant
-    bytes:
-        72
-        184
+    emit(72)
+    emit(184)
     csf: here()
-    put_8_bytes(0)
-    later_fill(csf, "iatslot", 7)
-    bytes:
-        255
-        16
-        72
-        49
-        224
-        72
-        141
-        13
+    emit8(0)
+    addp(csf, "iatslot", 7)
+    emit(255)
+    emit(16)
+    emit(72)
+    emit(49)
+    emit(224)
+    emit(72)
+    emit(141)
+    emit(13)
     csg: here()
-    put_4_bytes(0)
-    later_fill(csg, "grel", "g_canary")
-    bytes:
-        72
-        49
-        200
-        72
-        137
-        5
+    emit4(0)
+    addp(csg, "grel", "g_canary")
+    emit(72)
+    emit(49)
+    emit(200)
+    emit(72)
+    emit(137)
+    emit(5)
     csh: here()
-    put_4_bytes(0)
-    later_fill(csh, "grel", "g_canary")
+    emit4(0)
+    addp(csh, "grel", "g_canary")
     patch(csj)
 
 emit_crash_handler:
     # pass S6 on windows: one vectored handler instead of five
     # signal stubs. it never returns - wipe, then exit 111
-    task_names: _sov_list_add(task_names, "_sov_cw_all")
-    task_at: _sov_list_add(task_at, here())
+    fn_names: _sov_list_add(fn_names, "_sov_cw_all")
+    fn_offs: _sov_list_add(fn_offs, here())
     emit_write_lit("crash\n")
-    emit_stack_wipe
+    emit_stack_wipe()
     rdi_imm(111)
-    bytes:
-        106
-        60
-        88
-    ask_kernel
+    emit(106)
+    emit(60)
+    emit(88)
+    sysc()
 
 emit_crash_install:
     dummy: imp_mark(11)
     dummy: imp_mark(12)
-    bytes:
-        72
-        184
+    emit(72)
+    emit(184)
     cia: here()
-    put_8_bytes(0)
-    later_fill(cia, "iatslot", 11)
-    bytes:
-        72
-        185
+    emit8(0)
+    addp(cia, "iatslot", 11)
+    emit(72)
+    emit(185)
     cib: here()
-    put_8_bytes(0)
-    later_fill(cib, "gwstr_a", intern_nz("KERNEL32.DLL"))
-    bytes:
-        255
-        16
-        72
-        137
-        193
-        72
-        184
+    emit8(0)
+    addp(cib, "gwstr_a", intern_nz("KERNEL32.DLL"))
+    emit(255)
+    emit(16)
+    emit(72)
+    emit(137)
+    emit(193)
+    emit(72)
+    emit(184)
     cic: here()
-    put_8_bytes(0)
-    later_fill(cic, "iatslot", 12)
-    bytes:
-        72
-        186
+    emit8(0)
+    addp(cic, "iatslot", 12)
+    emit(72)
+    emit(186)
     cid: here()
-    put_8_bytes(0)
-    later_fill(cid, "gwstr_a", intern_nz("AddVectoredExceptionHandler"))
-    bytes:
-        255
-        16
-        72
-        133
-        192
+    emit8(0)
+    addp(cid, "gwstr_a", intern_nz("AddVectoredExceptionHandler"))
+    emit(255)
+    emit(16)
+    emit(72)
+    emit(133)
+    emit(192)
     ciz: jz()
-    bytes:
-        106
-        1
-        89
-        72
-        186
+    emit(106)
+    emit(1)
+    emit(89)
+    emit(72)
+    emit(186)
     cie: here()
-    put_8_bytes(0)
-    later_fill(cie, "task_address", "_sov_cw_all")
-    bytes:
-        255
-        208
+    emit8(0)
+    addp(cie, "fnaddr", "_sov_cw_all")
+    emit(255)
+    emit(208)
     patch(ciz)
 
 emit_wincall:
     # Windows has no Linux syscalls. This turns a linux syscall
     # number in rax into the matching kernel32 call. It also maps
     # the terminal ioctls onto Get/SetConsoleMode so raw key input
-    # works. Every register the compiled code keeps local_names in is
+    # works. Every register the compiled code keeps locals in is
     # saved and put back.
-    task_names: _sov_list_add(task_names, "_sov_wincall")
-    task_at: _sov_list_add(task_at, here())
-    if needs_heap = 0
-        if windows_late = 0
-            if rare_windows = 0
+    fn_names: _sov_list_add(fn_names, "_sov_wincall")
+    fn_offs: _sov_list_add(fn_offs, here())
+    if has_vm is 0
+        if wc_dyn is 0
+            if wc_rare is 0
                 # the common case: the only syscalls are write and
                 # exit. emit a slim two-branch dispatcher and skip the
                 # full thirteen-call one below (pass 94).
-                bytes:
-                    85
-                    72
-                    137
-                    229
-                    83
-                    65
-                    84
-                    65
-                    85
-                    65
-                    86
-                    65
-                    87
-                    87
-                    86
-                    72
-                    129
-                    236
-                    160
-                    0
-                    0
-                    0
-                    72
-                    131
-                    228
-                    240
-                    72
-                    137
-                    117
-                    184
-                    72
-                    137
-                    85
-                    176
-                    72
-                    137
-                    125
-                    168
-                    131
-                    248
-                    1
+                emit(85)
+                emit(72)
+                emit(137)
+                emit(229)
+                emit(83)
+                emit(65)
+                emit(84)
+                emit(65)
+                emit(85)
+                emit(65)
+                emit(86)
+                emit(65)
+                emit(87)
+                emit(87)
+                emit(86)
+                emit(72)
+                emit(129)
+                emit(236)
+                emit(160)
+                emit(0)
+                emit(0)
+                emit(0)
+                emit(72)
+                emit(131)
+                emit(228)
+                emit(240)
+                emit(72)
+                emit(137)
+                emit(117)
+                emit(184)
+                emit(72)
+                emit(137)
+                emit(85)
+                emit(176)
+                emit(72)
+                emit(137)
+                emit(125)
+                emit(168)
+                emit(131)
+                emit(248)
+                emit(1)
                 wcw1: jz()
-                bytes:
-                    131
-                    248
-                    60
+                emit(131)
+                emit(248)
+                emit(60)
                 wcw60: jz()
-                bytes:
-                    49
-                    192
+                emit(49)
+                emit(192)
                 wcdef: jmp()
                 patch(wcw1)
-                bytes:
-                    72
-                    131
-                    255
-                    3
-                    124
-                    5
-                    72
-                    137
-                    249
-                    235
-                    31
-                    185
-                    245
-                    255
-                    255
-                    255
-                    72
-                    131
-                    255
-                    1
-                    116
-                    5
-                    185
-                    244
-                    255
-                    255
-                    255
-                    72
-                    184
+                emit(72)
+                emit(131)
+                emit(255)
+                emit(3)
+                emit(124)
+                emit(5)
+                emit(72)
+                emit(137)
+                emit(249)
+                emit(235)
+                emit(31)
+                emit(185)
+                emit(245)
+                emit(255)
+                emit(255)
+                emit(255)
+                emit(72)
+                emit(131)
+                emit(255)
+                emit(1)
+                emit(116)
+                emit(5)
+                emit(185)
+                emit(244)
+                emit(255)
+                emit(255)
+                emit(255)
+                emit(72)
+                emit(184)
                 at: here()
-                put_8_bytes(0)
-                later_fill(at, "iatslot", 0)
-                bytes:
-                    255
-                    16
-                    72
-                    137
-                    193
-                    72
-                    139
-                    85
-                    184
-                    76
-                    139
-                    69
-                    176
-                    76
-                    141
-                    77
-                    192
-                    72
-                    199
-                    68
-                    36
-                    32
-                    0
-                    0
-                    0
-                    0
-                    72
-                    184
+                emit8(0)
+                addp(at, "iatslot", 0)
+                emit(255)
+                emit(16)
+                emit(72)
+                emit(137)
+                emit(193)
+                emit(72)
+                emit(139)
+                emit(85)
+                emit(184)
+                emit(76)
+                emit(139)
+                emit(69)
+                emit(176)
+                emit(76)
+                emit(141)
+                emit(77)
+                emit(192)
+                emit(72)
+                emit(199)
+                emit(68)
+                emit(36)
+                emit(32)
+                emit(0)
+                emit(0)
+                emit(0)
+                emit(0)
+                emit(72)
+                emit(184)
                 at: here()
-                put_8_bytes(0)
-                later_fill(at, "iatslot", 1)
-                bytes:
-                    255
-                    16
-                    139
-                    69
-                    192
+                emit8(0)
+                addp(at, "iatslot", 1)
+                emit(255)
+                emit(16)
+                emit(139)
+                emit(69)
+                emit(192)
                 wcj1: jmp()
                 patch(wcw60)
-                bytes:
-                    72
-                    137
-                    249
-                    72
-                    184
+                emit(72)
+                emit(137)
+                emit(249)
+                emit(72)
+                emit(184)
                 at: here()
-                put_8_bytes(0)
-                later_fill(at, "iatslot", 6)
-                bytes:
-                    255
-                    16
+                emit8(0)
+                addp(at, "iatslot", 6)
+                emit(255)
+                emit(16)
                 patch(wcdef)
                 patch(wcj1)
-                bytes:
-                    72
-                    141
-                    101
-                    200
-                    94
-                    95
-                    65
-                    95
-                    65
-                    94
-                    65
-                    93
-                    65
-                    92
-                    91
-                    72
-                    137
-                    236
-                    93
-                    195
+                emit(72)
+                emit(141)
+                emit(101)
+                emit(200)
+                emit(94)
+                emit(95)
+                emit(65)
+                emit(95)
+                emit(65)
+                emit(94)
+                emit(65)
+                emit(93)
+                emit(65)
+                emit(92)
+                emit(91)
+                emit(72)
+                emit(137)
+                emit(236)
+                emit(93)
+                emit(195)
                 return 0
-    bytes:
-        85
-        72
-        137
-        229
-        83
-        65
-        84
-        65
-        85
-        65
-        86
-        65
-        87
-        87
-        86
-        72
-        129
-        236
-        160
-        0
-        0
-        0
-        72
-        131
-        228
-        240
-        72
-        137
-        117
-        184
-        72
-        137
-        85
-        176
-        72
-        137
-        125
-        168
-        131
-        248
-        1
-        116
-        92
-        131
-        248
-        0
-        15
-        132
-        166
-        0
-        0
-        0
-        131
-        248
-        9
-        15
-        132
-        229
-        0
-        0
-        0
-        131
-        248
-        60
-        15
-        132
-        255
-        0
-        0
-        0
-        61
-        231
-        0
-        0
-        0
-        15
-        132
-        244
-        0
-        0
-        0
-        131
-        248
-        3
-        15
-        132
-        255
-        0
-        0
-        0
-        61
-        1
-        1
-        0
-        0
-        15
-        132
-        16
-        1
-        0
-        0
-        131
-        248
-        2
-        15
-        132
-        23
-        1
-        0
-        0
-        131
-        248
-        8
-        15
-        132
-        111
-        1
-        0
-        0
-        131
-        248
-        16
-        15
-        132
-        138
-        1
-        0
-        0
-        49
-        192
-        233
-        19
-        2
-        0
-        0
-        72
-        131
-        255
-        3
-        124
-        5
-        72
-        137
-        249
-        235
-        31
-        185
-        245
-        255
-        255
-        255
-        72
-        131
-        255
-        1
-        116
-        5
-        185
-        244
-        255
-        255
-        255
-        72
-        184
+    emit(85)
+    emit(72)
+    emit(137)
+    emit(229)
+    emit(83)
+    emit(65)
+    emit(84)
+    emit(65)
+    emit(85)
+    emit(65)
+    emit(86)
+    emit(65)
+    emit(87)
+    emit(87)
+    emit(86)
+    emit(72)
+    emit(129)
+    emit(236)
+    emit(160)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(72)
+    emit(131)
+    emit(228)
+    emit(240)
+    emit(72)
+    emit(137)
+    emit(117)
+    emit(184)
+    emit(72)
+    emit(137)
+    emit(85)
+    emit(176)
+    emit(72)
+    emit(137)
+    emit(125)
+    emit(168)
+    emit(131)
+    emit(248)
+    emit(1)
+    emit(116)
+    emit(92)
+    emit(131)
+    emit(248)
+    emit(0)
+    emit(15)
+    emit(132)
+    emit(166)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(131)
+    emit(248)
+    emit(9)
+    emit(15)
+    emit(132)
+    emit(229)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(131)
+    emit(248)
+    emit(60)
+    emit(15)
+    emit(132)
+    emit(255)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(61)
+    emit(231)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(15)
+    emit(132)
+    emit(244)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(131)
+    emit(248)
+    emit(3)
+    emit(15)
+    emit(132)
+    emit(255)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(61)
+    emit(1)
+    emit(1)
+    emit(0)
+    emit(0)
+    emit(15)
+    emit(132)
+    emit(16)
+    emit(1)
+    emit(0)
+    emit(0)
+    emit(131)
+    emit(248)
+    emit(2)
+    emit(15)
+    emit(132)
+    emit(23)
+    emit(1)
+    emit(0)
+    emit(0)
+    emit(131)
+    emit(248)
+    emit(8)
+    emit(15)
+    emit(132)
+    emit(111)
+    emit(1)
+    emit(0)
+    emit(0)
+    emit(131)
+    emit(248)
+    emit(16)
+    emit(15)
+    emit(132)
+    emit(138)
+    emit(1)
+    emit(0)
+    emit(0)
+    emit(49)
+    emit(192)
+    emit(233)
+    emit(19)
+    emit(2)
+    emit(0)
+    emit(0)
+    emit(72)
+    emit(131)
+    emit(255)
+    emit(3)
+    emit(124)
+    emit(5)
+    emit(72)
+    emit(137)
+    emit(249)
+    emit(235)
+    emit(31)
+    emit(185)
+    emit(245)
+    emit(255)
+    emit(255)
+    emit(255)
+    emit(72)
+    emit(131)
+    emit(255)
+    emit(1)
+    emit(116)
+    emit(5)
+    emit(185)
+    emit(244)
+    emit(255)
+    emit(255)
+    emit(255)
+    emit(72)
+    emit(184)
     at: here()
-    put_8_bytes(0)
-    later_fill(at, "iatslot", 0)
-    bytes:
-        255
-        16
-        72
-        137
-        193
-        72
-        139
-        85
-        184
-        76
-        139
-        69
-        176
-        76
-        141
-        77
-        192
-        72
-        199
-        68
-        36
-        32
-        0
-        0
-        0
-        0
-        72
-        184
+    emit8(0)
+    addp(at, "iatslot", 0)
+    emit(255)
+    emit(16)
+    emit(72)
+    emit(137)
+    emit(193)
+    emit(72)
+    emit(139)
+    emit(85)
+    emit(184)
+    emit(76)
+    emit(139)
+    emit(69)
+    emit(176)
+    emit(76)
+    emit(141)
+    emit(77)
+    emit(192)
+    emit(72)
+    emit(199)
+    emit(68)
+    emit(36)
+    emit(32)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(72)
+    emit(184)
     at: here()
-    put_8_bytes(0)
-    later_fill(at, "iatslot", 1)
-    bytes:
-        255
-        16
-        139
-        69
-        192
-        233
-        192
-        1
-        0
-        0
-        72
-        131
-        255
-        3
-        124
-        5
-        72
-        137
-        249
-        235
-        20
-        185
-        246
-        255
-        255
-        255
-        72
-        184
+    emit8(0)
+    addp(at, "iatslot", 1)
+    emit(255)
+    emit(16)
+    emit(139)
+    emit(69)
+    emit(192)
+    emit(233)
+    emit(192)
+    emit(1)
+    emit(0)
+    emit(0)
+    emit(72)
+    emit(131)
+    emit(255)
+    emit(3)
+    emit(124)
+    emit(5)
+    emit(72)
+    emit(137)
+    emit(249)
+    emit(235)
+    emit(20)
+    emit(185)
+    emit(246)
+    emit(255)
+    emit(255)
+    emit(255)
+    emit(72)
+    emit(184)
     at: here()
-    put_8_bytes(0)
-    later_fill(at, "iatslot", 0)
-    bytes:
-        255
-        16
-        72
-        137
-        193
-        72
-        139
-        85
-        184
-        76
-        139
-        69
-        176
-        76
-        141
-        77
-        192
-        72
-        199
-        68
-        36
-        32
-        0
-        0
-        0
-        0
-        72
-        184
+    emit8(0)
+    addp(at, "iatslot", 0)
+    emit(255)
+    emit(16)
+    emit(72)
+    emit(137)
+    emit(193)
+    emit(72)
+    emit(139)
+    emit(85)
+    emit(184)
+    emit(76)
+    emit(139)
+    emit(69)
+    emit(176)
+    emit(76)
+    emit(141)
+    emit(77)
+    emit(192)
+    emit(72)
+    emit(199)
+    emit(68)
+    emit(36)
+    emit(32)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(72)
+    emit(184)
     at: here()
-    put_8_bytes(0)
-    later_fill(at, "iatslot", 2)
-    bytes:
-        255
-        16
-        139
-        69
-        192
-        233
-        120
-        1
-        0
-        0
-        49
-        201
-        72
-        139
-        85
-        184
-        65
-        184
-        0
-        48
-        0
-        0
-        65
-        185
-        4
-        0
-        0
-        0
-        72
-        184
+    emit8(0)
+    addp(at, "iatslot", 2)
+    emit(255)
+    emit(16)
+    emit(139)
+    emit(69)
+    emit(192)
+    emit(233)
+    emit(120)
+    emit(1)
+    emit(0)
+    emit(0)
+    emit(49)
+    emit(201)
+    emit(72)
+    emit(139)
+    emit(85)
+    emit(184)
+    emit(65)
+    emit(184)
+    emit(0)
+    emit(48)
+    emit(0)
+    emit(0)
+    emit(65)
+    emit(185)
+    emit(4)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(72)
+    emit(184)
     at: here()
-    put_8_bytes(0)
-    later_fill(at, "iatslot", 5)
-    bytes:
-        255
-        16
-        233
-        85
-        1
-        0
-        0
-        72
-        137
-        249
-        72
-        184
+    emit8(0)
+    addp(at, "iatslot", 5)
+    emit(255)
+    emit(16)
+    emit(233)
+    emit(85)
+    emit(1)
+    emit(0)
+    emit(0)
+    emit(72)
+    emit(137)
+    emit(249)
+    emit(72)
+    emit(184)
     at: here()
-    put_8_bytes(0)
-    later_fill(at, "iatslot", 6)
-    bytes:
-        255
-        16
-        233
-        65
-        1
-        0
-        0
-        72
-        131
-        255
-        3
-        124
-        15
-        72
-        137
-        249
-        72
-        184
+    emit8(0)
+    addp(at, "iatslot", 6)
+    emit(255)
+    emit(16)
+    emit(233)
+    emit(65)
+    emit(1)
+    emit(0)
+    emit(0)
+    emit(72)
+    emit(131)
+    emit(255)
+    emit(3)
+    emit(124)
+    emit(15)
+    emit(72)
+    emit(137)
+    emit(249)
+    emit(72)
+    emit(184)
     at: here()
-    put_8_bytes(0)
-    later_fill(at, "iatslot", 4)
-    bytes:
-        255
-        16
-        49
-        192
-        233
-        37
-        1
-        0
-        0
-        72
-        139
-        69
-        184
-        72
-        137
-        69
-        168
-        72
-        139
-        69
-        176
-        72
-        137
-        69
-        184
-        72
-        139
-        77
-        168
-        76
-        139
-        85
-        184
-        186
-        0
-        0
-        0
-        128
-        65
-        247
-        194
-        3
-        0
-        0
-        0
-        116
-        5
-        186
-        0
-        0
-        0
-        192
-        65
-        184
-        3
-        0
-        0
-        0
-        69
-        49
-        201
-        65
-        187
-        3
-        0
-        0
-        0
-        65
-        247
-        194
-        64
-        0
-        0
-        0
-        116
-        6
-        65
-        187
-        2
-        0
-        0
-        0
-        76
-        137
-        92
-        36
-        32
-        72
-        199
-        68
-        36
-        40
-        128
-        0
-        0
-        0
-        72
-        199
-        68
-        36
-        48
-        0
-        0
-        0
-        0
-        72
-        184
+    emit8(0)
+    addp(at, "iatslot", 4)
+    emit(255)
+    emit(16)
+    emit(49)
+    emit(192)
+    emit(233)
+    emit(37)
+    emit(1)
+    emit(0)
+    emit(0)
+    emit(72)
+    emit(139)
+    emit(69)
+    emit(184)
+    emit(72)
+    emit(137)
+    emit(69)
+    emit(168)
+    emit(72)
+    emit(139)
+    emit(69)
+    emit(176)
+    emit(72)
+    emit(137)
+    emit(69)
+    emit(184)
+    emit(72)
+    emit(139)
+    emit(77)
+    emit(168)
+    emit(76)
+    emit(139)
+    emit(85)
+    emit(184)
+    emit(186)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(128)
+    emit(65)
+    emit(247)
+    emit(194)
+    emit(3)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(116)
+    emit(5)
+    emit(186)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(192)
+    emit(65)
+    emit(184)
+    emit(3)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(69)
+    emit(49)
+    emit(201)
+    emit(65)
+    emit(187)
+    emit(3)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(65)
+    emit(247)
+    emit(194)
+    emit(64)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(116)
+    emit(6)
+    emit(65)
+    emit(187)
+    emit(2)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(76)
+    emit(137)
+    emit(92)
+    emit(36)
+    emit(32)
+    emit(72)
+    emit(199)
+    emit(68)
+    emit(36)
+    emit(40)
+    emit(128)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(72)
+    emit(199)
+    emit(68)
+    emit(36)
+    emit(48)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(72)
+    emit(184)
     at: here()
-    put_8_bytes(0)
-    later_fill(at, "iatslot", 3)
-    bytes:
-        255
-        16
-        233
-        180
-        0
-        0
-        0
-        72
-        137
-        249
-        72
-        139
-        85
-        184
-        76
-        141
-        69
-        192
-        76
-        139
-        77
-        176
-        72
-        184
+    emit8(0)
+    addp(at, "iatslot", 3)
+    emit(255)
+    emit(16)
+    emit(233)
+    emit(180)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(72)
+    emit(137)
+    emit(249)
+    emit(72)
+    emit(139)
+    emit(85)
+    emit(184)
+    emit(76)
+    emit(141)
+    emit(69)
+    emit(192)
+    emit(76)
+    emit(139)
+    emit(77)
+    emit(176)
+    emit(72)
+    emit(184)
     at: here()
-    put_8_bytes(0)
-    later_fill(at, "iatslot", 8)
-    bytes:
-        255
-        16
-        72
-        139
-        69
-        192
-        233
-        144
-        0
-        0
-        0
-        72
-        139
-        69
-        184
-        61
-        1
-        84
-        0
-        0
-        116
-        25
-        61
-        2
-        84
-        0
-        0
-        116
-        73
-        61
-        3
-        84
-        0
-        0
-        116
-        66
-        61
-        4
-        84
-        0
-        0
-        116
-        59
-        49
-        192
-        235
-        108
-        185
-        246
-        255
-        255
-        255
-        72
-        184
+    emit8(0)
+    addp(at, "iatslot", 8)
+    emit(255)
+    emit(16)
+    emit(72)
+    emit(139)
+    emit(69)
+    emit(192)
+    emit(233)
+    emit(144)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(72)
+    emit(139)
+    emit(69)
+    emit(184)
+    emit(61)
+    emit(1)
+    emit(84)
+    emit(0)
+    emit(0)
+    emit(116)
+    emit(25)
+    emit(61)
+    emit(2)
+    emit(84)
+    emit(0)
+    emit(0)
+    emit(116)
+    emit(73)
+    emit(61)
+    emit(3)
+    emit(84)
+    emit(0)
+    emit(0)
+    emit(116)
+    emit(66)
+    emit(61)
+    emit(4)
+    emit(84)
+    emit(0)
+    emit(0)
+    emit(116)
+    emit(59)
+    emit(49)
+    emit(192)
+    emit(235)
+    emit(108)
+    emit(185)
+    emit(246)
+    emit(255)
+    emit(255)
+    emit(255)
+    emit(72)
+    emit(184)
     at: here()
-    put_8_bytes(0)
-    later_fill(at, "iatslot", 0)
-    bytes:
-        255
-        16
-        72
-        137
-        69
-        160
-        72
-        137
-        193
-        72
-        141
-        85
-        152
-        72
-        184
+    emit8(0)
+    addp(at, "iatslot", 0)
+    emit(255)
+    emit(16)
+    emit(72)
+    emit(137)
+    emit(69)
+    emit(160)
+    emit(72)
+    emit(137)
+    emit(193)
+    emit(72)
+    emit(141)
+    emit(85)
+    emit(152)
+    emit(72)
+    emit(184)
     at: here()
-    put_8_bytes(0)
-    later_fill(at, "iatslot", 9)
-    bytes:
-        255
-        16
-        139
-        69
-        152
-        76
-        139
-        85
-        176
-        65
-        137
-        66
-        12
-        49
-        192
-        235
-        53
-        185
-        246
-        255
-        255
-        255
-        72
-        184
+    emit8(0)
+    addp(at, "iatslot", 9)
+    emit(255)
+    emit(16)
+    emit(139)
+    emit(69)
+    emit(152)
+    emit(76)
+    emit(139)
+    emit(85)
+    emit(176)
+    emit(65)
+    emit(137)
+    emit(66)
+    emit(12)
+    emit(49)
+    emit(192)
+    emit(235)
+    emit(53)
+    emit(185)
+    emit(246)
+    emit(255)
+    emit(255)
+    emit(255)
+    emit(72)
+    emit(184)
     at: here()
-    put_8_bytes(0)
-    later_fill(at, "iatslot", 0)
-    bytes:
-        255
-        16
-        72
-        137
-        193
-        76
-        139
-        85
-        176
-        65
-        139
-        82
-        12
-        131
-        226
-        248
-        129
-        202
-        0
-        2
-        0
-        0
-        72
-        184
+    emit8(0)
+    addp(at, "iatslot", 0)
+    emit(255)
+    emit(16)
+    emit(72)
+    emit(137)
+    emit(193)
+    emit(76)
+    emit(139)
+    emit(85)
+    emit(176)
+    emit(65)
+    emit(139)
+    emit(82)
+    emit(12)
+    emit(131)
+    emit(226)
+    emit(248)
+    emit(129)
+    emit(202)
+    emit(0)
+    emit(2)
+    emit(0)
+    emit(0)
+    emit(72)
+    emit(184)
     at: here()
-    put_8_bytes(0)
-    later_fill(at, "iatslot", 10)
-    bytes:
-        255
-        16
-        49
-        192
-        235
-        0
-        72
-        141
-        101
-        200
-        94
-        95
-        65
-        95
-        65
-        94
-        65
-        93
-        65
-        92
-        91
-        72
-        137
-        236
-        93
-        195
-# replace linux execve (syscall 59) on windows: rdi = the image
-# path, rsi = a null-ended argv. build a command line, spawn with
+    emit8(0)
+    addp(at, "iatslot", 10)
+    emit(255)
+    emit(16)
+    emit(49)
+    emit(192)
+    emit(235)
+    emit(0)
+    emit(72)
+    emit(141)
+    emit(101)
+    emit(200)
+    emit(94)
+    emit(95)
+    emit(65)
+    emit(95)
+    emit(65)
+    emit(94)
+    emit(65)
+    emit(93)
+    emit(65)
+    emit(92)
+    emit(91)
+    emit(72)
+    emit(137)
+    emit(236)
+    emit(93)
+    emit(195)
+# replace linux execve (syscall 59) on windows: rdi is the image
+# path, rsi is a null-ended argv. build a command line, spawn with
 # CreateProcessA, wait, and ExitProcess with the child's code so
-# this = exec, not fork. a failed spawn returns 0 and the caller
+# this is exec, not fork. a failed spawn returns 0 and the caller
 # prints the error. IAT 17 CreateProcessA, 18 GetExitCodeProcess,
 # 15 WaitForSingleObject, 4 CloseHandle, 6 ExitProcess.
-# image base from the PEB, so winapi can walk the IAT under ASLR
-emit_image_base:
-    task_names: _sov_list_add(task_names, "_sov_image_base")
-    task_at: _sov_list_add(task_at, here())
-    bytes:
-        85
-        72
-        137
-        229
-        101
-        72
-        139
-        4
-        37
-        96
-        0
-        0
-        0
-        72
-        139
-        64
-        16
-        93
-        195
-    return 0
-
-# call a Windows function with twelve values laid out in a block:
-# rcx rdx r8 r9, then eight stack slots. CreateWindowEx needs this.
-emit_win_ccall:
-    task_names: _sov_list_add(task_names, "_sov_ccall")
-    task_at: _sov_list_add(task_at, here())
-    bytes:
-        85
-        72
-        137
-        229
-        83
-        65
-        84
-        73
-        137
-        252
-        72
-        137
-        243
-        72
-        131
-        228
-        240
-        72
-        131
-        236
-        112
-        72
-        139
-        11
-        72
-        139
-        83
-        8
-        76
-        139
-        67
-        16
-        76
-        139
-        75
-        24
-        72
-        139
-        67
-        32
-        72
-        137
-        68
-        36
-        32
-        72
-        139
-        67
-        40
-        72
-        137
-        68
-        36
-        40
-        72
-        139
-        67
-        48
-        72
-        137
-        68
-        36
-        48
-        72
-        139
-        67
-        56
-        72
-        137
-        68
-        36
-        56
-        72
-        139
-        67
-        64
-        72
-        137
-        68
-        36
-        64
-        72
-        139
-        67
-        72
-        72
-        137
-        68
-        36
-        72
-        72
-        139
-        67
-        80
-        72
-        137
-        68
-        36
-        80
-        72
-        139
-        67
-        88
-        72
-        137
-        68
-        36
-        88
-        72
-        49
-        192
-        65
-        255
-        212
-        72
-        141
-        101
-        240
-        65
-        92
-        91
-        93
-        195
-    return 0
-
 emit_win_exec:
-    task_names: _sov_list_add(task_names, "_sov_win_exec")
-    task_at: _sov_list_add(task_at, here())
-    bytes:
-        85
-        72
-        137
-        229
-        83
-        65
-        84
-        65
-        85
-        65
-        86
-        65
-        87
-        72
-        129
-        236
-    put_4_bytes(1280)
-    bytes:
-        72
-        131
-        228
-        240
-        72
-        131
-        236
-        96
-        73
-        137
-        252
-        73
-        137
-        245
-        72
-        141
-        189
-    put_4_bytes(0 - 1024)
-    bytes:
-        76
-        137
-        230
-        138
-        6
-        136
-        7
-        132
-        192
-        116
-        8
-        72
-        255
-        198
-        72
-        255
-        199
-        235
-        240
-        77
-        133
-        237
-        116
-        43
-        77
-        137
-        239
-        73
-        131
-        199
-        8
-        73
-        139
-        55
-        72
-        133
-        246
-        116
-        28
-        198
-        7
-        32
-        72
-        255
-        199
-        138
-        6
-        136
-        7
-        132
-        192
-        116
-        8
-        72
-        255
-        198
-        72
-        255
-        199
-        235
-        240
-        73
-        131
-        199
-        8
-        235
-        220
-        49
-        192
-        185
-    put_4_bytes(13)
-    bytes:
-        72
-        141
-        157
-    put_4_bytes(0 - 1136)
-    bytes:
-        72
-        137
-        3
-        72
-        131
-        195
-        8
-        255
-        201
-        117
-        245
-        72
-        141
-        157
-    put_4_bytes(0 - 1136)
-    bytes:
-        199
-        3
-    put_4_bytes(104)
-    bytes:
-        72
-        141
-        133
-    put_4_bytes(0 - 1168)
-    bytes:
-        72
-        199
-        0
-        0
-        0
-        0
-        0
-        72
-        199
-        64
-        8
-        0
-        0
-        0
-        0
-        72
-        199
-        64
-        16
-        0
-        0
-        0
-        0
-        76
-        137
-        225
-        72
-        141
-        149
-    put_4_bytes(0 - 1024)
-    bytes:
-        77
-        49
-        192
-        77
-        49
-        201
-        72
-        199
-        68
-        36
-        32
-        0
-        0
-        0
-        0
-        72
-        199
-        68
-        36
-        40
-        0
-        0
-        0
-        0
-        72
-        199
-        68
-        36
-        48
-        0
-        0
-        0
-        0
-        72
-        199
-        68
-        36
-        56
-        0
-        0
-        0
-        0
-        72
-        141
-        133
-    put_4_bytes(0 - 1136)
-    bytes:
-        72
-        137
-        68
-        36
-        64
-        72
-        141
-        133
-    put_4_bytes(0 - 1168)
-    bytes:
-        72
-        137
-        68
-        36
-        72
-        72
-        184
+    fn_names: _sov_list_add(fn_names, "_sov_win_exec")
+    fn_offs: _sov_list_add(fn_offs, here())
+    emit(85)
+    emit(72)
+    emit(137)
+    emit(229)
+    emit(83)
+    emit(65)
+    emit(84)
+    emit(65)
+    emit(85)
+    emit(65)
+    emit(86)
+    emit(65)
+    emit(87)
+    emit(72)
+    emit(129)
+    emit(236)
+    emit4(1280)
+    emit(72)
+    emit(131)
+    emit(228)
+    emit(240)
+    emit(72)
+    emit(131)
+    emit(236)
+    emit(96)
+    emit(73)
+    emit(137)
+    emit(252)
+    emit(73)
+    emit(137)
+    emit(245)
+    emit(72)
+    emit(141)
+    emit(189)
+    emit4(0 - 1024)
+    emit(76)
+    emit(137)
+    emit(230)
+    emit(138)
+    emit(6)
+    emit(136)
+    emit(7)
+    emit(132)
+    emit(192)
+    emit(116)
+    emit(8)
+    emit(72)
+    emit(255)
+    emit(198)
+    emit(72)
+    emit(255)
+    emit(199)
+    emit(235)
+    emit(240)
+    emit(77)
+    emit(133)
+    emit(237)
+    emit(116)
+    emit(43)
+    emit(77)
+    emit(137)
+    emit(239)
+    emit(73)
+    emit(131)
+    emit(199)
+    emit(8)
+    emit(73)
+    emit(139)
+    emit(55)
+    emit(72)
+    emit(133)
+    emit(246)
+    emit(116)
+    emit(28)
+    emit(198)
+    emit(7)
+    emit(32)
+    emit(72)
+    emit(255)
+    emit(199)
+    emit(138)
+    emit(6)
+    emit(136)
+    emit(7)
+    emit(132)
+    emit(192)
+    emit(116)
+    emit(8)
+    emit(72)
+    emit(255)
+    emit(198)
+    emit(72)
+    emit(255)
+    emit(199)
+    emit(235)
+    emit(240)
+    emit(73)
+    emit(131)
+    emit(199)
+    emit(8)
+    emit(235)
+    emit(220)
+    emit(49)
+    emit(192)
+    emit(185)
+    emit4(13)
+    emit(72)
+    emit(141)
+    emit(157)
+    emit4(0 - 1136)
+    emit(72)
+    emit(137)
+    emit(3)
+    emit(72)
+    emit(131)
+    emit(195)
+    emit(8)
+    emit(255)
+    emit(201)
+    emit(117)
+    emit(245)
+    emit(72)
+    emit(141)
+    emit(157)
+    emit4(0 - 1136)
+    emit(199)
+    emit(3)
+    emit4(104)
+    emit(72)
+    emit(141)
+    emit(133)
+    emit4(0 - 1168)
+    emit(72)
+    emit(199)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(72)
+    emit(199)
+    emit(64)
+    emit(8)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(72)
+    emit(199)
+    emit(64)
+    emit(16)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(76)
+    emit(137)
+    emit(225)
+    emit(72)
+    emit(141)
+    emit(149)
+    emit4(0 - 1024)
+    emit(77)
+    emit(49)
+    emit(192)
+    emit(77)
+    emit(49)
+    emit(201)
+    emit(72)
+    emit(199)
+    emit(68)
+    emit(36)
+    emit(32)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(72)
+    emit(199)
+    emit(68)
+    emit(36)
+    emit(40)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(72)
+    emit(199)
+    emit(68)
+    emit(36)
+    emit(48)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(72)
+    emit(199)
+    emit(68)
+    emit(36)
+    emit(56)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(72)
+    emit(141)
+    emit(133)
+    emit4(0 - 1136)
+    emit(72)
+    emit(137)
+    emit(68)
+    emit(36)
+    emit(64)
+    emit(72)
+    emit(141)
+    emit(133)
+    emit4(0 - 1168)
+    emit(72)
+    emit(137)
+    emit(68)
+    emit(36)
+    emit(72)
+    emit(72)
+    emit(184)
     we_cpia: here()
-    put_8_bytes(0)
-    later_fill(we_cpia, "iatslot", 17)
-    bytes:
-        255
-        16
-        133
-        192
+    emit8(0)
+    addp(we_cpia, "iatslot", 17)
+    emit(255)
+    emit(16)
+    emit(133)
+    emit(192)
     we_fail: jz()
-    bytes:
-        72
-        139
-        141
-    put_4_bytes(0 - 1168)
-    bytes:
-        186
-        255
-        255
-        255
-        255
-        72
-        184
+    emit(72)
+    emit(139)
+    emit(141)
+    emit4(0 - 1168)
+    emit(186)
+    emit(255)
+    emit(255)
+    emit(255)
+    emit(255)
+    emit(72)
+    emit(184)
     we_wia: here()
-    put_8_bytes(0)
-    later_fill(we_wia, "iatslot", 15)
-    bytes:
-        255
-        16
-        72
-        139
-        141
-    put_4_bytes(0 - 1168)
-    bytes:
-        72
-        141
-        149
-    put_4_bytes(0 - 1176)
-    bytes:
-        72
-        184
+    emit8(0)
+    addp(we_wia, "iatslot", 15)
+    emit(255)
+    emit(16)
+    emit(72)
+    emit(139)
+    emit(141)
+    emit4(0 - 1168)
+    emit(72)
+    emit(141)
+    emit(149)
+    emit4(0 - 1176)
+    emit(72)
+    emit(184)
     we_gia: here()
-    put_8_bytes(0)
-    later_fill(we_gia, "iatslot", 18)
-    bytes:
-        255
-        16
-        72
-        139
-        141
-    put_4_bytes(0 - 1160)
-    bytes:
-        72
-        184
+    emit8(0)
+    addp(we_gia, "iatslot", 18)
+    emit(255)
+    emit(16)
+    emit(72)
+    emit(139)
+    emit(141)
+    emit4(0 - 1160)
+    emit(72)
+    emit(184)
     we_ch1: here()
-    put_8_bytes(0)
-    later_fill(we_ch1, "iatslot", 4)
-    bytes:
-        255
-        16
-        72
-        139
-        141
-    put_4_bytes(0 - 1168)
-    bytes:
-        72
-        184
+    emit8(0)
+    addp(we_ch1, "iatslot", 4)
+    emit(255)
+    emit(16)
+    emit(72)
+    emit(139)
+    emit(141)
+    emit4(0 - 1168)
+    emit(72)
+    emit(184)
     we_ch2: here()
-    put_8_bytes(0)
-    later_fill(we_ch2, "iatslot", 4)
-    bytes:
-        255
-        16
-        139
-        141
-    put_4_bytes(0 - 1176)
-    bytes:
-        72
-        184
+    emit8(0)
+    addp(we_ch2, "iatslot", 4)
+    emit(255)
+    emit(16)
+    emit(139)
+    emit(141)
+    emit4(0 - 1176)
+    emit(72)
+    emit(184)
     we_ex: here()
-    put_8_bytes(0)
-    later_fill(we_ex, "iatslot", 6)
-    bytes:
-        255
-        16
+    emit8(0)
+    addp(we_ex, "iatslot", 6)
+    emit(255)
+    emit(16)
     patch(we_fail)
-    bytes:
-        49
-        192
-        72
-        141
-        101
-        216
-        65
-        95
-        65
-        94
-        65
-        93
-        65
-        92
-        91
-        93
-        195
+    emit(49)
+    emit(192)
+    emit(72)
+    emit(141)
+    emit(101)
+    emit(216)
+    emit(65)
+    emit(95)
+    emit(65)
+    emit(94)
+    emit(65)
+    emit(93)
+    emit(65)
+    emit(92)
+    emit(91)
+    emit(93)
+    emit(195)
 
-# the windows thread bridge functions. thread_create (rdi = the
-# entry the runtime packed in - ignored here, the trampoline = the
-# only entry - rsi = the control block top): the block sits a known
-# 262272 below the top CreateThread = given, so the base = rsi
+# the windows thread bridge functions. thread_create (rdi is the
+# entry the runtime packed in - ignored here, the trampoline is the
+# only entry - rsi is the control block top): the block sits a known
+# 262272 below the top CreateThread is given, so the base is rsi
 # minus that. CreateThread hands the trampoline the base in rcx;
 # the trampoline moves it to rdi and enters the shared entry task,
-# and returning from the trampoline = what ends the thread, which
-# signals the handle join = waiting on. the handle parks in the
+# and returning from the trampoline is what ends the thread, which
+# signals the handle join is waiting on. the handle parks in the
 # 256-entry table the pe writer allocates, keyed by base/262272.
 # every byte below was checked against gas output for the same
 # instruction: legacy pushes/pops take no rex; sub with a 32-bit
-# immediate = opcode 81, not 83 (83 takes a signed byte, so 0xb0
-# would mean -80); shr reg, n = c1 with a modrm and an imm8, not
-# d1/d3; lea = 8d, not ba (ba = mov edx, imm32); and 262272 is
-# 0x40080, whose little-endian immediate = 80 00 04 00.
+# immediate is opcode 81, not 83 (83 takes a signed byte, so 0xb0
+# would mean -80); shr reg, n is c1 with a modrm and an imm8, not
+# d1/d3; lea is 8d, not ba (ba is mov edx, imm32); and 262272 is
+# 0x40080, whose little-endian immediate is 80 00 04 00.
 emit_win_thread:
-    task_names: _sov_list_add(task_names, "_sov_win_create")
-    task_at: _sov_list_add(task_at, here())
+    fn_names: _sov_list_add(fn_names, "_sov_win_create")
+    fn_offs: _sov_list_add(fn_offs, here())
     # frame: rbp + the three registers the body keeps
-    bytes:
-        85
-        72
-        137
-        229
-        83
-        87
-        86
-        72
-        129
-        236
-        176
-        0
-        0
-        0
-        72
-        131
-        228
-        240
+    emit(85)
+    emit(72)
+    emit(137)
+    emit(229)
+    emit(83)
+    emit(87)
+    emit(86)
+    emit(72)
+    emit(129)
+    emit(236)
+    emit(176)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(72)
+    emit(131)
+    emit(228)
+    emit(240)
     # base = top - 262272 (262272 = 0x40080), kept in rbx
-    bytes:
-        72
-        137
-        243
-        72
-        129
-        235
-        128
-        0
-        4
-        0
+    emit(72)
+    emit(137)
+    emit(243)
+    emit(72)
+    emit(129)
+    emit(235)
+    emit(128)
+    emit(0)
+    emit(4)
+    emit(0)
     # CreateThread(NULL, 262144, trampoline, base, 0, 0)
-    bytes:
-        49
-        201
-        72
-        186
-        0
-        0
-        4
-        0
-        0
-        0
-        0
-        0
-        73
-        184
+    emit(49)
+    emit(201)
+    emit(72)
+    emit(186)
+    emit(0)
+    emit(0)
+    emit(4)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(73)
+    emit(184)
     trp: here()
-    put_8_bytes(0)
-    later_fill(trp, "task_address", "_sov_win_trampoline")
-    bytes:
-        73
-        137
-        217
-        72
-        199
-        68
-        36
-        32
-        0
-        0
-        0
-        0
-        72
-        199
-        68
-        36
-        40
-        0
-        0
-        0
-        0
-        72
-        184
+    emit8(0)
+    addp(trp, "fnaddr", "_sov_win_trampoline")
+    emit(73)
+    emit(137)
+    emit(217)
+    emit(72)
+    emit(199)
+    emit(68)
+    emit(36)
+    emit(32)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(72)
+    emit(199)
+    emit(68)
+    emit(36)
+    emit(40)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(0)
+    emit(72)
+    emit(184)
     trc: here()
-    put_8_bytes(0)
-    later_fill(trc, "iatslot", 14)
-    bytes:
-        255
-        16
+    emit8(0)
+    addp(trc, "iatslot", 14)
+    emit(255)
+    emit(16)
     # on failure (null handle) hand back -1 so the runtime's
     # fork-fallback path reports the error instead of a dead join
-    bytes:
-        72
-        133
-        192
+    emit(72)
+    emit(133)
+    emit(192)
     trf: jz()
     # park the handle in the table, keyed by base/262272
-    bytes:
-        72
-        137
-        198
-        72
-        137
-        216
-        72
-        193
-        232
-        18
-        72
-        141
-        21
+    emit(72)
+    emit(137)
+    emit(198)
+    emit(72)
+    emit(137)
+    emit(216)
+    emit(72)
+    emit(193)
+    emit(232)
+    emit(18)
+    emit(72)
+    emit(141)
+    emit(21)
     trt: here()
-    put_4_bytes(0)
-    later_fill(trt, "threadtable", 0)
-    bytes:
-        72
-        137
-        52
-        194
-        72
-        137
-        240
+    emit4(0)
+    addp(trt, "threadtable", 0)
+    emit(72)
+    emit(137)
+    emit(52)
+    emit(194)
+    emit(72)
+    emit(137)
+    emit(240)
     trd: jmp()
     patch(trf)
-    bytes:
-        187
-        255
-        255
-        255
-        255
-        137
-        216
+    emit(187)
+    emit(255)
+    emit(255)
+    emit(255)
+    emit(255)
+    emit(137)
+    emit(216)
     patch(trd)
-    bytes:
-        94
-        95
-        91
-        72
-        137
-        236
-        93
-        195
-    # wait (rdi = the block base, rsi the pre-observed status,
-    # dead_alloc_name: the handle signals when the thread ends): look the
+    emit(94)
+    emit(95)
+    emit(91)
+    emit(72)
+    emit(137)
+    emit(236)
+    emit(93)
+    emit(195)
+    # wait (rdi is the block base, rsi the pre-observed status,
+    # unused: the handle signals when the thread ends): look the
     # handle up by base/262272 and WaitForSingleObject on it
-    task_names: _sov_list_add(task_names, "_sov_win_wait")
-    task_at: _sov_list_add(task_at, here())
-    bytes:
-        72
-        139
-        199
-        72
-        193
-        232
-        18
-        72
-        141
-        13
+    fn_names: _sov_list_add(fn_names, "_sov_win_wait")
+    fn_offs: _sov_list_add(fn_offs, here())
+    emit(72)
+    emit(139)
+    emit(199)
+    emit(72)
+    emit(193)
+    emit(232)
+    emit(18)
+    emit(72)
+    emit(141)
+    emit(13)
     twt: here()
-    put_4_bytes(0)
-    later_fill(twt, "threadtable", 0)
-    bytes:
-        72
-        139
-        4
-        193
-        72
-        137
-        193
-        186
-        255
-        255
-        255
-        255
-        72
-        184
+    emit4(0)
+    addp(twt, "threadtable", 0)
+    emit(72)
+    emit(139)
+    emit(4)
+    emit(193)
+    emit(72)
+    emit(137)
+    emit(193)
+    emit(186)
+    emit(255)
+    emit(255)
+    emit(255)
+    emit(255)
+    emit(72)
+    emit(184)
     twc: here()
-    put_8_bytes(0)
-    later_fill(twc, "iatslot", 15)
-    bytes:
-        255
-        16
-        49
-        192
-        195
+    emit8(0)
+    addp(twc, "iatslot", 15)
+    emit(255)
+    emit(16)
+    emit(49)
+    emit(192)
+    emit(195)
     # the thread entry: Windows hands the parameter in rcx, the
     # shared entry task takes it in rdi; returning ends the thread
-    task_names: _sov_list_add(task_names, "_sov_win_trampoline")
-    task_at: _sov_list_add(task_at, here())
-    bytes:
-        72
-        137
-        207
-    call("_sov_thread_entry_param")
-    put_in_program(195)
+    fn_names: _sov_list_add(fn_names, "_sov_win_trampoline")
+    fn_offs: _sov_list_add(fn_offs, here())
+    emit(72)
+    emit(137)
+    emit(207)
+    calln("_sov_thread_entry_param")
+    emit(195)
 compile source:
-    want_window: 0
-    if look(source, "_sov_win_gui") > 0 - 1
-        want_window: 1
-    code: _sov_list_new()
-    bump_ptr: blank
-    bump_end: blank
-    known_name: blank
-    known_value: 0
-    dead_alloc_name: blank
-    used_alloc: 0
-    used_text_length: 0
-    used_texts_equal: 0
-    used_print: 0
-    used_print_number: 0
-    used_windows_call: 0
-    used_crash: 0
-    windows_late: 0
-    rare_windows: 0
-    used_fill: 0
-    tiny_program: 0
-    needs_heap: 0
-    needs_private: 0
-    saw_letters: 0
-    letter_boxes: _sov_list_new()
-    letter_tasks: _sov_list_new()
-    array_names: _sov_list_new()
-    array_count: _sov_list_new()
+    oc: _sov_list_new()
+    iota_ptr: blank
+    iota_lim: blank
+    kn: blank
+    kv: 0
+    skip_al: blank
+    used_al: 0
+    used_sl: 0
+    used_eq: 0
+    used_pr: 0
+    used_pi: 0
+    used_wc: 0
+    used_tr: 0
+    wc_dyn: 0
+    wc_rare: 0
+    did_stos: 0
+    thin_main: 0
+    has_vm: 0
+    need_priv: 0
+    saw_str: 0
+    str_vars: _sov_list_new()
+    str_fns: _sov_list_new()
+    ar_names: _sov_list_new()
+    ar_cnt: _sov_list_new()
     fn_locs: _sov_list_new()
-    letter_tasks: _sov_list_add(letter_tasks, "cat")
-    letter_tasks: _sov_list_add(letter_tasks, "strcat")
-    letter_tasks: _sov_list_add(letter_tasks, "_sov_strcat")
-    letter_tasks: _sov_list_add(letter_tasks, "sub")
-    letter_tasks: _sov_list_add(letter_tasks, "trim")
-    letter_tasks: _sov_list_add(letter_tasks, "ch")
-    letter_tasks: _sov_list_add(letter_tasks, "_sov_substring")
-    seed_str_fns
+    str_fns: _sov_list_add(str_fns, "cat")
+    str_fns: _sov_list_add(str_fns, "strcat")
+    str_fns: _sov_list_add(str_fns, "_sov_strcat")
+    str_fns: _sov_list_add(str_fns, "sub")
+    str_fns: _sov_list_add(str_fns, "trim")
+    str_fns: _sov_list_add(str_fns, "ch")
+    str_fns: _sov_list_add(str_fns, "_sov_substring")
+    seed_str_fns()
     pre_lns: lines_of(source)
     pre_i: 0
     pre_cur: blank
@@ -3146,13 +2777,13 @@ compile source:
     as long as pre_i < pre_n
         pre_l: _sov_list_get(pre_lns, pre_i)
         if length(strip(pre_l)) > 0
-            if nind(pre_l) = 0
+            if nind(pre_l) is 0
                 pre_t: strip(pre_l)
-                if starts(pre_t, "#") = 0
-                    if starts(pre_t, "use ") = 0
+                if starts(pre_t, "#") is 0
+                    if starts(pre_t, "use ") is 0
                         pre_c: find_col(pre_t)
                         if pre_c > 0
-                            if pre_c = length(pre_t) - 1
+                            if pre_c is length(pre_t) - 1
                                 pre_h: strip(cut(pre_t, 0, pre_c))
                                 pre_sp: look(pre_h, " ")
                                 if pre_sp > 0 - 1
@@ -3162,64 +2793,65 @@ compile source:
                                     pre_k: 0
                                     pre_in: 0
                                     as long as pre_k < length(pre_ps)
-                                        if same(letter(pre_ps, pre_k), " ") = 1
+                                        if same(letter(pre_ps, pre_k), " ") is 1
                                             pre_in: 0
                                         if not
-                                            if pre_in = 0
+                                            if pre_in is 0
                                                 pre_na: pre_na + 1
                                                 pre_in: 1
                                         pre_k: pre_k + 1
-                                    # seven values = the most a job can
+                                    # seven values is the most a job can
                                     # take. more used to compile and then
                                     # go wrong while running.
                                     if pre_na > 7
-                                        print "Error: a job takes at most seven values" : pre_cur
-                                        print "name" : pre_na
-                                        saw_error: 1
-                                    array_names: _sov_list_add(array_names, pre_cur)
-                                    array_count: _sov_list_add(array_count, pre_na)
+                                        print "Error: a job takes at most seven values"
+                                        _sov_print(pre_cur)
+                                        print pre_na
+                                        had_err: 1
+                                    ar_names: _sov_list_add(ar_names, pre_cur)
+                                    ar_cnt: _sov_list_add(ar_cnt, pre_na)
                                 if not
                                     pre_cur: pre_h
-                                    array_names: _sov_list_add(array_names, pre_cur)
-                                    array_count: _sov_list_add(array_count, 0)
+                                    ar_names: _sov_list_add(ar_names, pre_cur)
+                                    ar_cnt: _sov_list_add(ar_cnt, 0)
             if not
                 pre_t2: strip(pre_l)
-                if starts(pre_t2, "return ") = 1
+                if starts(pre_t2, "return ") is 1
                     pre_r: strip(cut(pre_t2, 7, length(pre_t2)))
-                    if starts(pre_r, "as text ") = 1
+                    if starts(pre_r, "as text ") is 1
                         if length(pre_cur) > 0
                             mark_fn_str(pre_cur)
-                    if starts(pre_r, "as ptr ") = 1
+                    if starts(pre_r, "as ptr ") is 1
                         if length(pre_cur) > 0
                             mark_fn_str(pre_cur)
                     if length(pre_r) > 0
-                        if _sov_byte_at(pre_r, 0) = 34
+                        if _sov_byte_at(pre_r, 0) is 34
                             if length(pre_cur) > 0
                                 mark_fn_str(pre_cur)
                         if not
-                            if same(pre_r, "blank") = 1
+                            if same(pre_r, "blank") is 1
                                 if length(pre_cur) > 0
                                     mark_fn_str(pre_cur)
         pre_i: pre_i + 1
-    # a job that hands back another job's answer = a text job too,
+    # a job that hands back another job's answer is a text job too,
     # whatever order the jobs were written in. Keep going round until
-    # nobody new = marked, so forward references work as well as
+    # nobody new is marked, so forward references work as well as
     # backward ones.
     changed: 1
-    as long as changed = 1
+    as long as changed is 1
         changed: 0
         pre_i: 0
         pre_cur: blank
         as long as pre_i < pre_n
             pre_l: _sov_list_get(pre_lns, pre_i)
             if length(strip(pre_l)) > 0
-                if nind(pre_l) = 0
+                if nind(pre_l) is 0
                     pre_t: strip(pre_l)
-                    if starts(pre_t, "#") = 0
-                        if starts(pre_t, "use ") = 0
+                    if starts(pre_t, "#") is 0
+                        if starts(pre_t, "use ") is 0
                             pre_c: find_col(pre_t)
                             if pre_c > 0
-                                if pre_c = length(pre_t) - 1
+                                if pre_c is length(pre_t) - 1
                                     pre_h: strip(cut(pre_t, 0, pre_c))
                                     pre_sp: look(pre_h, " ")
                                     if pre_sp > 0 - 1
@@ -3228,18 +2860,18 @@ compile source:
                                         pre_cur: pre_h
                 if not
                     pre_t2: strip(pre_l)
-                    if starts(pre_t2, "return ") = 1
+                    if starts(pre_t2, "return ") is 1
                         pre_r: strip(cut(pre_t2, 7, length(pre_t2)))
-                        if idx(letter_tasks, pre_cur) < 0
-                            if starts(pre_r, "as text ") = 0
-                                if starts(pre_r, "as ptr ") = 0
+                        if idx(str_fns, pre_cur) < 0
+                            if starts(pre_r, "as text ") is 0
+                                if starts(pre_r, "as ptr ") is 0
                                     if length(pre_r) > 0
                                         if _sov_byte_at(pre_r, 0) is not 34
-                                            if same(pre_r, "blank") = 0
+                                            if same(pre_r, "blank") is 0
                                                 pre_lp: look(pre_r, "(")
                                                 if pre_lp > 0
                                                     pre_f: strip(cut(pre_r, 0, pre_lp))
-                                                    if idx(letter_tasks, pre_f) > 0 - 1
+                                                    if idx(str_fns, pre_f) > 0 - 1
                                                         mark_fn_str(pre_cur)
                                                         changed: 1
             pre_i: pre_i + 1
@@ -3251,35 +2883,33 @@ compile source:
     ni: 0
     as long as ni < _sov_list_len(nls)
         ns: strip(_sov_list_get(nls, ni))
-        if same(ns, "private") = 1
-            needs_private: 1
-        if starts(ns, "wipe ") = 1
-            needs_private: 1
+        if same(ns, "private") is 1
+            need_priv: 1
+        if starts(ns, "wipe ") is 1
+            need_priv: 1
         ni: ni + 1
-    const_names: _sov_list_new()
-    const_values: _sov_list_new()
-    const_dirty: _sov_list_new()
-    letters: _sov_buf_new()
-    letter_keys: _sov_list_new()
-    letters_at: _sov_list_new()
-    task_names: _sov_list_new()
-    task_at: _sov_list_new()
-    global_names: _sov_list_new()
+    cnms: _sov_list_new()
+    cvls: _sov_list_new()
+    cemt: _sov_list_new()
+    strb: _sov_buf_new()
+    str_keys: _sov_list_new()
+    str_pos: _sov_list_new()
+    fn_names: _sov_list_new()
+    fn_offs: _sov_list_new()
+    glob_names: _sov_list_new()
     patch_at: _sov_list_new()
     patch_kind: _sov_list_new()
-    patch_value: _sov_list_new()
+    patch_val: _sov_list_new()
     patch_line: _sov_list_new()
-    line_of_stmt: _sov_list_new()
-    line_of_body: _sov_list_new()
-    line_of_task: _sov_list_new()
-    user_tasks: _sov_list_new()
+    stmt_lns: _sov_list_new()
+    body_lns: _sov_list_new()
+    task_lns: _sov_list_new()
+    task_user: _sov_list_new()
     lns: lines_of(source)
     bodies: _sov_list_new()
     params: _sov_list_new()
     names: _sov_list_new()
     tops: _sov_list_new()
-    loose: _sov_list_new()
-    loose_lns: _sov_list_new()
     in_t: 0
     cur: _sov_list_new()
     cur_ln: _sov_list_new()
@@ -3288,55 +2918,39 @@ compile source:
         raw: _sov_list_get(lns, li)
         s: strip(raw)
         th: 0
-        if nind(raw) = 0
-            if is_task_hdr(s) = 1
-                th: 1
-        if nind(raw) = 0
-            if th = 0
-                if length(s) > 0
-                    if peek_byte(s, 0) is not 35
-                        if in_t = 1
-                            cur: expand_bytes(cur)
-                            bodies: _sov_list_add(bodies, cur)
-                            line_of_body: _sov_list_add(line_of_body, cur_ln)
-                            in_t: 0
-        if th = 1
-            if in_t = 1
-                cur: expand_bytes(cur)
+        if is_task_hdr(s) is 1
+            th: 1
+        if th is 1
+            if in_t is 1
                 bodies: _sov_list_add(bodies, cur)
-                line_of_body: _sov_list_add(line_of_body, cur_ln)
+                body_lns: _sov_list_add(body_lns, cur_ln)
             tn: tname(s)
-            if same(tn, "main") = 1
-                print "Error: main is gone, put the code at the top of the file"
-                error_line: file_ln(li)
-                err_where
-                saw_error: 1
-                tn: "_gone_main"
             if idx(names, tn) > 0 - 1
-                print "Error: two with the same name" : tn
-                error_line: file_ln(li)
-                print "line" : error_line
-                saw_error: 1
+                print "Error: two with the same name"
+                _sov_print(tn)
+                err_line: file_ln(li)
+                print err_line
+                had_err: 1
             names: _sov_list_add(names, tn)
             params: _sov_list_add(params, tparams(s))
             tu: 0
-            if li + 1 > first_user_line
+            if li + 1 > src_base
                 tu: 1
-            user_tasks: _sov_list_add(user_tasks, tu)
-            line_of_task: _sov_list_add(line_of_task, file_ln(li))
+            task_user: _sov_list_add(task_user, tu)
+            task_lns: _sov_list_add(task_lns, file_ln(li))
             cur: _sov_list_new()
             cur_ln: _sov_list_new()
             in_t: 1
         if not
-            if nind(raw) = 0
+            if nind(raw) is 0
                 gok: 0
                 gc: find_col(s)
                 if gc > 0
                     if gc < length(s) - 1
                         gok: 1
-                if gok = 1
+                if gok is 1
                     gn: blank
-                    if starts(s, "<-- ") = 1
+                    if starts(s, "<-- ") is 1
                         rest: cut(s, 4, length(s))
                         t: find_sep(rest)
                         if t > 0 - 1
@@ -3344,78 +2958,34 @@ compile source:
                     if not
                         gn: repl(strip(cut(s, 0, gc)), " ", "_")
                     if length(gn) > 0
-                        if idx(names, gn) < 0
-                            if idx(global_names, gn) = 0 - 1
-                                global_names: _sov_list_add(global_names, gn)
-                        if not
-                            grhs0: strip(cut(s, gc + 1, length(s)))
-                            keepg: 0
-                            if is_imm(grhs0) = 1
-                                keepg: 1
-                            if look(grhs0, "(") > 0 - 1
-                                keepg: 1
-                            if keepg = 1
-                                if idx(global_names, gn) = 0 - 1
-                                    global_names: _sov_list_add(global_names, gn)
+                        if idx(glob_names, gn) is 0 - 1
+                            glob_names: _sov_list_add(glob_names, gn)
                         # a top-level "x: x" only registers the global;
-                        # the store = a no-op (the start stub has already
+                        # the store is a no-op (the start stub has already
                         # filled g_argc/g_argv before main runs). skip it.
                         sa: 0
                         if gc + 1 < length(s)
                             grhs: strip(cut(s, gc + 1, length(s)))
-                            if same(repl(grhs, " ", "_"), gn) = 1
+                            if same(repl(grhs, " ", "_"), gn) is 1
                                 sa: 1
-                        if sa = 0
-                            loose: _sov_list_add(loose, raw)
-                            loose_lns: _sov_list_add(loose_lns, file_ln(li))
-                if gok = 0
-                    if length(s) > 0
-                        if peek_byte(s, 0) is not 35
-                            if starts(s, "use ") = 0
-                                loose: _sov_list_add(loose, raw)
-                                loose_lns: _sov_list_add(loose_lns, file_ln(li))
+                        if sa is 0
+                            tops: _sov_list_add(tops, raw)
             if not
-                if in_t = 1
+                if in_t is 1
                     cur: _sov_list_add(cur, raw)
                     cur_ln: _sov_list_add(cur_ln, file_ln(li))
-                if not
-                    loose: _sov_list_add(loose, raw)
-                    loose_lns: _sov_list_add(loose_lns, file_ln(li))
         li: li + 1
-    if in_t = 1
-        cur: expand_bytes(cur)
+    if in_t is 1
         bodies: _sov_list_add(bodies, cur)
-        line_of_body: _sov_list_add(line_of_body, cur_ln)
-    if _sov_list_len(loose) > 0
-        if idx(names, "main") > 0 - 1
-            print "Error: code outside main"
-            error_line: _sov_list_get(loose_lns, 0)
-            err_where
-            saw_error: 1
-        if not
-            names: _sov_list_add(names, "main")
-            params: _sov_list_add(params, _sov_list_new())
-            loose: expand_bytes(loose)
-            bodies: _sov_list_add(bodies, loose)
-            line_of_body: _sov_list_add(line_of_body, loose_lns)
-            user_tasks: _sov_list_add(user_tasks, 1)
-            line_of_task: _sov_list_add(line_of_task, _sov_list_get(loose_lns, 0))
-    if idx(names, "main") < 0
-        if _sov_list_len(tops) > 0
-            names: _sov_list_add(names, "main")
-            params: _sov_list_add(params, _sov_list_new())
-            bodies: _sov_list_add(bodies, _sov_list_new())
-            line_of_body: _sov_list_add(line_of_body, _sov_list_new())
-            user_tasks: _sov_list_add(user_tasks, 1)
-            line_of_task: _sov_list_add(line_of_task, 1)
-    needs_args: 0
+        body_lns: _sov_list_add(body_lns, cur_ln)
+    want_args: 0
     if look(source, "g_argc") > 0 - 1
-        needs_args: 1
-    needs_heap: 0
+        want_args: 1
+    has_vm: 0
     if look(source, "task _sov_alloc") > 0 - 1
-        needs_heap: 1
+        has_vm: 1
     if look(source, "_sov_alloc size:") > 0 - 1
-        needs_heap: 1
+        has_vm: 1
     prep_main(names, params, bodies)
     fli: 0
     as long as fli < _sov_list_len(bodies)
@@ -3432,89 +3002,83 @@ compile source:
                             if fgc < length(fls) - 1
                                 fgn: repl(strip(cut(fls, 0, fgc)), " ", "_")
                                 if length(fgn) > 0
-                                    if idx(global_names, fgn) = 0 - 1
-                                        if idx(fset, fgn) = 0 - 1
+                                    if idx(glob_names, fgn) is 0 - 1
+                                        if idx(fset, fgn) is 0 - 1
                                             fset: _sov_list_add(fset, fgn)
             flj: flj + 1
         fn_locs: _sov_list_add(fn_locs, _sov_list_len(fset))
         fli: fli + 1
-    if needs_heap = 1
-        global_names: _sov_list_add(global_names, "heap_ptr")
-        emit_start
-        emit_wincall
-        used_windows_call: 0
-        emit_alloc
-        emit_strlen
-        emit_streq
-        emit_print
-        emit_print_int
+    if has_vm is 1
+        glob_names: _sov_list_add(glob_names, "heap_ptr")
+        emit_start()
+        emit_wincall()
+        used_wc: 0
+        emit_alloc()
+        emit_strlen()
+        emit_streq()
+        emit_print()
+        emit_print_int()
         # the thread bridge, when the re-placed runtime asks for it
         if look(source, "thread_create") > 0 - 1
-            emit_win_thread
-        tiny_program: 0
+            emit_win_thread()
+        thin_main: 0
     if not
-        if tiny_program = 0
-            emit_start
+        if thin_main is 0
+            emit_start()
     fi: 0
     as long as fi < _sov_list_len(names)
         nm: _sov_list_get(names, fi)
-        if same(nm, "_sov_win_exec") = 1
-            if idx(task_names, nm) < 0
-                emit_win_exec
-        if same(nm, "_sov_image_base") = 1
-            if idx(task_names, nm) < 0
-                emit_image_base
-        if same(nm, "_sov_ccall") = 1
-            if idx(task_names, nm) < 0
-                emit_win_ccall
-        if idx(task_names, nm) < 0
-                task_names: _sov_list_add(task_names, nm)
-                task_at: _sov_list_add(task_at, here())
-                local_names: _sov_list_new()
-                letter_boxes: _sov_list_new()
-                saw_letters: 0
-                inside_if: 0
-                line_of_stmt: _sov_list_get(line_of_body, fi)
-                if _sov_list_len(_sov_list_get(bodies, fi)) = 0
-                    if _sov_list_get(user_tasks, fi) = 1
-                        print "Warning: empty" : nm
-                        print "line" : _sov_list_get(line_of_task, fi)
+        if same(nm, "_sov_win_exec") is 1
+            if idx(fn_names, nm) < 0
+                emit_win_exec()
+        if idx(fn_names, nm) < 0
+                fn_names: _sov_list_add(fn_names, nm)
+                fn_offs: _sov_list_add(fn_offs, here())
+                locals: _sov_list_new()
+                str_vars: _sov_list_new()
+                saw_str: 0
+                br_depth: 0
+                stmt_lns: _sov_list_get(body_lns, fi)
+                if _sov_list_len(_sov_list_get(bodies, fi)) is 0
+                    if _sov_list_get(task_user, fi) is 1
+                        print "Warning: empty"
+                        _sov_print(nm)
+                        print _sov_list_get(task_lns, fi)
                 ps: _sov_list_get(params, fi)
                 pi: 0
                 as long as pi < _sov_list_len(ps)
-                    local_names: _sov_list_add(local_names, _sov_list_get(ps, pi))
+                    locals: _sov_list_add(locals, _sov_list_get(ps, pi))
                     pi: pi + 1
                 thin: 0
-                if same(nm, "main") = 1
-                    if _sov_list_len(ps) = 0
+                if same(nm, "main") is 1
+                    if _sov_list_len(ps) is 0
                         thin: 0
-                if thin = 1
-                    dead_alloc_name: drop_unused(_sov_list_get(bodies, fi))
-                    if needs_private = 1
-                        emit_nodump
+                if thin is 1
+                    skip_al: dead_iota(_sov_list_get(bodies, fi))
+                    if need_priv is 1
+                        emit_nodump()
                     leaf8: leaf8_scan(tops)
                     body(tops)
-                    cflush_all
+                    cflush_all()
                     leaf8: 0
-                    if _sov_list_len(ps) = 0
+                    if _sov_list_len(ps) is 0
                         leaf8: leaf8_scan(_sov_list_get(bodies, fi))
                     body(_sov_list_get(bodies, fi))
-                    if saw_letters = 1
+                    if saw_str is 1
                         mark_fn_str(nm)
-                    if needs_private = 1
-                        emit_stack_wipe
-                    bytes:
-                        49
-                        255
-                        106
-                        60
-                        88
-                    ask_kernel
+                    if need_priv is 1
+                        emit_stack_wipe()
+                    emit(49)
+                    emit(255)
+                    emit(106)
+                    emit(60)
+                    emit(88)
+                    sysc()
                 if not
-                    saved_locals: 0
-                    frame_open: 0
-                    frame_done: 0
-                    frame_holes: _sov_list_new()
+                    fn_save_n: 0
+                    fw_on: 0
+                    fw_done: 0
+                    fw_pos: _sov_list_new()
                     fargs: _sov_list_len(ps)
                     floc: 0
                     if fi < _sov_list_len(fn_locs)
@@ -3522,65 +3086,65 @@ compile source:
                     ftot: fargs + floc
                     if ftot > 5
                         ftot: 5
-                    saved_locals: ftot
-                    skip_frame: 0
+                    fn_save_n: ftot
+                    no_frame: 0
                     if fargs + floc < 6
-                        if starts(nm, "_sov_") = 0
-                            if same(nm, "main") = 0
-                                skip_frame: 1
+                        if starts(nm, "_sov_") is 0
+                            no_frame: 1
                     isfib: fiblike(nm, ps, _sov_list_get(bodies, fi))
-                    if isfib = 1
+                    if isfib is 1
                         # frame-free: the iterative body touches rbx
                         # (the arg) and nothing else callee-saved -
                         # a/rdx/rcx are caller-saved - so the frame
-                        # = one register, not three
-                        saved_locals: 1
-                        skip_frame: 1
+                        # is one register, not three
+                        fn_save_n: 1
+                        no_frame: 1
                     can_here: 0
                     cbi: 0
                     as long as cbi < _sov_list_len(_sov_list_get(bodies, fi))
-                        if same(strip(_sov_list_get(_sov_list_get(bodies, fi), cbi)), "private") = 1
+                        if same(strip(_sov_list_get(_sov_list_get(bodies, fi), cbi)), "private") is 1
                             can_here: 1
                         cbi: cbi + 1
-                    prolog
+                    prolog()
                     # a thin build enters at main itself: the seed
                     # and the handler still have to run first
-                    if same(nm, "main") = 1
-                        if tiny_program = 1
-                            if needs_private = 1
-                                emit_canary_seed
-                                emit_crash_install
-                    if can_here = 1
-                        if skip_frame = 0
-                            if isfib = 0
-                                canary_store
+                    if same(nm, "main") is 1
+                        if thin_main is 1
+                            if need_priv is 1
+                                emit_canary_seed()
+                                emit_crash_install()
+                    if can_here is 1
+                        if no_frame is 0
+                            if isfib is 0
+                                canary_store()
                     copyargs(_sov_list_len(ps))
-                    if isfib = 1
-                        emit_fib_iter
+                    if isfib is 1
+                        emit_fib_iter()
                     if not
-                        if same(nm, "main") = 1
-                            dead_alloc_name: drop_unused(_sov_list_get(bodies, fi))
-                            if needs_private = 1
-                                emit_nodump
+                        if same(nm, "main") is 1
+                            skip_al: dead_iota(_sov_list_get(bodies, fi))
+                            if need_priv is 1
+                                emit_nodump()
                             leaf8: leaf8_scan(tops)
-                            at_top: 1
+                            in_main_now: 1
                             body(tops)
-                            at_top: 0
-                            cflush_all
+                            in_main_now: 0
+                            cflush_all()
                         leaf8: 0
-                        if _sov_list_len(ps) = 0
+                        if _sov_list_len(ps) is 0
                             leaf8: leaf8_scan(_sov_list_get(bodies, fi))
-                        if same(nm, "main") = 1
-                            at_top: 1
+                        if same(nm, "main") is 1
+                            in_main_now: 1
                         body(_sov_list_get(bodies, fi))
-                        if same(nm, "main") = 1
-                            at_top: 0
-                    if _sov_list_len(local_names) < 6
-                        if saved_locals < _sov_list_len(local_names)
-                            print "Warning: local_names" : nm
-                            print "local_names" : _sov_list_len(local_names)
-                            print "saved" : saved_locals
-                    if saw_letters = 1
+                        if same(nm, "main") is 1
+                            in_main_now: 0
+                    if _sov_list_len(locals) < 6
+                        if fn_save_n < _sov_list_len(locals)
+                            print "Warning: locals"
+                            _sov_print(nm)
+                            print _sov_list_len(locals)
+                            print fn_save_n
+                    if saw_str is 1
                         mark_fn_str(nm)
                     # the frame must reach past the deepest local: a
                     # value stored at slot i sits (i + 1) * 8 bytes below
@@ -3593,63 +3157,62 @@ compile source:
                     # a full slot deeper than the count, or the
                     # callee's own frame lands on top of our spilled
                     # values
-                    if skip_frame = 0
-                        ns: (_sov_list_len(local_names) + 1) * 8
+                    if no_frame is 0
+                        ns: (_sov_list_len(locals) + 1) * 8
                         if ns < 32
                             ns: 32
-                        if _sov_list_len(guard_holes) > 0
+                        if _sov_list_len(cd_at) > 0
                             ns: ns + 16
-                        put(frame_at, ns)
-                        if frame_open = 1
-                            if isfib = 0
-                                canary_check
-                                xor_rax
-                                restores
-                                frame_wipe
-                                put_in_program(201)
-                                ret
-                                frame_done: 1
+                        put(pro_at, ns)
+                        if fw_on is 1
+                            if isfib is 0
+                                canary_check()
+                                xor_rax()
+                                restores()
+                                frame_wipe()
+                                emit(201)
+                                ret()
+                                fw_done: 1
                             fwi: 0
-                            as long as fwi < _sov_list_len(frame_holes)
-                                put(_sov_list_get(frame_holes, fwi), ns + saved_locals * 8)
+                            as long as fwi < _sov_list_len(fw_pos)
+                                put(_sov_list_get(fw_pos, fwi), ns + fn_save_n * 8)
                                 fwi: fwi + 1
                         # the canary sits just above the saved
                         # registers, below every local; point the
                         # compare and the store at it, then spend
                         # the list
                         chi2: 0
-                        as long as chi2 < _sov_list_len(guard_holes)
-                            put(_sov_list_get(guard_holes, chi2), 8 - ns - saved_locals * 8)
+                        as long as chi2 < _sov_list_len(cd_at)
+                            put(_sov_list_get(cd_at, chi2), 8 - ns - fn_save_n * 8)
                             chi2: chi2 + 1
-                        guard_holes: 0
-                    if same(nm, "main") = 1
-                        if needs_private = 1
-                            emit_stack_wipe
-                        bytes:
-                            49
-                            255
+                        cd_at: 0
+                    if same(nm, "main") is 1
+                        if need_priv is 1
+                            emit_stack_wipe()
+                        emit(49)
+                        emit(255)
                         emit_sys_num(60)
-                        emit_sys_do
+                        emit_sys_do()
                     if not
                         # the fib fast path ends in its own leave/ret;
                         # a second epilogue here would be dead bytes
-                        if isfib = 0
-                            if frame_done = 0
-                                xor_rax
-                                restore_frame
-                                ret
+                        if isfib is 0
+                            if fw_done is 0
+                                xor_rax()
+                                leave()
+                                ret()
         fi: fi + 1
-    if needs_heap = 0
-        emit_used
-    if used_guard = 1
-        emit_canary_fail
-    if needs_private = 1
-        emit_crash_handler
-    warn_unused
-    dce
-    dce_stores
-    dce_litter
-    dce_globals
+    if has_vm is 0
+        emit_used()
+    if can_used is 1
+        emit_canary_fail()
+    if need_priv is 1
+        emit_crash_handler()
+    warn_unused()
+    dce()
+    dce_stores()
+    dce_litter()
+    dce_globals()
 poke2 p off v:
     dummy: _sov_set_byte(p, off, v % 256)
     dummy: _sov_set_byte(p, off + 1, v / 256)
@@ -3662,54 +3225,54 @@ poke2 p off v:
 # slots in the order they sit in the table.
 imp_used: 0
 imp_name s:
-    if s = 0
+    if s is 0
         return "GetStdHandle"
-    if s = 1
+    if s is 1
         return "WriteFile"
-    if s = 2
+    if s is 2
         return "ReadFile"
-    if s = 3
+    if s is 3
         return "CreateFileA"
-    if s = 4
+    if s is 4
         return "CloseHandle"
-    if s = 5
+    if s is 5
         return "VirtualAlloc"
-    if s = 6
+    if s is 6
         return "ExitProcess"
-    if s = 7
+    if s is 7
         return "GetCommandLineA"
-    if s = 8
+    if s is 8
         return "SetFilePointerEx"
-    if s = 9
+    if s is 9
         return "GetConsoleMode"
-    if s = 10
+    if s is 10
         return "SetConsoleMode"
-    if s = 11
+    if s is 11
         return "LoadLibraryA"
-    if s = 13
+    if s is 13
         return "VirtualQuery"
-    if s = 14
+    if s is 14
         return "CreateThread"
-    if s = 15
+    if s is 15
         return "WaitForSingleObject"
-    if s = 16
+    if s is 16
         return "ExitThread"
-    if s = 17
+    if s is 17
         return "CreateProcessA"
-    if s = 18
+    if s is 18
         return "GetExitCodeProcess"
     return "GetProcAddress"
 imp_pos s:
     i: 0
     as long as i < _sov_list_len(imp_used)
-        if _sov_list_get(imp_used, i) = s
+        if _sov_list_get(imp_used, i) is s
             return i
         i: i + 1
     return 0 - 1
 imp_mark s:
     i: 0
     as long as i < _sov_list_len(imp_used)
-        if _sov_list_get(imp_used, i) = s
+        if _sov_list_get(imp_used, i) is s
             return 0
         i: i + 1
     imp_used: _sov_list_add(imp_used, s)
@@ -3733,38 +3296,38 @@ win_head_byte i:
         return peek_byte(win_head_c, i - 1024)
     return peek_byte(win_head_d, i - 1536)
 
-# one hex digit to its value (the blob = lowercase)
+# one hex digit to its value (the blob is lowercase)
 win_nib c:
     if c > 96
         return c - 87
     return c - 48
 
-write_program path:
-    if saw_error = 1
+write_elf path:
+    if had_err is 1
         return
-    clen: _sov_list_len(code)
-    sl: _sov_buf_len(letters)
+    clen: _sov_list_len(oc)
+    sl: _sov_buf_len(strb)
     str_off: clen
-    if _sov_list_len(global_names) > 0
+    if _sov_list_len(glob_names) > 0
         as long as str_off % 8 is not 0
-            code: _sov_list_add(code, 0)
+            oc: _sov_list_add(oc, 0)
             str_off: str_off + 1
             clen: clen + 1
     glob_off: clen + sl
-    pad: _sov_list_len(global_names) * 8
+    pad: _sov_list_len(glob_names) * 8
     tneed: clen + sl + pad
     # pass S3 (resolved below): .text holds code only; literals,
     # globals and the import blob move to a READ+WRITE .data at
-    # RVA 8192. the IAT = loader-written: it must be writable.
+    # RVA 8192. the IAT is loader-written: it must be writable.
     # the import table lists only the slots the code referenced, then
     # LoadLibraryA and GetProcAddress so `use winapi` can reach the
-    # rest of Windows. it rides inside .text so the whole exe = one
+    # rest of Windows. it rides inside .text so the whole exe is one
     # section and one page of code + imports (pass 95).
     imp_used: _sov_list_new()
     pi: 0
     as long as pi < _sov_list_len(patch_kind)
-        if same(_sov_list_get(patch_kind, pi), "iatslot") = 1
-            imp_mark(_sov_list_get(patch_value, pi))
+        if same(_sov_list_get(patch_kind, pi), "iatslot") is 1
+            imp_mark(_sov_list_get(patch_val, pi))
         pi: pi + 1
     imp_mark(11)
     imp_mark(12)
@@ -3805,11 +3368,11 @@ write_program path:
     tt_used: 0
     pt: 0
     as long as pt < _sov_list_len(patch_kind)
-        if same(_sov_list_get(patch_kind, pt), "threadtable") = 1
+        if same(_sov_list_get(patch_kind, pt), "threadtable") is 1
             tt_used: 1
         pt: pt + 1
     draw: tt_off
-    if tt_used = 1
+    if tt_used is 1
         draw: draw + 16384
     as long as draw % 512 is not 0
         draw: draw + 1
@@ -3826,20 +3389,20 @@ write_program path:
     as long as ri < _sov_list_len(patch_kind)
         rk: _sov_list_get(patch_kind, ri)
         rty: 0
-        if same(rk, "task_address") = 1
+        if same(rk, "fnaddr") is 1
             rty: 10
-        if same(rk, "glob") = 1
+        if same(rk, "glob") is 1
             rty: 10
-        if same(rk, "gwstr_a") = 1
+        if same(rk, "gwstr_a") is 1
             rty: 10
-        if same(rk, "gwipe_a") = 1
+        if same(rk, "gwipe_a") is 1
             rty: 10
-        if same(rk, "iatslot") = 1
+        if same(rk, "iatslot") is 1
             rty: 10
         # string literal addresses ride movabs qwords (rax_str) -
-        # the kind the first landing missed, which = why a slid
+        # the kind the first landing missed, which is why a slid
         # load faulted on its first print
-        if same(rk, "str") = 1
+        if same(rk, "str") is 1
             rty: 10
         if rty > 0
             rva_l: _sov_list_add(rva_l, 4096 + _sov_list_get(patch_at, ri))
@@ -3852,7 +3415,7 @@ write_program path:
         cnt: 0
         ri: 0
         as long as ri < _sov_list_len(rva_l)
-            if _sov_list_get(rva_l, ri) / 4096 = pg
+            if _sov_list_get(rva_l, ri) / 4096 is pg
                 cnt: cnt + 1
             ri: ri + 1
         if cnt > 0
@@ -3871,7 +3434,7 @@ write_program path:
         dummy: _sov_set_byte(flat, i, 0)
         i: i + 1
     # the header lives in this source (win_head_a..d), not in an
-    # external file, so there = nothing to find and no way to lose
+    # external file, so there is nothing to find and no way to lose
     # it. Same 512 bytes, decoded here.
     hi: 0
     as long as hi < 512
@@ -3879,9 +3442,6 @@ write_program path:
         c1: win_nib(win_head_byte(hi * 2 + 1))
         dummy: _sov_set_byte(flat, hi, c0 * 16 + c1)
         hi: hi + 1
-    if want_window = 1
-        dummy: _sov_set_byte(flat, 220, 2)
-        dummy: _sov_set_byte(flat, 221, 0)
     # two sections: .text READ+EXECUTE (never writable),
     # .data READ+WRITE (never executable), NX_COMPAT on
     poke4(flat, 156, clen)
@@ -3949,20 +3509,20 @@ write_program path:
     poke4(flat, 276, 40)
     poke4(flat, 360, drva + import_off)
     poke4(flat, 364, (nimp + 1) * 8)
-    # when there = no start stub, main itself = the entry point
+    # when there is no start stub, main itself is the entry point
     moff: 0
-    if tiny_program = 1
-        mi: idx(task_names, "main")
+    if thin_main is 1
+        mi: idx(fn_names, "main")
         if mi > 0 - 1
-            moff: _sov_list_get(task_at, mi)
+            moff: _sov_list_get(fn_offs, mi)
     poke4(flat, 168, 4096 + moff)
     i: 0
     as long as i < clen
-        dummy: _sov_set_byte(flat, 512 + i, _sov_list_get(code, i))
+        dummy: _sov_set_byte(flat, 512 + i, _sov_list_get(oc, i))
         i: i + 1
     si: 0
     as long as si < sl
-        dummy: _sov_set_byte(flat, dfoff + str_off + si, _sov_buf_at(letters, si))
+        dummy: _sov_set_byte(flat, dfoff + str_off + si, _sov_buf_at(strb, si))
         si: si + 1
     # build the import table in .data (the loader writes the IAT)
     ib: dfoff + import_off
@@ -3999,65 +3559,67 @@ write_program path:
         dummy: _sov_set_byte(flat, ib + noff + 2 + length(nm), 0)
         noff: noff + 2 + length(nm) + 1
         ni: ni + 1
-    str_addr: load_at + drva + str_off
-    glob_addr: load_at + drva + glob_off
+    str_addr: BASE + drva + str_off
+    glob_addr: BASE + drva + glob_off
     i: 0
     as long as i < _sov_list_len(patch_at)
         at: _sov_list_get(patch_at, i)
         kind: _sov_list_get(patch_kind, i)
-        val: _sov_list_get(patch_value, i)
-        if same(kind, "rel") = 1
-            fi: idx(task_names, val)
+        val: _sov_list_get(patch_val, i)
+        if same(kind, "rel") is 1
+            fi: idx(fn_names, val)
             if fi > 0 - 1
-                tgt: _sov_list_get(task_at, fi)
+                tgt: _sov_list_get(fn_offs, fi)
                 rel: tgt - (at + 4)
                 poke4(flat, 512 + at, rel)
             if not
-                print "Error: no such task" : val
+                print "Error: no such task"
+                _sov_print(val)
                 print _sov_list_get(patch_line, i)
-                saw_error: 1
-        if same(kind, "iatslot") = 1
-            poke8(flat, 512 + at, load_at + drva + import_off + imp_pos(val) * 8)
-        if same(kind, "task_address") = 1
-            fi: idx(task_names, val)
+                had_err: 1
+        if same(kind, "iatslot") is 1
+            poke8(flat, 512 + at, BASE + drva + import_off + imp_pos(val) * 8)
+        if same(kind, "fnaddr") is 1
+            fi: idx(fn_names, val)
             if fi > 0 - 1
-                poke8(flat, 512 + at, load_at + 4096 + _sov_list_get(task_at, fi))
+                poke8(flat, 512 + at, BASE + 4096 + _sov_list_get(fn_offs, fi))
             if not
-                print "Error: no such task" : val
-                saw_error: 1
-        if same(kind, "str") = 1
+                print "Error: no such task"
+                _sov_print(val)
+                had_err: 1
+        if same(kind, "str") is 1
             poke8(flat, 512 + at, str_addr + val)
-        if same(kind, "str32") = 1
+        if same(kind, "str32") is 1
             poke4(flat, 512 + at, str_addr + val)
-        if same(kind, "ripstr") = 1
+        if same(kind, "ripstr") is 1
             poke4(flat, 512 + at, drva - 4096 + str_off + val - at - 4)
-        if same(kind, "grel") = 1
-            gx: idx(global_names, val)
+        if same(kind, "grel") is 1
+            gx: idx(glob_names, val)
             poke4(flat, 512 + at, drva - 4096 + glob_off + gx * 8 - at - 4)
-        if same(kind, "threadtable") = 1
+        if same(kind, "threadtable") is 1
             # rip-relative like grel: the lea's displacement to the
             # table slot in .data
             poke4(flat, 512 + at, drva - 4096 + tt_off - at - 4)
-        if same(kind, "gwstr_a") = 1
+        if same(kind, "gwstr_a") is 1
             poke8(flat, 512 + at, str_addr + val)
-        if same(kind, "gwstr_n") = 1
+        if same(kind, "gwstr_n") is 1
             poke4(flat, 512 + at, (sl + 7) / 8)
-        if same(kind, "gwipe_a") = 1
+        if same(kind, "gwipe_a") is 1
             poke8(flat, 512 + at, glob_addr)
-        if same(kind, "gwipe_n") = 1
-            poke4(flat, 512 + at, _sov_list_len(global_names))
-        if same(kind, "glob") = 1
-            gx: idx(global_names, val)
+        if same(kind, "gwipe_n") is 1
+            poke4(flat, 512 + at, _sov_list_len(glob_names))
+        if same(kind, "glob") is 1
+            gx: idx(glob_names, val)
             poke8(flat, 512 + at, glob_addr + gx * 8)
         i: i + 1
-    if saw_error = 1
+    if had_err is 1
         return
     # the relocation blocks themselves, one page at a time.
     # one scan of the relocation list per page, not one per entry:
     # the old shape rescanned the whole list for every single entry it
     # wrote, so a library-sized program paid pages x entries x list -
     # seconds of it. Entries go down first and the block's size field
-    # = patched afterwards, which writes exactly the same bytes as
+    # is patched afterwards, which writes exactly the same bytes as
     # counting first and writing second
     ro2: reloc_off
     pg: 0
@@ -4066,7 +3628,7 @@ write_program path:
         eo: ro2 + 8
         ri: 0
         as long as ri < _sov_list_len(rva_l)
-            if _sov_list_get(rva_l, ri) / 4096 = pg
+            if _sov_list_get(rva_l, ri) / 4096 is pg
                 ent: _sov_list_get(ty_l, ri) * 4096 + _sov_list_get(rva_l, ri) % 4096
                 poke2(flat, eo, ent)
                 eo: eo + 2
@@ -4086,67 +3648,61 @@ write_program path:
             ro2: ro2 + 8 + pcnt2 * 2
         pg: pg + 1
     w: _sov_write_n(path, flat, tot_sz)
-    if w = 0
+    if w is 0
         print "Error: cannot write output (is it running?)"
-        fail
-    if needs_private = 1
+        fail()
+    if need_priv is 1
         # pass 140: a private program's binary carries its secrets -
         # literals, keys - in its string span; it belongs to its
         # owner alone
         _sov_chmod(path, 448)
     if not
         _sov_chmod(path, 493)
-# remember where this compiler lives, so its library and runtime
-# are found no matter which folder you run it from
-windows_thread_words runtime:
-    # linux clone/fork/futex lines become CreateThread / wait / wake
-    runtime: repl(runtime, "syscall(56, e, top, 12032, 0, 0, 0)", "thread_create(e, top)")
-    runtime: repl(runtime, "syscall(57, 0, 0, 0, 0, 0, 0)", "thread_create(0, 0)")
-    runtime: repl(runtime, "syscall(202, cb, 1, 1, 0, 0, 0)", "thread_wake(cb)")
-    runtime: repl(runtime, "syscall(202, base, 1, 1, 0, 0, 0)", "thread_wake(base)")
-    runtime: repl(runtime, "syscall(202, h, 0, s, 0, 0, 0)", "thread_wait(h, s)")
-    return runtime
-
-start:
-    compiler_folder: dirname(tidy_path(peek_ptr(g_argv, 0)))
-    if g_argc < 2
+main argc argv:
+    # remember where this compiler lives, so its library and runtime
+    # are found no matter which folder you run it from
+    self_dir: dirname(tidy_path(peek_ptr(argv, 0)))
+    if argc < 2
         print "Usage: sovren <file.sov> [-o out]"
         print "sovren — native x86-64, self-contained"
-        fail
-    in_file: blank
-    out_file: blank
+        fail()
+    inf: blank
+    outf: blank
     i: 1
-    as long as i < g_argc
-        arg: peek_ptr(g_argv, i)
-        if same(arg, "--bare") = 1
-            no_runtime: 1
+    as long as i < argc
+        arg: peek_ptr(argv, i)
+        if same(arg, "--bare") is 1
+            bare_mode: 1
         if not
-            if same(arg, "-o") = 1
+            if same(arg, "-o") is 1
                 i: i + 1
-                if i < g_argc
-                    out_file: peek_ptr(g_argv, i)
+                if i < argc
+                    outf: peek_ptr(argv, i)
             if not
-                if same(arg, "build") = 0
-                    in_file: arg
+                if same(arg, "build") is 0
+                    inf: arg
         i: i + 1
-    if length(in_file) = 0
+    if length(inf) is 0
         print "Error: no input"
-        fail
-    if length(out_file) = 0
-        if holds(in_file, ".sov") = 1
-            out_file: cut(in_file, 0, look(in_file, ".sov"))
+        fail()
+    if length(outf) is 0
+        d: look(inf, ".sov")
+        if d > 0 - 1
+            outf: cut(inf, 0, d)
         if not
-            out_file: join(in_file, ".out")
-    file_name: in_file
-    print "Compiling" : in_file
-    src: load_file(in_file)
-    if src = 0
+            outf: join(inf, ".out")
+    src_name: inf
+    print "Compiling"
+    _sov_print(inf)
+    src: load_file(inf)
+    if src is 0
         print "Error: cannot read input"
-        fail
-    newline: "\n"
-    src: join("# skip this line\n", src)
-    libraries: blank
-    src: expand_use_lines(src)
+        fail()
+    nl: _sov_alloc(2)
+    dummy: _sov_set_byte(nl, 0, 10)
+    dummy: _sov_set_byte(nl, 1, 0)
+    src: join(join("# pad line so main is not first", nl), src)
+    used_libs: blank
     extra: pull_uses(src)
     more: pull_uses(extra)
     as long as length(more) > 0
@@ -4154,53 +3710,80 @@ start:
         more: pull_uses(more)
     if length(extra) > 0
         src: join(extra, src)
-    heap_size: 12582912
-    needs_runtime: uses_runtime(src)
-    runtime: blank
-    if no_runtime = 1
-        needs_runtime: 0
-    if needs_runtime = 1
-        heap_size: 1073741824
-        runtime: load_file("runtime.sov")
-        if runtime = 0
-            runtime: load_file("linux/runtime.sov")
-        if runtime = 0
-            runtime: load_file(join(compiler_folder, "/runtime.sov"))
-        if runtime = 0
-            runtime: load_file(join(compiler_folder, "/../runtime.sov"))
-        if runtime = 0
-            runtime: load_file(join(dirname(dirname(compiler_folder)), "/runtime.sov"))
-        if runtime = 0
+    need: 0
+    mmap_sz: 12582912
+    if look(src, "_sov_list") > 0 - 1
+        need: 1
+    if look(src, "load_file") > 0 - 1
+        need: 1
+    if look(src, "_sov_buf") > 0 - 1
+        need: 1
+    if look(src, "_sov_alloc") > 0 - 1
+        need: 1
+    if look(src, "_sov_set_byte") > 0 - 1
+        need: 1
+    if look(src, "peek_byte") > 0 - 1
+        need: 1
+    if look(src, "poke_byte") > 0 - 1
+        need: 1
+    if look(src, "spawn ") > 0 - 1
+        need: 1
+    if look(src, "join ") > 0 - 1
+        need: 1
+    rt: blank
+    if bare_mode is 1
+        need: 0
+    if need is 1
+        mmap_sz: 1073741824
+        rt: load_file("runtime.sov")
+        if rt is 0
+            rt: load_file("linux/runtime.sov")
+        if rt is 0
+            rt: load_file(join(self_dir, "/runtime.sov"))
+        if rt is 0
+            rt: load_file(join(self_dir, "/../runtime.sov"))
+        if rt is 0
+            rt: load_file(join(dirname(dirname(self_dir)), "/runtime.sov"))
+        if rt is 0
             print "Error: cannot read runtime"
-            fail
+            fail()
         # the windows thread bridge: the runtime's clone/fork and
         # futex lines become the bridge builtins, which the codegen
         # answers with CreateThread, WaitForSingleObject and a no-op
         # wake (the thread's own end signals its handle)
-        runtime: windows_thread_words(runtime)
-    first_user_line: 1
-    if length(runtime) > 0
-        first_user_line: first_user_line + _sov_list_len(lines_of(runtime))
+        rt: repl(rt, "syscall(56, e, top, 12032, 0, 0, 0)", "thread_create(e, top)")
+        rt: repl(rt, "syscall(57, 0, 0, 0, 0, 0, 0)", "thread_create(0, 0)")
+        rt: repl(rt, "syscall(202, cb, 1, 1, 0, 0, 0)", "thread_wake(cb)")
+        rt: repl(rt, "syscall(202, base, 1, 1, 0, 0, 0)", "thread_wake(base)")
+        rt: repl(rt, "syscall(202, h, 0, s, 0, 0, 0)", "thread_wait(h, s)")
+    src_base: 1
+    if length(rt) > 0
+        src_base: src_base + _sov_list_len(lines_of(rt))
     if length(extra) > 0
-        first_user_line: first_user_line + _sov_list_len(lines_of(extra))
-    newline: "\n"
-    all: join(runtime, newline)
-    first_user_line: first_user_line + 1
-    if needs_runtime = 1
+        src_base: src_base + _sov_list_len(lines_of(extra))
+    nl: _sov_alloc(2)
+    dummy: _sov_set_byte(nl, 0, 10)
+    dummy: _sov_set_byte(nl, 1, 0)
+    all: join(rt, nl)
+    src_base: src_base + 1
+    if need is 1
         # the runtime's thread paths end themselves through this
-        # injected task; on windows a thread = a CreateThread
-        # function, so ending it = ExitThread
-        all: join(all, "_sov_thread_exit:\n    thread_exit()\n    return 0 - 1\n")
-        first_user_line: first_user_line + 4
+        # injected task; on windows a thread is a CreateThread
+        # function, so ending it is ExitThread
+        all: join(all, nl)
+        all: join(all, join("_sov_thread_exit:", nl))
+        all: join(all, join("    thread_exit()", nl))
+        all: join(all, join("    return 0 - 1", nl))
+        src_base: src_base + 4
     all: join(all, src)
     compile(all)
-    write_program(out_file)
-    if saw_error = 1
-        fail
-    print "Wrote" : out_file
+    write_elf(outf)
+    if had_err is 1
+        fail()
+    print "Wrote"
+    _sov_print(outf)
 
-    # the spawn packing = os-neutral: it lands the job pointer and its
-    # values in the Sovren call registers and calls the shared runtime's
-    # _sov_thread_spawn, whose clone/fork/futex syscalls the repl block
-    # above turns into the windows bridge builtins.
-start
+# the spawn packing is os-neutral: it lands the job pointer and its
+# values in the Sovren call registers and calls the shared runtime's
+# _sov_thread_spawn, whose clone/fork/futex syscalls the repl block
+# above turns into the windows bridge builtins.

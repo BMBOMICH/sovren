@@ -69,86 +69,87 @@ cs_hb hs k:
     v: peek_i64(hs, w * 8)
     return wand(shr(v, (3 - j) * 8), 255)
 
-p: arg_at(1)
-if str_len(p) is 0
-    print "Usage: check_sig <file>"
-    sys_exit(2)
-d: file_read_all(p)
-if d is 0
-    print "cannot read file"
-    sys_exit(2)
-ncmds: cs_le32(d, 16)
-off: 32
-i: 0
-sigoff: 0 - 1
-as long as i < ncmds
-    cmd: cs_le32(d, off)
-    sz: cs_le32(d, off + 4)
-    if cmd is 29
-        sigoff: cs_le32(d, off + 8)
-    off: off + sz
-    i: i + 1
-if sigoff < 0
-    print "no LC_CODE_SIGNATURE"
+main:
+    p: arg_at(1)
+    if str_len(p) is 0
+        print "Usage: check_sig <file>"
+        sys_exit(2)
+    d: file_read_all(p)
+    if d is 0
+        print "cannot read file"
+        sys_exit(2)
+    ncmds: cs_le32(d, 16)
+    off: 32
+    i: 0
+    sigoff: 0 - 1
+    as long as i < ncmds
+        cmd: cs_le32(d, off)
+        sz: cs_le32(d, off + 4)
+        if cmd is 29
+            sigoff: cs_le32(d, off + 8)
+        off: off + sz
+        i: i + 1
+    if sigoff < 0
+        print "no LC_CODE_SIGNATURE"
+        sys_exit(1)
+    blob: d + sigoff
+    magic: cs_be32(blob, 0)
+    # the SuperBlob index starts at 12: each entry is (type, offset),
+    # and the CodeDirectory entry is first, so its offset is at 16
+    cd_off: cs_be32(blob, 16)
+    cd: blob + cd_off
+    cmagic: cs_be32(cd, 0)
+    ver: cs_be32(cd, 8)
+    flags: cs_be32(cd, 12)
+    hoff: cs_be32(cd, 16)
+    ioff: cs_be32(cd, 20)
+    ncs: cs_be32(cd, 28)
+    climit: cs_be32(cd, 32)
+    hsize: peek_byte(cd, 36)
+    htype: peek_byte(cd, 37)
+    ok: 1
+    if magic is not 4208856256
+        ok: 0
+    if cmagic is not 4208856066
+        ok: 0
+    if wand(flags, 2) is 0
+        ok: 0
+    if htype is not 2
+        ok: 0
+    if hsize is not 32
+        ok: 0
+    ident: cs_ident(cd, ioff)
+    pg: 0
+    as long as pg < ncs
+        plen: 4096
+        left: climit - pg * 4096
+        if left < 4096
+            plen: left
+        hs: _sov_alloc(64)
+        sha256_bytes(d + pg * 4096, plen, hs)
+        k: 0
+        as long as k < 32
+            want: peek_byte(cd, hoff + pg * 32 + k)
+            if cs_hb(hs, k) is not want
+                ok: 0
+            k: k + 1
+        pg: pg + 1
+    print str_join3("SuperBlob     ", cs_hx(magic), "")
+    l: cs_hx(flags)
+    l: str_join3(" flags ", l, "")
+    l: str_join3(cs_hx(ver), l, "")
+    l: str_join3(" version ", l, "")
+    l: str_join3(cs_hx(cmagic), l, "")
+    l: str_join3("CodeDirectory ", l, "")
+    print l
+    l: "  SHA-256"
+    l: str_join3("  codeLimit ", num_text(climit), l)
+    l: str_join3("'  pages ", num_text(ncs), l)
+    l: str_join3(ident, l, "")
+    l: str_join3("identifier '", l, "")
+    print l
+    if ok is 1
+        print "VALID AD-HOC SIGNATURE"
+        sys_exit(0)
+    print "INVALID"
     sys_exit(1)
-blob: d + sigoff
-magic: cs_be32(blob, 0)
-# the SuperBlob index starts at 12: each entry is (type, offset),
-# and the CodeDirectory entry is first, so its offset is at 16
-cd_off: cs_be32(blob, 16)
-cd: blob + cd_off
-cmagic: cs_be32(cd, 0)
-ver: cs_be32(cd, 8)
-flags: cs_be32(cd, 12)
-hoff: cs_be32(cd, 16)
-ioff: cs_be32(cd, 20)
-ncs: cs_be32(cd, 28)
-climit: cs_be32(cd, 32)
-hsize: peek_byte(cd, 36)
-htype: peek_byte(cd, 37)
-ok: 1
-if magic is not 4208856256
-    ok: 0
-if cmagic is not 4208856066
-    ok: 0
-if wand(flags, 2) is 0
-    ok: 0
-if htype is not 2
-    ok: 0
-if hsize is not 32
-    ok: 0
-ident: cs_ident(cd, ioff)
-pg: 0
-as long as pg < ncs
-    plen: 4096
-    left: climit - pg * 4096
-    if left < 4096
-        plen: left
-    hs: _sov_alloc(64)
-    sha256_bytes(d + pg * 4096, plen, hs)
-    k: 0
-    as long as k < 32
-        want: peek_byte(cd, hoff + pg * 32 + k)
-        if cs_hb(hs, k) is not want
-            ok: 0
-        k: k + 1
-    pg: pg + 1
-print str_join3("SuperBlob     ", cs_hx(magic), "")
-l: cs_hx(flags)
-l: str_join3(" flags ", l, "")
-l: str_join3(cs_hx(ver), l, "")
-l: str_join3(" version ", l, "")
-l: str_join3(cs_hx(cmagic), l, "")
-l: str_join3("CodeDirectory ", l, "")
-print l
-l: "  SHA-256"
-l: str_join3("  codeLimit ", num_text(climit), l)
-l: str_join3("'  pages ", num_text(ncs), l)
-l: str_join3(ident, l, "")
-l: str_join3("identifier '", l, "")
-print l
-if ok is 1
-    print "VALID AD-HOC SIGNATURE"
-    sys_exit(0)
-print "INVALID"
-sys_exit(1)

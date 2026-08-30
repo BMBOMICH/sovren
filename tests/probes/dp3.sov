@@ -21,10 +21,11 @@ lf:
     r: d1 + d2 * 10 + d3 * 100 + d4 * 1000
     return r
 
-g: _sov_alloc(640)
-poke_i64(g, 0, 5)
-poke_i64(g, 8, 19)
-poke_i64(g, 16, 37)
-poke_i64(g, 24, 53)
-poke_i64(g, 32, 7)
-print lf()
+main:
+    g: _sov_alloc(640)
+    poke_i64(g, 0, 5)
+    poke_i64(g, 8, 19)
+    poke_i64(g, 16, 37)
+    poke_i64(g, 24, 53)
+    poke_i64(g, 32, 7)
+    print lf()

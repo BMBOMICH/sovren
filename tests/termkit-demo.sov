@@ -1,0 +1,60 @@
+# termkit-demo.sov — click paints, drag draws, the wheel counts,
+# keys show themselves, q quits. Run it in a real terminal:
+#
+#   ./sovren tests/termkit-demo.sov -o /tmp/tkdemo && /tmp/tkdemo
+#
+# Notice: no flicker. Every frame is one write of only the cells
+# that changed, and the mouse works with click, drag and wheel.
+
+use termkit
+use num
+use string
+
+main:
+    t: tk_open()
+    tk_color(t, 2, 0)
+    tk_fill(t, 1, 1, 1, tk_cols(t))
+    tk_color(t, 7, 0)
+    tk_put(t, 1, 2, "termkit: click paints, drag draws, wheel counts, q quits")
+    tk_put(t, 3, 2, "keys: ")
+    tk_put(t, 3, 40, "wheel: ")
+    wheel: 0
+    going: 1
+    as long as going is 1
+        tk_color(t, 7, 0)
+        tk_fill(t, 3, 8, 1, 28)
+        tk_put(t, 3, 8, "waiting")
+        tk_put(t, 3, 48, num_text(wheel))
+        tk_frame(t)
+        ev: tk_event(t, 500)
+        if ev is 0
+            going: 0
+        if not
+            if ev is 1
+                if tk_key(t) is 113
+                    going: 0
+                if not
+                    tk_fill(t, 3, 8, 1, 28)
+                    tk_put(t, 3, 8, str_cat("key ", num_text(tk_key(t))))
+            if ev is 2
+                tk_fill(t, 3, 8, 1, 28)
+                tk_put(t, 3, 8, str_cat("arrow ", num_text(tk_key(t))))
+            if ev is 3
+                tk_color(t, 4, 0)
+                tk_fill(t, tk_y(t), tk_x(t), 1, 1)
+                tk_color(t, 7, 0)
+            if ev is 4
+                tk_color(t, 5, 0)
+                tk_fill(t, tk_y(t), tk_x(t), 1, 1)
+                tk_color(t, 7, 0)
+            if ev is 5
+                tk_color(t, 0, 7)
+                tk_fill(t, tk_y(t), tk_x(t), 1, 1)
+                tk_color(t, 7, 0)
+            if ev is 6
+                if tk_button(t) is 0
+                    wheel: wheel + 1
+                if not
+                    if wheel > 0
+                        wheel: wheel - 1
+    tk_close(t)

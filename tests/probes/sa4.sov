@@ -5,12 +5,13 @@ use sys
 
 g: 0
 
-g: _sov_alloc(128)
-poke_i64(g, 0, 5)
-poke_i64(g, 8, 13)
-x: 3
-y: 4
-c: peek_i64(g, 0)
-s: x * x + y * y + c * c
-print s
-print s + peek_i64(g, 8)
+main:
+    g: _sov_alloc(128)
+    poke_i64(g, 0, 5)
+    poke_i64(g, 8, 13)
+    x: 3
+    y: 4
+    c: peek_i64(g, 0)
+    s: x * x + y * y + c * c
+    print s
+    print s + peek_i64(g, 8)

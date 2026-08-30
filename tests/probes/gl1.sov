@@ -5,14 +5,15 @@ use sys
 b: 0
 gi: 1
 
-b: _sov_alloc(640)
-poke_i64(b, 0, 111)
-poke_i64(b, 8, 222)
-poke_i64(b, 16, 333)
-if peek_i64(b, (gi + 1) * 8) is 333
-    print 901
-if peek_i64(b, (gi - 1) * 8) is 111
-    print 902
-poke_i64(b, (gi + 1) * 8, 444)
-print peek_i64(b, 0)
-print peek_i64(b, 16)
+main:
+    b: _sov_alloc(640)
+    poke_i64(b, 0, 111)
+    poke_i64(b, 8, 222)
+    poke_i64(b, 16, 333)
+    if peek_i64(b, (gi + 1) * 8) is 333
+        print 901
+    if peek_i64(b, (gi - 1) * 8) is 111
+        print 902
+    poke_i64(b, (gi + 1) * 8, 444)
+    print peek_i64(b, 0)
+    print peek_i64(b, 16)

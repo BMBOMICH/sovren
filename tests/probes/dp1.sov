@@ -6,17 +6,18 @@ use sys
 
 g: 0
 
-g: _sov_alloc(640)
-poke_i64(g, 8, 41)
-poke_i64(g, 16, 73)
-poke_i64(g, 24, 17)
-a: 1
-b: 2
-c: 3
-d: 0
-d: peek_i64(g, b * 8) - peek_i64(g, a * 8)
-print d
-e: peek_i64(g, c * 8) - peek_i64(g, b * 8)
-print e
-f: peek_i64(g, a * 8) - peek_i64(g, c * 8)
-print f
+main:
+    g: _sov_alloc(640)
+    poke_i64(g, 8, 41)
+    poke_i64(g, 16, 73)
+    poke_i64(g, 24, 17)
+    a: 1
+    b: 2
+    c: 3
+    d: 0
+    d: peek_i64(g, b * 8) - peek_i64(g, a * 8)
+    print d
+    e: peek_i64(g, c * 8) - peek_i64(g, b * 8)
+    print e
+    f: peek_i64(g, a * 8) - peek_i64(g, c * 8)
+    print f

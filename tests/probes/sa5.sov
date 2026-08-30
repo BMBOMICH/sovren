@@ -14,11 +14,12 @@ lf:
     s: a * a + b * b + e * e
     return s
 
-g: _sov_alloc(64)
-poke_i64(g, 0, 2)
-poke_i64(g, 8, 3)
-poke_i64(g, 16, 5)
-poke_i64(g, 24, 7)
-poke_i64(g, 32, 13)
-poke_i64(g, 40, 11)
-print lf()
+main:
+    g: _sov_alloc(64)
+    poke_i64(g, 0, 2)
+    poke_i64(g, 8, 3)
+    poke_i64(g, 16, 5)
+    poke_i64(g, 24, 7)
+    poke_i64(g, 32, 13)
+    poke_i64(g, 40, 11)
+    print lf()

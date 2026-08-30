@@ -2,6 +2,9 @@
 # needs _sov_list
 use rand
 use hex
+use time
+use num
+use string
 
 token_hex n:
     if n < 1
@@ -11,3 +14,9 @@ token_hex n:
 
 token_new:
     return token_hex(16)
+
+# unique id with a time prefix (from id.sov, folded in here)
+id_time:
+    t: num_text(time_now())
+    r: token_hex(4)
+    return str_join3(t, "-", r)

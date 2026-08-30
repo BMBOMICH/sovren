@@ -359,7 +359,7 @@ ck_arm64:
 
 # ---- the iOS signature needs a second, independent sha256 ----
 ck_ios:
-    r: cr_build("examples/hello.sov", "/tmp/sov-ios.bin", "--ios")
+    r: cr_build("tests/hello.sov", "/tmp/sov-ios.bin", "--ios")
     if r is not 0
         cr_bad("could not build the ios test binary")
         return 0
@@ -781,7 +781,7 @@ ck_win_imports:
     py: cr_which("python3")
     if py is 0
         return 0
-    cr_build("examples/hello.sov", "/tmp/sov-imp.exe", "--windows")
+    cr_build("tests/hello.sov", "/tmp/sov-imp.exe", "--windows")
     s: "import struct\n"
     s: str_cat(s, "d = open('/tmp/sov-imp.exe','rb').read()\n")
     s: str_cat(s, "pe = struct.unpack_from('<I', d, 0x3c)[0]\n")
@@ -1039,88 +1039,13 @@ ck_editor:
         cr_ok("tui-goto")
     if not
         cr_bad("tui-goto")
-    cr_build("apps/edit.sov", "/tmp/sov-edit", "")
-    if file_exists("/tmp/sov-ed.txt") is 1
-        file_delete("/tmp/sov-ed.txt")
-    a: _sov_alloc(16)
-    poke_i64(a, 0, "/tmp/sov-edit")
-    poke_i64(a, 8, "/tmp/sov-ed.txt")
-    poke_i64(a, 16, 0)
-    d: _sov_alloc(16)
-    poke_byte(d, 0, 104)
-    poke_byte(d, 1, 101)
-    poke_byte(d, 2, 108)
-    poke_byte(d, 3, 108)
-    poke_byte(d, 4, 111)
-    poke_byte(d, 5, 19)
-    poke_byte(d, 6, 17)
-    poke_byte(d, 7, 0)
-    cr_run_in("/tmp/sov-edit", a, 0, d, 30)
-    if file_exists("/tmp/sov-ed.txt") is 1
-        d: file_read_all("/tmp/sov-ed.txt")
-        if str_eq(cr_trim(d), "hello") is 1
-            cr_ok("editor")
-        if not
-            cr_bad("editor")
-    if not
-        cr_bad("editor")
-    # no input at all: must stop, not spin
-    cr_run_dev("/tmp/sov-edit", a, 0, 20)
-    if cr_rc is 0
-        cr_ok("editor-stops-when-input-ends")
-    if not
-        cr_bad("editor-stops-when-input-ends")
-    # a bare escape must not wedge it: escape, then nothing, then a
-    # quit, with a pause between so a wedged editor shows itself
-    e1: _sov_alloc(8)
-    poke_byte(e1, 0, 27)
-    poke_byte(e1, 1, 0)
-    cr_run_in("/tmp/sov-edit", a, 0, e1, 4)
-    e2: _sov_alloc(8)
-    poke_byte(e2, 0, 27)
-    poke_byte(e2, 1, 17)
-    poke_byte(e2, 2, 0)
-    cr_run_in("/tmp/sov-edit", a, 0, e2, 15)
-    cr_ok("editor-survives-a-bare-escape")
-    # arrow keys move the cursor rather than being typed as letters
-    if file_exists("/tmp/sov-arrow.txt") is 1
-        file_delete("/tmp/sov-arrow.txt")
-    d2: _sov_alloc(16)
-    poke_byte(d2, 0, 97)
-    poke_byte(d2, 1, 98)
-    poke_byte(d2, 2, 27)
-    poke_byte(d2, 3, 91)
-    poke_byte(d2, 4, 68)
-    poke_byte(d2, 5, 120)
-    poke_byte(d2, 6, 19)
-    poke_byte(d2, 7, 17)
-    poke_byte(d2, 8, 0)
-    a2: _sov_alloc(16)
-    poke_i64(a2, 0, "/tmp/sov-edit")
-    poke_i64(a2, 8, "/tmp/sov-arrow.txt")
-    poke_i64(a2, 16, 0)
-    cr_run_in("/tmp/sov-edit", a2, 0, d2, 20)
-    if file_exists("/tmp/sov-arrow.txt") is 1
-        d: file_read_all("/tmp/sov-arrow.txt")
-        if str_eq(cr_trim(d), "axb") is 1
-            cr_ok("editor-arrow-keys")
-        if not
-            cr_bad("editor-arrow-keys")
-    if not
-        cr_bad("editor-arrow-keys")
-    return 0
-
 # every other example must stop on its own with nothing to read
 ck_examples:
     i: 0
     names: _sov_alloc(64)
-    poke_i64(names, 0, "examples/hello.sov")
-    poke_i64(names, 8, "examples/show.sov")
-    poke_i64(names, 16, "examples/play.sov")
-    poke_i64(names, 24, "examples/guess.sov")
-    poke_i64(names, 32, "examples/mysite.sov")
-    poke_i64(names, 40, 0)
-    as long as i < 5
+    poke_i64(names, 0, "tests/hello.sov")
+    poke_i64(names, 8, 0)
+    as long as i < 1
         ex: peek_i64(names, i * 8)
         r: cr_build(ex, "/tmp/sov-ex", "")
         if r is 0
@@ -1139,7 +1064,7 @@ ck_examples:
 ck_targets:
     a: _sov_alloc(16)
     poke_i64(a, 0, "./sovren")
-    poke_i64(a, 8, "examples/hello.sov")
+    poke_i64(a, 8, "tests/hello.sov")
     poke_i64(a, 16, "--android")
     poke_i64(a, 24, "-o")
     poke_i64(a, 32, "/tmp/sov-tgt.bin")
@@ -1149,14 +1074,14 @@ ck_targets:
         cr_ok("target--android")
     if not
         cr_bad("target--android")
-    poke_i64(a, 8, "examples/hello.sov")
+    poke_i64(a, 8, "tests/hello.sov")
     poke_i64(a, 16, "--ios")
     cr_run("./sovren", a, 0, 120)
     if cr_rc is 0
         cr_ok("target--ios")
     if not
         cr_bad("target--ios")
-    poke_i64(a, 8, "examples/hello.sov")
+    poke_i64(a, 8, "tests/hello.sov")
     poke_i64(a, 16, "--android-so")
     cr_run("./sovren", a, 0, 120)
     if cr_rc is 0
@@ -1341,8 +1266,8 @@ ck_longdouble:
 ck_exemac:
     cr_build("tests/windows-run.sov", "/tmp/sov-wrun", "")
     cr_build("tests/macos-run.sov", "/tmp/sov-mrun", "")
-    cr_build("examples/hello.sov", "/tmp/sov-h.exe", "--windows")
-    cr_build("examples/hello.sov", "/tmp/sov-h.mac", "--mac")
+    cr_build("tests/hello.sov", "/tmp/sov-h.exe", "--windows")
+    cr_build("tests/hello.sov", "/tmp/sov-h.mac", "--mac")
     a: _sov_alloc(16)
     poke_i64(a, 0, "/tmp/sov-wrun")
     poke_i64(a, 8, "/tmp/sov-h.exe")
@@ -1390,7 +1315,7 @@ ck_wincomp_emu:
     if file_exists("/tmp/hello-emu.exe") is 0
         cr_bad("windows compiler in the emulator (no exe)")
         return 0
-    cr_build("examples/hello.sov", "/tmp/sov-hn.exe", "--windows")
+    cr_build("tests/hello.sov", "/tmp/sov-hn.exe", "--windows")
     if cr_same("/tmp/hello-emu.exe", "/tmp/sov-hn.exe") is 1
         cr_ok("windows compiler in the emulator, byte for byte")
     if not
@@ -1609,40 +1534,41 @@ ck_crypto:
     return 0
 
 # ---------------------------------------------------------------
-ck_all()
-ck_arm_emu()
-ck_arm64()
-ck_ios()
-ck_x86ins()
-ck_emu_driver()
-ck_cprog()
-ck_fp()
-ck_windows_gui()
-ck_win_hang()
-ck_win_imports()
-ck_ww()
-ck_nodisp()
-ck_telegram()
-ck_wine()
-ck_editor()
-ck_examples()
-ck_targets()
-ck_exemac()
-ck_wincomp_emu()
-ck_selfhost()
-ck_alllibs()
-ck_nowarn()
-ck_longdouble()
-ck_fuzz()
-ck_crypto()
-write_out(num_text(cr_pass))
-write_out(" passed, ")
-write_out(num_text(cr_fail))
-write_out(" failed, ")
-write_out(num_text(cr_skipn))
-write_out(" skipped\n")
-if cr_fail is 0
-    write_out("all checks passed\n")
-    sys_exit(0)
-write_out("some checks failed\n")
-sys_exit(1)
+main:
+    ck_all()
+    ck_arm_emu()
+    ck_arm64()
+    ck_ios()
+    ck_x86ins()
+    ck_emu_driver()
+    ck_cprog()
+    ck_fp()
+    ck_windows_gui()
+    ck_win_hang()
+    ck_win_imports()
+    ck_ww()
+    ck_nodisp()
+    ck_telegram()
+    ck_wine()
+    ck_editor()
+    ck_examples()
+    ck_targets()
+    ck_exemac()
+    ck_wincomp_emu()
+    ck_selfhost()
+    ck_alllibs()
+    ck_nowarn()
+    ck_longdouble()
+    ck_fuzz()
+    ck_crypto()
+    write_out(num_text(cr_pass))
+    write_out(" passed, ")
+    write_out(num_text(cr_fail))
+    write_out(" failed, ")
+    write_out(num_text(cr_skipn))
+    write_out(" skipped\n")
+    if cr_fail is 0
+        write_out("all checks passed\n")
+        sys_exit(0)
+    write_out("some checks failed\n")
+    sys_exit(1)

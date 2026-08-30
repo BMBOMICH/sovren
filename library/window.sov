@@ -1,7 +1,7 @@
 # window.sov — one window, whichever machine you are on.
 #
-# There are two window libraries underneath. win.sov speaks to the
-# X server, which is how Linux draws. winwin.sov calls user32 and
+# There are two window libraries underneath. winx11.sov speaks to the
+# X server, which is how Linux draws. winwin32.sov calls user32 and
 # gdi32, which is how Windows draws. They are genuinely different
 # machines and there is no way round writing both.
 #
@@ -24,8 +24,8 @@
 # back nought when neither answers, so a program on a machine with
 # no screen at all says so rather than falling over.
 
-use win
-use winwin
+use winx11
+use winwin32
 use num
 use mem
 
@@ -91,37 +91,12 @@ window_next h:
 
 # ---- what the person did ----
 
-window_wait h:
-    if h is 0
-        return 0
-    if peek_i64(h, 0) is WD_X11
-        w: peek_i64(h, 8)
-        e: win_wait(w)
-        if e is WIN_CLOSE
-            return 0
-        return 1
-    return ww_wait(peek_i64(h, 8))
-
 window_key h:
     if h is 0
         return 0
     if peek_i64(h, 0) is WD_X11
         return win_key(peek_i64(h, 8))
     return ww_key(peek_i64(h, 8))
-
-window_char h:
-    if h is 0
-        return 0
-    if peek_i64(h, 0) is WD_X11
-        return 0
-    return ww_char(peek_i64(h, 8))
-
-window_msg h:
-    if h is 0
-        return 0
-    if peek_i64(h, 0) is WD_X11
-        return peek_i64(peek_i64(h, 8), 104)
-    return ww_msg(peek_i64(h, 8))
 
 window_x h:
     if h is 0

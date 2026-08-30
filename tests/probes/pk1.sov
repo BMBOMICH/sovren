@@ -1,9 +1,10 @@
 # register-resident twin pick, lt sense, taken
-a: _sov_alloc(8000)
-r: 2
-poke_raw64(a, r * 8, 510)
-poke_raw64(a, (r + 1) * 8, 777)
-if peek_raw64(a, r * 8) < peek_raw64(a, (r + 1) * 8)
-    r: r + 1
-print r
-print peek_raw64(a, r * 8)
+main:
+    a: _sov_alloc(8000)
+    r: 2
+    poke_raw64(a, r * 8, 510)
+    poke_raw64(a, (r + 1) * 8, 777)
+    if peek_raw64(a, r * 8) < peek_raw64(a, (r + 1) * 8)
+        r: r + 1
+    print r
+    print peek_raw64(a, r * 8)

@@ -1,0 +1,503 @@
+# termkit.sov — a terminal that behaves.
+#
+# The first terminal's problems, fixed in one place:
+#   - input is read in chunks and parsed from a buffer: one syscall
+#     for a whole burst of keys, not one syscall per byte
+#   - a frame is ONE write: a shadow grid is diffed against what was
+#     last sent, and only the cells that changed are emitted, so
+#     there is no flicker and no full-screen repaint
+#   - the mouse is on: click, drag, release and wheel (SGR mode)
+#   - tk_event waits with a timeout, and tk_wait watches the
+#     keyboard AND your own file numbers at once, so a program with
+#     a shell behind it never blocks on the pipe and misses the
+#     window, or the other way round
+#
+#   use termkit
+#   main:
+#       t: tk_open()
+#       tk_put(t, 1, 1, "hello")
+#       tk_frame(t)
+#       going: 1
+#       as long as going is 1
+#           ev: tk_event(t, 250)
+#           if ev is 0
+#               going: 0
+#           if not
+#               if ev is 1
+#                   if tk_key(t) is 113
+#                       going: 0
+#               if ev is 3
+#                   tk_fill(t, tk_y(t), tk_x(t), 1, 1)
+#               tk_frame(t)
+#       tk_close(t)
+#
+# events from tk_event: 0 the input ended, 1 a key (tk_key is the
+# byte), 2 an arrow (1 up 2 down 3 right 4 left), 3 a click,
+# 4 a drag, 5 a release (tk_button 0 left 1 middle 2 right),
+# 6 the wheel (tk_button 0 up 1 down). tk_x and tk_y are the
+# 0-based column and row. A timeout with nothing waiting hands
+# back 0 - 1 and changes nothing.
+#
+# when stdin is not a terminal (a test pipe, say) the mode set-up
+# writes are skipped, so piped runs stay byte-clean.
+
+use sys
+use num
+use string
+
+# ---- the block: every slot by offset ----
+#   8 inbuf   16 inlen  24 inpos   32 out    40 outlen
+#  48 chars   56 attrs  64 sent ch 72 sent at
+#  80 rows    88 cols   96 kind   104 key
+# 112 x      120 y     128 button 136 lrow  144 lcol
+# 152 lat    156 attr  160 outcap 168 tty   176 outfd
+
+tk_open:
+    t: _sov_alloc(184)
+    i: 0
+    as long as i < 184
+        poke_byte(t, i, 0)
+        i: i + 1
+    # is stdin a terminal? modes are written only when it is
+    tb: _sov_alloc(16)
+    if sys_ioctl(0, 21504, tb) is 0
+        poke_i64(t, 168, 1)
+    # the size of the screen
+    sb: _sov_alloc(8)
+    rows: 24
+    cols: 80
+    if sys_ioctl(0, 21523, sb) is 0
+        r: peek_byte(sb, 0) + peek_byte(sb, 1) * 256
+        c: peek_byte(sb, 2) + peek_byte(sb, 3) * 256
+        if r > 0
+            rows: r
+        if c > 0
+            cols: c
+    poke_i64(t, 80, rows)
+    poke_i64(t, 88, cols)
+    n: rows * cols
+    poke_i64(t, 8, _sov_alloc(4096))
+    poke_i64(t, 32, _sov_alloc(n * 16 + 256))
+    poke_i64(t, 160, n * 16 + 256)
+    poke_i64(t, 48, _sov_alloc(n))
+    poke_i64(t, 56, _sov_alloc(n))
+    poke_i64(t, 64, _sov_alloc(n))
+    poke_i64(t, 72, _sov_alloc(n))
+    # the screen starts blank, white on black; what was "sent"
+    # starts as impossibilities, so the first frame paints every
+    # cell once and the diff starts honest
+    i: 0
+    as long as i < n
+        poke_byte(peek_i64(t, 48), i, 32)
+        poke_byte(peek_i64(t, 56), i, 7)
+        poke_byte(peek_i64(t, 64), i, 0)
+        poke_byte(peek_i64(t, 72), i, 255)
+        i: i + 1
+    poke_i64(t, 156, 7)
+    poke_i64(t, 176, 1)
+    if peek_i64(t, 168) is 1
+        s: tk_escpre("[?25l")
+        s: str_cat(s, tk_escpre("[?1000h"))
+        s: str_cat(s, tk_escpre("[?1002h"))
+        s: str_cat(s, tk_escpre("[?1006h"))
+        dummy: sys_write(1, s, str_len(s))
+    return t
+
+# give everything back: cursor on, mouse off, colours reset
+tk_close t:
+    if peek_i64(t, 168) is 1
+        s: tk_escpre("[?1002l")
+        s: str_cat(s, tk_escpre("[?1000l"))
+        s: str_cat(s, tk_escpre("[?1006l"))
+        s: str_cat(s, tk_escpre("[?25h"))
+        s: str_cat(s, tk_escpre("[0m"))
+        dummy: sys_write(1, s, str_len(s))
+    return 0
+
+# frames go to this file number instead of the screen (for tests)
+tk_to t fd:
+    poke_i64(t, 176, fd)
+    return 0
+
+# the colour tk_put and tk_fill write with, 0..7 each
+tk_color t fg bg:
+    poke_i64(t, 156, fg % 8 + (bg % 8) * 16)
+    return 0
+
+# ESC followed by s
+tk_escpre s:
+    r: _sov_alloc(2 + str_len(s))
+    poke_byte(r, 0, 27)
+    i: 0
+    as long as i < str_len(s)
+        poke_byte(r, 1 + i, peek_byte(s, i))
+        i: i + 1
+    poke_byte(r, 1 + str_len(s), 0)
+    return as text r
+
+tk_put t row col s:
+    rows: peek_i64(t, 80)
+    cols: peek_i64(t, 88)
+    ch: peek_i64(t, 48)
+    at: peek_i64(t, 56)
+    a: peek_i64(t, 156)
+    n: str_len(s)
+    i: 0
+    as long as i < n
+        c: col + i
+        if c < cols
+            if row < rows
+                poke_byte(ch, row * cols + c, peek_byte(s, i))
+                poke_byte(at, row * cols + c, a)
+        i: i + 1
+    return 0
+
+# a rectangle of blanks in the current colour
+tk_fill t row col h w:
+    rows: peek_i64(t, 80)
+    cols: peek_i64(t, 88)
+    ch: peek_i64(t, 48)
+    at: peek_i64(t, 56)
+    a: peek_i64(t, 156)
+    j: 0
+    as long as j < h
+        r: row + j
+        if r < rows
+            i: 0
+            as long as i < w
+                c: col + i
+                if c < cols
+                    poke_byte(ch, r * cols + c, 32)
+                    poke_byte(at, r * cols + c, a)
+                i: i + 1
+        j: j + 1
+    return 0
+
+# ---- building the frame: bytes pile up in one buffer ----
+
+tk_ob t b:
+    o: peek_i64(t, 40)
+    poke_byte(peek_i64(t, 32), o, b)
+    poke_i64(t, 40, o + 1)
+    return 0
+
+tk_obn t n:
+    s: num_text(n)
+    i: 0
+    as long as i < str_len(s)
+        dummy: tk_ob(t, peek_byte(s, i))
+        i: i + 1
+    return 0
+
+# one frame: only the cells that changed, one write at the end.
+# the number handed back is how many bytes left the program.
+tk_frame t:
+    rows: peek_i64(t, 80)
+    cols: peek_i64(t, 88)
+    ch: peek_i64(t, 48)
+    at: peek_i64(t, 56)
+    ch2: peek_i64(t, 64)
+    at2: peek_i64(t, 72)
+    poke_i64(t, 40, 0)
+    lat: 0 - 1
+    lrow: 0 - 1
+    lcol: 0 - 1
+    n: rows * cols
+    i: 0
+    as long as i < n
+        c: peek_byte(ch, i)
+        a: peek_byte(at, i)
+        paint: 0
+        if c is not peek_byte(ch2, i)
+            paint: 1
+        if not
+            if a is not peek_byte(at2, i)
+                paint: 1
+        if paint is 1
+            r: i / cols
+            cc: i % cols
+            move: 0
+            if r is not lrow
+                move: 1
+            if not
+                if cc is not lcol
+                    move: 1
+            if move is 1
+                dummy: tk_ob(t, 27)
+                dummy: tk_ob(t, 91)
+                dummy: tk_obn(t, r + 1)
+                dummy: tk_ob(t, 59)
+                dummy: tk_obn(t, cc + 1)
+                dummy: tk_ob(t, 72)
+                lrow: r
+                lcol: cc
+            if a is not lat
+                # reset, then only the halves that are not default
+                dummy: tk_ob(t, 27)
+                dummy: tk_ob(t, 91)
+                dummy: tk_ob(t, 48)
+                dummy: tk_ob(t, 109)
+                fg: a % 16
+                bg: a / 16
+                if fg is not 7
+                    dummy: tk_ob(t, 27)
+                    dummy: tk_ob(t, 91)
+                    dummy: tk_ob(t, 51)
+                    dummy: tk_ob(t, 48 + fg)
+                    dummy: tk_ob(t, 109)
+                if bg is not 0
+                    dummy: tk_ob(t, 27)
+                    dummy: tk_ob(t, 91)
+                    dummy: tk_ob(t, 52)
+                    dummy: tk_ob(t, 48 + bg)
+                    dummy: tk_ob(t, 109)
+                lat: a
+            dummy: tk_ob(t, c)
+            poke_byte(ch2, i, c)
+            poke_byte(at2, i, a)
+            lcol: lcol + 1
+            if lcol is cols
+                lcol: 0
+                lrow: lrow + 1
+        i: i + 1
+    olen: peek_i64(t, 40)
+    if olen > 0
+        dummy: sys_write(peek_i64(t, 176), peek_i64(t, 32), olen)
+    return olen
+
+# ---- input: chunked reads, parsed from the buffer ----
+
+# the next event. ms is how long to wait when nothing is buffered
+# (0 - 1 waits forever). hands back the kind, or 0 when the input
+# ended, or 0 - 1 on a quiet timeout.
+tk_event t ms:
+    if peek_i64(t, 24) < peek_i64(t, 16)
+        return tk_parse(t)
+    if ms > 0 - 1
+        p: _sov_alloc(16)
+        poke_u32(p, 0, 0)
+        poke_u16(p, 4, 1)
+        poke_u16(p, 6, 0)
+        if sys_poll(p, 1, ms) < 1
+            return 0 - 1
+    n: sys_read(0, peek_i64(t, 8), 4096)
+    if n < 1
+        poke_i64(t, 96, 0)
+        return 0
+    poke_i64(t, 16, n)
+    poke_i64(t, 24, 0)
+    return tk_parse(t)
+
+# parse one event out of the buffer, skipping anything unknown
+tk_parse t:
+    buf: peek_i64(t, 8)
+    going: 1
+    as long as going is 1
+        len: peek_i64(t, 16)
+        pos: peek_i64(t, 24)
+        if pos >= len
+            n: sys_read(0, buf, 4096)
+            if n < 1
+                poke_i64(t, 96, 0)
+                return 0
+            poke_i64(t, 16, n)
+            poke_i64(t, 24, 0)
+        if not
+            b: peek_byte(buf, pos)
+            if b is 27
+                if pos + 2 < peek_i64(t, 16)
+                    res: 0
+                    if peek_byte(buf, pos + 1) is 91
+                        if peek_byte(buf, pos + 2) is 60
+                            res: tk_mouse(t)
+                        if not
+                            res: tk_csi(t)
+                        if res is 0 - 2
+                            # skipped inside; keep going
+                            going: 1
+                        if not
+                            return res
+                    if not
+                        # a bare escape: a key of its own
+                        poke_i64(t, 24, pos + 1)
+                        poke_i64(t, 104, 27)
+                        poke_i64(t, 96, 1)
+                        return 1
+                if not
+                    # escape at the very end of the chunk: key 27
+                    poke_i64(t, 24, pos + 1)
+                    poke_i64(t, 104, 27)
+                    poke_i64(t, 96, 1)
+                    return 1
+            if not
+                poke_i64(t, 24, pos + 1)
+                poke_i64(t, 104, b)
+                poke_i64(t, 96, 1)
+                return 1
+    return 0
+
+# ESC [ < b ; x ; y M/m — click, drag, release, wheel
+tk_mouse t:
+    buf: peek_i64(t, 8)
+    len: peek_i64(t, 16)
+    pos: peek_i64(t, 24)
+    p: pos + 3
+    ni: 0
+    v0: 0
+    v1: 0
+    v2: 0
+    fin: 0
+    as long as fin is 0
+        if p >= len
+            fin: 3
+        if not
+            c: peek_byte(buf, p)
+            if c is 59
+                ni: ni + 1
+            if not
+                if c is 77
+                    fin: 1
+                if not
+                    if c is 109
+                        fin: 2
+                    if not
+                        d: c - 48
+                        if ni is 0
+                            v0: v0 * 10 + d
+                        if not
+                            if ni is 1
+                                v1: v1 * 10 + d
+                            if not
+                                v2: v2 * 10 + d
+            p: p + 1
+    poke_i64(t, 24, p)
+    if fin is 3
+        return 0 - 2
+    kind: 3
+    btn: v0
+    if v0 > 63
+        kind: 6
+        btn: v0 - 64
+    if not
+        if v0 > 31
+            kind: 4
+            btn: v0 - 32
+    if fin is 2
+        if kind is 3
+            kind: 5
+    poke_i64(t, 104, 0)
+    poke_i64(t, 112, v1 - 1)
+    poke_i64(t, 120, v2 - 1)
+    poke_i64(t, 128, btn)
+    poke_i64(t, 96, kind)
+    return kind
+
+# ESC [ ... letter — the arrows, and anything unknown is skipped
+tk_csi t:
+    buf: peek_i64(t, 8)
+    len: peek_i64(t, 16)
+    pos: peek_i64(t, 24)
+    p: pos + 2
+    fin: 0
+    as long as fin is 0
+        if p >= len
+            fin: 1
+            p: p + 1
+        if not
+            c: peek_byte(buf, p)
+            if c < 64
+                p: p + 1
+            if not
+                fin: 1
+    if p > len
+        poke_i64(t, 24, len)
+        return 0 - 2
+    c: peek_byte(buf, p)
+    poke_i64(t, 24, p + 1)
+    k: 0
+    if c is 65
+        k: 1
+    if c is 66
+        k: 2
+    if c is 67
+        k: 3
+    if c is 68
+        k: 4
+    if k is 0
+        return 0 - 2
+    poke_i64(t, 104, k)
+    poke_i64(t, 96, 2)
+    return 2
+
+# watch the keyboard and the caller's own file numbers at once.
+# fds is a row of file numbers, n of them. hands back 0 when the
+# keyboard has something (then tk_event reads it), 1..n for which
+# extra file is ready, and 0 - 1 when the time ran out.
+tk_wait t fds n ms:
+    p: _sov_alloc(8 * (n + 1) + 8)
+    poke_u32(p, 0, 0)
+    poke_u16(p, 4, 1)
+    poke_u16(p, 6, 0)
+    i: 0
+    as long as i < n
+        poke_u32(p, 8 + i * 8, peek_i64(fds, i * 8))
+        poke_u16(p, 8 + i * 8 + 4, 1)
+        poke_u16(p, 8 + i * 8 + 6, 0)
+        i: i + 1
+    r: sys_poll(p, n + 1, ms)
+    if r < 1
+        return 0 - 1
+    rv: peek_byte(p, 6) + peek_byte(p, 7) * 256
+    if rv % 2 is 1
+        return 0
+    i: 0
+    as long as i < n
+        rev: peek_byte(p, 8 + i * 8 + 6) + peek_byte(p, 8 + i * 8 + 7) * 256
+        if rev % 2 is 1
+            return i + 1
+        i: i + 1
+    return 0 - 1
+
+# ---- what happened, in words ----
+
+tk_kind t:
+    return peek_i64(t, 96)
+
+tk_key t:
+    return peek_i64(t, 104)
+
+tk_x t:
+    return peek_i64(t, 112)
+
+tk_y t:
+    return peek_i64(t, 120)
+
+tk_button t:
+    return peek_i64(t, 128)
+
+tk_rows t:
+    return peek_i64(t, 80)
+
+tk_cols t:
+    return peek_i64(t, 88)
+
+tk_name t:
+    k: peek_i64(t, 96)
+    if k is 0
+        return "end"
+    if k is 1
+        return str_cat("key ", num_text(peek_i64(t, 104)))
+    if k is 2
+        return str_cat("arrow ", num_text(peek_i64(t, 104)))
+    if k is 3
+        return str_cat(str_cat("click ", num_text(peek_i64(t, 128))), tk_xy(t))
+    if k is 4
+        return str_cat(str_cat("drag ", num_text(peek_i64(t, 128))), tk_xy(t))
+    if k is 5
+        return str_cat(str_cat("release ", num_text(peek_i64(t, 128))), tk_xy(t))
+    if k is 6
+        return str_cat(str_cat("wheel ", num_text(peek_i64(t, 128))), tk_xy(t))
+    return "?"
+
+tk_xy t:
+    return str_cat(str_cat(" ", num_text(peek_i64(t, 112))), str_cat(" ", num_text(peek_i64(t, 120))))

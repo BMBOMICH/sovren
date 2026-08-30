@@ -14,20 +14,21 @@ use sock
 use string
 use sys
 
-l: sock_listen(8877)
-if l < 0
-    print "no-listen"
-    stop
-as long as 1 is 1
-    c: sock_accept(l)
-    if c >= 0
-        req: hd_read(c)
-        p: hd_path(req)
-        if str_has(p, "getMe") is 1
-            hd_send(c, 200, "application/json", "{\"ok\":true,\"result\":{\"username\":\"sovren_test_bot\"}}")
-        if str_has(p, "getUpdates") is 1
-            hd_send(c, 200, "application/json", "{\"ok\":true,\"result\":[{\"update_id\":1,\"message\":{\"message_id\":7,\"chat\":{\"id\":999},\"text\":\"hello bot\",\"from\":{\"username\":\"elxan\"}}}]}")
-        if str_has(p, "getMe") is 0
-            if str_has(p, "getUpdates") is 0
-                hd_send(c, 200, "application/json", "{\"ok\":true,\"echo\":\"\"}")
-sys_exit(0)
+main:
+    l: sock_listen(8877)
+    if l < 0
+        print "no-listen"
+        stop
+    as long as 1 is 1
+        c: sock_accept(l)
+        if c >= 0
+            req: hd_read(c)
+            p: hd_path(req)
+            if str_has(p, "getMe") is 1
+                hd_send(c, 200, "application/json", "{\"ok\":true,\"result\":{\"username\":\"sovren_test_bot\"}}")
+            if str_has(p, "getUpdates") is 1
+                hd_send(c, 200, "application/json", "{\"ok\":true,\"result\":[{\"update_id\":1,\"message\":{\"message_id\":7,\"chat\":{\"id\":999},\"text\":\"hello bot\",\"from\":{\"username\":\"elxan\"}}}]}")
+            if str_has(p, "getMe") is 0
+                if str_has(p, "getUpdates") is 0
+                    hd_send(c, 200, "application/json", "{\"ok\":true,\"echo\":\"\"}")
+    sys_exit(0)

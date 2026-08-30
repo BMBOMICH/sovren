@@ -7,11 +7,12 @@ use sys
 b: 0
 c: 0
 
-b: _sov_alloc(640)
-c: _sov_alloc(640)
-t: poke_i64(b, 0, 55)
-r: 0
-if t is b
-    r: 881
-print r
-print peek_i64(b, 0)
+main:
+    b: _sov_alloc(640)
+    c: _sov_alloc(640)
+    t: poke_i64(b, 0, 55)
+    r: 0
+    if t is b
+        r: 881
+    print r
+    print peek_i64(b, 0)

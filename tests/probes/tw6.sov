@@ -1,14 +1,15 @@
 use sys
-a: _sov_alloc(160)
-i: 0
-as long as i < 20
-    poke_raw64(a, i * 8, (i * 37) % 100)
-    i: i + 1
-r: 4
-as long as r < 19
-    if peek_raw64(a, r * 8) < peek_raw64(a, (r + 1) * 8)
-        r: r + 1
-    if not
-        r: 19
-print r
-print peek_raw64(a, r * 8)
+main:
+    a: _sov_alloc(160)
+    i: 0
+    as long as i < 20
+        poke_raw64(a, i * 8, (i * 37) % 100)
+        i: i + 1
+    r: 4
+    as long as r < 19
+        if peek_raw64(a, r * 8) < peek_raw64(a, (r + 1) * 8)
+            r: r + 1
+        if not
+            r: 19
+    print r
+    print peek_raw64(a, r * 8)

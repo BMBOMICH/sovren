@@ -1,17 +1,18 @@
 # the sub direction: D is "x - 1" through the same folded pick
-c: _sov_alloc(8000)
-x: 3
-poke_raw64(c, 16, 314)
-poke_raw64(c, x * 8, 41)
-poke_raw64(c, (x + 1) * 8, 99)
-if peek_raw64(c, x * 8) < peek_raw64(c, (x + 1) * 8)
-    x: x - 1
-print x
-print peek_raw64(c, x * 8)
-x: 5
-poke_raw64(c, x * 8, 500)
-poke_raw64(c, (x + 1) * 8, 122)
-if peek_raw64(c, x * 8) < peek_raw64(c, (x + 1) * 8)
-    x: x - 1
-print x
-print peek_raw64(c, x * 8)
+main:
+    c: _sov_alloc(8000)
+    x: 3
+    poke_raw64(c, 16, 314)
+    poke_raw64(c, x * 8, 41)
+    poke_raw64(c, (x + 1) * 8, 99)
+    if peek_raw64(c, x * 8) < peek_raw64(c, (x + 1) * 8)
+        x: x - 1
+    print x
+    print peek_raw64(c, x * 8)
+    x: 5
+    poke_raw64(c, x * 8, 500)
+    poke_raw64(c, (x + 1) * 8, 122)
+    if peek_raw64(c, x * 8) < peek_raw64(c, (x + 1) * 8)
+        x: x - 1
+    print x
+    print peek_raw64(c, x * 8)

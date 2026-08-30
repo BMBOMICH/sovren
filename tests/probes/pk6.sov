@@ -1,24 +1,25 @@
 # fallback shapes: target is not the index, and frame-resident base
-d: _sov_alloc(8000)
-j: 1
-z: 0
-poke_raw64(d, j * 8, 70)
-poke_raw64(d, (j + 1) * 8, 88)
-if peek_raw64(d, j * 8) < peek_raw64(d, (j + 1) * 8)
-    z: j + 1
-print j
-print z
-print 313
-m1: 11
-m2: 22
-m3: 33
-m4: 44
-m5: 55
-e: _sov_alloc(8000)
-k: 2
-poke_raw64(e, k * 8, 612)
-poke_raw64(e, (k + 1) * 8, 919)
-if peek_raw64(e, k * 8) < peek_raw64(e, (k + 1) * 8)
-    k: k + 1
-print k
-print m1 + m2 + m3 + m4 + m5
+main:
+    d: _sov_alloc(8000)
+    j: 1
+    z: 0
+    poke_raw64(d, j * 8, 70)
+    poke_raw64(d, (j + 1) * 8, 88)
+    if peek_raw64(d, j * 8) < peek_raw64(d, (j + 1) * 8)
+        z: j + 1
+    print j
+    print z
+    print 313
+    m1: 11
+    m2: 22
+    m3: 33
+    m4: 44
+    m5: 55
+    e: _sov_alloc(8000)
+    k: 2
+    poke_raw64(e, k * 8, 612)
+    poke_raw64(e, (k + 1) * 8, 919)
+    if peek_raw64(e, k * 8) < peek_raw64(e, (k + 1) * 8)
+        k: k + 1
+    print k
+    print m1 + m2 + m3 + m4 + m5

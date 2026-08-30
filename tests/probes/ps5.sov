@@ -17,7 +17,8 @@ work:
     d: peek_i64(b, j * 8) - peek_i64(b, i * 8)
     return d
 
-b: _sov_alloc(640)
-poke_i64(b, 8, 300)
-poke_i64(b, 16, 700)
-print work()
+main:
+    b: _sov_alloc(640)
+    poke_i64(b, 8, 300)
+    poke_i64(b, 16, 700)
+    print work()

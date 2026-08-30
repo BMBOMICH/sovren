@@ -5,11 +5,12 @@ use sys
 
 v: 0
 
-v: _sov_alloc(640)
-poke_i64(v, 8, 71)
-i: 1
-a: 2
-b: 6
-q: poke_i64(v, i * 8, peek_i64(v, i * 8) + a * b)
-print peek_i64(v, 8)
-print peek_i64(v, 8) + 1
+main:
+    v: _sov_alloc(640)
+    poke_i64(v, 8, 71)
+    i: 1
+    a: 2
+    b: 6
+    q: poke_i64(v, i * 8, peek_i64(v, i * 8) + a * b)
+    print peek_i64(v, 8)
+    print peek_i64(v, 8) + 1

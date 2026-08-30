@@ -90,6 +90,19 @@ jobs:
           $global:LASTEXITCODE = 0
           exit 0
 
+      - name: tests/hello.sov
+        shell: pwsh
+        run: |
+          .\sovren.exe tests/hello.sov -o hello.exe
+          if ($LASTEXITCODE -ne 0) { throw "compile failed, exit $LASTEXITCODE" }
+          if (-not (Test-Path hello.exe)) { throw "nothing was written" }
+          $o = (.\hello.exe | Out-String).Trim()
+          $o
+          if ($LASTEXITCODE -ne 0) { throw "run failed, exit $LASTEXITCODE" }
+          if ($o -notmatch "Hello from Sovren") { throw "wrong output" }
+          $global:LASTEXITCODE = 0
+          exit 0
+
       - name: the language itself
         shell: pwsh
         run: |
@@ -101,21 +114,21 @@ jobs:
             "{0,-22} {1}" -f $name, $g
             if ($g -ne $want) { throw "$name : wanted '$want', got '$g'" }
           }
-          Try-One "add"          "print 2 + 2" "4"
-          Try-One "precedence"   "print 5 * 3 / 2" "7"
-          Try-One "remainder"    "print 7 % 3" "1"
-          Try-One "brackets"     "print (2 + 3) * 4" "20"
-          Try-One "negative"     "print 0 - 42" "-42"
-          Try-One "text"         "print `"hello`"" "hello"
-          Try-One "if"           "if 3 > 2`n        print `"yes`"" "yes"
-          Try-One "if not"       "if 1 > 2`n        print `"no`"`n    if not`n        print `"else`"" "else"
-          Try-One "and or"       "if 1 is 1 and 2 is 2`n        print `"both`"" "both"
-          Try-One "loop"         "i: 0`n    as long as i < 3`n        print i`n        i: i + 1" "0 1 2"
-          Try-One "job"          "add a b:`n    return a + b`n`n    print add(40, 2)" "42"
-          Try-One "recursion"    "fib n:`n    if n < 2`n        return n`n    return fib(n - 1) + fib(n - 2)`n`n    print fib(20)" "6765"
-          Try-One "times"        "print `"x`" 3 times" "x x x"
-          Try-One "stop"         "print 1`n    stop`n    print 2" "1"
-          Try-One "as text int"  "    x: 65`n    print as text x" "65"
+          Try-One "add"          "main:`n    print 2 + 2" "4"
+          Try-One "precedence"   "main:`n    print 5 * 3 / 2" "7"
+          Try-One "remainder"    "main:`n    print 7 % 3" "1"
+          Try-One "brackets"     "main:`n    print (2 + 3) * 4" "20"
+          Try-One "negative"     "main:`n    print 0 - 42" "-42"
+          Try-One "text"         "main:`n    print `"hello`"" "hello"
+          Try-One "if"           "main:`n    if 3 > 2`n        print `"yes`"" "yes"
+          Try-One "if not"       "main:`n    if 1 > 2`n        print `"no`"`n    if not`n        print `"else`"" "else"
+          Try-One "and or"       "main:`n    if 1 is 1 and 2 is 2`n        print `"both`"" "both"
+          Try-One "loop"         "main:`n    i: 0`n    as long as i < 3`n        print i`n        i: i + 1" "0 1 2"
+          Try-One "job"          "add a b:`n    return a + b`n`nmain:`n    print add(40, 2)" "42"
+          Try-One "recursion"    "fib n:`n    if n < 2`n        return n`n    return fib(n - 1) + fib(n - 2)`n`nmain:`n    print fib(20)" "6765"
+          Try-One "times"        "main:`n    print `"x`" 3 times" "x x x"
+          Try-One "stop"         "main:`n    print 1`n    stop`n    print 2" "1"
+          Try-One "as text int"  "main:`n    x: 65`n    print as text x" "65"
           $global:LASTEXITCODE = 0
           exit 0
 
@@ -128,11 +141,11 @@ jobs:
             "{0,-22} exit={1}" -f $name, $LASTEXITCODE
             if ($LASTEXITCODE -eq 0) { throw "$name : should have been rejected but compiled" }
           }
-          Must-Fail "unknown name"    "print missing"
-          Must-Fail "unclosed quote"  "print `"abc"
-          Must-Fail "wrong arg count" "add a b:`n    return a + b`n`n    print add(1)"
-          Must-Fail "duplicate job"   "f:`n    return 1`n`nf:`n    return 2`n`n    print f()"
-          Must-Fail "old syntax"      "    set x to 3"
+          Must-Fail "unknown name"    "main:`n    print missing"
+          Must-Fail "unclosed quote"  "main:`n    print `"abc"
+          Must-Fail "wrong arg count" "add a b:`n    return a + b`n`nmain:`n    print add(1)"
+          Must-Fail "duplicate job"   "f:`n    return 1`n`nf:`n    return 2`n`nmain:`n    print f()"
+          Must-Fail "old syntax"      "main:`n    set x to 3"
           $global:LASTEXITCODE = 0
           exit 0
 
@@ -143,7 +156,7 @@ jobs:
           foreach ($f in Get-ChildItem library\*.sov) {
             $n = $f.BaseName
             if ($n -eq "carm" -or $n -eq "cx86") { continue }
-            "use $n`n    print 1" | Set-Content -NoNewline lib.sov
+            "use $n`nmain:`n    print 1" | Set-Content -NoNewline lib.sov
             .\sovren.exe lib.sov -o lib.exe 2>&1 | Out-Null
             if ($LASTEXITCODE -ne 0) { $fail += "$n (build, exit $LASTEXITCODE)"; continue }
             $g = (.\lib.exe | Out-String).Trim()
@@ -166,32 +179,45 @@ jobs:
             "{0,-10} {1}" -f $name, $g
             if ($g -ne $want) { throw "$name : wanted $want" }
           }
-          Try-One "sha256" "use sha256`n    print sha256_hex(`"abc`")" "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-          Try-One "sha1"   "use sha1`n    print sha1_hex(`"abc`")" "a9993e364706816aba3e25717850c26c9cd0d89d"
-          Try-One "crc32"  "use crc32`n    print crc32_text(`"hello`")" "907060870"
-          Try-One "base64" "use base64`n    print b64_encode(`"abc`", 3)" "YWJj"
-          Try-One "hmac"   "use hmac`n    print hmac_sha256(`"key`", `"The quick brown fox jumps over the lazy dog`")" "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8"
-          Try-One "bigint" "use bigint`n    print bi_text(bi_fact(20))" "2432902008176640000"
-          Try-One "fixed"  "use fixed`n    print fx_text(fx_sqrt(fx_from(2)))" "1.414213"
+          Try-One "sha256" "use sha256`nmain:`n    print sha256_hex(`"abc`")" "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+          Try-One "sha1"   "use sha1`nmain:`n    print sha1_hex(`"abc`")" "a9993e364706816aba3e25717850c26c9cd0d89d"
+          Try-One "crc32"  "use crc32`nmain:`n    print crc32_text(`"hello`")" "907060870"
+          Try-One "base64" "use base64`nmain:`n    print b64_encode(`"abc`", 3)" "YWJj"
+          Try-One "hmac"   "use hmac`nmain:`n    print hmac_sha256(`"key`", `"The quick brown fox jumps over the lazy dog`")" "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8"
+          Try-One "bigint" "use bigint`nmain:`n    print bi_text(bi_fact(20))" "2432902008176640000"
+          Try-One "fixed"  "use fixed`nmain:`n    print fx_text(fx_sqrt(fx_from(2)))" "1.414213"
           $global:LASTEXITCODE = 0
           exit 0
 
       - name: files, folders, arguments
         shell: pwsh
         run: |
-          "use file`n    file_write_all(`"w.txt`", `"hi there`")`n    print file_read_all(`"w.txt`")" | Set-Content -NoNewline t.sov
+          "use file`nmain:`n    file_write_all(`"w.txt`", `"hi there`")`n    print file_read_all(`"w.txt`")" | Set-Content -NoNewline t.sov
           .\sovren.exe t.sov -o t.exe
           $g = (.\t.exe | Out-String).Trim()
           "file round trip : $g"
           if ($g -ne "hi there") { throw "file io broken" }
 
+          "use file`nmain:`n    print file_exists(`"tests/hello.sov`")" | Set-Content -NoNewline t.sov
+          .\sovren.exe t.sov -o t.exe
+          $g = (.\t.exe | Out-String).Trim()
+          "file_exists     : $g"
+          if ($g -ne "1") { throw "file_exists broken" }
+
+          "use arg`nmain:`n    print arg_count()`n    print as text arg_at(1)" | Set-Content -NoNewline t.sov
+          .\sovren.exe t.sov -o t.exe
+          $g = (.\t.exe one two | Out-String).Trim() -replace "`r`n", " "
+          "arguments       : $g"
+          if ($g -ne "3 one") { throw "arguments broken" }
+          $global:LASTEXITCODE = 0
+          exit 0
 
       - name: works from a different folder
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force elsewhere | Out-Null
           Set-Location elsewhere
-          "use string`n    print str_copy(`"found its library`")" | Set-Content -NoNewline q.sov
+          "use string`nmain:`n    print str_copy(`"found its library`")" | Set-Content -NoNewline q.sov
           ..\sovren.exe q.sov -o q.exe
           if ($LASTEXITCODE -ne 0) { throw "could not compile from another folder, exit $LASTEXITCODE" }
           $g = (.\q.exe | Out-String).Trim()
@@ -221,7 +247,7 @@ jobs:
           # sovren.exe is the Windows back end. The target
           # flags are the launcher's job, and the launcher is a Linux
           # program, so only --bare applies here.
-          .\sovren.exe examples/hello.sov --bare -o out.bin 2>&1 | Out-Null
+          .\sovren.exe tests/hello.sov --bare -o out.bin 2>&1 | Out-Null
           "--bare exit=$LASTEXITCODE"
           if ($LASTEXITCODE -ne 0) { throw "--bare failed from Windows" }
           $global:LASTEXITCODE = 0
@@ -230,7 +256,7 @@ jobs:
       - name: the example programs
         shell: pwsh
         run: |
-          foreach ($f in @("examples/guess.sov", "examples/show.sov", "examples/play.sov", "examples/mysite.sov", "apps/edit.sov")) {
+          foreach ($f in @("launcher.sov", "tests/hello.sov")) {
             if (-not (Test-Path $f)) { continue }
             .\sovren.exe $f -o ex.exe 2>&1 | Out-Null
             "{0,-14} exit={1}" -f $f, $LASTEXITCODE
@@ -450,15 +476,13 @@ jobs:
           echo "the telegram library reads messages and sends replies"
       - name: a Windows exe and a Mac binary, run here, in Sovren
         run: |
-          printf 'main:\n    print "Hello from Sovren"\n' > /tmp/hello.sov
           # library/x86.sov is a processor written in Sovren. It runs
           # the PE and the Mach-O this compiler emits, with no Wine,
           # no Unicorn and no Python. It is strict where Wine is not.
           ./sovren tests/windows-run.sov -o /tmp/wrun && chmod +x /tmp/wrun
           ./sovren tests/macos-run.sov -o /tmp/mrun && chmod +x /tmp/mrun
-          printf 'main:\n    print "Hello from Sovren"\n' > /tmp/hello.sov
-          ./sovren /tmp/hello.sov --windows -o /tmp/h.exe
-          ./sovren /tmp/hello.sov --mac -o /tmp/h.mac
+          ./sovren tests/hello.sov --windows -o /tmp/h.exe
+          ./sovren tests/hello.sov --mac -o /tmp/h.mac
           /tmp/wrun /tmp/h.exe > /tmp/w.txt
           /tmp/mrun /tmp/h.mac > /tmp/m.txt
           cat /tmp/w.txt
@@ -476,7 +500,7 @@ jobs:
           # the emulator was tried at a 40,000,000,000 step budget
           # and did not finish in a sensible time: the emulator does
           # about 2.5M steps a second on that workload, so the full
-          # self build needs twenty minutes or more. examples/hello.sov uses
+          # self build needs twenty minutes or more. tests/hello.sov uses
           # the same compiler, the same code path, and finishes in
           # under a second, so it proves the same thing cheaply.
           cat > /tmp/emubuild.sov <<'EOF'
@@ -487,7 +511,7 @@ jobs:
               if x86_load(m, "sovren.exe") is 0
                   print "cannot load sovren.exe"
                   stop
-              x_set_cmdline(m, "sovren.exe /tmp/hello.sov -o /tmp/hello-emu.exe")
+              x_set_cmdline(m, "sovren.exe tests/hello.sov -o /tmp/hello-emu.exe")
               x86_run_for(m, 500000000)
               write_out(x86_out(m))
               write_out(x86_err(m))
@@ -498,7 +522,7 @@ jobs:
           grep -q "Wrote" /tmp/emubuild.txt
           grep -q "done" /tmp/emubuild.txt
           test -f /tmp/hello-emu.exe
-          ./sovren /tmp/hello.sov --windows -o /tmp/hello-native.exe
+          ./sovren tests/hello.sov --windows -o /tmp/hello-native.exe
           a=$(sha256sum /tmp/hello-emu.exe | cut -d' ' -f1)
           b=$(sha256sum /tmp/hello-native.exe | cut -d' ' -f1)
           echo "from emu $a"

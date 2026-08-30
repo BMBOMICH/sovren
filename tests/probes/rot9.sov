@@ -1,12 +1,13 @@
 use sys
-a: _sov_alloc(16)
-poke_i64(a, 0, 5)
-poke_i64(a, 8, 9)
-poke_i64(a, 16, 0)
-i: 0
-s: 0
-as long as peek_i64(a, i * 8) > 0
-    s: s + peek_i64(a, i * 8)
-    i: i + 1
-print s
-print i
+main:
+    a: _sov_alloc(16)
+    poke_i64(a, 0, 5)
+    poke_i64(a, 8, 9)
+    poke_i64(a, 16, 0)
+    i: 0
+    s: 0
+    as long as peek_i64(a, i * 8) > 0
+        s: s + peek_i64(a, i * 8)
+        i: i + 1
+    print s
+    print i

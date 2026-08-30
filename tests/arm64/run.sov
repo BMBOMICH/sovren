@@ -10,18 +10,19 @@
 
 use arm
 
-m: arm_new()
-if arm_load(m, "/tmp/sov-arm.bin") is 0
-    print "cannot read /tmp/sov-arm.bin"
-    stop
-why: arm_run(m)
-write_out(arm_out(m))
-if why is 2
-    print ""
-    write_out("stopped on an instruction this emulator does not know: ")
-    print arm_bad(m)
-    stop
-if why is 3
-    print ""
-    print "stopped: it ran too long"
-    stop
+main:
+    m: arm_new()
+    if arm_load(m, "/tmp/sov-arm.bin") is 0
+        print "cannot read /tmp/sov-arm.bin"
+        stop
+    why: arm_run(m)
+    write_out(arm_out(m))
+    if why is 2
+        print ""
+        write_out("stopped on an instruction this emulator does not know: ")
+        print arm_bad(m)
+        stop
+    if why is 3
+        print ""
+        print "stopped: it ran too long"
+        stop

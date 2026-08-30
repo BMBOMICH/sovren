@@ -1,13 +1,14 @@
 use sys
-arr: _sov_alloc(128)
-poke_i64(arr, 0, 4)
-poke_i64(arr, 8, 9)
-poke_i64(arr, 16, 0 - 2)
-poke_i64(arr, 24, 11)
-l: 1
-r: 2
-t: l
-if peek_i64(arr, l * 8) < peek_i64(arr, r * 8)
-    t: r
-print t
-print peek_i64(arr, t * 8)
+main:
+    arr: _sov_alloc(128)
+    poke_i64(arr, 0, 4)
+    poke_i64(arr, 8, 9)
+    poke_i64(arr, 16, 0 - 2)
+    poke_i64(arr, 24, 11)
+    l: 1
+    r: 2
+    t: l
+    if peek_i64(arr, l * 8) < peek_i64(arr, r * 8)
+        t: r
+    print t
+    print peek_i64(arr, t * 8)

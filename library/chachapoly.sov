@@ -1,4 +1,4 @@
-# cp.sov — AEAD_CHACHA20_POLY1305 (RFC 8439 2.8)
+# chachapoly.sov — AEAD_CHACHA20_POLY1305 (RFC 8439 2.8)
 #
 #   use cp
 #   cp_seal(key, nonce, aad, aad_n, pt, pt_n, ct)   tag -> cp_tag
@@ -15,7 +15,7 @@
 
 use chacha20
 use poly1305
-use ct
+use constant
 use secret
 use mem
 

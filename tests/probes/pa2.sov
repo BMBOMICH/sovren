@@ -9,11 +9,12 @@ acc buf n:
         poke_i64(buf, i * 8, peek_i64(buf, i * 8) + i * 3 - 100)
         i: i + 1
 
-b: _sov_alloc(640)
-poke_i64(b, 0, 50)
-poke_i64(b, 8, 60)
-poke_i64(b, 16, 70)
-acc(b, 3)
-print peek_i64(b, 0)
-print peek_i64(b, 8)
-print peek_i64(b, 16)
+main:
+    b: _sov_alloc(640)
+    poke_i64(b, 0, 50)
+    poke_i64(b, 8, 60)
+    poke_i64(b, 16, 70)
+    acc(b, 3)
+    print peek_i64(b, 0)
+    print peek_i64(b, 8)
+    print peek_i64(b, 16)
