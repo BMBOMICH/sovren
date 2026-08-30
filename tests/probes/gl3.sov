@@ -9,9 +9,8 @@ worker bb:
     poke_i64(bb, 8, 77)
     print peek_i64(bb, 0) + peek_i64(bb, 8)
 
-main:
-    b: _sov_alloc(128)
-    worker(b)
-    poke_i64(b, 8, 66)
-    print peek_i64(b, 0)
-    print peek_i64(b, 8)
+b: _sov_alloc(128)
+worker(b)
+poke_i64(b, 8, 66)
+print peek_i64(b, 0)
+print peek_i64(b, 8)

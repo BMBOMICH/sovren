@@ -11,120 +11,120 @@ site_title: "site"
 site_col: "black"
 site_bg: "white"
 site_sz: 20
-site_px: 0
-site_py: 0
+px: 0
+py: 0
 site_has_place: 0
-site_fillc: blank
+fillc: blank
 
-site_new name:
+page name:
     site_html: blank
     site_title: name
     site_col: "black"
     site_bg: "white"
     site_sz: 20
     site_has_place: 0
-    site_fillc: blank
+    fillc: blank
     return 1
 
-site_color name:
+color name:
     site_col: name
     return 1
 
-site_back name:
+background name:
     site_bg: name
     return 1
 
-site_size n:
+text_size n:
     site_sz: n
     return 1
 
-site_position x y:
-    site_px: x
-    site_py: y
+position x y:
+    px: x
+    py: y
     site_has_place: 1
     return 1
 
-site_fill name:
-    site_fillc: name
+fill name:
+    fillc: name
     return 1
 
-site_add s:
+add s:
     site_html: str_cat(site_html, s)
     return 1
 
-site_wrap inner:
+wrap inner:
     a: "<div style=\"color:"
     a: str_cat(a, site_col)
     a: str_cat(a, ";font-size:")
     a: str_cat(a, num_text(site_sz))
     a: str_cat(a, "px")
-    if str_len(site_fillc) > 0
+    if str_len(fillc) > 0
         a: str_cat(a, ";background:")
-        a: str_cat(a, site_fillc)
-        site_fillc: blank
+        a: str_cat(a, fillc)
+        fillc: blank
     if site_has_place is 1
         a: str_cat(a, ";position:absolute;left:")
-        a: str_cat(a, num_text(site_px))
+        a: str_cat(a, num_text(px))
         a: str_cat(a, "px;top:")
-        a: str_cat(a, num_text(site_py))
+        a: str_cat(a, num_text(py))
         a: str_cat(a, "px")
         site_has_place: 0
     a: str_cat(a, "\">")
     a: str_cat(a, inner)
     a: str_cat(a, "</div>\n")
-    site_add(a)
+    add(a)
     return 1
 
-site_say text:
-    site_wrap(escape_html(text))
+say text:
+    wrap(escape_html(text))
     return 1
 
-site_big text:
+bold text:
     t: str_cat("<b>", escape_html(text))
     t: str_cat(t, "</b>")
-    site_wrap(t)
+    wrap(t)
     return 1
 
-site_button text:
+button text:
     t: str_cat("<button>", escape_html(text))
     t: str_cat(t, "</button>")
-    site_wrap(t)
+    wrap(t)
     return 1
 
-site_go url text:
+link url text:
     t: str_cat("<a href=\"", escape_html(url))
     t: str_cat(t, "\">")
     t: str_cat(t, escape_html(text))
     t: str_cat(t, "</a>")
-    site_wrap(t)
+    wrap(t)
     return 1
 
 # a heading, first to sixth
-site_heading n text:
+heading n text:
     t: str_cat("<h", num_text(n))
     t: str_cat(t, ">")
     t: str_cat(t, escape_html(text))
     t: str_cat(t, "</h")
     t: str_cat(t, num_text(n))
     t: str_cat(t, ">\n")
-    site_add(t)
+    add(t)
     return 1
 
 # a paragraph
-site_p text:
+paragraph text:
     t: str_cat("<p>", escape_html(text))
     t: str_cat(t, "</p>\n")
-    site_add(t)
+    add(t)
     return 1
 
 # a line across the page
-site_rule:
-    site_add("<hr>\n")
+line_across:
+    add("<hr>\n")
     return 1
 
 # a bullet list. the items come in one string, separated by bars
-site_bullets s:
-    site_add("<ul>\n")
+bullets s:
+    add("<ul>\n")
     i: 0
     n: str_len(s)
     start: 0
@@ -139,30 +139,30 @@ site_bullets s:
             more: 0
         t: str_cat("<li>", escape_html(item))
         t: str_cat(t, "</li>\n")
-        site_add(t)
+        add(t)
         if more is 0
             i: n
         i: i + 1
-    site_add("</ul>\n")
+    add("</ul>\n")
     return 1
 
 # a box to type in
-site_input placeholder:
+input placeholder:
     t: str_cat("<input placeholder=\"", escape_html(placeholder))
     t: str_cat(t, "\">\n")
-    site_wrap(t)
+    wrap(t)
     return 1
 
 # a picture
-site_image src alt:
+image src alt:
     t: str_cat("<img src=\"", escape_html(src))
     t: str_cat(t, "\" alt=\"")
     t: str_cat(t, escape_html(alt))
     t: str_cat(t, "\">\n")
-    site_wrap(t)
+    wrap(t)
     return 1
 
-site_save path:
+save path:
     h: "<!doctype html><html><head><meta charset=\"utf-8\"><title>"
     h: str_cat(h, escape_html(site_title))
     h: str_cat(h, "</title><style>body{font-family:sans-serif;margin:28px;color:")

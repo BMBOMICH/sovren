@@ -6,11 +6,10 @@ g: 0
 
 h: 0
 
-main:
-    g: _sov_alloc(640)
-    h: _sov_alloc(640)
-    poke_i64(g, 8, 23)
-    poke_i64(h, 8, 61)
-    i: 1
-    d: peek_i64(g, i * 8) - peek_i64(h, i * 8)
-    print d
+g: _sov_alloc(640)
+h: _sov_alloc(640)
+poke_i64(g, 8, 23)
+poke_i64(h, 8, 61)
+i: 1
+d: peek_i64(g, i * 8) - peek_i64(h, i * 8)
+print d

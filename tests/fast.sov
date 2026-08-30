@@ -41,7 +41,6 @@ slow_list:
     l: list_add(l, "windows recognized fib with alloc")
     return l
 
-main:
-    tr_use("./sovren")
-    tr_skips: slow_list()
-    sys_exit(suite())
+tr_use("./sovren")
+tr_skips: slow_list()
+sys_exit(suite())

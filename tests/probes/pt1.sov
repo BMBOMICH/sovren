@@ -5,17 +5,16 @@ use sys
 
 v: 0
 
-main:
-    v: _sov_alloc(640)
-    poke_i64(v, 8, 11)
-    poke_i64(v, 16, 23)
-    i: 1
-    dx: 7
-    f: 5
-    poke_i64(v, i * 8, peek_i64(v, i * 8) + dx * f)
-    i: 2
-    dx: 23
-    f: 3
-    poke_i64(v, i * 8, peek_i64(v, i * 8) + dx * f)
-    print peek_i64(v, 8)
-    print peek_i64(v, 16)
+v: _sov_alloc(640)
+poke_i64(v, 8, 11)
+poke_i64(v, 16, 23)
+i: 1
+dx: 7
+f: 5
+poke_i64(v, i * 8, peek_i64(v, i * 8) + dx * f)
+i: 2
+dx: 23
+f: 3
+poke_i64(v, i * 8, peek_i64(v, i * 8) + dx * f)
+print peek_i64(v, 8)
+print peek_i64(v, 16)

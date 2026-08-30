@@ -6,9 +6,8 @@ use sys
 
 g: 0
 
-main:
-    try
-        raise "boom"
-    except g
-        print 41
-    print 42
+try
+    raise "boom"
+except g
+    print 41
+print 42

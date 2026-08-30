@@ -1,0 +1,136 @@
+# security.sov — security operations
+# Real implementation with actual crypto
+
+use sys
+use aes
+use sha256
+use tls12
+
+# Encrypt data with AES
+sec_encrypt_aes key, data, data_len:
+    ctx: _sov_alloc(256)
+    aes_init(ctx, key, 16)
+    encrypted: _sov_alloc(data_len)
+    blocks: data_len / 16
+    i: 0
+    as long as i < blocks:
+        offset: i * 16
+        aes_encrypt_block(ctx, data + offset, encrypted + offset)
+        i: i + 1
+    return encrypted
+
+# Decrypt data with AES
+sec_decrypt_aes key, data, data_len:
+    ctx: _sov_alloc(256)
+    aes_init(ctx, key, 16)
+    decrypted: _sov_alloc(data_len)
+    blocks: data_len / 16
+    i: 0
+    as long as i < blocks:
+        offset: i * 16
+        aes_decrypt_block(ctx, data + offset, decrypted + offset)
+        i: i + 1
+    return decrypted
+
+# Hash data with SHA-256
+sec_hash_sha256 data, data_len:
+    ctx: _sov_alloc(128)
+    hash: _sov_alloc(32)
+    sha256_init(ctx)
+    sha256_update(ctx, data, data_len)
+    sha256_final(ctx, hash)
+    return hash
+
+# Verify hash
+sec_verify_hash data, data_len, expected_hash:
+    actual_hash: sec_hash_sha256(data, data_len)
+    match: 1
+    i: 0
+    as long as i < 32:
+        byte1: peek_byte(actual_hash, i)
+        byte2: peek_byte(expected_hash, i)
+        if byte1 != byte2
+            match: 0
+        i: i + 1
+    return match
+
+# Create secure random bytes
+sec_random buf, len:
+    fd: sys_open("/dev/urandom", 0, 0)
+    if fd < 0
+        return -1
+    sys_read(fd, buf, len)
+    sys_close(fd)
+    return 0
+
+# HMAC-SHA256
+sec_hmac key, key_len, data, data_len:
+    block_size: 64
+    ipad: _sov_alloc(block_size)
+    opad: _sov_alloc(block_size)
+    
+    # Prepare key
+    if key_len > block_size
+        key_hash: sec_hash_sha256(key, key_len)
+        key: key_hash
+        key_len: 32
+    
+    # XOR key with pads
+    i: 0
+    as long as i < block_size:
+        if i < key_len
+            k: peek_byte(key, i)
+            poke_byte(ipad, i, k ^ 0x36)
+            poke_byte(opad, i, k ^ 0x5c)
+        if i >= key_len
+            poke_byte(ipad, i, 0x36)
+            poke_byte(opad, i, 0x5c)
+        i: i + 1
+    
+    # Inner hash
+    inner_data: _sov_alloc(block_size + data_len)
+    i: 0
+    as long as i < block_size:
+        poke_byte(inner_data, i, peek_byte(ipad, i))
+        i: i + 1
+    i: 0
+    as long as i < data_len:
+        poke_byte(inner_data, block_size + i, peek_byte(data, i))
+        i: i + 1
+    inner_hash: sec_hash_sha256(inner_data, block_size + data_len)
+    
+    # Outer hash
+    outer_data: _sov_alloc(block_size + 32)
+    i: 0
+    as long as i < block_size:
+        poke_byte(outer_data, i, peek_byte(opad, i))
+        i: i + 1
+    i: 0
+    as long as i < 32:
+        poke_byte(outer_data, block_size + i, peek_byte(inner_hash, i))
+        i: i + 1
+    result: sec_hash_sha256(outer_data, block_size + 32)
+    
+    return result
+
+# Initialize TLS context
+sec_tls_init:
+    ctx: _sov_alloc(1024)
+    tls_init(ctx)
+    return ctx
+
+# TLS handshake
+sec_tls_handshake ctx, fd:
+    return tls_handshake(ctx, fd)
+
+# TLS send
+sec_tls_send ctx, data, len:
+    return tls_send(ctx, data, len)
+
+# TLS receive
+sec_tls_recv ctx, buf, len:
+    return tls_recv(ctx, buf, len)
+
+# TLS close
+sec_tls_close ctx:
+    tls_close(ctx)

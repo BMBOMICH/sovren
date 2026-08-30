@@ -10,9 +10,9 @@ as_eq name got want:
         as_pass: as_pass + 1
         return 1
     as_fail: as_fail + 1
-    _sov_print(str_cat("FAIL ", name))
-    _sov_print(str_join3("  got ", num_text(got), ""))
-    _sov_print(str_join3("  want ", num_text(want), ""))
+    print "FAIL" : name
+    print "got" : got
+    print "want" : want
     return 0
 
 as_true name v:
@@ -26,14 +26,14 @@ as_text name got want:
         as_pass: as_pass + 1
         return 1
     as_fail: as_fail + 1
-    _sov_print(str_cat("FAIL ", name))
-    _sov_print(str_cat("  got ", got))
-    _sov_print(str_cat("  want ", want))
+    print "FAIL" : name
+    print "got" : got
+    print "want" : want
     return 0
 
 as_report:
-    _sov_print(str_join3("passed ", num_text(as_pass), ""))
-    _sov_print(str_join3("failed ", num_text(as_fail), ""))
+    print "passed" : as_pass
+    print "failed" : as_fail
     if as_fail > 0
         return 1
     return 0

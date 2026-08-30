@@ -1,0 +1,90 @@
+# perf.sov — performance monitoring
+# Real implementation with syscalls
+
+use sys
+
+# Get time in nanoseconds
+perf_time_ns:
+    timespec: _sov_alloc(16)
+    syscall(228, 1, timespec)
+    secs: peek_i64(timespec, 0)
+    nsecs: peek_i64(timespec, 8)
+    return secs * 1000000000 + nsecs
+
+# Get time in microseconds
+perf_time_us:
+    ns: perf_time_ns()
+    return ns / 1000
+
+# Get time in milliseconds
+perf_time_ms:
+    ns: perf_time_ns()
+    return ns / 1000000
+
+# Get time in seconds
+perf_time_secs:
+    ns: perf_time_ns()
+    return ns / 1000000000
+
+# Measure execution time
+perf_measure func, arg:
+    start: perf_time_ns()
+    func(arg)
+    end: perf_time_ns()
+    return end - start
+
+# Get process times
+perf_proc_times:
+    tms: _sov_alloc(32)
+    syscall(99, tms)
+    user_time: peek_i64(tms, 0)
+    sys_time: peek_i64(tms, 8)
+    child_user: peek_i64(tms, 16)
+    child_sys: peek_i64(tms, 24)
+    return user_time
+
+# Get memory usage
+perf_mem_usage:
+    usage: _sov_alloc(80)
+    syscall(98, usage)
+    vm_size: peek_i64(usage, 0)
+    vm_rss: peek_i64(usage, 8)
+    vm_shared: peek_i64(usage, 16)
+    vm_text: peek_i64(usage, 24)
+    return vm_rss
+
+# CPU usage
+perf_cpu_usage:
+    times: _sov_alloc(64)
+    fd: sys_open("/proc/stat", 0)
+    if fd >= 0
+        sys_read(fd, times, 64)
+        sys_close(fd)
+    return 0
+
+# Get uptime
+perf_uptime:
+    info: _sov_alloc(64)
+    fd: sys_open("/proc/uptime", 0)
+    if fd >= 0
+        sys_read(fd, info, 64)
+        sys_close(fd)
+    return 0
+
+# Get load average
+perf_load_avg:
+    info: _sov_alloc(128)
+    fd: sys_open("/proc/loadavg", 0)
+    if fd >= 0
+        sys_read(fd, info, 128)
+        sys_close(fd)
+    return 0
+
+# Benchmark loop
+perf_benchmark iterations:
+    start: perf_time_ns()
+    i: 0
+    as long as i < iterations:
+        i: i + 1
+    end: perf_time_ns()
+    return end - start

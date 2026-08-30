@@ -17,79 +17,78 @@ use string
 use sys
 use tool
 
-main argc argv:
-    if argc < 2
-        print "Usage: sovren <file.sov> --debug [--interactive]"
-        stop
-    src: as text peek_ptr(argv, 1)
-    interactive: 0
-    if argc > 2
-        a2: as text peek_ptr(argv, 2)
-        if str_eq(a2, "--debug") is 1
-            if argc > 3
-                if str_eq(as text peek_ptr(argv, 3), "--interactive") is 1
-                    interactive: 1
-        if not
-            if str_eq(a2, "--interactive") is 1
+if g_argc < 2
+    print "Usage: sovren <file.sov> --debug [--interactive]"
+    stop
+src: as text peek_ptr(g_argv, 1)
+interactive: 0
+if g_argc > 2
+    a2: as text peek_ptr(g_argv, 2)
+    if str_eq(a2, "--debug") is 1
+        if g_argc > 3
+            if str_eq(as text peek_ptr(g_argv, 3), "--interactive") is 1
                 interactive: 1
-    me: as text peek_ptr(argv, 0)
-    root: dir_of(me)
-    cc: str_cat(root, "/compilers/linux/compiler")
-    out: "/tmp/sov-dbg.out"
-    args: _sov_list_new()
-    args: _sov_list_add(args, src)
-    args: _sov_list_add(args, "--debug")
-    args: _sov_list_add(args, "-o")
-    args: _sov_list_add(args, out)
-    msg: as text tool_outv(cc, args)
-    if str_has(msg, "Error") is 1
-        print msg
-        stop
-    map: file_read_all(str_cat(out, ".map"))
-    if map is 0
-        print "Error: no map - did the build fail?"
-        stop
-    # the map header carries src_base for humans; the recorded line
-    # numbers are already the guest's own lines, so it is unused here
-    srcd: file_read_all(src)
-    if srcd is 0
-        print "Error: cannot re-read the source"
-        stop
-    m: x86_new()
-    if x86_load(m, out) is 0
-        print "Error: could not load the build"
-        stop
-    last: 0 - 1
-    going: 1
-    as long as going is 1
-        # one step is a block of machine code, not one instruction,
-        # so keep the stride tiny or a line is missed between stops.
-        # a run that only hits its stride limit reports "too long";
-        # that is not a real stop, so clear it and carry on.
-        x86_run_for(m, 2)
-        why: x86_why(m)
-        if why is 3
-            x86_state_w(m, 168, 0)
-            why: 0
-        ln: line_at(m, map, x_rip(m) - x_low(m))
-        if ln is not last
-            if ln > 0 - 1
-                last: ln
-                print str_cat(str_cat("L", n2t(ln)), ": ")
-                print line_of(srcd, ln)
-                if interactive is 1
-                    c: read_key()
-                    if c is 113
-                        print "(quit)"
-                        stop
-        if why is not 0
-            going: 0
-    print str_cat(str_cat("(stopped: ", x86_reason(m)), ")")
-    o: x86_out(m)
-    if str_empty(o) is 0
-        print "(output)"
-        print o
-    return 0
+    if not
+        if str_eq(a2, "--interactive") is 1
+            interactive: 1
+me: as text peek_ptr(g_argv, 0)
+root: dir_of(me)
+cc: str_cat(root, "/compilers/linux/compiler")
+out: "/tmp/sov-dbg.out"
+args: _sov_list_new()
+args: _sov_list_add(args, src)
+args: _sov_list_add(args, "--debug")
+args: _sov_list_add(args, "-o")
+args: _sov_list_add(args, out)
+msg: as text tool_outv(cc, args)
+if str_has(msg, "Error") is 1
+    print msg
+    stop
+map: file_read_all(str_cat(out, ".map"))
+if map is 0
+    print "Error: no map - did the build fail?"
+    stop
+# the map header carries src_base for humans; the recorded line
+# numbers are already the guest's own lines, so it is unused here
+srcd: file_read_all(src)
+if srcd is 0
+    print "Error: cannot re-read the source"
+    stop
+m: x86_new()
+if x86_load(m, out) is 0
+    print "Error: could not load the build"
+    stop
+last: 0 - 1
+going: 1
+as long as going is 1
+    # one step is a block of machine code, not one instruction,
+    # so keep the stride tiny or a line is missed between stops.
+    # a run that only hits its stride limit reports "too long";
+    # that is not a real stop, so clear it and carry on.
+    x86_run_for(m, 2)
+    why: x86_why(m)
+    if why is 3
+        x86_state_w(m, 168, 0)
+        why: 0
+    ln: line_at(m, map, x_rip(m) - x_low(m))
+    if ln is not last
+        if ln > 0 - 1
+            last: ln
+            print str_cat(str_cat("L", n2t(ln)), ": ")
+            print line_of(srcd, ln)
+            if interactive is 1
+                c: read_key()
+                if c is 113
+                    print "(quit)"
+                    stop
+    if why is not 0
+        going: 0
+print str_cat(str_cat("(stopped: ", x86_reason(m)), ")")
+o: x86_out(m)
+if str_empty(o) is 0
+    print "(output)"
+    print o
+return 0
 
 # the line that owns off: the first recorded start at or before off
 # whose window (up to the next recorded start strictly after it)

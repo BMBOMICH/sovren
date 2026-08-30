@@ -1,9 +1,8 @@
 # pa5 - has_vm 0 control: no alloc anywhere, so the whole
 # poke-accumulate arm is gated off. the text still compiles (the
 # branch never runs); binary must be byte-identical both compilers.
-main:
-    a: 3
-    b2: 4
-    if a > b2
-        poke_i64(a, b2 * 8, peek_i64(a, b2 * 8) + 1)
-    print a + b2
+a: 3
+b2: 4
+if a > b2
+    poke_i64(a, b2 * 8, peek_i64(a, b2 * 8) + 1)
+print a + b2

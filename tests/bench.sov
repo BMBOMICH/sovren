@@ -19,13 +19,12 @@
 
 use file
 
-main argc argv:
-    n: 2900000
-    if argc > 1
-        n: _sov_atoi(as text peek_ptr(argv, 1))
-    s: 0
-    i: 1
-    as long as i < n + 1
-        s: s + i * i
-        i: i + 1
-    print s
+n: 2900000
+if g_argc > 1
+    n: _sov_atoi(as text peek_ptr(g_argv, 1))
+s: 0
+i: 1
+as long as i < n + 1
+    s: s + i * i
+    i: i + 1
+print s

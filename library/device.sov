@@ -1,0 +1,68 @@
+# device.sov — device management
+# Real implementation with syscalls
+
+use sys
+
+# Open device
+dev_open path, flags:
+    return sys_open(path, flags, 0)
+
+# Close device
+dev_close fd:
+    return sys_close(fd)
+
+# Read from device
+dev_read fd, buf, count:
+    return sys_read(fd, buf, count)
+
+# Write to device
+dev_write fd, buf, count:
+    return sys_write(fd, buf, count)
+
+# Device ioctl
+dev_ioctl fd, request, argp:
+    return syscall(16, fd, request, argp)
+
+# Get device info
+dev_info fd, statbuf:
+    return sys_fstat(fd, statbuf)
+
+# Open terminal
+dev_tty_open:
+    return dev_open("/dev/tty", 2, 0)
+
+# Read from terminal
+dev_tty_read fd, buf, count:
+    return dev_read(fd, buf, count)
+
+# Write to terminal
+dev_tty_write fd, buf, count:
+    return dev_write(fd, buf, count)
+
+# Open null device
+dev_null_open:
+    return dev_open("/dev/null", 0, 0)
+
+# Open random device
+dev_random_open:
+    return dev_open("/dev/urandom", 0, 0)
+
+# Read random bytes
+dev_random_read fd, buf, count:
+    return dev_read(fd, buf, count)
+
+# Set terminal attributes
+dev_tty_setattr fd, termios:
+    return dev_ioctl(fd, 0x5402, termios)
+
+# Get terminal attributes
+dev_tty_getattr fd, termios:
+    return dev_ioctl(fd, 0x5401, termios)
+
+# Wait for device
+dev_poll fds, nfds, timeout:
+    return syscall(271, fds, nfds, timeout)
+
+# Select on devices
+dev_select nfds, readfds, writefds, exceptfds, timeout:
+    return syscall(23, nfds, readfds, writefds, exceptfds, timeout)

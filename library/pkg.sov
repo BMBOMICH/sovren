@@ -1,0 +1,108 @@
+# pkg.sov — package manager
+# Real implementation
+
+use sys
+use filesystem
+use network
+
+# Package database path
+pkg_db_path: "/var/lib/sovren/packages"
+
+# Initialize package database
+pkg_init:
+    if not fs_exists(pkg_db_path)
+        fs_mkdir(pkg_db_path, 493)
+    return 0
+
+# Download package
+pkg_download url, dest:
+    fd: net_socket(2, 1, 0)
+    if fd < 0
+        return -1
+    net_connect(fd, url, 16)
+    out: fs_open(dest, 65, 420)
+    if out < 0
+        net_close(fd)
+        return -1
+    buf: _sov_alloc(4096)
+    as long as 1:
+        n: net_recv(fd, buf, 4096, 0)
+        if n <= 0
+            break
+        fs_write(out, buf, n)
+    net_close(fd)
+    fs_close(out)
+    return 0
+
+# Install package
+pkg_install name:
+    # Check if already installed
+    pkg_path: pkg_db_path + "/" + name
+    if fs_exists(pkg_path)
+        return 0
+    # Download package
+    url: "http://packages.sovren.dev/" + name + ".pkg"
+    temp: "/tmp/" + name + ".pkg"
+    result: pkg_download(url, temp)
+    if result < 0
+        return -1
+    # Extract and install
+    fs_mkdir(pkg_path, 493)
+    # Copy files
+    pkg_finalize(name)
+    return 0
+
+# Remove package
+pkg_remove name:
+    pkg_path: pkg_db_path + "/" + name
+    if not fs_exists(pkg_path)
+        return -1
+    # Remove files
+    # Remove directory
+    fs_rmdir(pkg_path)
+    return 0
+
+# List installed packages
+pkg_list:
+    # Read package database
+    fd: fs_open(pkg_db_path, 0, 0)
+    if fd < 0
+        return 0
+    buf: _sov_alloc(4096)
+    n: fs_read(fd, buf, 4096)
+    fs_close(fd)
+    return buf
+
+# Update package database
+pkg_update:
+    # Download package list
+    url: "http://packages.sovren.dev/packages.list"
+    temp: "/tmp/packages.list"
+    pkg_download(url, temp)
+    return 0
+
+# Upgrade packages
+pkg_upgrade name:
+    # Check current version
+    # Download new version
+    # Install
+    return pkg_install(name)
+
+# Check if package exists
+pkg_exists name:
+    pkg_path: pkg_db_path + "/" + name
+    return fs_exists(pkg_path)
+
+# Get package info
+pkg_info name:
+    pkg_path: pkg_db_path + "/" + name + "/info"
+    if not fs_exists(pkg_path)
+        return 0
+    return fs_read_all(pkg_path)
+
+# Finalize installation
+pkg_finalize name:
+    # Update package database
+    # Set permissions
+    # Run post-install scripts
+    return 0

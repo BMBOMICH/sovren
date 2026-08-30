@@ -652,7 +652,7 @@ _sov_thread_spawn fn a0 a1 a2 a3 a4 a5:
 _sov_thread_entry_stack:
     # clone model: the child's stack pointer is the exact top that
     # spawn passed to clone, so the block sits a known distance down
-    s: sp()
+    s: stack_pointer()
     cb: s - 262272
     f: peek_i64(cb, 8)
     dummy: cfunc(f, peek_i64(cb, 16), peek_i64(cb, 24), peek_i64(cb, 32), peek_i64(cb, 40), peek_i64(cb, 48), peek_i64(cb, 56))

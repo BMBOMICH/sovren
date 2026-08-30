@@ -1,0 +1,67 @@
+# process.sov — process management
+# Real implementation with actual syscalls
+
+use sys
+
+# Fork a new process
+proc_fork:
+    return syscall(57)
+
+# Execute a program
+proc_exec path, argv:
+    return syscall(59, path, argv, 0)
+
+# Wait for child process
+proc_wait pid:
+    status: _sov_alloc(4)
+    result: syscall(61, pid, status, 0)
+    exit_code: peek_i32(status, 0)
+    if result < 0
+        return result
+    return exit_code
+
+# Exit current process
+proc_exit code:
+    syscall(60, code, 0, 0)
+
+# Get current process ID
+proc_getpid:
+    return syscall(39)
+
+# Get parent process ID
+proc_getppid:
+    return syscall(110)
+
+# Send signal to process
+proc_kill pid, sig:
+    return syscall(62, pid, sig)
+
+# Sleep for microseconds
+proc_sleep_us us:
+    req: _sov_alloc(16)
+    rem: _sov_alloc(16)
+    secs: us / 1000000
+    nsecs: (us % 1000000) * 1000
+    poke_i64(req, 0, secs)
+    poke_i64(req, 8, nsecs)
+    syscall(35, req, rem)
+
+# Sleep for milliseconds
+proc_sleep_ms ms:
+    proc_sleep_us(ms * 1000)
+
+# Get user ID
+proc_getuid:
+    return syscall(102)
+
+# Get effective user ID
+proc_geteuid:
+    return syscall(107)
+
+# Get group ID
+proc_getgid:
+    return syscall(104)
+
+# Get effective group ID
+proc_getegid:
+    return syscall(108)

@@ -64,6 +64,21 @@ ww_f_pen: 0
 ww_f_select: 0
 ww_f_ellipse: 0
 ww_f_getmodule: 0
+ww_f_cursor: 0
+ww_f_getmsg: 0
+ww_f_move: 0
+ww_f_quit: 0
+ww_f_font: 0
+ww_f_extent: 0
+ww_f_iswindow: 0
+ww_f_exit: 0
+ww_f_compdc: 0
+ww_f_compbmp: 0
+ww_f_bitblt: 0
+ww_f_deldc: 0
+ww_f_dpi: 0
+ww_f_timer: 0
+ww_f_icon: 0
 ww_loaded: 0
 
 # Find everything, once. Hands back nought when this is not
@@ -78,6 +93,7 @@ ww_load:
         return 0
     ww_user: dll_open("user32.dll")
     ww_gdi: dll_open("gdi32.dll")
+    k32: dll_open("kernel32.dll")
     if ww_user is 0
         return 0
     if ww_gdi is 0
@@ -105,9 +121,32 @@ ww_load:
     ww_f_pen: dll_find(ww_gdi, "CreatePen")
     ww_f_select: dll_find(ww_gdi, "SelectObject")
     ww_f_ellipse: dll_find(ww_gdi, "Ellipse")
+    ww_f_getmsg: dll_find(ww_user, "GetMessageA")
+    ww_f_move: dll_find(ww_user, "MoveWindow")
+    ww_f_quit: dll_find(ww_user, "PostQuitMessage")
+    ww_f_font: dll_find(ww_gdi, "CreateFontIndirectA")
+    ww_f_cursor: dll_find(ww_user, "LoadCursorA")
+    ww_f_extent: dll_find(ww_gdi, "GetTextExtentPoint32A")
+    ww_f_iswindow: dll_find(ww_user, "IsWindow")
+    ww_f_compdc: dll_find(ww_gdi, "CreateCompatibleDC")
+    ww_f_compbmp: dll_find(ww_gdi, "CreateCompatibleBitmap")
+    ww_f_bitblt: dll_find(ww_gdi, "BitBlt")
+    ww_f_deldc: dll_find(ww_gdi, "DeleteDC")
+    ww_f_timer: dll_find(ww_user, "SetTimer")
+    ww_f_icon: dll_find(ww_user, "LoadIconA")
+    ww_f_dpi: dll_find(ww_user, "SetProcessDPIAware")
+    ww_f_getmodule: 0
+    ww_f_exit: 0
+    if k32 is not 0
+        ww_f_getmodule: dll_find(k32, "GetModuleHandleA")
+        ww_f_exit: dll_find(k32, "ExitProcess")
+    if ww_f_dpi is not 0
+        wincall0(ww_f_dpi)
     if ww_f_create is 0
         return 0
     if ww_f_fillrect is 0
+        return 0
+    if ww_f_reg is 0
         return 0
     ww_loaded: 1
     return 1
@@ -129,11 +168,20 @@ ww_ready:
 # what lets a Sovren loop stay in charge.
 
 WW_CLASS: "SovrenWindow"
+WW_STYLE: 0
 
 ww_open width height title:
     if ww_load() is 0
         return 0
-    # the class block: sixteen fields, eighty bytes
+    inst: 0
+    if ww_f_getmodule is not 0
+        inst: wincall1(ww_f_getmodule, 0)
+    cur: 0
+    if ww_f_cursor is not 0
+        cur: wincall2(ww_f_cursor, 0, 32513)
+    # WNDCLASSEXA: cbSize 80, style CS_HREDRAW|CS_VREDRAW, lpfnWndProc,
+    # hInstance at 24, hCursor at 40, hbrBackground COLOR_WINDOW+1 at 48,
+    # lpszClassName at 64
     wc: mem_new(96)
     i: 0
     as long as i < 96
@@ -142,20 +190,49 @@ ww_open width height title:
     poke_u32(wc, 0, 80)
     poke_u32(wc, 4, 3)
     poke_i64(wc, 8, ww_f_defproc)
-    poke_i64(wc, 40, 0)
-    poke_i64(wc, 48, 6)
-    poke_i64(wc, 56, WW_CLASS)
-    if wincall1(ww_f_reg, wc) is 0
-        return 0
-    # a plain window with a title bar
-    h: cfunc(ww_f_create, 0, WW_CLASS, title, 13565952, 100, 100, 0)
+    poke_i64(wc, 24, inst)
+    poke_i64(wc, 40, cur)
+    if ww_f_icon is not 0
+        ic: wincall2(ww_f_icon, 0, 32512)
+        poke_i64(wc, 32, ic)
+        poke_i64(wc, 72, ic)
+    bgb: 6
+    if ww_f_brush is not 0
+        bgb: wincall1(ww_f_brush, 789516)
+    poke_i64(wc, 48, bgb)
+    poke_i64(wc, 64, WW_CLASS)
+    wincall1(ww_f_reg, wc)
+    style: 281870336
+    if WW_STYLE is not 0
+        style: WW_STYLE
+    av: mem_new(96)
+    poke_i64(av, 0, 0)
+    poke_i64(av, 8, WW_CLASS)
+    poke_i64(av, 16, title)
+    poke_i64(av, 24, style)
+    poke_i64(av, 32, 80)
+    poke_i64(av, 40, 80)
+    poke_i64(av, 48, width)
+    poke_i64(av, 56, height)
+    poke_i64(av, 64, 0)
+    poke_i64(av, 72, 0)
+    poke_i64(av, 80, inst)
+    poke_i64(av, 88, 0)
+    h: wincall12(ww_f_create, av)
     if h is 0
         return 0
-    # the size and the two extra values go on the stack, so a
-    # second call sets the size instead
-    w: mem_new(128)
+    if ww_f_move is not 0
+        mv: mem_new(96)
+        poke_i64(mv, 0, h)
+        poke_i64(mv, 8, 80)
+        poke_i64(mv, 16, 80)
+        poke_i64(mv, 24, width)
+        poke_i64(mv, 32, height)
+        poke_i64(mv, 40, 1)
+        wincall12(ww_f_move, mv)
+    w: mem_new(192)
     i: 0
-    as long as i < 128
+    as long as i < 192
         poke_byte(w, i, 0)
         i: i + 1
     poke_i64(w, 0, h)
@@ -163,10 +240,169 @@ ww_open width height title:
     poke_i64(w, 24, height)
     poke_i64(w, 32, 1)
     poke_i64(w, 64, mem_new(64))
+    poke_i64(w, 120, 8)
+    poke_i64(w, 128, 20)
     wincall2(ww_f_show, h, 5)
     wincall1(ww_f_update, h)
-    poke_i64(w, 8, wincall1(ww_f_getdc, h))
+    dc: wincall1(ww_f_getdc, h)
+    poke_i64(w, 8, dc)
+    if ww_f_font is not 0
+        lf: mem_new(64)
+        fi: 0
+        as long as fi < 64
+            poke_byte(lf, fi, 0)
+            fi: fi + 1
+        poke_u32(lf, 0, 20)
+        poke_u32(lf, 16, 400)
+        poke_byte(lf, 26, 5)
+        poke_byte(lf, 27, 49)
+        fnm: "Consolas"
+        fi: 0
+        as long as fi < str_len(fnm)
+            poke_byte(lf, 28 + fi, peek_byte(fnm, fi))
+            fi: fi + 1
+        hf: wincall1(ww_f_font, lf)
+        if hf is not 0
+            wincall2(ww_f_select, dc, hf)
+        mw: ww_measure(dc, "M")
+        iw: ww_measure(dc, "i")
+        if mw is 0
+            mw: 8
+        if mw is not iw
+            fi: 0
+            as long as fi < 32
+                poke_byte(lf, 28 + fi, 0)
+                fi: fi + 1
+            fnm: "Consolas"
+            fi: 0
+            as long as fi < str_len(fnm)
+                poke_byte(lf, 28 + fi, peek_byte(fnm, fi))
+                fi: fi + 1
+            hf: wincall1(ww_f_font, lf)
+            if hf is not 0
+                wincall2(ww_f_select, dc, hf)
+            mw: ww_measure(dc, "M")
+            if mw is 0
+                mw: 8
+        poke_i64(w, 120, mw)
+        mh: ww_measure_h(dc, "M")
+        if mh < 12
+            mh: 16
+        poke_i64(w, 128, mh + 4)
+        poke_i64(w, 176, hf)
+    poke_i64(w, 168, dc)
+    ww_buf(w)
+    if ww_f_timer is not 0
+        wincall4(ww_f_timer, h, 1, 500, 0)
+    sh: dll_open("shell32.dll")
+    if sh is not 0
+        df: dll_find(sh, "DragAcceptFiles")
+        if df is not 0
+            wincall2(df, h, 1)
     return w
+
+ww_buf w:
+    windc: peek_i64(w, 168)
+    if windc is 0
+        return 0
+    if ww_f_compdc is 0
+        return 0
+    oldmdc: peek_i64(w, 144)
+    oldbmp: peek_i64(w, 152)
+    oldsel: peek_i64(w, 160)
+    if oldmdc is not 0
+        if oldsel is not 0
+            wincall2(ww_f_select, oldmdc, oldsel)
+        if oldbmp is not 0
+            wincall1(ww_f_delete, oldbmp)
+        if ww_f_deldc is not 0
+            wincall1(ww_f_deldc, oldmdc)
+    bw: peek_i64(w, 16)
+    bh: peek_i64(w, 24)
+    if bw < 64
+        bw: 64
+    if bh < 64
+        bh: 64
+    mdc: wincall1(ww_f_compdc, windc)
+    if mdc is 0
+        poke_i64(w, 8, windc)
+        return 0
+    bmp: wincall3(ww_f_compbmp, windc, bw, bh)
+    old: wincall2(ww_f_select, mdc, bmp)
+    hf: peek_i64(w, 176)
+    if hf is not 0
+        wincall2(ww_f_select, mdc, hf)
+    poke_i64(w, 144, mdc)
+    poke_i64(w, 152, bmp)
+    poke_i64(w, 160, old)
+    poke_i64(w, 8, mdc)
+    return 1
+
+ww_flip w:
+    mdc: peek_i64(w, 144)
+    windc: peek_i64(w, 168)
+    if mdc is 0
+        return 0
+    if windc is 0
+        return 0
+    if ww_f_bitblt is 0
+        return 0
+    av: mem_new(96)
+    poke_i64(av, 0, windc)
+    poke_i64(av, 8, 0)
+    poke_i64(av, 16, 0)
+    poke_i64(av, 24, peek_i64(w, 16))
+    poke_i64(av, 32, peek_i64(w, 24))
+    poke_i64(av, 40, mdc)
+    poke_i64(av, 48, 0)
+    poke_i64(av, 56, 0)
+    poke_i64(av, 64, 13369376)
+    poke_i64(av, 72, 0)
+    poke_i64(av, 80, 0)
+    poke_i64(av, 88, 0)
+    wincall12(ww_f_bitblt, av)
+    return 1
+
+ww_char_more w:
+    msg: peek_i64(w, 64)
+    if ww_f_peek is 0
+        return 0
+    h: peek_i64(w, 0)
+    if wincall(ww_f_peek, msg, h, 258, 258, 1) is 0
+        return 0
+    return peek_i64(msg, 16)
+
+ww_measure dc s:
+    if ww_f_extent is 0
+        return 0
+    if dc is 0
+        return 0
+    sz: mem_new(8)
+    poke_i64(sz, 0, 0)
+    wincall4(ww_f_extent, dc, s, str_len(s), sz)
+    return peek_u32(sz, 0)
+
+ww_measure_h dc s:
+    if ww_f_extent is 0
+        return 0
+    if dc is 0
+        return 0
+    sz: mem_new(8)
+    poke_i64(sz, 0, 0)
+    wincall4(ww_f_extent, dc, s, str_len(s), sz)
+    return peek_u32(sz, 4)
+
+ww_take_mouse w msg:
+    p: peek_i64(msg, 24)
+    x: p % 65536
+    if x > 32767
+        x: x - 65536
+    y: (p / 65536) % 65536
+    if y > 32767
+        y: y - 65536
+    poke_i64(w, 48, x)
+    poke_i64(w, 56, y)
+    return 0
 
 ww_ok w:
     if w is 0
@@ -195,7 +431,7 @@ ww_next w:
     n: 0
     as long as n < 64
         # PM_REMOVE is 1: take the message rather than peek at it
-        if cfunc(ww_f_peek, msg, 0, 0, 0, 1, 0) is 0
+        if wincall(ww_f_peek, msg, 0, 0, 0, 1) is 0
             n: 64
         if not
             kind: peek_u32(msg, 8)
@@ -207,8 +443,15 @@ ww_next w:
                     poke_i64(w, 32, 0)
                     n: 64
                 if not
+                    poke_i64(w, 104, kind)
                     if kind is 256
                         poke_i64(w, 40, peek_i64(msg, 16))
+                    if kind is 258
+                        poke_i64(w, 96, peek_i64(msg, 16))
+                        poke_i64(w, 40, peek_i64(msg, 16))
+                    if kind is 16
+                        poke_i64(w, 32, 0)
+                        n: 64
                     if kind is 512
                         p: peek_i64(msg, 24)
                         poke_i64(w, 48, p % 65536)
@@ -218,8 +461,89 @@ ww_next w:
                     n: n + 1
     return peek_i64(w, 32)
 
+ww_gone w:
+    poke_i64(w, 32, 0)
+    if ww_f_quit is not 0
+        wincall1(ww_f_quit, 0)
+    if ww_f_exit is not 0
+        wincall1(ww_f_exit, 0)
+    return 0
+
+ww_wait w:
+    if peek_i64(w, 32) is 0
+        return 0
+    msg: peek_i64(w, 64)
+    if ww_f_getmsg is 0
+        return ww_next(w)
+    r: wincall4(ww_f_getmsg, msg, 0, 0, 0)
+    if r < 1
+        return ww_gone(w)
+    kind: peek_u32(msg, 8)
+    poke_i64(w, 104, kind)
+    poke_i64(w, 112, peek_i64(msg, 16))
+    poke_i64(w, 136, peek_i64(msg, 24))
+    if kind is 2
+        return ww_gone(w)
+    if kind is 18
+        return ww_gone(w)
+    if kind is 16
+        return ww_gone(w)
+    if kind is 274
+        c: peek_i64(msg, 16) % 65536
+        c: c - (c % 16)
+        if c is 61536
+            return ww_gone(w)
+    if kind is 256
+        poke_i64(w, 40, peek_i64(msg, 16))
+    if kind is 258
+        poke_i64(w, 96, peek_i64(msg, 16))
+        poke_i64(w, 40, peek_i64(msg, 16))
+    if kind is 512
+        ww_take_mouse(w, msg)
+    if kind is 513
+        ww_take_mouse(w, msg)
+    if kind is 514
+        ww_take_mouse(w, msg)
+    if kind is 516
+        ww_take_mouse(w, msg)
+    if kind is 517
+        ww_take_mouse(w, msg)
+    if kind is 518
+        ww_take_mouse(w, msg)
+    if kind is 515
+        ww_take_mouse(w, msg)
+    if kind is 563
+        ww_take_mouse(w, msg)
+    wincall1(ww_f_translate, msg)
+    wincall1(ww_f_dispatch, msg)
+    if ww_f_iswindow is not 0
+        if wincall1(ww_f_iswindow, peek_i64(w, 0)) is 0
+            return ww_gone(w)
+    return peek_i64(w, 32)
+
 ww_key w:
     return peek_i64(w, 40)
+
+ww_char w:
+    return peek_i64(w, 96)
+
+ww_msg w:
+    return peek_i64(w, 104)
+
+ww_wparam w:
+    return peek_i64(w, 112)
+
+ww_cellw w:
+    c: peek_i64(w, 120)
+    if c < 4
+        return 8
+    return c
+
+ww_cellh w:
+    c: peek_i64(w, 128)
+    if c < 12
+        return 20
+    return c
 
 ww_x w:
     return peek_i64(w, 48)
@@ -253,14 +577,19 @@ ww_fill w x y width height rgb:
     dc: peek_i64(w, 8)
     if dc is 0
         return 0
+    br: peek_i64(w, 80)
+    if peek_i64(w, 88) is not rgb
+        if br is not 0
+            wincall1(ww_f_delete, br)
+        br: wincall1(ww_f_brush, ww_colour(rgb))
+        poke_i64(w, 80, br)
+        poke_i64(w, 88, rgb)
     rect: mem_new(32)
     poke_u32(rect, 0, x)
     poke_u32(rect, 4, y)
     poke_u32(rect, 8, x + width)
     poke_u32(rect, 12, y + height)
-    br: wincall1(ww_f_brush, ww_colour(rgb))
     wincall3(ww_f_fillrect, dc, rect, br)
-    wincall1(ww_f_delete, br)
     return 0
 
 ww_box w x y width height rgb:
@@ -279,7 +608,7 @@ ww_line w x0 y0 x1 y1 rgb:
         return 0
     pen: wincall3(ww_f_pen, 0, 1, ww_colour(rgb))
     old: wincall2(ww_f_select, dc, pen)
-    cfunc(ww_f_moveto, dc, x0, y0, 0, 0, 0)
+    wincall4(ww_f_moveto, dc, x0, y0, 0)
     wincall3(ww_f_lineto, dc, x1, y1)
     wincall2(ww_f_select, dc, old)
     wincall1(ww_f_delete, pen)
@@ -291,7 +620,7 @@ ww_circle w x y r rgb:
         return 0
     br: wincall1(ww_f_brush, ww_colour(rgb))
     old: wincall2(ww_f_select, dc, br)
-    cfunc(ww_f_ellipse, dc, x - r, y - r, x + r, y + r, 0)
+    wincall(ww_f_ellipse, dc, x - r, y - r, x + r, y + r)
     wincall2(ww_f_select, dc, old)
     wincall1(ww_f_delete, br)
     return 0
@@ -305,7 +634,7 @@ ww_text w x y words rgb:
         return 0
     wincall2(ww_f_setbkmode, dc, 1)
     wincall2(ww_f_settextcolor, dc, ww_colour(rgb))
-    cfunc(ww_f_textout, dc, x, y - 12, words, str_len(words), 0)
+    wincall(ww_f_textout, dc, x, y - 12, words, str_len(words))
     return 0
 
 # Windows draws as it goes, so there is nothing held back, but a

@@ -23,47 +23,46 @@ say_err s:
     write_err("\n")
     return 0
 
-main:
-    p: arg_at(1)
-    if str_len(p) is 0
-        print "Usage: run <app>"
-        print "Runs a Mac program here, on an emulated processor."
-        sys_exit(1)
+p: arg_at(1)
+if str_len(p) is 0
+    print "Usage: run <app>"
+    print "Runs a Mac program here, on an emulated processor."
+    sys_exit(1)
 
-    m: x86_new()
-    if x86_load(m, p) is 0
-        write_out("cannot read ")
-        print p
-        sys_exit(2)
-    if peek_i64(m, 240) is not 2
-        print "that is not a 64-bit Mach-O program"
-        sys_exit(2)
+m: x86_new()
+if x86_load(m, p) is 0
+    write_out("cannot read ")
+    print p
+    sys_exit(2)
+if peek_i64(m, 240) is not 2
+    print "that is not a 64-bit Mach-O program"
+    sys_exit(2)
 
-    x86_run(m)
-    write_out(x86_out(m))
-    write_err(x86_err(m))
+x86_run(m)
+write_out(x86_out(m))
+write_err(x86_err(m))
 
-    why: x86_why(m)
-    if why is 4
-        say_err("")
-        say_err("REJECTED: the program used a Linux syscall number.")
-        write_err("  number ")
-        say_err(num_text(x86_bad(m)))
-        say_err("macOS numbers its calls differently and marks them with")
-        say_err("the class bit 0x2000000. A real Mac refuses this.")
-        sys_exit(3)
-    if why is 2
-        write_err("cpu: an instruction it does not know, ")
-        say_err(num_text(x86_bad(m)))
-        sys_exit(4)
-    if why is 5
-        say_err("cpu: it divided by nothing")
-        sys_exit(4)
-    if why is 6
-        write_err("cpu: it reached outside its own memory, at ")
-        say_err(num_text(x86_bad(m)))
-        sys_exit(4)
-    if why is 3
-        say_err("cpu: it ran too long and was stopped")
-        sys_exit(4)
-    sys_exit(x86_code(m))
+why: x86_why(m)
+if why is 4
+    say_err("")
+    say_err("REJECTED: the program used a Linux syscall number.")
+    write_err("  number ")
+    say_err(num_text(x86_bad(m)))
+    say_err("macOS numbers its calls differently and marks them with")
+    say_err("the class bit 0x2000000. A real Mac refuses this.")
+    sys_exit(3)
+if why is 2
+    write_err("cpu: an instruction it does not know, ")
+    say_err(num_text(x86_bad(m)))
+    sys_exit(4)
+if why is 5
+    say_err("cpu: it divided by nothing")
+    sys_exit(4)
+if why is 6
+    write_err("cpu: it reached outside its own memory, at ")
+    say_err(num_text(x86_bad(m)))
+    sys_exit(4)
+if why is 3
+    say_err("cpu: it ran too long and was stopped")
+    sys_exit(4)
+sys_exit(x86_code(m))

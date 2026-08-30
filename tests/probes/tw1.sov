@@ -1,14 +1,13 @@
 use sys
-main:
-    a: _sov_alloc(80)
-    poke_raw64(a, 24, 30)
-    poke_raw64(a, 32, 40)
-    r: 3
-    if peek_raw64(a, r * 8) < peek_raw64(a, (r + 1) * 8)
-        r: r + 1
-    print r
-    poke_raw64(a, 24, 50)
-    r: 3
-    if peek_raw64(a, r * 8) < peek_raw64(a, (r + 1) * 8)
-        r: r + 1
-    print r
+a: _sov_alloc(80)
+poke_raw64(a, 24, 30)
+poke_raw64(a, 32, 40)
+r: 3
+if peek_raw64(a, r * 8) < peek_raw64(a, (r + 1) * 8)
+    r: r + 1
+print r
+poke_raw64(a, 24, 50)
+r: 3
+if peek_raw64(a, r * 8) < peek_raw64(a, (r + 1) * 8)
+    r: r + 1
+print r

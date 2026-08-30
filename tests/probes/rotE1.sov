@@ -1,12 +1,11 @@
-main:
-    r: 0
-    try
-        i: 0
-        as long as i < 10
-            if i is 5
-                leave
-            i: i + 1
-        r: i
-    except e
-        print e
-    print r
+r: 0
+try
+    i: 0
+    as long as i < 10
+        if i is 5
+            leave
+        i: i + 1
+    r: i
+except e
+    print e
+print r

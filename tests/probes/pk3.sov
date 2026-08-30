@@ -1,18 +1,17 @@
 # equal children: neither < nor > may fire - the cmov sense trap
-main:
-    a: _sov_alloc(8000)
-    r: 2
-    poke_raw64(a, r * 8, 555)
-    poke_raw64(a, (r + 1) * 8, 555)
-    if peek_raw64(a, r * 8) < peek_raw64(a, (r + 1) * 8)
-        r: r + 1
-    print r
-    print 909
-    b: _sov_alloc(8000)
-    k: 1
-    poke_raw64(b, k * 8, 444)
-    poke_raw64(b, (k + 1) * 8, 444)
-    if peek_raw64(b, k * 8) > peek_raw64(b, (k + 1) * 8)
-        k: k + 1
-    print k
-    print 707
+a: _sov_alloc(8000)
+r: 2
+poke_raw64(a, r * 8, 555)
+poke_raw64(a, (r + 1) * 8, 555)
+if peek_raw64(a, r * 8) < peek_raw64(a, (r + 1) * 8)
+    r: r + 1
+print r
+print 909
+b: _sov_alloc(8000)
+k: 1
+poke_raw64(b, k * 8, 444)
+poke_raw64(b, (k + 1) * 8, 444)
+if peek_raw64(b, k * 8) > peek_raw64(b, (k + 1) * 8)
+    k: k + 1
+print k
+print 707

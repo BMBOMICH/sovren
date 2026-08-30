@@ -4,10 +4,9 @@ use sys
 
 b: 0
 
-main:
-    b: _sov_alloc(640)
-    poke_i64(b, 8, 30)
-    poke_i64(b, 16, 70)
-    i: 1
-    d: peek_i64(b, i * 8) - peek_i64(b, (i + 1) * 8)
-    print d
+b: _sov_alloc(640)
+poke_i64(b, 8, 30)
+poke_i64(b, 16, 70)
+i: 1
+d: peek_i64(b, i * 8) - peek_i64(b, (i + 1) * 8)
+print d

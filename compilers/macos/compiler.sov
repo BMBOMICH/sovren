@@ -1,128 +1,132 @@
-oc: 0
-strb: 0
-str_keys: 0
-str_pos: 0
-fn_names: 0
-fn_offs: 0
-glob_names: 0
+code: 0
+letters: 0
+letter_keys: 0
+letters_at: 0
+task_names: 0
+task_at: 0
+global_names: 0
 patch_at: 0
 patch_kind: 0
-can_used: 0
-cd_at: 0
-patch_val: 0
+used_guard: 0
+guard_holes: 0
+patch_value: 0
 patch_line: 0
 # pass 69: branch registration for the relaxation pass
-br_at: 0
-br_pv: 0
-pad_ver: 0
-br_id: 0
-br_st: 0
-locals: 0
-src_base: 0
-had_err: 0
-push_live: 0
-main_params_n: 0
-ex_depth: 0
-br_depth: 0
-bare_mode: 0
-fib_nm: blank
-fib_drop: 0
-stmt_lns: 0
-body_lns: 0
-task_lns: 0
-task_user: 0
+jump_at: 0
+jump_pad: 0
+pad_version: 0
+jump_id: 0
+jump_state: 0
+local_names: 0
+first_user_line: 0
+saw_error: 0
+hold_value: 0
+top_params: 0
+try_depth: 0
+inside_if: 0
+no_runtime: 0
+fold_fib_name: blank
+skip_fib: 0
+line_of_stmt: 0
+line_of_body: 0
+line_of_task: 0
+user_tasks: 0
 names: 0
-BASE: 4194304
-HDR: 120
-opt_imm: 0
-opt_src: 0
-iota_ptr: 0
-iota_lim: 0
-mmap_sz: 1073741824
-used_libs: blank
-err_line: 0
-src_name: blank
-kn: blank
-kv: 0
-pro_at: 0
-fw_on: 0
-fw_pos: 0
-fn_save_n: 0
-no_frame: 0
-skip_al: blank
-used_al: 0
-self_dir: 0
-want_args: 0
-used_sl: 0
-used_eq: 0
-used_pr: 0
-used_mn: 0
-used_thr: 0
-used_pi: 0
-did_stos: 0
+load_at: 4194304
+header_size: 120
+folded_number: 0
+folded_from: 0
+bump_ptr: 0
+bump_end: 0
+heap_size: 1073741824
+libraries: blank
+error_line: 0
+file_name: blank
+known_name: blank
+known_value: 0
+frame_at: 0
+frame_open: 0
+frame_holes: 0
+saved_locals: 0
+skip_frame: 0
+dead_alloc_name: blank
+used_alloc: 0
+compiler_folder: 0
+needs_args: 0
+used_text_length: 0
+used_texts_equal: 0
+used_print: 0
+used_mac_number: 0
+used_thread: 0
+used_print_number: 0
+used_fill: 0
 use cx86
 
-is_mac:
+this_is_mac:
     return 1
-is_rel:
+this_is_pie:
     return 0
-win_rare:
-    return 0
-
-stmt_dbg:
-    return 0
-stmt_reset_small:
-    return 0
-stmt_mark_print:
-    return 0
-stmt_join_op:
-    mov_rdi_rax()
-    calln("_sov_thread_join")
-    return 0
-stmt_leave_op:
-    emit(201)
+use_rare_windows:
     return 0
 
-try_sbss var rhs:
+note_debug_place:
     return 0
-plat_used:
-    if used_mn is 1
-        emit_macnum()
-    if used_thr is 1
-        emit_mac_thread()
+forget_small:
     return 0
-plat_canary:
-    if can_used is 1
-        emit_canary_fail()
+note_print:
+    return 0
+do_wait_for_thread:
+    mov_rdi_rax
+    wait_for_thread
+    return 0
+do_restore_frame:
+    put_in_program(201)
+    return 0
+
+try_static_block var rhs:
+    return 0
+emit_platform:
+    if used_mac_number = 1
+        emit_macnum
+    if used_thread = 1
+        emit_mac_thread
+    return 0
+emit_stack_guard:
+    if used_guard = 1
+        emit_canary_fail
     return 0
 
 leave_reload:
-    if fn_save_n > 4
-        emit(76)
-        emit(139)
-        emit(125)
-        emit(216)
-    if fn_save_n > 3
-        emit(76)
-        emit(139)
-        emit(117)
-        emit(224)
-    if fn_save_n > 2
-        emit(76)
-        emit(139)
-        emit(109)
-        emit(232)
-    if fn_save_n > 1
-        emit(76)
-        emit(139)
-        emit(101)
-        emit(240)
+    if saved_locals > 4
+        bytes:
+            76
+            139
+            125
+            216
+    if saved_locals > 3
+        bytes:
+            76
+            139
+            117
+            224
+    if saved_locals > 2
+        bytes:
+            76
+            139
+            109
+            232
+    if saved_locals > 1
+        bytes:
+            76
+            139
+            101
+            240
     return 0
 canary_die:
-    emit(191)
-    emit4(101)
+    put_in_program(191)
+    put_4_bytes(101)
     rax_mac(60)
-    sysc()
+    ask_kernel
     return 0
 spawn_arg ai:
     return 0
@@ -131,123 +135,129 @@ spawn_finish name:
     return 0
 
 # set while main's own statements emit
-in_main_now: 0
-thin_main: 0
+at_top: 0
+tiny_program: 0
 
 main: 0
-has_vm: 0
+needs_heap: 0
 leaf8: 0
-val_dead: 0
-need_priv: 0
-used_tr: 0
-cnms: 0
-cvls: 0
-cemt: 0
-str_vars: 0
-str_fns: 0
-ar_names: 0
-ar_cnt: 0
-saw_str: 0
+value_dead: 0
+needs_private: 0
+used_crash: 0
+const_names: 0
+const_values: 0
+const_dirty: 0
+letter_boxes: 0
+letter_tasks: 0
+array_names: 0
+array_count: 0
+saw_letters: 0
 
-sysc:
-    used_mn: 1
+ask_kernel:
+    used_mac_number: 1
     # the translation call clobbers the syscall argument registers
     # (rdi..r9 are caller-saved), so they are parked on the stack
     # first and come back after. The emulator keeps them across
-    # calls, which is why this only broke on real macOS.
-    emit(87)
-    emit(86)
-    emit(82)
-    emit(65)
-    emit(82)
-    emit(65)
-    emit(80)
-    emit(65)
-    emit(81)
-    calln("_sov_macnum")
-    emit(65)
-    emit(89)
-    emit(65)
-    emit(88)
-    emit(65)
-    emit(90)
-    emit(90)
-    emit(94)
-    emit(95)
-    emit(15)
-    emit(5)
+    # calls, which = why this only broke on real macOS.
+    bytes:
+        87
+        86
+        82
+        65
+        82
+        65
+        80
+        65
+        81
+    call("_sov_macnum")
+    bytes:
+        65
+        89
+        65
+        88
+        65
+        90
+        90
+        94
+        95
+        15
+        5
 
-call_args name argc direct:
+set_up_call name how_many already_set:
     # cfunc(addr, a1..a6) calls a C function at a computed address.
     # C wants its arguments in rdi rsi rdx rcx r8 r9 and the stack
     # aligned to 16 bytes, and rax cleared for a variadic callee.
-    if same(name, "cfunc") is 1
+    if same(name, "cfunc") = 1
         # args pop to their C registers; the call target swaps into
         # r10 from the stack, parking the caller's r10 under it.
-        # r11 is never touched.
-        emit(65)
-        emit(89)
-        emit(65)
-        emit(88)
-        emit(89)
-        emit(90)
-        emit(94)
-        emit(95)
-        emit(65)
-        emit(90)
-        emit(85)
-        emit(72)
-        emit(137)
-        emit(229)
-        emit(72)
-        emit(131)
-        emit(228)
-        emit(240)
-        emit(49)
-        emit(192)
-        emit(65)
-        emit(255)
-        emit(210)
-        emit(72)
-        emit(137)
-        emit(236)
-        emit(93)
+        # r11 = never touched.
+        bytes:
+            65
+            89
+            65
+            88
+            89
+            90
+            94
+            95
+            65
+            90
+            85
+            72
+            137
+            229
+            72
+            131
+            228
+            240
+            49
+            192
+            65
+            255
+            210
+            72
+            137
+            236
+            93
         return
-    if same(name, "thread_create") is 1
-        used_thr: 1
-        emit(94)
-        pop_rax()
-        mov_rdi_rax()
-        calln("_sov_mac_create")
+    if same(name, "thread_create") = 1
+        used_thread: 1
+        put_in_program(94)
+        take_from_stack
+        mov_rdi_rax
+        call("_sov_mac_create")
         return
-    if same(name, "thread_wait") is 1
-        used_thr: 1
-        emit(94)
-        pop_rax()
-        mov_rdi_rax()
-        calln("_sov_mac_wait")
+    if same(name, "thread_wait") = 1
+        used_thread: 1
+        put_in_program(94)
+        take_from_stack
+        mov_rdi_rax
+        call("_sov_mac_wait")
         return
-    if same(name, "thread_wake") is 1
-        used_thr: 1
-        emit(49)
-        emit(192)
+    if same(name, "thread_wake") = 1
+        used_thread: 1
+        bytes:
+            49
+            192
         return
-    if same(name, "thread_exit") is 1
-        used_thr: 1
-        emit(184)
-        emit(1)
-        emit(0)
-        emit(0)
-        emit(2)
-        emit(15)
-        emit(5)
+    if same(name, "thread_exit") = 1
+        used_thread: 1
+        bytes:
+            184
+            1
+            0
+            0
+            2
+            15
+            5
         return
-    if same(name, "sp") is 1
-        emit(72)
-        emit(137)
-        emit(224)
+    if same(name, "stack_pointer") = 1
+        bytes:
+            72
+            137
+            224
         return
-    if same(name, "syscall") is 1
+    if same(name, "syscall") = 1
         # pop exactly the values that were pushed, highest position
         # first: a7->r9, a6->r8, a5->rcx, a4->rdx, a3->rsi,
         # a2->rdi, a1(num)->rax. the kernel wants arg4 in r10, so
@@ -256,686 +266,761 @@ call_args name argc direct:
         # never touched. (the old code always popped seven; the
         # four-value print syscalls survived only because their
         # rbp frames absorbed three slots of drift.)
-        sy: argc
-        if sy > 7
-            sy: 7
-        if sy > 6
-            emit(65)
-            emit(89)
-        if sy > 5
-            emit(65)
-            emit(88)
-        if sy > 4
-            emit(89)
-        if sy > 3
-            emit(90)
-        if sy > 2
-            emit(94)
-        if sy > 1
-            emit(95)
-        pop_rax()
-        if argc > 4
-            emit(65)
-            emit(82)
-            emit(73)
-            emit(137)
-            emit(202)
-            sysc()
-            emit(65)
-            emit(90)
+        count: how_many
+        if count > 7
+            count: 7
+        if count > 6
+            bytes:
+                65
+                89
+        if count > 5
+            bytes:
+                65
+                88
+        if count > 4
+            put_in_program(89)
+        if count > 3
+            put_in_program(90)
+        if count > 2
+            put_in_program(94)
+        if count > 1
+            put_in_program(95)
+        take_from_stack
+        if how_many > 4
+            bytes:
+                65
+                82
+                73
+                137
+                202
+            ask_kernel
+            bytes:
+                65
+                90
         if not
-            sysc()
+            ask_kernel
         return
-    if direct is 0
-        if argc is 1
-            pop_rax()
-            mov_rdi_rax()
+    if already_set = 0
+        if how_many = 1
+            take_from_stack
+            mov_rdi_rax
         if not
-            if argc is 2
-                emit(94)
-                pop_rax()
-                mov_rdi_rax()
+            if how_many = 2
+                put_in_program(94)
+                take_from_stack
+                mov_rdi_rax
             if not
-                if argc is 3
-                    emit(90)
-                    emit(94)
-                    pop_rax()
-                    mov_rdi_rax()
+                if how_many = 3
+                    bytes:
+                        90
+                        94
+                    take_from_stack
+                    mov_rdi_rax
                 if not
-                    if argc is 4
-                        emit(89)
-                        emit(90)
-                        emit(94)
-                        pop_rax()
-                        mov_rdi_rax()
+                    if how_many = 4
+                        bytes:
+                            89
+                            90
+                            94
+                        take_from_stack
+                        mov_rdi_rax
                     if not
-                        if argc is 5
-                            emit(65)
-                            emit(88)
-                            emit(89)
-                            emit(90)
-                            emit(94)
-                            pop_rax()
-                            mov_rdi_rax()
+                        if how_many = 5
+                            bytes:
+                                65
+                                88
+                                89
+                                90
+                                94
+                            take_from_stack
+                            mov_rdi_rax
                         if not
-                            if argc is 6
-                                emit(65)
-                                emit(89)
-                                emit(65)
-                                emit(88)
-                                emit(89)
-                                emit(90)
-                                emit(94)
-                                pop_rax()
-                                mov_rdi_rax()
+                            if how_many = 6
+                                bytes:
+                                    65
+                                    89
+                                    65
+                                    88
+                                    89
+                                    90
+                                    94
+                                take_from_stack
+                                mov_rdi_rax
                             if not
-                                if argc is 7
-                                    emit(65)
-                                    emit(90)
-                                    emit(65)
-                                    emit(89)
-                                    emit(65)
-                                    emit(88)
-                                    emit(89)
-                                    emit(90)
-                                    emit(94)
-                                    pop_rax()
-                                    mov_rdi_rax()
+                                if how_many = 7
+                                    bytes:
+                                        65
+                                        90
+                                        65
+                                        89
+                                        65
+                                        88
+                                        89
+                                        90
+                                        94
+                                    take_from_stack
+                                    mov_rdi_rax
 
-    if same(name, "_sov_alloc") is 1
-        used_al: 1
-    if same(name, "_sov_strlen") is 1
-        used_sl: 1
-    if same(name, "_sov_str_eq") is 1
-        used_eq: 1
-    if same(name, "syscall") is 1
-        emit(65)
-        emit(89)
-        emit(65)
-        emit(88)
-        emit(65)
-        emit(90)
-        emit(65)
-        emit(91)
-        emit(90)
-        emit(94)
-        pop_rax()
-        emit(72)
-        emit(137)
-        emit(247)
-        emit(72)
-        emit(137)
-        emit(214)
-        emit(76)
-        emit(137)
-        emit(218)
-        sysc()
+    if same(name, "_sov_alloc") = 1
+        used_alloc: 1
+    if same(name, "_sov_strlen") = 1
+        used_text_length: 1
+    if same(name, "_sov_str_eq") = 1
+        used_texts_equal: 1
+    if same(name, "syscall") = 1
+        bytes:
+            65
+            89
+            65
+            88
+            65
+            90
+            65
+            91
+            90
+            94
+        take_from_stack
+        bytes:
+            72
+            137
+            247
+            72
+            137
+            214
+            76
+            137
+            218
+        ask_kernel
         return
-    if same(name, "port_out8") is 1
-        emit(72)
-        emit(137)
-        emit(248)
-        emit(137)
-        emit(214)
-        emit(137)
-        emit(240)
-        emit(72)
-        emit(137)
-        emit(250)
-        emit(137)
-        emit(208)
-        emit(238)
+    if same(name, "port_out8") = 1
+        bytes:
+            72
+            137
+            248
+            137
+            214
+            137
+            240
+            72
+            137
+            250
+            137
+            208
+            238
         return
-    if same(name, "port_in8") is 1
-        emit(72)
-        emit(137)
-        emit(250)
-        emit(49)
-        emit(192)
-        emit(236)
+    if same(name, "port_in8") = 1
+        bytes:
+            72
+            137
+            250
+            49
+            192
+            236
         return
-    if same(name, "hlt") is 1
-        emit(244)
+    if same(name, "hlt") = 1
+        put_in_program(244)
         return
-    if same(name, "cli") is 1
-        emit(250)
+    if same(name, "cli") = 1
+        put_in_program(250)
         return
-    if same(name, "sti") is 1
-        emit(251)
+    if same(name, "sti") = 1
+        put_in_program(251)
         return
-    if same(name, "peek_raw8") is 1
-        emit(72)
-        emit(15)
-        emit(182)
-        emit(4)
-        emit(55)
+    if same(name, "peek_raw8") = 1
+        bytes:
+            72
+            15
+            182
+            4
+            55
         return
-    if same(name, "peek_raw64") is 1
-        emit(72)
-        emit(139)
-        emit(4)
-        emit(55)
+    if same(name, "peek_raw64") = 1
+        bytes:
+            72
+            139
+            4
+            55
         return
-    if same(name, "poke_raw8") is 1
-        emit(136)
-        emit(20)
-        emit(55)
-        mov_rax_rdi()
+    if same(name, "poke_raw8") = 1
+        bytes:
+            136
+            20
+            55
+        mov_rax_rdi
         return
-    if same(name, "poke_raw64") is 1
-        emit(72)
-        emit(137)
-        emit(20)
-        emit(55)
-        mov_rax_rdi()
+    if same(name, "poke_raw64") = 1
+        bytes:
+            72
+            137
+            20
+            55
+        mov_rax_rdi
         return
-    if same(name, "peek_byte") is 1
+    if same(name, "peek_byte") = 1
         chk_mem(1)
-        emit(72)
-        emit(15)
-        emit(182)
-        emit(4)
-        emit(55)
+        bytes:
+            72
+            15
+            182
+            4
+            55
         return
-    if same(name, "peek_i64") is 1
+    if same(name, "peek_i64") = 1
         chk_mem(8)
-        emit(72)
-        emit(139)
-        emit(4)
-        emit(55)
+        bytes:
+            72
+            139
+            4
+            55
         return
-    if same(name, "peek_ptr") is 1
+    if same(name, "peek_ptr") = 1
         chk_mem(8)
-        emit(72)
-        emit(139)
-        emit(4)
-        emit(247)
+        bytes:
+            72
+            139
+            4
+            247
         return
-    if same(name, "poke_byte") is 1
+    if same(name, "poke_byte") = 1
         chk_mem(1)
-        emit(136)
-        emit(20)
-        emit(55)
-        mov_rax_rdi()
+        bytes:
+            136
+            20
+            55
+        mov_rax_rdi
         return
-    if same(name, "poke_i64") is 1
+    if same(name, "poke_i64") = 1
         chk_mem(8)
-        emit(72)
-        emit(137)
-        emit(20)
-        emit(55)
-        mov_rax_rdi()
+        bytes:
+            72
+            137
+            20
+            55
+        mov_rax_rdi
         return
-    # bitwise, native: one opcode each. a is rdi, b is rsi, answer rax.
+    # bitwise, native: one opcode each. a = rdi, b = rsi, answer rax.
     # the language had no bit operators, so every and/or/xor in every
     # library was a 32-step loop over % and /
-    if same(name, "band") is 1
-        mov_rax_rsi()
-        emit(72)
-        emit(33)
-        emit(248)
+    if same(name, "band") = 1
+        mov_rax_rsi
+        bytes:
+            72
+            33
+            248
         return
-    if same(name, "bor") is 1
-        mov_rax_rsi()
-        emit(72)
-        emit(9)
-        emit(248)
+    if same(name, "bor") = 1
+        mov_rax_rsi
+        bytes:
+            72
+            9
+            248
         return
-    if same(name, "bxor") is 1
-        mov_rax_rsi()
-        emit(72)
-        emit(49)
-        emit(248)
+    if same(name, "bxor") = 1
+        mov_rax_rsi
+        bytes:
+            72
+            49
+            248
         return
-    if same(name, "bshl") is 1
-        mov_rcx_rsi()
-        mov_rax_rdi()
-        emit(72)
-        emit(211)
-        emit(224)
+    if same(name, "bshl") = 1
+        mov_rcx_rsi
+        mov_rax_rdi
+        bytes:
+            72
+            211
+            224
         return
-    if same(name, "bshr") is 1
-        mov_rcx_rsi()
-        mov_rax_rdi()
-        emit(72)
-        emit(211)
-        emit(232)
+    if same(name, "bshr") = 1
+        mov_rcx_rsi
+        mov_rax_rdi
+        bytes:
+            72
+            211
+            232
         return
     # arithmetic shift right: the exact replacement for "a / 2", which
     # truncates toward zero and so keeps a negative's sign
-    if same(name, "bsar") is 1
-        mov_rcx_rsi()
-        mov_rax_rdi()
-        emit(72)
-        emit(211)
-        emit(248)
+    if same(name, "bsar") = 1
+        mov_rcx_rsi
+        mov_rax_rdi
+        bytes:
+            72
+            211
+            248
         return
     # ---- things every other language has as one instruction ----
-    # a is rdi, b is rsi, c is rdx, answer rax
-    if same(name, "_sov_mem_copy") is 1
-        mov_rax_rdi()
-        mov_rcx_rdx()
-        emit(243)
-        emit(164)
+    # a = rdi, b = rsi, c = rdx, answer rax
+    if same(name, "_sov_mem_copy") = 1
+        mov_rax_rdi
+        mov_rcx_rdx
+        bytes:
+            243
+            164
         return
-    if same(name, "_sov_mem_set") is 1
-        # rep stosb takes its byte from al, so rax is busy for the
+    if same(name, "_sov_mem_set") = 1
+        # rep stosb takes its byte from al, so rax = busy for the
         # whole fill and rdi walks off the end of the block. The
-        # destination is what a caller wants back - everyone writes
+        # destination = what a caller wants back - everyone writes
         # mem_zero(mem_new(n), n) - so park it on the stack and hand
         # it back, the way memset does. Returning the fill value
         # instead handed callers a null pointer.
-        emit(87)
-        mov_rax_rsi()
-        mov_rcx_rdx()
-        emit(243)
-        emit(170)
-        emit(88)
+        put_in_program(87)
+        mov_rax_rsi
+        mov_rcx_rdx
+        bytes:
+            243
+            170
+            88
         return
-    if same(name, "bswap64") is 1
-        mov_rax_rdi()
-        emit(72)
-        emit(15)
-        emit(200)
+    if same(name, "bswap64") = 1
+        mov_rax_rdi
+        bytes:
+            72
+            15
+            200
         return
-    if same(name, "iabs") is 1
-        mov_rax_rdi()
-        emit(72)
-        emit(247)
-        emit(216)
-        emit(72)
-        emit(15)
-        emit(72)
-        emit(199)
+    if same(name, "iabs") = 1
+        mov_rax_rdi
+        bytes:
+            72
+            247
+            216
+            72
+            15
+            72
+            199
         return
-    # atomics: rdi is the slot, rsi the value, rdx the cas desired.
+    # atomics: rdi = the slot, rsi the value, rdx the cas desired.
     # lock xadd/xchg/cmpxchg, verified with as+objdump. rax comes
-    # back as the old value, which is what a mutex_swap wants.
-    if same(name, "atomic_add") is 1
-        mov_rax_rsi()
-        emit(240)
-        emit(72)
-        emit(15)
-        emit(193)
-        emit(7)
+    # back as the old value, which = what a mutex_swap wants.
+    if same(name, "atomic_add") = 1
+        mov_rax_rsi
+        bytes:
+            240
+            72
+            15
+            193
+            7
         return
-    if same(name, "atomic_swap") is 1
-        mov_rax_rsi()
-        emit(240)
-        emit(72)
-        emit(135)
-        emit(7)
+    if same(name, "atomic_swap") = 1
+        mov_rax_rsi
+        bytes:
+            240
+            72
+            135
+            7
         return
-    if same(name, "atomic_load") is 1
-        emit(72)
-        emit(139)
-        emit(7)
+    if same(name, "atomic_load") = 1
+        bytes:
+            72
+            139
+            7
         return
-    if same(name, "atomic_store") is 1
-        emit(72)
-        emit(137)
-        emit(55)
-        mov_rax_rsi()
+    if same(name, "atomic_store") = 1
+        bytes:
+            72
+            137
+            55
+        mov_rax_rsi
         return
-    if same(name, "atomic_cas") is 1
-        mov_rax_rsi()
-        emit(72)
-        emit(137)
-        emit(214)
-        emit(240)
-        emit(72)
-        emit(15)
-        emit(177)
-        emit(55)
+    if same(name, "atomic_cas") = 1
+        mov_rax_rsi
+        bytes:
+            72
+            137
+            214
+            240
+            72
+            15
+            177
+            55
         return
-    calln(name)
+    call(name)
 # immutable: names declared `immutable name: value` may not be
 # assigned again anywhere in the file
-im_names: 0
-im_skip: 0
+locked_names: 0
+skip_lock: 0
 copyargs n:
     if n > 0
-        mov_rax_rdi()
+        mov_rax_rdi
         store_loc(0)
     if n > 1
-        emit(72)
-        emit(137)
-        emit(240)
+        bytes:
+            72
+            137
+            240
         store_loc(1)
     if n > 2
-        emit(72)
-        emit(137)
-        emit(208)
+        bytes:
+            72
+            137
+            208
         store_loc(2)
     if n > 3
-        emit(72)
-        emit(137)
-        emit(200)
+        bytes:
+            72
+            137
+            200
         store_loc(3)
     if n > 4
-        emit(76)
-        emit(137)
-        emit(192)
+        bytes:
+            76
+            137
+            192
         store_loc(4)
     if n > 5
-        emit(76)
-        emit(137)
-        emit(200)
+        bytes:
+            76
+            137
+            200
         store_loc(5)
     if n > 6
-        emit(76)
-        emit(137)
-        emit(208)
+        bytes:
+            76
+            137
+            208
         store_loc(6)
 emit_print_int:
-    fn_names: _sov_list_add(fn_names, "_sov_print_int")
-    fn_offs: _sov_list_add(fn_offs, here())
-    emit(83)
-    emit(72)
-    emit(137)
-    emit(248)
-    emit(72)
-    emit(131)
-    emit(236)
-    emit(32)
-    emit(72)
-    emit(141)
-    emit(92)
-    emit(36)
-    emit(32)
-    emit(72)
-    emit(255)
-    emit(203)
-    emit(198)
-    emit(3)
-    emit(10)
-    emit(106)
-    emit(10)
-    emit(89)
-    emit(69)
-    emit(49)
-    emit(201)
-    test_rax()
-    emit(15)
-    emit(141)
+    task_names: _sov_list_add(task_names, "_sov_print_int")
+    task_at: _sov_list_add(task_at, here())
+    bytes:
+        83
+        72
+        137
+        248
+        72
+        131
+        236
+        32
+        72
+        141
+        92
+        36
+        32
+        72
+        255
+        203
+        198
+        3
+        10
+        106
+        10
+        89
+        69
+        49
+        201
+    test_rax
+    bytes:
+        15
+        141
     ag: here()
-    br_at: _sov_list_add(br_at, ag)
-    br_pv: _sov_list_add(br_pv, pad_ver)
-    br_id: _sov_list_add(br_id, ag)
-    br_st: _sov_list_add(br_st, 0)
-    emit4(0)
-    emit(65)
-    emit(177)
-    emit(1)
-    emit(72)
-    emit(247)
-    emit(216)
+    jump_at: _sov_list_add(jump_at, ag)
+    jump_pad: _sov_list_add(jump_pad, pad_version)
+    jump_id: _sov_list_add(jump_id, ag)
+    jump_state: _sov_list_add(jump_state, 0)
+    put_4_bytes(0)
+    bytes:
+        65
+        177
+        1
+        72
+        247
+        216
     put(ag, here() - (ag + 4))
     dl: here()
-    emit(49)
-    emit(210)
-    emit(72)
-    emit(247)
-    emit(241)
-    emit(131)
-    emit(194)
-    emit(48)
-    emit(72)
-    emit(255)
-    emit(203)
-    emit(136)
-    emit(19)
-    emit(72)
-    emit(133)
-    emit(192)
-    emit(15)
-    emit(133)
+    bytes:
+        49
+        210
+        72
+        247
+        241
+        131
+        194
+        48
+        72
+        255
+        203
+        136
+        19
+        72
+        133
+        192
+        15
+        133
     aj: here()
-    br_at: _sov_list_add(br_at, aj)
-    br_pv: _sov_list_add(br_pv, pad_ver)
-    br_id: _sov_list_add(br_id, aj)
-    br_st: _sov_list_add(br_st, 0)
-    emit4(0)
+    jump_at: _sov_list_add(jump_at, aj)
+    jump_pad: _sov_list_add(jump_pad, pad_version)
+    jump_id: _sov_list_add(jump_id, aj)
+    jump_state: _sov_list_add(jump_state, 0)
+    put_4_bytes(0)
     put(aj, dl - (aj + 4))
-    emit(69)
-    emit(132)
-    emit(201)
+    bytes:
+        69
+        132
+        201
     zn: jz()
-    emit(72)
-    emit(255)
-    emit(203)
-    emit(198)
-    emit(3)
-    emit(45)
+    bytes:
+        72
+        255
+        203
+        198
+        3
+        45
     patch(zn)
-    emit(72)
-    emit(137)
-    emit(222)
-    emit(72)
-    emit(141)
-    emit(84)
-    emit(36)
-    emit(32)
-    emit(72)
-    emit(41)
-    emit(218)
+    bytes:
+        72
+        137
+        222
+        72
+        141
+        84
+        36
+        32
+        72
+        41
+        218
     rdi_imm(1)
     emit_sys_num(1)
-    emit_sys_do()
-    emit(72)
-    emit(131)
-    emit(196)
-    emit(32)
-    emit(91)
-    ret()
+    emit_sys_do
+    bytes:
+        72
+        131
+        196
+        32
+        91
+    ret
 # pass S7: the relocation walk. The kernel may land this image
 # anywhere, so before the first absolute address runs, every absolute
 # qword in the code gets the slide added. g_slide holds its own link
 # address at link time; the lea below finds where it really sits and
-# the difference is the slide.
+# the difference = the slide.
 emit_pie_walk:
-    if idx(glob_names, "g_slide") is 0 - 1
-        glob_names: _sov_list_add(glob_names, "g_slide")
-    emit(87)
-    emit(86)
+    if idx(global_names, "g_slide") = 0 - 1
+        global_names: _sov_list_add(global_names, "g_slide")
+    bytes:
+        87
+        86
     # rax = the stored link-time self pointer
-    emit(72)
-    emit(139)
-    emit(5)
+    bytes:
+        72
+        139
+        5
     pw0: here()
-    emit4(0)
-    addp(pw0, "grel", "g_slide")
-    # rdx = where the slot really is now
-    emit(72)
-    emit(141)
-    emit(21)
+    put_4_bytes(0)
+    later_fill(pw0, "grel", "g_slide")
+    # rdx = where the slot really = now
+    bytes:
+        72
+        141
+        21
     pw1: here()
-    emit4(0)
-    addp(pw1, "grel", "g_slide")
+    put_4_bytes(0)
+    later_fill(pw1, "grel", "g_slide")
     # rdx = actual - link = the slide
-    emit(72)
-    emit(41)
-    emit(194)
+    bytes:
+        72
+        41
+        194
     # zero slide means the kernel chose the link address: skip all
-    # of it, both mprotects included (116 is jz, not jnz)
-    emit(116)
-    emit(102)
+    # of it, both mprotects included (116 = jz, not jnz)
+    bytes:
+        116
+        102
     # the slide rides rbx
-    emit(72)
-    emit(137)
-    emit(211)
+    bytes:
+        72
+        137
+        211
     # r8 = runtime base = 0x100000000 + slide. The base does not fit
     # an imm32 the way linux's 4MB does, so it rides a wide mov
-    emit(73)
-    emit(184)
-    emit8(4294967296)
-    emit(73)
-    emit(1)
-    emit(216)
-    emit(76)
-    emit(137)
-    emit(199)
+    bytes:
+        73
+        184
+    put_8_bytes(4294967296)
+    bytes:
+        73
+        1
+        216
+        76
+        137
+        199
     # the mprotect span: just the __TEXT piece, headers + code, so
     # __DATA keeps its READ+WRITE after the restore
-    emit(72)
-    emit(190)
+    bytes:
+        72
+        190
     pwl: here()
-    emit8(0)
-    addp(pwl, "rel_l", 0)
-    emit(75)
-    emit(137)
-    emit(241)
-    emit(186)
-    emit4(7)
-    # mprotect is BSD 74 with the class bit riding: 0x200004A
-    emit(184)
-    emit4(33554506)
-    sysc_raw()
+    put_8_bytes(0)
+    later_fill(pwl, "rel_l", 0)
+    bytes:
+        75
+        137
+        241
+        186
+    put_4_bytes(7)
+    # mprotect = BSD 74 with the class bit riding: 0x200004A
+    put_in_program(184)
+    put_4_bytes(33554506)
+    sysc_raw
     # the count loads after: the syscall eats rcx
-    emit(185)
+    put_in_program(185)
     pw2: here()
-    emit4(0)
-    addp(pw2, "rel_n", 0)
-    emit(73)
-    emit(186)
+    put_4_bytes(0)
+    later_fill(pw2, "rel_n", 0)
+    bytes:
+        73
+        186
     pw3: here()
-    emit8(0)
-    addp(pw3, "rel_a", 0)
-    # the table pointer is link-time; the slide makes it live, so
+    put_8_bytes(0)
+    later_fill(pw3, "rel_a", 0)
+    # the table pointer = link-time; the slide makes it live, so
     # the walk owns no unrelocated absolute of its own
-    emit(73)
-    emit(1)
-    emit(218)
-    emit(73)
-    emit(131)
-    emit(194)
-    emit(8)
+    bytes:
+        73
+        1
+        218
+        73
+        131
+        194
+        8
     # zero entries must not enter the loop: the do-while shape would
     # run its body once
-    emit(227)
-    emit(17)
+    bytes:
+        227
+        17
     # rsi = [r10] + r8; add slide to [rsi]
-    emit(73)
-    emit(139)
-    emit(50)
-    emit(76)
-    emit(1)
-    emit(198)
-    emit(72)
-    emit(1)
-    emit(30)
-    emit(73)
-    emit(131)
-    emit(194)
-    emit(8)
-    emit(255)
-    emit(201)
-    emit(117)
-    emit(239)
+    bytes:
+        73
+        139
+        50
+        76
+        1
+        198
+        72
+        1
+        30
+        73
+        131
+        194
+        8
+        255
+        201
+        117
+        239
     # __TEXT back to READ+EXECUTE
-    emit(76)
-    emit(137)
-    emit(206)
-    emit(186)
-    emit4(5)
-    emit(184)
-    emit4(33554506)
-    sysc_raw()
-    emit(94)
-    emit(95)
+    bytes:
+        76
+        137
+        206
+        186
+    put_4_bytes(5)
+    put_in_program(184)
+    put_4_bytes(33554506)
+    sysc_raw
+    bytes:
+        94
+        95
     return 0
 
 emit_start:
     # pass S7: the walk runs before the first absolute
-    emit_pie_walk()
-    emit(72)
-    emit(139)
-    emit(28)
-    emit(36)
-    emit(76)
-    emit(141)
-    emit(100)
-    emit(36)
-    emit(8)
-    emit(72)
-    emit(131)
-    emit(228)
-    emit(240)
-    emit(72)
-    emit(137)
-    emit(223)
-    emit(76)
-    emit(137)
-    emit(230)
-    if want_args is 1
-        emit(72)
-        emit(184)
+    emit_pie_walk
+    bytes:
+        72
+        139
+        28
+        36
+        76
+        141
+        100
+        36
+        8
+        72
+        131
+        228
+        240
+        72
+        137
+        223
+        76
+        137
+        230
+    if needs_args = 1
+        bytes:
+            72
+            184
         ga: here()
-        emit8(0)
-        addp(ga, "glob", "g_argc")
-        emit(72)
-        emit(137)
-        emit(56)
-        emit(72)
-        emit(184)
+        put_8_bytes(0)
+        later_fill(ga, "glob", "g_argc")
+        bytes:
+            72
+            137
+            56
+            72
+            184
         gv: here()
-        emit8(0)
-        addp(gv, "glob", "g_argv")
-        emit(72)
-        emit(137)
-        emit(48)
-    emit(233)
+        put_8_bytes(0)
+        later_fill(gv, "glob", "g_argv")
+        bytes:
+            72
+            137
+            48
+    put_in_program(233)
     at: here()
-    emit4(0)
-    addp(at, "rel", "main")
+    put_4_bytes(0)
+    later_fill(at, "rel", "main")
 emit_write_lit s:
     n: length(s)
-    emit(106)
-    emit(1)
-    emit(95)
+    bytes:
+        106
+        1
+        95
     off: intern_nz(s)
     # rip-relative: the string sits in the same __TEXT page as the
     # code, so lea rsi,[rip+disp] reaches it in 7 bytes (vs 10 for
     # a full mov rsi,imm64 at the 0x100000000 load address)
-    emit(72)
-    emit(141)
-    emit(53)
+    bytes:
+        72
+        141
+        53
     at: here()
-    emit4(0)
-    addp(at, "ripstr", off)
+    put_4_bytes(0)
+    later_fill(at, "ripstr", off)
     if n < 128
-        emit(106)
-        emit(n)
-        emit(90)
+        put_in_program(106)
+        put_in_program(n)
+        put_in_program(90)
     if not
-        emit(186)
-        emit4(n)
+        put_in_program(186)
+        put_4_bytes(n)
     emit_sys_num(1)
-    emit_sys_do()
+    emit_sys_do
 # windows hands back argv[0] wrapped in quotes, as a drive path with
 # backslashes. turn it into the plain form the file calls understand.
 
 emit_canary_seed:
-    if idx(glob_names, "g_canary") is 0 - 1
-        glob_names: _sov_list_add(glob_names, "g_canary")
+    if idx(global_names, "g_canary") = 0 - 1
+        global_names: _sov_list_add(global_names, "g_canary")
     # getentropy(&g_canary, 8) - bsd 500, two arguments
     rax_mac(318)
-    emit(72)
-    emit(191)
+    bytes:
+        72
+        191
     sga: here()
-    emit8(0)
-    addp(sga, "glob", "g_canary")
-    emit(72)
-    emit(190)
-    emit8(8)
-    sysc()
+    put_8_bytes(0)
+    later_fill(sga, "glob", "g_canary")
+    bytes:
+        72
+        190
+    put_8_bytes(8)
+    ask_kernel
 
 # pass S6: the crash path wipes. a private build installs handlers
 # for the fatal signals before main runs; each handler says crash,
 # runs the same register-only wipe the exit walk runs, and exits
 # 100 + signal - a SIGSEGV death leaves exit 111, not a dump.
 # BSD sigaction has no SA_RESTORER: the kernel owns the return
-# trampoline, and this handler exits anyway, so there is no
+# trampoline, and this handler exits anyway, so there = no
 # sigreturn stub to emit
 emit_crash_handler:
     cwns: _sov_list_new()
@@ -954,35 +1039,36 @@ emit_crash_handler:
     as long as chi < 5
         sg2: _sov_list_get(cwns, chi)
         sgv: _sov_list_get(cwvs, chi)
-        fn_names: _sov_list_add(fn_names, sg2)
-        fn_offs: _sov_list_add(fn_offs, here())
+        task_names: _sov_list_add(task_names, sg2)
+        task_at: _sov_list_add(task_at, here())
         emit_write_lit("crash\n")
-        emit_stack_wipe()
+        emit_stack_wipe
         # exit(100 + signal), set fresh after the register wipe
-        emit(191)
-        emit4(100 + sgv)
+        put_in_program(191)
+        put_4_bytes(100 + sgv)
         rax_mac(60)
-        sysc()
+        ask_kernel
         chi: chi + 1
 
 emit_crash_install:
-    # the bsd act is 32 bytes on the stack: handler, sa_mask
+    # the bsd act = 32 bytes on the stack: handler, sa_mask
     # (sixteen zero bytes), sa_flags zero. pushed in reverse so
-    # the handler slot sits at [rsp]; the struct is spent inside
+    # the handler slot sits at [rsp]; the struct = spent inside
     # the syscall that follows, and the pushes are their own
     # reader as far as the dead-store passes care
-    emit(106)
-    emit(0)
-    emit(106)
-    emit(0)
-    emit(106)
-    emit(0)
-    emit(72)
-    emit(184)
+    bytes:
+        106
+        0
+        106
+        0
+        106
+        0
+        72
+        184
     cah: here()
-    emit8(0)
-    addp(cah, "fnaddr", "_sov_cw_4")
-    emit(80)
+    put_8_bytes(0)
+    later_fill(cah, "task_address", "_sov_cw_4")
+    put_in_program(80)
     # sigaction(sig, &act, 0) for ill, abrt, bus, fpe, segv
     csi: 0
     csigs: _sov_list_new()
@@ -993,64 +1079,70 @@ emit_crash_install:
     csigs: _sov_list_add(csigs, 11)
     as long as csi < 5
         sg: _sov_list_get(csigs, csi)
-        # the handler slot at [rsp] is rewritten for this signal
-        emit(72)
-        emit(184)
+        # the handler slot at [rsp] = rewritten for this signal
+        bytes:
+            72
+            184
         cph: here()
-        emit8(0)
+        put_8_bytes(0)
         cwn: ""
-        if sg is 4
+        if sg = 4
             cwn: "_sov_cw_4"
-        if sg is 6
+        if sg = 6
             cwn: "_sov_cw_6"
-        if sg is 7
+        if sg = 7
             cwn: "_sov_cw_7"
-        if sg is 8
+        if sg = 8
             cwn: "_sov_cw_8"
-        if sg is 11
+        if sg = 11
             cwn: "_sov_cw_11"
-        addp(cph, "fnaddr", cwn)
-        emit(72)
-        emit(137)
-        emit(4)
-        emit(36)
+        later_fill(cph, "task_address", cwn)
+        bytes:
+            72
+            137
+            4
+            36
         rdi_imm(sg)
-        emit(72)
-        emit(137)
-        emit(230)
-        emit(72)
-        emit(49)
-        emit(210)
+        bytes:
+            72
+            137
+            230
+            72
+            49
+            210
         rax_mac(13)
-        sysc()
+        ask_kernel
         csi: csi + 1
-    emit(72)
-    emit(131)
-    emit(196)
-    emit(32)
+    bytes:
+        72
+        131
+        196
+        32
 
 emit_nodump:
-    # no prctl on macOS. the equivalent is setrlimit(RLIMIT_CORE, 0)
+    # no prctl on macOS. the equivalent = setrlimit(RLIMIT_CORE, 0)
     # (bsd 195), which stops the kernel writing a core when the
     # process dies. the 16-byte rlimit lives just below rsp for the
-    # call and is dropped again immediately.
-    emit(49)
-    emit(192)
-    emit(80)
-    emit(80)
-    emit(72)
-    emit(137)
-    emit(230)
+    # call and = dropped again immediately.
+    bytes:
+        49
+        192
+        80
+        80
+        72
+        137
+        230
     rdi_imm(4)
     emit_sys_num(160)
-    emit_sys_do()
-    emit(72)
-    emit(129)
-    emit(196)
-    emit4(16)
+    emit_sys_do
+    bytes:
+        72
+        129
+        196
+    put_4_bytes(16)
     return
 emit_stack_wipe:
-    # pass 139: the heap, first. heap_ptr is the program's own bump
+    # pass 139: the heap, first. heap_ptr = the program's own bump
     # frontier (its store survives every diet); every byte below it
     # down to the mmap base was allocated by the program, and a
     # private program that never called secret_die left it all in
@@ -1058,57 +1150,65 @@ emit_stack_wipe:
     # mprotect probing downward - the bottom of the heap mapping
     # refuses, everything inside grants and takes the stosq. guard:
     # heap_ptr zero means no heap ever started.
-    if idx(glob_names, "heap_ptr") > 0 - 1
-        emit(72)
-        emit(184)
+    if idx(global_names, "heap_ptr") > 0 - 1
+        bytes:
+            72
+            184
         hp_at: here()
-        emit8(0)
-        addp(hp_at, "glob", "heap_ptr")
-        emit(72)
-        emit(139)
-        emit(0)
-        emit(72)
-        emit(133)
-        emit(192)
+        put_8_bytes(0)
+        later_fill(hp_at, "glob", "heap_ptr")
+        bytes:
+            72
+            139
+            0
+            72
+            133
+            192
         hp_sk: jz()
-        emit(72)
-        emit(137)
-        emit(199)
-        emit(72)
-        emit(129)
-        emit(231)
-        emit4(4294963200)
-        # pass 141: the heap mapping is 64MB - 16384 pages, a hard
+        bytes:
+            72
+            137
+            199
+            72
+            129
+            231
+        put_4_bytes(4294963200)
+        # pass 141: the heap mapping = 64MB - 16384 pages, a hard
         # bound no gapless neighbor below can stretch
-        emit(65)
-        emit(185)
-        emit4(16384)
+        bytes:
+            65
+            185
+        put_4_bytes(16384)
         hw_loop: here()
-        emit(190)
-        emit4(4096)
-        emit(186)
-        emit4(3)
+        put_in_program(190)
+        put_4_bytes(4096)
+        put_in_program(186)
+        put_4_bytes(3)
         rax_mac(74)
-        sysc()
-        emit(72)
-        emit(133)
-        emit(192)
+        ask_kernel
+        bytes:
+            72
+            133
+            192
         hw_out: jnz()
-        emit(49)
-        emit(192)
-        emit(185)
-        emit4(512)
-        emit(252)
-        emit(243)
-        emit(72)
-        emit(171)
-        emit(72)
-        emit(129)
-        emit(239)
-        emit4(8192)
-        emit(65)
-        emit(255)
-        emit(201)
+        bytes:
+            49
+            192
+            185
+        put_4_bytes(512)
+        bytes:
+            252
+            243
+            72
+            171
+            72
+            129
+            239
+        put_4_bytes(8192)
+        bytes:
+            65
+            255
+            201
         hw_cap: jz()
         hw_back: jmp()
         put(hw_back, hw_loop - (hw_back + 4))
@@ -1116,91 +1216,103 @@ emit_stack_wipe:
         patch(hw_cap)
         patch(hp_sk)
     # pass 136: the globals region first - one stosq, bounds patched
-    # at write time. 48 BF is movabs rdi (48 B8 is rax; the stosq
-    # would fire with a stale rdi, which is how the linux version
+    # at write time. 48 BF = movabs rdi (48 B8 = rax; the stosq
+    # would fire with a stale rdi, which = how the linux version
     # taught us the difference).
-    emit(72)
-    emit(191)
+    bytes:
+        72
+        191
     gwa: here()
-    emit8(0)
-    addp(gwa, "gwipe_a", 0)
-    emit(185)
+    put_8_bytes(0)
+    later_fill(gwa, "gwipe_a", 0)
+    put_in_program(185)
     gwn: here()
-    emit4(0)
-    addp(gwn, "gwipe_n", 0)
-    emit(49)
-    emit(192)
-    emit(252)
-    emit(243)
-    emit(72)
-    emit(171)
+    put_4_bytes(0)
+    later_fill(gwn, "gwipe_n", 0)
+    bytes:
+        49
+        192
+        252
+        243
+        72
+        171
     # pass 137: the string literals. a secret written as a constant
     # in the source lives in this span until now. on mac a 4-byte
     # rider string sits in the mach header's reserved dword instead -
     # the patch points there and zeroes a dead qword.
-    emit(72)
-    emit(191)
+    bytes:
+        72
+        191
     gsa: here()
-    emit8(0)
-    addp(gsa, "gwstr_a", 0)
-    emit(185)
+    put_8_bytes(0)
+    later_fill(gsa, "gwstr_a", 0)
+    put_in_program(185)
     gsn: here()
-    emit4(0)
-    addp(gsn, "gwstr_n", 0)
-    emit(49)
-    emit(192)
-    emit(252)
-    emit(243)
-    emit(72)
-    emit(171)
+    put_4_bytes(0)
+    later_fill(gsn, "gwstr_n", 0)
+    bytes:
+        49
+        192
+        252
+        243
+        72
+        171
     # pass 132: same walk as linux, two differences. the anchor is
-    # rsp itself (everything below the running frame is dead), and
-    # the probe is bsd mincore (0x200004e). xnu returns 0 for a
+    # rsp itself (everything below the running frame = dead), and
+    # the probe = bsd mincore (0x200004e). xnu returns 0 for a
     # mapped page and nonzero otherwise, so the test catches both
     # error styles. the exit that follows re-loads rax and rdi.
-    emit(72)
-    emit(137)
-    emit(231)
-    emit(72)
-    emit(129)
-    emit(231)
-    emit4(4294963200)
-    emit(72)
-    emit(137)
-    emit(250)
+    bytes:
+        72
+        137
+        231
+        72
+        129
+        231
+    put_4_bytes(4294963200)
+    bytes:
+        72
+        137
+        250
     # pass 138: r8 keeps the anchor for the up-walk at the end
-    emit(73)
-    emit(137)
-    emit(208)
-    # pass 141: 64MB of pages is a hard bound - no gapless
+    bytes:
+        73
+        137
+        208
+    # pass 141: 64MB of pages = a hard bound - no gapless
     # neighbor below the stack takes the stosq
-    emit(65)
-    emit(185)
-    emit4(16384)
+    bytes:
+        65
+        185
+    put_4_bytes(16384)
     sw_head: here()
-    emit(190)
-    emit4(4096)
+    put_in_program(190)
+    put_4_bytes(4096)
     emit_sys_num(27)
-    emit_sys_do()
-    emit(72)
-    emit(133)
-    emit(192)
+    emit_sys_do
+    bytes:
+        72
+        133
+        192
     sw_done: jnz()
-    emit(49)
-    emit(192)
-    emit(185)
-    emit4(512)
-    emit(252)
-    emit(243)
-    emit(72)
-    emit(171)
-    emit(72)
-    emit(129)
-    emit(239)
-    emit4(8192)
-    emit(65)
-    emit(255)
-    emit(201)
+    bytes:
+        49
+        192
+        185
+    put_4_bytes(512)
+    bytes:
+        252
+        243
+        72
+        171
+        72
+        129
+        239
+    put_4_bytes(8192)
+    bytes:
+        65
+        255
+        201
     sw_cap: jz()
     sw_back: jmp()
     put(sw_back, sw_head - (sw_back + 4))
@@ -1212,39 +1324,44 @@ emit_stack_wipe:
     # read-only neighbor "mapped" and the stosq would fault, while
     # mprotect(page,4096,RW) only grants pages that can take the
     # write. the exit that follows re-loads rax and rdi.
-    emit(76)
-    emit(137)
-    emit(199)
-    emit(72)
-    emit(129)
-    emit(199)
-    emit4(4096)
+    bytes:
+        76
+        137
+        199
+        72
+        129
+        199
+    put_4_bytes(4096)
     # pass 141: 16MB above the frame bounds the up-walk
-    emit(65)
-    emit(185)
-    emit4(4096)
+    bytes:
+        65
+        185
+    put_4_bytes(4096)
     up_head: here()
-    emit(190)
-    emit4(4096)
-    emit(186)
-    emit4(3)
+    put_in_program(190)
+    put_4_bytes(4096)
+    put_in_program(186)
+    put_4_bytes(3)
     rax_mac(74)
-    sysc()
-    emit(72)
-    emit(133)
-    emit(192)
+    ask_kernel
+    bytes:
+        72
+        133
+        192
     up_done: jnz()
-    emit(49)
-    emit(192)
-    emit(185)
-    emit4(512)
-    emit(252)
-    emit(243)
-    emit(72)
-    emit(171)
-    emit(65)
-    emit(255)
-    emit(201)
+    bytes:
+        49
+        192
+        185
+    put_4_bytes(512)
+    bytes:
+        252
+        243
+        72
+        171
+        65
+        255
+        201
     up_cap: jz()
     up_back: jmp()
     put(up_back, up_head - (up_back + 4))
@@ -1255,730 +1372,742 @@ emit_stack_wipe:
     # zeroed, so even the exit trap hands the kernel a
     # clean register dump. rax/rdi are set fresh by the
     # exit that follows.
-    emit(49)
-    emit(219)
-    emit(49)
-    emit(237)
-    emit(49)
-    emit(246)
-    emit(49)
-    emit(210)
-    emit(49)
-    emit(201)
-    emit(69)
-    emit(49)
-    emit(192)
-    emit(69)
-    emit(49)
-    emit(201)
-    emit(69)
-    emit(49)
-    emit(210)
-    emit(69)
-    emit(49)
-    emit(219)
-    emit(69)
-    emit(49)
-    emit(228)
-    emit(69)
-    emit(49)
-    emit(237)
-    emit(69)
-    emit(49)
-    emit(246)
-    emit(69)
-    emit(49)
-    emit(255)
-    emit(49)
-    emit(192)
+    bytes:
+        49
+        219
+        49
+        237
+        49
+        246
+        49
+        210
+        49
+        201
+        69
+        49
+        192
+        69
+        49
+        201
+        69
+        49
+        210
+        69
+        49
+        219
+        69
+        49
+        228
+        69
+        49
+        237
+        69
+        49
+        246
+        69
+        49
+        255
+        49
+        192
     return
 
 emit_mac_thread:
-    fn_names: _sov_list_add(fn_names, "_sov_mac_create")
-    fn_offs: _sov_list_add(fn_offs, here())
-    emit(85)
-    emit(72)
-    emit(137)
-    emit(229)
-    emit(83)
+    task_names: _sov_list_add(task_names, "_sov_mac_create")
+    task_at: _sov_list_add(task_at, here())
+    bytes:
+        85
+        72
+        137
+        229
+        83
     # base = top - 262272, kept in rbx
-    emit(72)
-    emit(137)
-    emit(243)
-    emit(72)
-    emit(129)
-    emit(235)
-    emit(128)
-    emit(0)
-    emit(4)
-    emit(0)
+    bytes:
+        72
+        137
+        243
+        72
+        129
+        235
+        128
+        0
+        4
+        0
     # rdi = _sov_thread_entry_param
-    emit(72)
-    emit(184)
+    bytes:
+        72
+        184
     tfn: here()
-    emit8(0)
-    addp(tfn, "fnaddr", "_sov_thread_entry_param")
-    emit(72)
-    emit(137)
-    emit(199)
+    put_8_bytes(0)
+    later_fill(tfn, "task_address", "_sov_thread_entry_param")
+    bytes:
+        72
+        137
+        199
     # rsi = base
-    emit(72)
-    emit(137)
-    emit(222)
+    bytes:
+        72
+        137
+        222
     # rdx = top (still in the incoming rsi, saved in... we overwrote rsi.
     # reload top = base + 262272
-    emit(72)
-    emit(137)
-    emit(218)
-    emit(72)
-    emit(129)
-    emit(194)
-    emit(128)
-    emit(0)
-    emit(4)
-    emit(0)
+    bytes:
+        72
+        137
+        218
+        72
+        129
+        194
+        128
+        0
+        4
+        0
     # r10 = 0 (pthread)
-    emit(73)
-    emit(49)
-    emit(210)
+    bytes:
+        73
+        49
+        210
     # r8 = PTHREAD_START_CUSTOM|PTHREAD_START_DETACHED
-    emit(65)
-    emit(184)
-    emit(0)
-    emit(0)
-    emit(0)
-    emit(5)
+    bytes:
+        65
+        184
+        0
+        0
+        0
+        5
     # rax = 0x2000168 bsdthread_create
-    emit(72)
-    emit(184)
-    emit(104)
-    emit(1)
-    emit(0)
-    emit(2)
-    emit(0)
-    emit(0)
-    emit(0)
-    emit(0)
-    emit(15)
-    emit(5)
-    emit(91)
-    emit(93)
-    emit(195)
-    # wait: spin until qword [rdi] is 1
-    fn_names: _sov_list_add(fn_names, "_sov_mac_wait")
-    fn_offs: _sov_list_add(fn_offs, here())
-    emit(72)
-    emit(139)
-    emit(7)
-    emit(72)
-    emit(131)
-    emit(248)
-    emit(1)
-    emit(116)
-    emit(4)
-    emit(243)
-    emit(144)
-    emit(235)
-    emit(243)
-    emit(49)
-    emit(192)
-    emit(195)
+    bytes:
+        72
+        184
+        104
+        1
+        0
+        2
+        0
+        0
+        0
+        0
+        15
+        5
+        91
+        93
+        195
+    # wait: spin until qword [rdi] = 1
+    task_names: _sov_list_add(task_names, "_sov_mac_wait")
+    task_at: _sov_list_add(task_at, here())
+    bytes:
+        72
+        139
+        7
+        72
+        131
+        248
+        1
+        116
+        4
+        243
+        144
+        235
+        243
+        49
+        192
+        195
 
 emit_macnum:
     # macOS numbers its syscalls differently from Linux and marks
     # them with the class bit 0x2000000. This turns the Linux number
     # in eax into the Mac one. Every syscall goes through here.
-    fn_names: _sov_list_add(fn_names, "_sov_macnum")
-    fn_offs: _sov_list_add(fn_offs, here())
-    emit(131)
-    emit(248)
-    emit(0)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(3)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(1)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(4)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(2)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(5)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(3)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(6)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(7)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(230)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(8)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(199)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(9)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(197)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(11)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(73)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(13)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(46)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(16)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(54)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(22)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(42)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(28)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(186)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(33)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(90)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(35)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(48)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(39)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(20)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(41)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(97)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(42)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(98)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(43)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(99)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(44)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(102)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(45)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(103)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(49)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(104)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(50)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(106)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(57)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(2)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(59)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(59)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(60)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(1)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(61)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(7)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(62)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(37)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(79)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(132)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(80)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(12)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(82)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(13)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(83)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(186)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(84)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(36)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(87)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(10)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(90)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(15)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(102)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(24)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(104)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(47)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(107)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(25)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(108)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(43)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(144)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(65)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(217)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(128)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(218)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(116)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(231)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(1)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(260)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(18)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(131)
-    emit(248)
-    emit(318)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(27)
-    emit(1)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(195)
-    emit(61)
-    emit(157)
-    emit(0)
-    emit(0)
-    emit(0)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(0)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(61)
-    emit(217)
-    emit(0)
-    emit(0)
-    emit(0)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(88)
-    emit(1)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(61)
-    emit(228)
-    emit(0)
-    emit(0)
-    emit(0)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(116)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(61)
-    emit(1)
-    emit(1)
-    emit(0)
-    emit(0)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(5)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(61)
-    emit(62)
-    emit(1)
-    emit(0)
-    emit(0)
-    emit(117)
-    emit(6)
-    emit(184)
-    emit(244)
-    emit(1)
-    emit(0)
-    emit(2)
-    emit(195)
-    emit(13)
-    emit(0)
-    emit(0)
-    emit(0)
-    emit(2)
-    emit(195)
+    task_names: _sov_list_add(task_names, "_sov_macnum")
+    task_at: _sov_list_add(task_at, here())
+    bytes:
+        131
+        248
+        0
+        117
+        6
+        184
+        3
+        0
+        0
+        2
+        195
+        131
+        248
+        1
+        117
+        6
+        184
+        4
+        0
+        0
+        2
+        195
+        131
+        248
+        2
+        117
+        6
+        184
+        5
+        0
+        0
+        2
+        195
+        131
+        248
+        3
+        117
+        6
+        184
+        6
+        0
+        0
+        2
+        195
+        131
+        248
+        7
+        117
+        6
+        184
+        230
+        0
+        0
+        2
+        195
+        131
+        248
+        8
+        117
+        6
+        184
+        199
+        0
+        0
+        2
+        195
+        131
+        248
+        9
+        117
+        6
+        184
+        197
+        0
+        0
+        2
+        195
+        131
+        248
+        11
+        117
+        6
+        184
+        73
+        0
+        0
+        2
+        195
+        131
+        248
+        13
+        117
+        6
+        184
+        46
+        0
+        0
+        2
+        195
+        131
+        248
+        16
+        117
+        6
+        184
+        54
+        0
+        0
+        2
+        195
+        131
+        248
+        22
+        117
+        6
+        184
+        42
+        0
+        0
+        2
+        195
+        131
+        248
+        28
+        117
+        6
+        184
+        186
+        0
+        0
+        2
+        195
+        131
+        248
+        33
+        117
+        6
+        184
+        90
+        0
+        0
+        2
+        195
+        131
+        248
+        35
+        117
+        6
+        184
+        48
+        0
+        0
+        2
+        195
+        131
+        248
+        39
+        117
+        6
+        184
+        20
+        0
+        0
+        2
+        195
+        131
+        248
+        41
+        117
+        6
+        184
+        97
+        0
+        0
+        2
+        195
+        131
+        248
+        42
+        117
+        6
+        184
+        98
+        0
+        0
+        2
+        195
+        131
+        248
+        43
+        117
+        6
+        184
+        99
+        0
+        0
+        2
+        195
+        131
+        248
+        44
+        117
+        6
+        184
+        102
+        0
+        0
+        2
+        195
+        131
+        248
+        45
+        117
+        6
+        184
+        103
+        0
+        0
+        2
+        195
+        131
+        248
+        49
+        117
+        6
+        184
+        104
+        0
+        0
+        2
+        195
+        131
+        248
+        50
+        117
+        6
+        184
+        106
+        0
+        0
+        2
+        195
+        131
+        248
+        57
+        117
+        6
+        184
+        2
+        0
+        0
+        2
+        195
+        131
+        248
+        59
+        117
+        6
+        184
+        59
+        0
+        0
+        2
+        195
+        131
+        248
+        60
+        117
+        6
+        184
+        1
+        0
+        0
+        2
+        195
+        131
+        248
+        61
+        117
+        6
+        184
+        7
+        0
+        0
+        2
+        195
+        131
+        248
+        62
+        117
+        6
+        184
+        37
+        0
+        0
+        2
+        195
+        131
+        248
+        79
+        117
+        6
+        184
+        132
+        0
+        0
+        2
+        195
+        131
+        248
+        80
+        117
+        6
+        184
+        12
+        0
+        0
+        2
+        195
+        131
+        248
+        82
+        117
+        6
+        184
+        13
+        0
+        0
+        2
+        195
+        131
+        248
+        83
+        117
+        6
+        184
+        186
+        0
+        0
+        2
+        195
+        131
+        248
+        84
+        117
+        6
+        184
+        36
+        0
+        0
+        2
+        195
+        131
+        248
+        87
+        117
+        6
+        184
+        10
+        0
+        0
+        2
+        195
+        131
+        248
+        90
+        117
+        6
+        184
+        15
+        0
+        0
+        2
+        195
+        131
+        248
+        102
+        117
+        6
+        184
+        24
+        0
+        0
+        2
+        195
+        131
+        248
+        104
+        117
+        6
+        184
+        47
+        0
+        0
+        2
+        195
+        131
+        248
+        107
+        117
+        6
+        184
+        25
+        0
+        0
+        2
+        195
+        131
+        248
+        108
+        117
+        6
+        184
+        43
+        0
+        0
+        2
+        195
+        131
+        248
+        144
+        117
+        6
+        184
+        65
+        0
+        0
+        2
+        195
+        131
+        248
+        217
+        117
+        6
+        184
+        128
+        0
+        0
+        2
+        195
+        131
+        248
+        218
+        117
+        6
+        184
+        116
+        0
+        0
+        2
+        195
+        131
+        248
+        231
+        117
+        6
+        184
+        1
+        0
+        0
+        2
+        195
+        131
+        248
+        260
+        117
+        6
+        184
+        18
+        0
+        0
+        2
+        195
+        131
+        248
+        318
+        117
+        6
+        184
+        27
+        1
+        0
+        2
+        195
+        195
+        61
+        157
+        0
+        0
+        0
+        117
+        6
+        184
+        0
+        0
+        0
+        2
+        195
+        61
+        217
+        0
+        0
+        0
+        117
+        6
+        184
+        88
+        1
+        0
+        2
+        195
+        61
+        228
+        0
+        0
+        0
+        117
+        6
+        184
+        116
+        0
+        0
+        2
+        195
+        61
+        1
+        1
+        0
+        0
+        117
+        6
+        184
+        5
+        0
+        0
+        2
+        195
+        61
+        62
+        1
+        0
+        0
+        117
+        6
+        184
+        244
+        1
+        0
+        2
+        195
+        13
+        0
+        0
+        0
+        2
+        195
 compile source:
-    oc: _sov_list_new()
-    iota_ptr: blank
-    iota_lim: blank
-    kn: blank
-    kv: 0
-    skip_al: blank
-    used_al: 0
-    used_sl: 0
-    used_eq: 0
-    used_pr: 0
-    used_pi: 0
-    used_mn: 0
-    used_thr: 0
-    used_tr: 0
-    did_stos: 0
-    thin_main: 0
-    has_vm: 0
-    need_priv: 0
-    saw_str: 0
-    str_vars: _sov_list_new()
-    str_fns: _sov_list_new()
-    ar_names: _sov_list_new()
-    ar_cnt: _sov_list_new()
+    code: _sov_list_new()
+    bump_ptr: blank
+    bump_end: blank
+    known_name: blank
+    known_value: 0
+    dead_alloc_name: blank
+    used_alloc: 0
+    used_text_length: 0
+    used_texts_equal: 0
+    used_print: 0
+    used_print_number: 0
+    used_mac_number: 0
+    used_thread: 0
+    used_crash: 0
+    used_fill: 0
+    tiny_program: 0
+    needs_heap: 0
+    needs_private: 0
+    saw_letters: 0
+    letter_boxes: _sov_list_new()
+    letter_tasks: _sov_list_new()
+    array_names: _sov_list_new()
+    array_count: _sov_list_new()
     fn_locs: _sov_list_new()
-    str_fns: _sov_list_add(str_fns, "cat")
-    str_fns: _sov_list_add(str_fns, "strcat")
-    str_fns: _sov_list_add(str_fns, "_sov_strcat")
-    str_fns: _sov_list_add(str_fns, "sub")
-    str_fns: _sov_list_add(str_fns, "trim")
-    str_fns: _sov_list_add(str_fns, "ch")
-    str_fns: _sov_list_add(str_fns, "_sov_substring")
-    seed_str_fns()
+    letter_tasks: _sov_list_add(letter_tasks, "cat")
+    letter_tasks: _sov_list_add(letter_tasks, "strcat")
+    letter_tasks: _sov_list_add(letter_tasks, "_sov_strcat")
+    letter_tasks: _sov_list_add(letter_tasks, "sub")
+    letter_tasks: _sov_list_add(letter_tasks, "trim")
+    letter_tasks: _sov_list_add(letter_tasks, "ch")
+    letter_tasks: _sov_list_add(letter_tasks, "_sov_substring")
+    seed_str_fns
     pre_lns: lines_of(source)
     pre_i: 0
     pre_cur: blank
@@ -1986,13 +2115,13 @@ compile source:
     as long as pre_i < pre_n
         pre_l: _sov_list_get(pre_lns, pre_i)
         if length(strip(pre_l)) > 0
-            if nind(pre_l) is 0
+            if nind(pre_l) = 0
                 pre_t: strip(pre_l)
-                if starts(pre_t, "#") is 0
-                    if starts(pre_t, "use ") is 0
+                if starts(pre_t, "#") = 0
+                    if starts(pre_t, "use ") = 0
                         pre_c: find_col(pre_t)
                         if pre_c > 0
-                            if pre_c is length(pre_t) - 1
+                            if pre_c = length(pre_t) - 1
                                 pre_h: strip(cut(pre_t, 0, pre_c))
                                 pre_sp: look(pre_h, " ")
                                 if pre_sp > 0 - 1
@@ -2002,65 +2131,64 @@ compile source:
                                     pre_k: 0
                                     pre_in: 0
                                     as long as pre_k < length(pre_ps)
-                                        if same(letter(pre_ps, pre_k), " ") is 1
+                                        if same(letter(pre_ps, pre_k), " ") = 1
                                             pre_in: 0
                                         if not
-                                            if pre_in is 0
+                                            if pre_in = 0
                                                 pre_na: pre_na + 1
                                                 pre_in: 1
                                         pre_k: pre_k + 1
-                                    # seven values is the most a job can
+                                    # seven values = the most a job can
                                     # take. more used to compile and then
                                     # go wrong while running.
                                     if pre_na > 7
-                                        print "Error: a job takes at most seven values"
-                                        _sov_print(pre_cur)
-                                        print pre_na
-                                        had_err: 1
-                                    ar_names: _sov_list_add(ar_names, pre_cur)
-                                    ar_cnt: _sov_list_add(ar_cnt, pre_na)
+                                        print "Error: a job takes at most seven values" : pre_cur
+                                        print "name" : pre_na
+                                        saw_error: 1
+                                    array_names: _sov_list_add(array_names, pre_cur)
+                                    array_count: _sov_list_add(array_count, pre_na)
                                 if not
                                     pre_cur: pre_h
-                                    ar_names: _sov_list_add(ar_names, pre_cur)
-                                    ar_cnt: _sov_list_add(ar_cnt, 0)
+                                    array_names: _sov_list_add(array_names, pre_cur)
+                                    array_count: _sov_list_add(array_count, 0)
             if not
                 pre_t2: strip(pre_l)
-                if starts(pre_t2, "return ") is 1
+                if starts(pre_t2, "return ") = 1
                     pre_r: strip(cut(pre_t2, 7, length(pre_t2)))
-                    if starts(pre_r, "as text ") is 1
+                    if starts(pre_r, "as text ") = 1
                         if length(pre_cur) > 0
                             mark_fn_str(pre_cur)
-                    if starts(pre_r, "as ptr ") is 1
+                    if starts(pre_r, "as ptr ") = 1
                         if length(pre_cur) > 0
                             mark_fn_str(pre_cur)
                     if length(pre_r) > 0
-                        if _sov_byte_at(pre_r, 0) is 34
+                        if _sov_byte_at(pre_r, 0) = 34
                             if length(pre_cur) > 0
                                 mark_fn_str(pre_cur)
                         if not
-                            if same(pre_r, "blank") is 1
+                            if same(pre_r, "blank") = 1
                                 if length(pre_cur) > 0
                                     mark_fn_str(pre_cur)
         pre_i: pre_i + 1
-    # a job that hands back another job's answer is a text job too,
+    # a job that hands back another job's answer = a text job too,
     # whatever order the jobs were written in. Keep going round until
-    # nobody new is marked, so forward references work as well as
+    # nobody new = marked, so forward references work as well as
     # backward ones.
     changed: 1
-    as long as changed is 1
+    as long as changed = 1
         changed: 0
         pre_i: 0
         pre_cur: blank
         as long as pre_i < pre_n
             pre_l: _sov_list_get(pre_lns, pre_i)
             if length(strip(pre_l)) > 0
-                if nind(pre_l) is 0
+                if nind(pre_l) = 0
                     pre_t: strip(pre_l)
-                    if starts(pre_t, "#") is 0
-                        if starts(pre_t, "use ") is 0
+                    if starts(pre_t, "#") = 0
+                        if starts(pre_t, "use ") = 0
                             pre_c: find_col(pre_t)
                             if pre_c > 0
-                                if pre_c is length(pre_t) - 1
+                                if pre_c = length(pre_t) - 1
                                     pre_h: strip(cut(pre_t, 0, pre_c))
                                     pre_sp: look(pre_h, " ")
                                     if pre_sp > 0 - 1
@@ -2069,18 +2197,18 @@ compile source:
                                         pre_cur: pre_h
                 if not
                     pre_t2: strip(pre_l)
-                    if starts(pre_t2, "return ") is 1
+                    if starts(pre_t2, "return ") = 1
                         pre_r: strip(cut(pre_t2, 7, length(pre_t2)))
-                        if idx(str_fns, pre_cur) < 0
-                            if starts(pre_r, "as text ") is 0
-                                if starts(pre_r, "as ptr ") is 0
+                        if idx(letter_tasks, pre_cur) < 0
+                            if starts(pre_r, "as text ") = 0
+                                if starts(pre_r, "as ptr ") = 0
                                     if length(pre_r) > 0
                                         if _sov_byte_at(pre_r, 0) is not 34
-                                            if same(pre_r, "blank") is 0
+                                            if same(pre_r, "blank") = 0
                                                 pre_lp: look(pre_r, "(")
                                                 if pre_lp > 0
                                                     pre_f: strip(cut(pre_r, 0, pre_lp))
-                                                    if idx(str_fns, pre_f) > 0 - 1
+                                                    if idx(letter_tasks, pre_f) > 0 - 1
                                                         mark_fn_str(pre_cur)
                                                         changed: 1
             pre_i: pre_i + 1
@@ -2092,33 +2220,35 @@ compile source:
     ni: 0
     as long as ni < _sov_list_len(nls)
         ns: strip(_sov_list_get(nls, ni))
-        if same(ns, "private") is 1
-            need_priv: 1
-        if starts(ns, "wipe ") is 1
-            need_priv: 1
+        if same(ns, "private") = 1
+            needs_private: 1
+        if starts(ns, "wipe ") = 1
+            needs_private: 1
         ni: ni + 1
-    cnms: _sov_list_new()
-    cvls: _sov_list_new()
-    cemt: _sov_list_new()
-    strb: _sov_buf_new()
-    str_keys: _sov_list_new()
-    str_pos: _sov_list_new()
-    fn_names: _sov_list_new()
-    fn_offs: _sov_list_new()
-    glob_names: _sov_list_new()
+    const_names: _sov_list_new()
+    const_values: _sov_list_new()
+    const_dirty: _sov_list_new()
+    letters: _sov_buf_new()
+    letter_keys: _sov_list_new()
+    letters_at: _sov_list_new()
+    task_names: _sov_list_new()
+    task_at: _sov_list_new()
+    global_names: _sov_list_new()
     patch_at: _sov_list_new()
     patch_kind: _sov_list_new()
-    patch_val: _sov_list_new()
+    patch_value: _sov_list_new()
     patch_line: _sov_list_new()
-    stmt_lns: _sov_list_new()
-    body_lns: _sov_list_new()
-    task_lns: _sov_list_new()
-    task_user: _sov_list_new()
+    line_of_stmt: _sov_list_new()
+    line_of_body: _sov_list_new()
+    line_of_task: _sov_list_new()
+    user_tasks: _sov_list_new()
     lns: lines_of(source)
     bodies: _sov_list_new()
     params: _sov_list_new()
     names: _sov_list_new()
     tops: _sov_list_new()
+    loose: _sov_list_new()
+    loose_lns: _sov_list_new()
     in_t: 0
     cur: _sov_list_new()
     cur_ln: _sov_list_new()
@@ -2127,39 +2257,55 @@ compile source:
         raw: _sov_list_get(lns, li)
         s: strip(raw)
         th: 0
-        if is_task_hdr(s) is 1
-            th: 1
-        if th is 1
-            if in_t is 1
+        if nind(raw) = 0
+            if is_task_hdr(s) = 1
+                th: 1
+        if nind(raw) = 0
+            if th = 0
+                if length(s) > 0
+                    if peek_byte(s, 0) is not 35
+                        if in_t = 1
+                            cur: expand_bytes(cur)
+                            bodies: _sov_list_add(bodies, cur)
+                            line_of_body: _sov_list_add(line_of_body, cur_ln)
+                            in_t: 0
+        if th = 1
+            if in_t = 1
+                cur: expand_bytes(cur)
                 bodies: _sov_list_add(bodies, cur)
-                body_lns: _sov_list_add(body_lns, cur_ln)
+                line_of_body: _sov_list_add(line_of_body, cur_ln)
             tn: tname(s)
+            if same(tn, "main") = 1
+                print "Error: main is gone, put the code at the top of the file"
+                error_line: file_ln(li)
+                err_where
+                saw_error: 1
+                tn: "_gone_main"
             if idx(names, tn) > 0 - 1
-                print "Error: two with the same name"
-                _sov_print(tn)
-                err_line: file_ln(li)
-                print err_line
-                had_err: 1
+                print "Error: two with the same name" : tn
+                error_line: file_ln(li)
+                print "line" : error_line
+                saw_error: 1
             names: _sov_list_add(names, tn)
             params: _sov_list_add(params, tparams(s))
             tu: 0
-            if li + 1 > src_base
+            if li + 1 > first_user_line
                 tu: 1
-            task_user: _sov_list_add(task_user, tu)
-            task_lns: _sov_list_add(task_lns, file_ln(li))
+            user_tasks: _sov_list_add(user_tasks, tu)
+            line_of_task: _sov_list_add(line_of_task, file_ln(li))
             cur: _sov_list_new()
             cur_ln: _sov_list_new()
             in_t: 1
         if not
-            if nind(raw) is 0
+            if nind(raw) = 0
                 gok: 0
                 gc: find_col(s)
                 if gc > 0
                     if gc < length(s) - 1
                         gok: 1
-                if gok is 1
+                if gok = 1
                     gn: blank
-                    if starts(s, "<-- ") is 1
+                    if starts(s, "<-- ") = 1
                         rest: cut(s, 4, length(s))
                         t: find_sep(rest)
                         if t > 0 - 1
@@ -2167,34 +2313,78 @@ compile source:
                     if not
                         gn: repl(strip(cut(s, 0, gc)), " ", "_")
                     if length(gn) > 0
-                        if idx(glob_names, gn) is 0 - 1
-                            glob_names: _sov_list_add(glob_names, gn)
+                        if idx(names, gn) < 0
+                            if idx(global_names, gn) = 0 - 1
+                                global_names: _sov_list_add(global_names, gn)
+                        if not
+                            grhs0: strip(cut(s, gc + 1, length(s)))
+                            keepg: 0
+                            if is_imm(grhs0) = 1
+                                keepg: 1
+                            if look(grhs0, "(") > 0 - 1
+                                keepg: 1
+                            if keepg = 1
+                                if idx(global_names, gn) = 0 - 1
+                                    global_names: _sov_list_add(global_names, gn)
                         # a top-level "x: x" only registers the global;
-                        # the store is a no-op (the start stub has already
+                        # the store = a no-op (the start stub has already
                         # filled g_argc/g_argv before main runs). skip it.
                         sa: 0
                         if gc + 1 < length(s)
                             grhs: strip(cut(s, gc + 1, length(s)))
-                            if same(repl(grhs, " ", "_"), gn) is 1
+                            if same(repl(grhs, " ", "_"), gn) = 1
                                 sa: 1
-                        if sa is 0
-                            tops: _sov_list_add(tops, raw)
+                        if sa = 0
+                            loose: _sov_list_add(loose, raw)
+                            loose_lns: _sov_list_add(loose_lns, file_ln(li))
+                if gok = 0
+                    if length(s) > 0
+                        if peek_byte(s, 0) is not 35
+                            if starts(s, "use ") = 0
+                                loose: _sov_list_add(loose, raw)
+                                loose_lns: _sov_list_add(loose_lns, file_ln(li))
             if not
-                if in_t is 1
+                if in_t = 1
                     cur: _sov_list_add(cur, raw)
                     cur_ln: _sov_list_add(cur_ln, file_ln(li))
+                if not
+                    loose: _sov_list_add(loose, raw)
+                    loose_lns: _sov_list_add(loose_lns, file_ln(li))
         li: li + 1
-    if in_t is 1
+    if in_t = 1
+        cur: expand_bytes(cur)
         bodies: _sov_list_add(bodies, cur)
-        body_lns: _sov_list_add(body_lns, cur_ln)
-    want_args: 0
+        line_of_body: _sov_list_add(line_of_body, cur_ln)
+    if _sov_list_len(loose) > 0
+        if idx(names, "main") > 0 - 1
+            print "Error: code outside main"
+            error_line: _sov_list_get(loose_lns, 0)
+            err_where
+            saw_error: 1
+        if not
+            names: _sov_list_add(names, "main")
+            params: _sov_list_add(params, _sov_list_new())
+            loose: expand_bytes(loose)
+            bodies: _sov_list_add(bodies, loose)
+            line_of_body: _sov_list_add(line_of_body, loose_lns)
+            user_tasks: _sov_list_add(user_tasks, 1)
+            line_of_task: _sov_list_add(line_of_task, _sov_list_get(loose_lns, 0))
+    if idx(names, "main") < 0
+        if _sov_list_len(tops) > 0
+            names: _sov_list_add(names, "main")
+            params: _sov_list_add(params, _sov_list_new())
+            bodies: _sov_list_add(bodies, _sov_list_new())
+            line_of_body: _sov_list_add(line_of_body, _sov_list_new())
+            user_tasks: _sov_list_add(user_tasks, 1)
+            line_of_task: _sov_list_add(line_of_task, 1)
+    needs_args: 0
     if look(source, "g_argc") > 0 - 1
-        want_args: 1
-    has_vm: 0
+        needs_args: 1
+    needs_heap: 0
     if look(source, "task _sov_alloc") > 0 - 1
-        has_vm: 1
+        needs_heap: 1
     if look(source, "_sov_alloc size:") > 0 - 1
-        has_vm: 1
+        needs_heap: 1
     prep_main(names, params, bodies)
     fli: 0
     as long as fli < _sov_list_len(bodies)
@@ -2211,87 +2401,87 @@ compile source:
                             if fgc < length(fls) - 1
                                 fgn: repl(strip(cut(fls, 0, fgc)), " ", "_")
                                 if length(fgn) > 0
-                                    if idx(glob_names, fgn) is 0 - 1
-                                        if idx(fset, fgn) is 0 - 1
+                                    if idx(global_names, fgn) = 0 - 1
+                                        if idx(fset, fgn) = 0 - 1
                                             fset: _sov_list_add(fset, fgn)
             flj: flj + 1
         fn_locs: _sov_list_add(fn_locs, _sov_list_len(fset))
         fli: fli + 1
-    if has_vm is 1
-        glob_names: _sov_list_add(glob_names, "heap_ptr")
-        emit_start()
-        emit_macnum()
-        used_mn: 0
-        emit_alloc()
-        emit_strlen()
-        emit_streq()
-        emit_print()
-        emit_print_int()
+    if needs_heap = 1
+        global_names: _sov_list_add(global_names, "heap_ptr")
+        emit_start
+        emit_macnum
+        used_mac_number: 0
+        emit_alloc
+        emit_strlen
+        emit_streq
+        emit_print
+        emit_print_int
         if look(source, "thread_create") > 0 - 1
-            emit_mac_thread()
-        thin_main: 0
+            emit_mac_thread
+        tiny_program: 0
     if not
-        if thin_main is 0
-            emit_start()
-        if thin_main is 1
+        if tiny_program = 0
+            emit_start
+        if tiny_program = 1
             # pass S7: even a thin main needs the walk before its
             # first absolute: a start block of walk, then jump
-            emit_pie_walk()
-            emit(233)
+            emit_pie_walk
+            put_in_program(233)
             tjmp: here()
-            emit4(0)
-            addp(tjmp, "rel", "main")
+            put_4_bytes(0)
+            later_fill(tjmp, "rel", "main")
     fi: 0
     as long as fi < _sov_list_len(names)
         nm: _sov_list_get(names, fi)
-        if idx(fn_names, nm) < 0
-                fn_names: _sov_list_add(fn_names, nm)
-                fn_offs: _sov_list_add(fn_offs, here())
-                locals: _sov_list_new()
-                str_vars: _sov_list_new()
-                saw_str: 0
-                br_depth: 0
-                stmt_lns: _sov_list_get(body_lns, fi)
-                if _sov_list_len(_sov_list_get(bodies, fi)) is 0
-                    if _sov_list_get(task_user, fi) is 1
-                        print "Warning: empty"
-                        _sov_print(nm)
-                        print _sov_list_get(task_lns, fi)
+        if idx(task_names, nm) < 0
+                task_names: _sov_list_add(task_names, nm)
+                task_at: _sov_list_add(task_at, here())
+                local_names: _sov_list_new()
+                letter_boxes: _sov_list_new()
+                saw_letters: 0
+                inside_if: 0
+                line_of_stmt: _sov_list_get(line_of_body, fi)
+                if _sov_list_len(_sov_list_get(bodies, fi)) = 0
+                    if _sov_list_get(user_tasks, fi) = 1
+                        print "Warning: empty" : nm
+                        print "line" : _sov_list_get(line_of_task, fi)
                 ps: _sov_list_get(params, fi)
                 pi: 0
                 as long as pi < _sov_list_len(ps)
-                    locals: _sov_list_add(locals, _sov_list_get(ps, pi))
+                    local_names: _sov_list_add(local_names, _sov_list_get(ps, pi))
                     pi: pi + 1
                 thin: 0
-                if same(nm, "main") is 1
-                    if _sov_list_len(ps) is 0
+                if same(nm, "main") = 1
+                    if _sov_list_len(ps) = 0
                         thin: 0
-                if thin is 1
-                    skip_al: dead_iota(_sov_list_get(bodies, fi))
-                    if need_priv is 1
-                        emit_nodump()
-                        emit_canary_seed()
-                        emit_crash_install()
+                if thin = 1
+                    dead_alloc_name: drop_unused(_sov_list_get(bodies, fi))
+                    if needs_private = 1
+                        emit_nodump
+                        emit_canary_seed
+                        emit_crash_install
                     leaf8: leaf8_scan(tops)
                     body(tops)
-                    cflush_all()
+                    cflush_all
                     leaf8: 0
-                    if _sov_list_len(ps) is 0
+                    if _sov_list_len(ps) = 0
                         leaf8: leaf8_scan(_sov_list_get(bodies, fi))
                     body(_sov_list_get(bodies, fi))
-                    if saw_str is 1
+                    if saw_letters = 1
                         mark_fn_str(nm)
-                    if need_priv is 1
-                        emit_stack_wipe()
-                    emit(49)
-                    emit(255)
+                    if needs_private = 1
+                        emit_stack_wipe
+                    bytes:
+                        49
+                        255
                     emit_sys_num(60)
-                    emit_sys_do()
+                    emit_sys_do
                 if not
-                    fn_save_n: 0
-                    fw_on: 0
-                    fw_done: 0
-                    fw_pos: _sov_list_new()
+                    saved_locals: 0
+                    frame_open: 0
+                    frame_done: 0
+                    frame_holes: _sov_list_new()
                     fargs: _sov_list_len(ps)
                     floc: 0
                     if fi < _sov_list_len(fn_locs)
@@ -2299,60 +2489,60 @@ compile source:
                     ftot: fargs + floc
                     if ftot > 5
                         ftot: 5
-                    fn_save_n: ftot
-                    no_frame: 0
+                    saved_locals: ftot
+                    skip_frame: 0
                     if fargs + floc < 6
-                        if starts(nm, "_sov_") is 0
-                            no_frame: 1
+                        if starts(nm, "_sov_") = 0
+                            if same(nm, "main") = 0
+                                skip_frame: 1
                     isfib: fiblike(nm, ps, _sov_list_get(bodies, fi))
-                    if isfib is 1
+                    if isfib = 1
                         # frame-free: the iterative body touches rbx
                         # (the arg) and nothing else callee-saved -
                         # a/rdx/rcx are caller-saved - so the frame
-                        # is one register, not three
-                        fn_save_n: 1
-                        no_frame: 1
+                        # = one register, not three
+                        saved_locals: 1
+                        skip_frame: 1
                     can_here: 0
                     cbi: 0
                     as long as cbi < _sov_list_len(_sov_list_get(bodies, fi))
-                        if same(strip(_sov_list_get(_sov_list_get(bodies, fi), cbi)), "private") is 1
+                        if same(strip(_sov_list_get(_sov_list_get(bodies, fi), cbi)), "private") = 1
                             can_here: 1
                         cbi: cbi + 1
-                    prolog()
-                    if can_here is 1
-                        if no_frame is 0
-                            if isfib is 0
-                                canary_store()
+                    prolog
+                    if can_here = 1
+                        if skip_frame = 0
+                            if isfib = 0
+                                canary_store
                     copyargs(_sov_list_len(ps))
-                    if isfib is 1
-                        emit_fib_iter()
+                    if isfib = 1
+                        emit_fib_iter
                     if not
-                        if same(nm, "main") is 1
-                            skip_al: dead_iota(_sov_list_get(bodies, fi))
-                            if need_priv is 1
-                                emit_nodump()
-                                emit_canary_seed()
-                                emit_crash_install()
+                        if same(nm, "main") = 1
+                            dead_alloc_name: drop_unused(_sov_list_get(bodies, fi))
+                            if needs_private = 1
+                                emit_nodump
+                                emit_canary_seed
+                                emit_crash_install
                             leaf8: leaf8_scan(tops)
-                            in_main_now: 1
+                            at_top: 1
                             body(tops)
-                            in_main_now: 0
-                            cflush_all()
+                            at_top: 0
+                            cflush_all
                         leaf8: 0
-                        if _sov_list_len(ps) is 0
+                        if _sov_list_len(ps) = 0
                             leaf8: leaf8_scan(_sov_list_get(bodies, fi))
-                        if same(nm, "main") is 1
-                            in_main_now: 1
+                        if same(nm, "main") = 1
+                            at_top: 1
                         body(_sov_list_get(bodies, fi))
-                        if same(nm, "main") is 1
-                            in_main_now: 0
-                    if _sov_list_len(locals) < 6
-                        if fn_save_n < _sov_list_len(locals)
-                            print "Warning: locals"
-                            _sov_print(nm)
-                            print _sov_list_len(locals)
-                            print fn_save_n
-                    if saw_str is 1
+                        if same(nm, "main") = 1
+                            at_top: 0
+                    if _sov_list_len(local_names) < 6
+                        if saved_locals < _sov_list_len(local_names)
+                            print "Warning: local_names" : nm
+                            print "local_names" : _sov_list_len(local_names)
+                            print "saved" : saved_locals
+                    if saw_letters = 1
                         mark_fn_str(nm)
                     # the frame must reach past the deepest local: a
                     # value stored at slot i sits (i + 1) * 8 bytes below
@@ -2365,76 +2555,77 @@ compile source:
                     # a full slot deeper than the count, or the
                     # callee's own frame lands on top of our spilled
                     # values
-                    if no_frame is 0
-                        ns: (_sov_list_len(locals) + 1) * 8
+                    if skip_frame = 0
+                        ns: (_sov_list_len(local_names) + 1) * 8
                         if ns < 32
                             ns: 32
                         # pass S5: room for the canary below the
                         # deepest local, still inside the frame
-                        if _sov_list_len(cd_at) > 0
+                        if _sov_list_len(guard_holes) > 0
                             ns: ns + 16
-                        put(pro_at, ns)
-                        if fw_on is 1
-                            if isfib is 0
-                                canary_check()
-                                xor_rax()
-                                restores()
-                                frame_wipe()
-                                emit(201)
-                                ret()
-                                fw_done: 1
+                        put(frame_at, ns)
+                        if frame_open = 1
+                            if isfib = 0
+                                canary_check
+                                xor_rax
+                                restores
+                                frame_wipe
+                                put_in_program(201)
+                                ret
+                                frame_done: 1
                             fwi: 0
-                            as long as fwi < _sov_list_len(fw_pos)
-                                put(_sov_list_get(fw_pos, fwi), ns + fn_save_n * 8)
+                            as long as fwi < _sov_list_len(frame_holes)
+                                put(_sov_list_get(frame_holes, fwi), ns + saved_locals * 8)
                                 fwi: fwi + 1
                         # pass S5: patch the canary displacement holes
                         # now - after the end-of-body epilogue has
                         # emitted its own check into the list
                         chi: 0
-                        as long as chi < _sov_list_len(cd_at)
-                            put(_sov_list_get(cd_at, chi), 8 - ns - fn_save_n * 8)
+                        as long as chi < _sov_list_len(guard_holes)
+                            put(_sov_list_get(guard_holes, chi), 8 - ns - saved_locals * 8)
                             chi: chi + 1
-                        cd_at: 0
-                    if same(nm, "main") is 1
-                        if need_priv is 1
-                            emit_stack_wipe()
-                        emit(49)
-                        emit(255)
+                        guard_holes: 0
+                    if same(nm, "main") = 1
+                        if needs_private = 1
+                            emit_stack_wipe
+                        bytes:
+                            49
+                            255
                         emit_sys_num(60)
-                        emit_sys_do()
+                        emit_sys_do
                     if not
                         # the fib fast path ends in its own leave/ret;
                         # a second epilogue here would be dead bytes
-                        if isfib is 0
-                            if fw_done is 0
-                                xor_rax()
-                                leave()
-                                ret()
+                        if isfib = 0
+                            if frame_done = 0
+                                xor_rax
+                                restore_frame
+                                ret
         fi: fi + 1
-    if has_vm is 0
-        emit_used()
+    if needs_heap = 0
+        emit_used
     # pass S5: the canary stub rides even when the program ships
-    # its own runtime (has_vm), because private frames can appear
+    # its own runtime (needs_heap), because private frames can appear
     # in either shape
-    if can_used is 1
-        emit_canary_fail()
-    if need_priv is 1
-        emit_crash_handler()
-    warn_unused()
-    dce()
-    stub_diet()
-    dce_stores()
-    dce_litter()
-    dce_globals()
+    if used_guard = 1
+        emit_canary_fail
+    if needs_private = 1
+        emit_crash_handler
+    warn_unused
+    dce
+    stub_diet
+    dce_stores
+    dce_litter
+    dce_globals
 stub_diet:
-    if had_err is 1
+    if saw_error = 1
         return
-    if want_args is 0
+    if needs_args = 0
         return
     # a private program's exit walk anchors on g_argv, and its crash
     # handlers are referenced only by the sigaction install - the
     # diet must not touch either
-    if need_priv is 1
+    if needs_private = 1
         return
     sd_live: 0
     sd_i: 0
@@ -2442,24 +2633,24 @@ stub_diet:
         sd_at2: _sov_list_get(patch_at, sd_i)
         if sd_at2 >= 45
             sd_k: _sov_list_get(patch_kind, sd_i)
-            if same(sd_k, "glob") is 1
-                sd_v: _sov_list_get(patch_val, sd_i)
-                if same(sd_v, "g_argc") is 1
+            if same(sd_k, "glob") = 1
+                sd_v: _sov_list_get(patch_value, sd_i)
+                if same(sd_v, "g_argc") = 1
                     sd_live: 1
-                if same(sd_v, "g_argv") is 1
+                if same(sd_v, "g_argv") = 1
                     sd_live: 1
-            if same(sd_k, "grel") is 1
-                sd_v: _sov_list_get(patch_val, sd_i)
-                if same(sd_v, "g_argc") is 1
+            if same(sd_k, "grel") = 1
+                sd_v: _sov_list_get(patch_value, sd_i)
+                if same(sd_v, "g_argc") = 1
                     sd_live: 1
-                if same(sd_v, "g_argv") is 1
+                if same(sd_v, "g_argv") = 1
                     sd_live: 1
         sd_i: sd_i + 1
-    if sd_live is 1
+    if sd_live = 1
         return
     sd_cut_at: 0
     sd_cut: 45
-    if main_params_n > 0
+    if top_params > 0
         sd_cut_at: 19
         sd_cut: 26
     sd_na: _sov_list_new()
@@ -2472,35 +2663,35 @@ stub_diet:
         if sd_at < sd_cut_at
             sd_na: _sov_list_add(sd_na, sd_at)
             sd_nk: _sov_list_add(sd_nk, _sov_list_get(patch_kind, sd_i))
-            sd_nv: _sov_list_add(sd_nv, _sov_list_get(patch_val, sd_i))
+            sd_nv: _sov_list_add(sd_nv, _sov_list_get(patch_value, sd_i))
             sd_nl: _sov_list_add(sd_nl, _sov_list_get(patch_line, sd_i))
         if not
             if sd_at >= 45
                 sd_na: _sov_list_add(sd_na, sd_at - sd_cut)
                 sd_nk: _sov_list_add(sd_nk, _sov_list_get(patch_kind, sd_i))
-                sd_nv: _sov_list_add(sd_nv, _sov_list_get(patch_val, sd_i))
+                sd_nv: _sov_list_add(sd_nv, _sov_list_get(patch_value, sd_i))
                 sd_nl: _sov_list_add(sd_nl, _sov_list_get(patch_line, sd_i))
         sd_i: sd_i + 1
     patch_at: sd_na
     patch_kind: sd_nk
-    patch_val: sd_nv
+    patch_value: sd_nv
     patch_line: sd_nl
     sd_no: _sov_list_new()
     sd_pos: 0
-    as long as sd_pos < _sov_list_len(oc)
-        if sd_pos is sd_cut_at
+    as long as sd_pos < _sov_list_len(code)
+        if sd_pos = sd_cut_at
             sd_pos: sd_pos + sd_cut
         if not
-            sd_no: _sov_list_add(sd_no, _sov_list_get(oc, sd_pos))
+            sd_no: _sov_list_add(sd_no, _sov_list_get(code, sd_pos))
             sd_pos: sd_pos + 1
-    oc: sd_no
+    code: sd_no
     sd_i: 0
-    as long as sd_i < _sov_list_len(fn_offs)
-        fn_offs: _sov_list_set(fn_offs, sd_i, _sov_list_get(fn_offs, sd_i) - sd_cut)
+    as long as sd_i < _sov_list_len(task_at)
+        task_at: _sov_list_set(task_at, sd_i, _sov_list_get(task_at, sd_i) - sd_cut)
         sd_i: sd_i + 1
-    want_args: 0
-# Pass 105: a global whose every surviving reference is a plain
-# store_glob (mov [rip],rax - 48 89 05 <rel32>) is write-only: no load,
+    needs_args: 0
+# Pass 105: a global whose every surviving reference = a plain
+# store_glob (mov [rip],rax - 48 89 05 <rel32>) = write-only: no load,
 # compare or add-to-memory ever observes the value. Paint the store
 # bytes with one-byte nops IN PLACE - raw branch displacements (rel8
 # and post-relaxation rel32) are baked into the byte stream and must
@@ -2508,25 +2699,25 @@ stub_diet:
 # the 8-byte name. Every other reference shape (loads 48 8b .., movabs
 # "glob" forms, lea forms, anything else) counts as a read and
 # protects the name.
-write_elf path:
-    if had_err is 1
+write_program path:
+    if saw_error = 1
         return
-    clen: _sov_list_len(oc)
-    sl: _sov_buf_len(strb)
+    clen: _sov_list_len(code)
+    sl: _sov_buf_len(letters)
     str_off: clen
-    if _sov_list_len(glob_names) > 0
+    if _sov_list_len(global_names) > 0
         as long as str_off % 8 is not 0
-            oc: _sov_list_add(oc, 0)
+            code: _sov_list_add(code, 0)
             str_off: str_off + 1
             clen: clen + 1
     glob_off: clen + sl
-    pad: _sov_list_len(glob_names) * 8
+    pad: _sov_list_len(global_names) * 8
     hdr: 200
-    # pass S3: __TEXT is headers + code, READ+EXECUTE only. __DATA
+    # pass S3: __TEXT = headers + code, READ+EXECUTE only. __DATA
     # starts on the page after the code, READ+WRITE, never
     # executable, and holds the literals first (they are data: a
     # user wipe writes them at any moment) then the globals. the
-    # reserved-dword rider is gone with them.
+    # reserved-dword rider = gone with them.
     dfoff: hdr + clen
     as long as dfoff % 4096 is not 0
         dfoff: dfoff + 1
@@ -2535,25 +2726,25 @@ write_elf path:
         sl8: sl8 + 1
     str_off: dfoff - hdr
     glob_off: dfoff + sl8 - hdr
-    pad: _sov_list_len(glob_names) * 8
+    pad: _sov_list_len(global_names) * 8
     # pass S7: count the absolute qwords for the slide table. It
     # sits after the globals, so no address above it moves.
     rel_n: 0
-    rel_at: _sov_list_new()
+    reloc_at: _sov_list_new()
     rc_i: 0
     as long as rc_i < _sov_list_len(patch_at)
         rk: _sov_list_get(patch_kind, rc_i)
-        if same(rk, "fnaddr") is 1
+        if same(rk, "task_address") = 1
             rel_n: rel_n + 1
-        if same(rk, "str") is 1
+        if same(rk, "str") = 1
             rel_n: rel_n + 1
-        if same(rk, "glob") is 1
+        if same(rk, "glob") = 1
             rel_n: rel_n + 1
-        if same(rk, "gwstr_a") is 1
+        if same(rk, "gwstr_a") = 1
             rel_n: rel_n + 1
-        if same(rk, "gwipe_a") is 1
+        if same(rk, "gwipe_a") = 1
             rel_n: rel_n + 1
-        if same(rk, "sbss") is 1
+        if same(rk, "sbss") = 1
             rel_n: rel_n + 1
         rc_i: rc_i + 1
     relsz: 8 + rel_n * 8
@@ -2573,7 +2764,7 @@ write_elf path:
     poke4(flat, 16, 3)
     poke4(flat, 20, 168)
     # S7 reopened (CI run #2): dyld kills unsigned MH_PIE builds.
-    # fixed-address image until PIE is re-landed
+    # fixed-address image until PIE = re-landed
     poke4(flat, 24, 1)
     poke4(flat, 32, 25)
     poke4(flat, 36, 72)
@@ -2605,20 +2796,20 @@ write_elf path:
     poke8(flat, 152, sl8 + pad + relsz)
     poke4(flat, 160, 3)
     poke4(flat, 164, 3)
-    # with no start stub, main itself is the entry point
+    # with no start stub, main itself = the entry point
     # pass S7: thin or not, offset 0 now holds a start block - the
-    # walk, then the jump - so the entry is always the top of code
+    # walk, then the jump - so the entry = always the top of code
     moff: 0
     poke4(flat, 176, 2147483688)
     poke4(flat, 180, 24)
     poke8(flat, 184, hdr + moff)
     i: 0
     as long as i < clen
-        dummy: _sov_set_byte(flat, hdr + i, _sov_list_get(oc, i))
+        dummy: _sov_set_byte(flat, hdr + i, _sov_list_get(code, i))
         i: i + 1
     si: 0
     as long as si < sl
-        dummy: _sov_set_byte(flat, hdr + str_off + si, _sov_buf_at(strb, si))
+        dummy: _sov_set_byte(flat, hdr + str_off + si, _sov_buf_at(letters, si))
         si: si + 1
     str_addr: 4294967296 + hdr + str_off
     glob_addr: 4294967296 + hdr + glob_off
@@ -2626,134 +2817,129 @@ write_elf path:
     as long as i < _sov_list_len(patch_at)
         at: _sov_list_get(patch_at, i)
         kind: _sov_list_get(patch_kind, i)
-        val: _sov_list_get(patch_val, i)
-        if same(kind, "rel") is 1
-            fi: idx(fn_names, val)
+        val: _sov_list_get(patch_value, i)
+        if same(kind, "rel") = 1
+            fi: idx(task_names, val)
             if fi > 0 - 1
-                tgt: _sov_list_get(fn_offs, fi)
+                tgt: _sov_list_get(task_at, fi)
                 rel: tgt - (at + 4)
                 poke4(flat, hdr + at, rel)
             if not
-                print "Error: no such task"
-                _sov_print(val)
+                print "Error: no such task" : val
                 print _sov_list_get(patch_line, i)
-                had_err: 1
-        if same(kind, "fnaddr") is 1
-            fi: idx(fn_names, val)
+                saw_error: 1
+        if same(kind, "task_address") = 1
+            fi: idx(task_names, val)
             if fi > 0 - 1
-                poke8(flat, hdr + at, 4294967296 + hdr + _sov_list_get(fn_offs, fi))
+                poke8(flat, hdr + at, 4294967296 + hdr + _sov_list_get(task_at, fi))
             if not
-                print "Error: no such task"
-                _sov_print(val)
-                had_err: 1
-        if same(kind, "str") is 1
+                print "Error: no such task" : val
+                saw_error: 1
+        if same(kind, "str") = 1
             poke8(flat, hdr + at, str_addr + val)
-        if same(kind, "str32") is 1
+        if same(kind, "str32") = 1
             poke4(flat, hdr + at, str_addr + val)
-        if same(kind, "ripstr") is 1
+        if same(kind, "ripstr") = 1
             poke4(flat, hdr + at, str_off + val - at - 4)
-        if same(kind, "grel") is 1
-            gx: idx(glob_names, val)
+        if same(kind, "grel") = 1
+            gx: idx(global_names, val)
             poke4(flat, hdr + at, glob_off + gx * 8 - at - 4)
-        if same(kind, "gwstr_a") is 1
+        if same(kind, "gwstr_a") = 1
             poke8(flat, hdr + at, str_addr)
-        if same(kind, "gwstr_n") is 1
+        if same(kind, "gwstr_n") = 1
             poke4(flat, hdr + at, (sl + 7) / 8)
-        if same(kind, "gwipe_a") is 1
+        if same(kind, "gwipe_a") = 1
             poke8(flat, hdr + at, glob_addr)
-        if same(kind, "gwipe_n") is 1
-            poke4(flat, hdr + at, _sov_list_len(glob_names))
-        if same(kind, "glob") is 1
-            gx: idx(glob_names, val)
+        if same(kind, "gwipe_n") = 1
+            poke4(flat, hdr + at, _sov_list_len(global_names))
+        if same(kind, "glob") = 1
+            gx: idx(global_names, val)
             poke8(flat, hdr + at, glob_addr + gx * 8)
-        if same(kind, "rel_a") is 1
+        if same(kind, "rel_a") = 1
             poke8(flat, hdr + at, 4294967296 + hdr + glob_off + pad)
-        if same(kind, "rel_n") is 1
+        if same(kind, "rel_n") = 1
             poke4(flat, hdr + at, rel_n)
-        if same(kind, "rel_l") is 1
+        if same(kind, "rel_l") = 1
             poke8(flat, hdr + at, dfoff)
-        if same(kind, "fnaddr") is 1
-            rel_at: _sov_list_add(rel_at, at)
-        if same(kind, "str") is 1
-            rel_at: _sov_list_add(rel_at, at)
-        if same(kind, "glob") is 1
-            rel_at: _sov_list_add(rel_at, at)
-        if same(kind, "gwstr_a") is 1
-            rel_at: _sov_list_add(rel_at, at)
-        if same(kind, "gwipe_a") is 1
-            rel_at: _sov_list_add(rel_at, at)
-        if same(kind, "sbss") is 1
-            rel_at: _sov_list_add(rel_at, at)
+        if same(kind, "task_address") = 1
+            reloc_at: _sov_list_add(reloc_at, at)
+        if same(kind, "str") = 1
+            reloc_at: _sov_list_add(reloc_at, at)
+        if same(kind, "glob") = 1
+            reloc_at: _sov_list_add(reloc_at, at)
+        if same(kind, "gwstr_a") = 1
+            reloc_at: _sov_list_add(reloc_at, at)
+        if same(kind, "gwipe_a") = 1
+            reloc_at: _sov_list_add(reloc_at, at)
+        if same(kind, "sbss") = 1
+            reloc_at: _sov_list_add(reloc_at, at)
         i: i + 1
-    if had_err is 1
+    if saw_error = 1
         return
     # pass S7: the table itself - a count qword, then one link-time
     # absolute per entry; _start adds the slide to each before main
     poke8(flat, hdr + glob_off + pad, rel_n)
     ri: 0
     as long as ri < rel_n
-        poke8(flat, hdr + glob_off + pad + 8 + ri * 8, hdr + _sov_list_get(rel_at, ri))
+        poke8(flat, hdr + glob_off + pad + 8 + ri * 8, hdr + _sov_list_get(reloc_at, ri))
         ri: ri + 1
     # g_slide carries its own link address until the walk reads it
-    gsx: idx(glob_names, "g_slide")
+    gsx: idx(global_names, "g_slide")
     if gsx > 0 - 1
         poke8(flat, hdr + glob_off + gsx * 8, 4294967296 + hdr + glob_off + gsx * 8)
     w: _sov_write_n(path, flat, filesz)
-    if w is 0
+    if w = 0
         print "Error: cannot write output (is it running?)"
-        fail()
-    if need_priv is 1
+        fail
+    if needs_private = 1
         # pass 140: a private program's binary carries its secrets -
         # literals, keys - in its string span; it belongs to its
         # owner alone
         _sov_chmod(path, 448)
     if not
         _sov_chmod(path, 493)
-main argc argv:
-    # remember where this compiler lives, so its library and runtime
-    # are found no matter which folder you run it from
-    self_dir: dirname(tidy_path(peek_ptr(argv, 0)))
-    if argc < 2
+# remember where this compiler lives, so its library and runtime
+# are found no matter which folder you run it from
+start:
+    compiler_folder: dirname(tidy_path(peek_ptr(g_argv, 0)))
+    if g_argc < 2
         print "Usage: sovren <file.sov> [-o out]"
         print "sovren — native x86-64, self-contained"
-        fail()
-    inf: blank
-    outf: blank
+        fail
+    in_file: blank
+    out_file: blank
     i: 1
-    as long as i < argc
-        arg: peek_ptr(argv, i)
-        if same(arg, "--bare") is 1
-            bare_mode: 1
+    as long as i < g_argc
+        arg: peek_ptr(g_argv, i)
+        if same(arg, "--bare") = 1
+            no_runtime: 1
         if not
-            if same(arg, "-o") is 1
+            if same(arg, "-o") = 1
                 i: i + 1
-                if i < argc
-                    outf: peek_ptr(argv, i)
+                if i < g_argc
+                    out_file: peek_ptr(g_argv, i)
             if not
-                if same(arg, "build") is 0
-                    inf: arg
+                if same(arg, "build") = 0
+                    in_file: arg
         i: i + 1
-    if length(inf) is 0
+    if length(in_file) = 0
         print "Error: no input"
-        fail()
-    if length(outf) is 0
-        d: look(inf, ".sov")
-        if d > 0 - 1
-            outf: cut(inf, 0, d)
+        fail
+    if length(out_file) = 0
+        if holds(in_file, ".sov") = 1
+            out_file: cut(in_file, 0, look(in_file, ".sov"))
         if not
-            outf: join(inf, ".out")
-    src_name: inf
-    print "Compiling"
-    _sov_print(inf)
-    src: load_file(inf)
-    if src is 0
+            out_file: join(in_file, ".out")
+    file_name: in_file
+    print "Compiling" : in_file
+    src: load_file(in_file)
+    if src = 0
         print "Error: cannot read input"
-        fail()
-    nl: _sov_alloc(2)
-    dummy: _sov_set_byte(nl, 0, 10)
-    dummy: _sov_set_byte(nl, 1, 0)
-    src: join(join("# pad line so main is not first", nl), src)
-    used_libs: blank
+        fail
+    newline: "\n"
+    src: join("# skip this line\n", src)
+    libraries: blank
+    src: expand_use_lines(src)
     extra: pull_uses(src)
     more: pull_uses(extra)
     as long as length(more) > 0
@@ -2761,76 +2947,56 @@ main argc argv:
         more: pull_uses(more)
     if length(extra) > 0
         src: join(extra, src)
-    need: 0
-    mmap_sz: 12582912
-    if look(src, "_sov_list") > 0 - 1
-        need: 1
-    if look(src, "load_file") > 0 - 1
-        need: 1
-    if look(src, "_sov_buf") > 0 - 1
-        need: 1
-    if look(src, "_sov_alloc") > 0 - 1
-        need: 1
-    if look(src, "_sov_set_byte") > 0 - 1
-        need: 1
-    if look(src, "peek_byte") > 0 - 1
-        need: 1
-    if look(src, "poke_byte") > 0 - 1
-        need: 1
-    if look(src, "spawn ") > 0 - 1
-        need: 1
-    if look(src, "join ") > 0 - 1
-        need: 1
-    rt: blank
-    if bare_mode is 1
-        need: 0
-    if need is 1
-        mmap_sz: 1073741824
-        rt: load_file("runtime.sov")
-        if rt is 0
-            rt: load_file("linux/runtime.sov")
-        if rt is 0
-            rt: load_file(join(self_dir, "/runtime.sov"))
-        if rt is 0
-            rt: load_file(join(self_dir, "/../runtime.sov"))
-        if rt is 0
-            rt: load_file(join(dirname(dirname(self_dir)), "/runtime.sov"))
-        if rt is 0
+    heap_size: 12582912
+    needs_runtime: uses_runtime(src)
+    runtime: blank
+    if no_runtime = 1
+        needs_runtime: 0
+    if needs_runtime = 1
+        heap_size: 1073741824
+        runtime: load_file("runtime.sov")
+        if runtime = 0
+            runtime: load_file("linux/runtime.sov")
+        if runtime = 0
+            runtime: load_file(join(compiler_folder, "/runtime.sov"))
+        if runtime = 0
+            runtime: load_file(join(compiler_folder, "/../runtime.sov"))
+        if runtime = 0
+            runtime: load_file(join(dirname(dirname(compiler_folder)), "/runtime.sov"))
+        if runtime = 0
             print "Error: cannot read runtime"
-            fail()
+            fail
         # macOS has no openat: the runtime's open becomes plain
         # open, which _sov_macnum maps to the Mac's open (5).
-        rt: repl(rt, "syscall(257, 0 - 100, path, flags, 420, 0, 0)", "syscall(2, path, flags, 420, 0, 0)")
+        runtime: repl(runtime, "syscall(257, 0 - 100, path, flags, 420, 0, 0)", "syscall(2, path, flags, 420, 0, 0)")
         # the macos thread bridge: clone becomes bsdthread_create,
         # futex becomes a spin on the status word. fork stays, so a
         # refused create still has a real process fallback.
-        rt: repl(rt, "syscall(56, e, top, 12032, 0, 0, 0)", "thread_create(e, top)")
-        rt: repl(rt, "syscall(202, cb, 1, 1, 0, 0, 0)", "thread_wake(cb)")
-        rt: repl(rt, "syscall(202, base, 1, 1, 0, 0, 0)", "thread_wake(base)")
-        rt: repl(rt, "syscall(202, h, 0, s, 0, 0, 0)", "thread_wait(h, s)")
-    src_base: 1
-    if length(rt) > 0
-        src_base: src_base + _sov_list_len(lines_of(rt))
+        runtime: repl(runtime, "syscall(56, e, top, 12032, 0, 0, 0)", "thread_create(e, top)")
+        runtime: repl(runtime, "syscall(202, cb, 1, 1, 0, 0, 0)", "thread_wake(cb)")
+        runtime: repl(runtime, "syscall(202, base, 1, 1, 0, 0, 0)", "thread_wake(base)")
+        runtime: repl(runtime, "syscall(202, h, 0, s, 0, 0, 0)", "thread_wait(h, s)")
+    first_user_line: 1
+    if length(runtime) > 0
+        first_user_line: first_user_line + _sov_list_len(lines_of(runtime))
     if length(extra) > 0
-        src_base: src_base + _sov_list_len(lines_of(extra))
-    nl: _sov_alloc(2)
-    dummy: _sov_set_byte(nl, 0, 10)
-    dummy: _sov_set_byte(nl, 1, 0)
-    all: join(rt, nl)
-    src_base: src_base + 1
-    if need is 1
+        first_user_line: first_user_line + _sov_list_len(lines_of(extra))
+    newline: "\n"
+    all: join(runtime, newline)
+    first_user_line: first_user_line + 1
+    if needs_runtime = 1
         # the runtime's thread paths end themselves through this
         # injected task; on macos a thread ends with the exit
-        # syscall (60 is exit on the Mac's x86_64 table)
-        all: join(all, nl)
-        all: join(all, join("_sov_thread_exit:", nl))
-        all: join(all, join("    syscall(60, 0, 0, 0, 0, 0, 0)", nl))
-        all: join(all, join("    return 0 - 1", nl))
-        src_base: src_base + 4
+        # syscall (60 = exit on the Mac's x86_64 table)
+        all: join(all, newline)
+        all: join(all, join("_sov_thread_exit:", newline))
+        all: join(all, join("    syscall(60, 0, 0, 0, 0, 0, 0)", newline))
+        all: join(all, join("    return 0 - 1", newline))
+        first_user_line: first_user_line + 4
     all: join(all, src)
     compile(all)
-    write_elf(outf)
-    if had_err is 1
-        fail()
-    print "Wrote"
-    _sov_print(outf)
+    write_program(out_file)
+    if saw_error = 1
+        fail
+    print "Wrote" : out_file
+start

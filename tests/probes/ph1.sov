@@ -5,20 +5,19 @@ use sys
 
 b: 0
 
-main:
-    b: _sov_alloc(640)
-    n0: 2
-    n1: 3
-    n2: 4
-    n3: 5
-    n4: 6
-    poke_i64(b, n0 * 8, 20)
-    poke_i64(b, n1 * 8, 30)
-    poke_i64(b, n2 * 8, 40)
-    poke_i64(b, n3 * 8, 50)
-    poke_i64(b, n4 * 8, 60)
-    print peek_i64(b, n2 * 8)
-    print peek_i64(b, n0 * 8)
-    print peek_i64(b, n4 * 8)
-    print peek_i64(b, n1 * 8)
-    print peek_i64(b, n3 * 8)
+b: _sov_alloc(640)
+n0: 2
+n1: 3
+n2: 4
+n3: 5
+n4: 6
+poke_i64(b, n0 * 8, 20)
+poke_i64(b, n1 * 8, 30)
+poke_i64(b, n2 * 8, 40)
+poke_i64(b, n3 * 8, 50)
+poke_i64(b, n4 * 8, 60)
+print peek_i64(b, n2 * 8)
+print peek_i64(b, n0 * 8)
+print peek_i64(b, n4 * 8)
+print peek_i64(b, n1 * 8)
+print peek_i64(b, n3 * 8)

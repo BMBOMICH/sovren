@@ -1,6 +1,6 @@
 use carm
-stmt_join_op:
-    calln("_sov_thread_join")
+do_wait_for_thread:
+    wait_for_thread
     return 0
 
 # the XNU arm64 table (Apple), from XNU bsd syscalls for arm64:
@@ -16,134 +16,135 @@ sc_mincore: 78
 sc_rand: 500
 sc_nodump: 0
 sc_sigact: 0
-oc: 0
-strb: 0
-str_keys: 0
-str_pos: 0
-fn_names: 0
-fn_offs: 0
-glob_names: 0
+code: 0
+letters: 0
+letter_keys: 0
+letters_at: 0
+task_names: 0
+at_top: 0
+task_at: 0
+global_names: 0
 patch_at: 0
 patch_kind: 0
-can_used: 0
-patch_val: 0
+used_guard: 0
+patch_value: 0
 patch_line: 0
-locals: 0
-src_base: 0
-had_err: 0
-ex_depth: 0
-br_depth: 0
-bare_mode: 0
-fib_nm: blank
-fib_drop: 0
+local_names: 0
+first_user_line: 0
+saw_error: 0
+try_depth: 0
+inside_if: 0
+no_runtime: 0
+fold_fib_name: blank
+skip_fib: 0
 fn_locs: 0
-stmt_lns: 0
-body_lns: 0
-task_lns: 0
-task_user: 0
+line_of_stmt: 0
+line_of_body: 0
+line_of_task: 0
+user_tasks: 0
 names: 0
-BASE: 4194304
+load_at: 4194304
 
 # the shared a64 core calls emit_walk() inside its compile flow; each
-# os file defines its own. ios is fixed-base, so this is the no-op:
+# os file defines its own. ios = fixed-base, so this = the no-op:
 # the pie_walk gate (0 here) keeps it from ever running.
 
 emit_walk:
     return 0
-# HDR was the old flat base; the macho uses hdr (216). kept dead
+# header_size was the old flat base; the macho uses hdr (216). kept dead
 # so the git blame of this fix stays obvious
-opt_imm: 0
-opt_src: 0
-iota_ptr: 0
-iota_lim: 0
-mmap_sz: 1073741824
-used_libs: blank
-err_line: 0
-src_name: blank
-kn: blank
-kv: 0
-pro_at: 0
-fw_on: 0
-fw_done: 0
-fw_pos: 0
-skip_al: blank
-used_al: 0
-self_dir: 0
-used_sl: 0
-used_eq: 0
-used_pr: 0
-used_pi: 0
-did_stos: 0
-thin_main: 0
+folded_number: 0
+folded_from: 0
+bump_ptr: 0
+bump_end: 0
+heap_size: 1073741824
+libraries: blank
+error_line: 0
+file_name: blank
+known_name: blank
+known_value: 0
+frame_at: 0
+frame_open: 0
+frame_done: 0
+frame_holes: 0
+dead_alloc_name: blank
+used_alloc: 0
+compiler_folder: 0
+used_text_length: 0
+used_texts_equal: 0
+used_print: 0
+used_print_number: 0
+used_fill: 0
+tiny_program: 0
 # this target does not carry the self-relocating walk
 pie_walk: 0
-has_vm: 0
-need_priv: 0
-used_tr: 0
-cnms: 0
-cvls: 0
-cemt: 0
-str_vars: 0
-str_fns: 0
-ar_names: 0
-ar_cnt: 0
-saw_str: 0
+needs_heap: 0
+needs_private: 0
+used_crash: 0
+const_names: 0
+const_values: 0
+const_dirty: 0
+letter_boxes: 0
+letter_tasks: 0
+array_names: 0
+array_count: 0
+saw_letters: 0
 rax_str s:
     at: here()
     movz_x(0, 0, 0)
     movk_x(0, 0, 1)
     movk_x(0, 0, 2)
-    addp(at, "str64x0", intern(s))
-call_args name argc:
-    if argc is 1
-        pop_rax()
+    later_fill(at, "str64x0", intern(s))
+set_up_call name how_many already_set:
+    if how_many = 1
+        take_from_stack
         mov_reg(0, 0)
     if not
-        if argc is 2
+        if how_many = 2
             pop_reg(1)
-            pop_rax()
+            take_from_stack
         if not
-            if argc is 3
+            if how_many = 3
                 pop_reg(2)
                 pop_reg(1)
-                pop_rax()
+                take_from_stack
             if not
-                if argc is 4
+                if how_many = 4
                     pop_reg(3)
                     pop_reg(2)
                     pop_reg(1)
-                    pop_rax()
+                    take_from_stack
                 if not
-                    if argc is 5
+                    if how_many = 5
                         pop_reg(4)
                         pop_reg(3)
                         pop_reg(2)
                         pop_reg(1)
-                        pop_rax()
+                        take_from_stack
                     if not
-                        if argc is 6
+                        if how_many = 6
                             pop_reg(5)
                             pop_reg(4)
                             pop_reg(3)
                             pop_reg(2)
                             pop_reg(1)
-                            pop_rax()
+                            take_from_stack
                         if not
-                            if argc is 7
+                            if how_many = 7
                                 pop_reg(6)
                                 pop_reg(5)
                                 pop_reg(4)
                                 pop_reg(3)
                                 pop_reg(2)
                                 pop_reg(1)
-                                pop_rax()
-    if same(name, "_sov_alloc") is 1
-        used_al: 1
-    if same(name, "_sov_strlen") is 1
-        used_sl: 1
-    if same(name, "_sov_str_eq") is 1
-        used_eq: 1
-    if same(name, "cfunc") is 1
+                                take_from_stack
+    if same(name, "_sov_alloc") = 1
+        used_alloc: 1
+    if same(name, "_sov_strlen") = 1
+        used_text_length: 1
+    if same(name, "_sov_str_eq") = 1
+        used_texts_equal: 1
+    if same(name, "cfunc") = 1
         # x0 holds the address, x1..x6 the arguments. C wants the
         # arguments in x0..x5, so shift them down and call.
         mov_reg(9, 0)
@@ -155,7 +156,7 @@ call_args name argc:
         mov_reg(5, 6)
         emitw(3594453280)
         return
-    if same(name, "syscall") is 1
+    if same(name, "syscall") = 1
         # the number in x0 goes through _sov_sysnum and comes back
         # in x0 as the XNU number, which becomes x8. The six
         # arguments sit in x1..x6, which the translation clobbers,
@@ -166,7 +167,7 @@ call_args name argc:
         push_reg(3)
         push_reg(2)
         push_reg(1)
-        calln("_sov_sysnum")
+        call("_sov_sysnum")
         mov_reg(8, 0)
         pop_reg(1)
         pop_reg(2)
@@ -180,75 +181,75 @@ call_args name argc:
         mov_reg(3, 4)
         mov_reg(4, 5)
         mov_reg(5, 6)
-        sysc()
+        ask_kernel
         return
-    if same(name, "hlt") is 1
+    if same(name, "hlt") = 1
         emitw(3573751935)
         return
-    if same(name, "cli") is 1
+    if same(name, "cli") = 1
         emitw(3573760735)
         return
-    if same(name, "sti") is 1
+    if same(name, "sti") = 1
         emitw(3573760767)
         return
-    if same(name, "peek_raw8") is 1
-        ldrb_x0_x0x1()
+    if same(name, "peek_raw8") = 1
+        ldrb_x0_x0x1
         return
-    if same(name, "peek_raw64") is 1
-        ldr_x0_x0x1()
+    if same(name, "peek_raw64") = 1
+        ldr_x0_x0x1
         return
-    if same(name, "poke_raw8") is 1
-        strb_x2_x0x1()
+    if same(name, "poke_raw8") = 1
+        strb_x2_x0x1
         return
-    if same(name, "poke_raw64") is 1
-        str_x2_x0x1()
+    if same(name, "poke_raw64") = 1
+        str_x2_x0x1
         return
-    if same(name, "peek_byte") is 1
+    if same(name, "peek_byte") = 1
         chk_mem(1)
-        ldrb_x0_x0x1()
+        ldrb_x0_x0x1
         return
-    if same(name, "peek_i64") is 1
+    if same(name, "peek_i64") = 1
         chk_mem(8)
-        ldr_x0_x0x1()
+        ldr_x0_x0x1
         return
-    if same(name, "peek_ptr") is 1
+    if same(name, "peek_ptr") = 1
         chk_mem(8)
-        ldr_x0_x0x1()
+        ldr_x0_x0x1
         return
-    if same(name, "poke_byte") is 1
+    if same(name, "poke_byte") = 1
         chk_mem(1)
-        strb_x2_x0x1()
+        strb_x2_x0x1
         return
-    if same(name, "poke_i64") is 1
+    if same(name, "poke_i64") = 1
         chk_mem(8)
-        str_x2_x0x1()
+        str_x2_x0x1
         return
-    if same(name, "sp") is 1
+    if same(name, "stack_pointer") = 1
         # mov x0, sp: orr x0, xzr, sp (the shared runtime's thread
         # entry asks for the stack pointer; dead on machines without
         # threads, valid a64 either way)
         emitw(2854159328)
         return
-    calln(name)
-write_elf path:
-    if had_err is 1
+    call(name)
+write_program path:
+    if saw_error = 1
         return
-    clen: _sov_list_len(oc)
-    sl: _sov_buf_len(strb)
+    clen: _sov_list_len(code)
+    sl: _sov_buf_len(letters)
     str_off: clen
-    if _sov_list_len(glob_names) > 0
+    if _sov_list_len(global_names) > 0
         as long as str_off % 8 is not 0
-            oc: _sov_list_add(oc, 0)
+            code: _sov_list_add(code, 0)
             str_off: str_off + 1
             clen: clen + 1
     glob_off: clen + sl
-    pad: _sov_list_len(glob_names) * 8
+    pad: _sov_list_len(global_names) * 8
     hdr: 216
     # pass S3: __TEXT holds headers + code, READ+EXECUTE only.
     # __DATA starts on the page after the code, READ+WRITE, never
     # executable: literals first (they are data - a user wipe
     # writes them at any moment), then globals. the reserved-dword
-    # rider is gone with them.
+    # rider = gone with them.
     dfoff: hdr + clen
     as long as dfoff % 4096 is not 0
         dfoff: dfoff + 1
@@ -257,36 +258,36 @@ write_elf path:
         sl8: sl8 + 1
     str_off: dfoff - hdr
     glob_off: dfoff + sl8 - hdr
-    pad: _sov_list_len(glob_names) * 8
+    pad: _sov_list_len(global_names) * 8
     # pass S7: count the movz/movk runs that carry absolutes; the
     # loader adds the slide to their immediates - the windows model
     rel_n: 0
-    rel_at: _sov_list_new()
+    reloc_at: _sov_list_new()
     rel_nw: _sov_list_new()
     rc_i: 0
     as long as rc_i < _sov_list_len(patch_at)
         rk: _sov_list_get(patch_kind, rc_i)
-        if same(rk, "gw64s_a") is 1
+        if same(rk, "gw64s_a") = 1
             rel_n: rel_n + 1
-        if same(rk, "gw64a") is 1
+        if same(rk, "gw64a") = 1
             rel_n: rel_n + 1
-        if same(rk, "glob64") is 1
+        if same(rk, "glob64") = 1
             rel_n: rel_n + 1
-        if same(rk, "fnaddr64") is 1
+        if same(rk, "task_address64") = 1
             rel_n: rel_n + 1
-        if same(rk, "str64") is 1
+        if same(rk, "str64") = 1
             rel_n: rel_n + 1
-        if same(rk, "str64x0") is 1
+        if same(rk, "str64x0") = 1
             rel_n: rel_n + 1
-        if same(rk, "str") is 1
+        if same(rk, "str") = 1
             rel_n: rel_n + 1
-        if same(rk, "str32") is 1
+        if same(rk, "str32") = 1
             rel_n: rel_n + 1
-        if same(rk, "glob") is 1
+        if same(rk, "glob") = 1
             rel_n: rel_n + 1
         rc_i: rc_i + 1
     # S7 reopened (CI run #2): dyld kills unsigned MH_PIE builds.
-    # fixed-address image until PIE is re-landed
+    # fixed-address image until PIE = re-landed
     rel_n: 0
     relsz: rel_n * 8
     dlen: sl8 + pad + relsz
@@ -309,7 +310,7 @@ write_elf path:
     poke4(flat, 8, 0)
     poke4(flat, 12, 2)
     # no __PAGEZERO (NULL-page hardening only; unmapped memory faults
-    # the same way), so a single __TEXT + LC_MAIN + codesig is enough
+    # the same way), so a single __TEXT + LC_MAIN + codesig = enough
     poke4(flat, 16, 4)
     poke4(flat, 20, 184)
     # S7 reopened: fixed-address build, no MH_PIE
@@ -353,11 +354,11 @@ write_elf path:
     poke4(flat, 204, sig_len)
     i: 0
     as long as i < clen
-        dummy: _sov_set_byte(flat, hdr + i, _sov_list_get(oc, i))
+        dummy: _sov_set_byte(flat, hdr + i, _sov_list_get(code, i))
         i: i + 1
     si: 0
     as long as si < sl
-        dummy: _sov_set_byte(flat, hdr + str_off + si, _sov_buf_at(strb, si))
+        dummy: _sov_set_byte(flat, hdr + str_off + si, _sov_buf_at(letters, si))
         si: si + 1
     str_addr: 4294967296 + hdr + str_off
     glob_addr: 4294967296 + hdr + glob_off
@@ -365,138 +366,135 @@ write_elf path:
     as long as i < _sov_list_len(patch_at)
         at: _sov_list_get(patch_at, i)
         kind: _sov_list_get(patch_kind, i)
-        val: _sov_list_get(patch_val, i)
-        if same(kind, "rel26") is 1
-            fi: idx(fn_names, val)
+        val: _sov_list_get(patch_value, i)
+        if same(kind, "rel26") = 1
+            fi: idx(task_names, val)
             if fi > 0 - 1
-                tgt: _sov_list_get(fn_offs, fi)
+                tgt: _sov_list_get(task_at, fi)
                 rel: (tgt - at) / 4
                 if rel < 0
                     rel: rel + 67108864
                 poke4(flat, hdr + at, 2483027968 + (rel % 67108864))
             if not
-                print "Error: no such task"
-                _sov_print(val)
+                print "Error: no such task" : val
                 print _sov_list_get(patch_line, i)
-                had_err: 1
-        if same(kind, "b26") is 1
+                saw_error: 1
+        if same(kind, "b26") = 1
             poke4(flat, hdr + at, 335544320 + (val % 67108864))
-        if same(kind, "gw64s_a") is 1
+        if same(kind, "gw64s_a") = 1
             gsa2: str_addr
             poke4(flat, hdr + at, 3531603968 + (gsa2 % 65536) * 32)
             poke4(flat, hdr + at + 4, 4070572032 + ((gsa2 / 65536) % 65536) * 32)
             poke4(flat, hdr + at + 8, 4072669184 + ((gsa2 / 4294967296) % 65536) * 32)
             poke4(flat, hdr + at + 12, 4074766336 + ((gsa2 / 281474976710656) % 65536) * 32)
-        if same(kind, "gw64s_n") is 1
+        if same(kind, "gw64s_n") = 1
             gsc: (sl + 7) / 8
             poke4(flat, hdr + at, 3531603969 + gsc * 32)
-        if same(kind, "gw64a") is 1
+        if same(kind, "gw64a") = 1
             gwa2: glob_addr
             poke4(flat, hdr + at, 3531603968 + (gwa2 % 65536) * 32)
             poke4(flat, hdr + at + 4, 4070572032 + ((gwa2 / 65536) % 65536) * 32)
             poke4(flat, hdr + at + 8, 4072669184 + ((gwa2 / 4294967296) % 65536) * 32)
             poke4(flat, hdr + at + 12, 4074766336 + ((gwa2 / 281474976710656) % 65536) * 32)
-        if same(kind, "gw64n") is 1
-            poke4(flat, hdr + at, 3531603969 + _sov_list_len(glob_names) * 32)
-        if same(kind, "glob64") is 1
-            gx: idx(glob_names, val)
+        if same(kind, "gw64n") = 1
+            poke4(flat, hdr + at, 3531603969 + _sov_list_len(global_names) * 32)
+        if same(kind, "glob64") = 1
+            gx: idx(global_names, val)
             ga: glob_addr + gx * 8
             poke4(flat, hdr + at, 3531603968 + (ga % 65536) * 32 + 9)
             poke4(flat, hdr + at + 4, 4070572032 + ((ga / 65536) % 65536) * 32 + 9)
             poke4(flat, hdr + at + 8, 4072669184 + ((ga / 4294967296) % 65536) * 32 + 9)
-        if same(kind, "fnaddr64") is 1
-            fi: idx(fn_names, val)
+        if same(kind, "task_address64") = 1
+            fi: idx(task_names, val)
             if fi > 0 - 1
-                fa: 4294967296 + hdr + _sov_list_get(fn_offs, fi)
+                fa: 4294967296 + hdr + _sov_list_get(task_at, fi)
                 poke4(flat, hdr + at, 3531603968 + (fa % 65536) * 32)
                 poke4(flat, hdr + at + 4, 4070572032 + ((fa / 65536) % 65536) * 32)
                 poke4(flat, hdr + at + 8, 4072669184 + ((fa / 4294967296) % 65536) * 32)
                 poke4(flat, hdr + at + 12, 4074766336 + ((fa / 281474976710656) % 65536) * 32)
             if not
-                print "Error: no such task"
-                _sov_print(val)
-                had_err: 1
-        if same(kind, "str64x0") is 1
+                print "Error: no such task" : val
+                saw_error: 1
+        if same(kind, "str64x0") = 1
             sa: str_addr + val
             poke4(flat, hdr + at, 3531603968 + (sa % 65536) * 32)
             poke4(flat, hdr + at + 4, 4070572032 + ((sa / 65536) % 65536) * 32)
             poke4(flat, hdr + at + 8, 4072669184 + ((sa / 4294967296) % 65536) * 32)
-        if same(kind, "str64") is 1
+        if same(kind, "str64") = 1
             sa: str_addr + val
             poke4(flat, hdr + at, 3531603968 + (sa % 65536) * 32 + 1)
             poke4(flat, hdr + at + 4, 4070572032 + ((sa / 65536) % 65536) * 32 + 1)
             poke4(flat, hdr + at + 8, 4072669184 + ((sa / 4294967296) % 65536) * 32 + 1)
-        if same(kind, "adr") is 1
+        if same(kind, "adr") = 1
             sa: str_addr + val
             rel: sa - (4294967296 + hdr + at)
             if rel < 0
                 rel: rel + 2097152
             poke4(flat, hdr + at, 268435456 + (rel % 4) * 536870912 + ((rel / 4) % 524288) * 32 + 1)
-        if same(kind, "cbz_trap") is 1
-            ti: idx(fn_names, "_sov_trap")
+        if same(kind, "cbz_trap") = 1
+            ti: idx(task_names, "_sov_trap")
             if ti > 0 - 1
-                tg: _sov_list_get(fn_offs, ti)
+                tg: _sov_list_get(task_at, ti)
                 rl: (tg - at) / 4
                 if rl < 0
                     rl: rl + 524288
                 poke4(flat, hdr + at, 3019898880 + (rl % 524288) * 32 + val)
-        if same(kind, "b19_trap") is 1
-            ti: idx(fn_names, "_sov_trap")
+        if same(kind, "b19_trap") = 1
+            ti: idx(task_names, "_sov_trap")
             if ti > 0 - 1
-                tg: _sov_list_get(fn_offs, ti)
+                tg: _sov_list_get(task_at, ti)
                 rl: (tg - at) / 4
                 if rl < 0
                     rl: rl + 524288
                 poke4(flat, hdr + at, 1409286144 + (rl % 524288) * 32 + 2)
-        if same(kind, "rel") is 1
-            fi: idx(fn_names, val)
+        if same(kind, "rel") = 1
+            fi: idx(task_names, val)
             if fi > 0 - 1
-                tgt: _sov_list_get(fn_offs, fi)
+                tgt: _sov_list_get(task_at, fi)
                 rel: tgt - (at + 4)
                 poke4(flat, hdr + at, rel)
             if not
-                print "Error: no such task"
-                _sov_print(val)
+                print "Error: no such task" : val
                 print _sov_list_get(patch_line, i)
-                had_err: 1
-        if same(kind, "str") is 1
+                saw_error: 1
+        if same(kind, "str") = 1
             poke8(flat, hdr + at, str_addr + val)
-        if same(kind, "str32") is 1
+        if same(kind, "str32") = 1
             poke4(flat, hdr + at, str_addr + val)
-        if same(kind, "ripstr") is 1
+        if same(kind, "ripstr") = 1
             poke4(flat, hdr + at, str_off + val - at - 4)
-        if same(kind, "glob") is 1
-            gx: idx(glob_names, val)
+        if same(kind, "glob") = 1
+            gx: idx(global_names, val)
             poke8(flat, hdr + at, glob_addr + gx * 8)
-        if same(kind, "gw64s_a") is 1
-            rel_at: _sov_list_add(rel_at, at)
+        if same(kind, "gw64s_a") = 1
+            reloc_at: _sov_list_add(reloc_at, at)
             rel_nw: _sov_list_add(rel_nw, 4)
-        if same(kind, "gw64a") is 1
-            rel_at: _sov_list_add(rel_at, at)
+        if same(kind, "gw64a") = 1
+            reloc_at: _sov_list_add(reloc_at, at)
             rel_nw: _sov_list_add(rel_nw, 4)
-        if same(kind, "glob64") is 1
-            rel_at: _sov_list_add(rel_at, at)
+        if same(kind, "glob64") = 1
+            reloc_at: _sov_list_add(reloc_at, at)
             rel_nw: _sov_list_add(rel_nw, 3)
-        if same(kind, "fnaddr64") is 1
-            rel_at: _sov_list_add(rel_at, at)
+        if same(kind, "task_address64") = 1
+            reloc_at: _sov_list_add(reloc_at, at)
             rel_nw: _sov_list_add(rel_nw, 4)
-        if same(kind, "str64") is 1
-            rel_at: _sov_list_add(rel_at, at)
+        if same(kind, "str64") = 1
+            reloc_at: _sov_list_add(reloc_at, at)
             rel_nw: _sov_list_add(rel_nw, 2)
-        if same(kind, "str64x0") is 1
-            rel_at: _sov_list_add(rel_at, at)
+        if same(kind, "str64x0") = 1
+            reloc_at: _sov_list_add(reloc_at, at)
             rel_nw: _sov_list_add(rel_nw, 2)
-        if same(kind, "str") is 1
-            rel_at: _sov_list_add(rel_at, at)
+        if same(kind, "str") = 1
+            reloc_at: _sov_list_add(reloc_at, at)
             rel_nw: _sov_list_add(rel_nw, 80)
-        if same(kind, "str32") is 1
-            rel_at: _sov_list_add(rel_at, at)
+        if same(kind, "str32") = 1
+            reloc_at: _sov_list_add(reloc_at, at)
             rel_nw: _sov_list_add(rel_nw, 40)
-        if same(kind, "glob") is 1
-            rel_at: _sov_list_add(rel_at, at)
+        if same(kind, "glob") = 1
+            reloc_at: _sov_list_add(reloc_at, at)
             rel_nw: _sov_list_add(rel_nw, 80)
         i: i + 1
-    if had_err is 1
+    if saw_error = 1
         return
     # pass S7: the relocation table rides the __DATA tail, inside
     # the signed span: a count, then (offset, kind) pairs, same
@@ -504,7 +502,7 @@ write_elf path:
     poke8(flat, dfoff + sl8 + pad, rel_n)
     ri: 0
     as long as ri < rel_n
-        poke4(flat, dfoff + sl8 + pad + 8 + ri * 8, hdr + _sov_list_get(rel_at, ri))
+        poke4(flat, dfoff + sl8 + pad + 8 + ri * 8, hdr + _sov_list_get(reloc_at, ri))
         poke4(flat, dfoff + sl8 + pad + 12 + ri * 8, _sov_list_get(rel_nw, ri))
         ri: ri + 1
     sig: codelim
@@ -543,10 +541,10 @@ write_elf path:
             hj: hj + 1
         pg: pg + 1
     w: _sov_write_n(path, flat, filesz)
-    if w is 0
+    if w = 0
         print "Error: cannot write output (is it running?)"
-        fail()
-    if need_priv is 1
+        fail
+    if needs_private = 1
         # pass 140: a private program's binary carries its secrets -
         # literals, keys - in its string span; it belongs to its
         # owner alone
@@ -570,51 +568,48 @@ so_name s flat at:
         i: i + 1
     dummy: _sov_set_byte(flat, at + i, 0)
     return 0
-main argc argv:
-    # remember where this compiler lives, so its library and runtime
-    # are found no matter which folder you run it from
-    self_dir: dirname(tidy_path(peek_ptr(argv, 0)))
-    if argc < 2
+# remember where this compiler lives, so its library and runtime
+# are found no matter which folder you run it from
+start:
+    compiler_folder: dirname(tidy_path(peek_ptr(g_argv, 0)))
+    if g_argc < 2
         print "Usage: sovren <file.sov> [-o out]"
         print "sovren — native x86-64, self-contained"
-        fail()
-    inf: blank
-    outf: blank
+        fail
+    in_file: blank
+    out_file: blank
     i: 1
-    as long as i < argc
-        arg: peek_ptr(argv, i)
-        if same(arg, "--bare") is 1
-            bare_mode: 1
+    as long as i < g_argc
+        arg: peek_ptr(g_argv, i)
+        if same(arg, "--bare") = 1
+            no_runtime: 1
         if not
-            if same(arg, "-o") is 1
+            if same(arg, "-o") = 1
                 i: i + 1
-                if i < argc
-                    outf: peek_ptr(argv, i)
+                if i < g_argc
+                    out_file: peek_ptr(g_argv, i)
             if not
-                if same(arg, "build") is 0
-                    inf: arg
+                if same(arg, "build") = 0
+                    in_file: arg
         i: i + 1
-    if length(inf) is 0
+    if length(in_file) = 0
         print "Error: no input"
-        fail()
-    if length(outf) is 0
-        d: look(inf, ".sov")
-        if d > 0 - 1
-            outf: cut(inf, 0, d)
+        fail
+    if length(out_file) = 0
+        if holds(in_file, ".sov") = 1
+            out_file: cut(in_file, 0, look(in_file, ".sov"))
         if not
-            outf: join(inf, ".out")
-    src_name: inf
-    print "Compiling"
-    _sov_print(inf)
-    src: load_file(inf)
-    if src is 0
+            out_file: join(in_file, ".out")
+    file_name: in_file
+    print "Compiling" : in_file
+    src: load_file(in_file)
+    if src = 0
         print "Error: cannot read input"
-        fail()
-    nl: _sov_alloc(2)
-    dummy: _sov_set_byte(nl, 0, 10)
-    dummy: _sov_set_byte(nl, 1, 0)
-    src: join(join("# pad line so main is not first", nl), src)
-    used_libs: blank
+        fail
+    newline: "\n"
+    src: join("# skip this line\n", src)
+    libraries: blank
+    src: expand_use_lines(src)
     extra: pull_uses(src)
     more: pull_uses(extra)
     as long as length(more) > 0
@@ -622,80 +617,60 @@ main argc argv:
         more: pull_uses(more)
     if length(extra) > 0
         src: join(extra, src)
-    need: 0
-    mmap_sz: 12582912
-    if look(src, "_sov_list") > 0 - 1
-        need: 1
-    if look(src, "load_file") > 0 - 1
-        need: 1
-    if look(src, "_sov_buf") > 0 - 1
-        need: 1
-    if look(src, "_sov_alloc") > 0 - 1
-        need: 1
-    if look(src, "_sov_set_byte") > 0 - 1
-        need: 1
-    if look(src, "peek_byte") > 0 - 1
-        need: 1
-    if look(src, "poke_byte") > 0 - 1
-        need: 1
-    if look(src, "spawn ") > 0 - 1
-        need: 1
-    if look(src, "join ") > 0 - 1
-        need: 1
-    rt: blank
-    if bare_mode is 1
-        need: 0
-    if need is 1
-        mmap_sz: 1073741824
-        rt: load_file("runtime.sov")
-        if rt is 0
-            rt: load_file("linux/runtime.sov")
-        if rt is 0
-            rt: load_file(join(self_dir, "/runtime.sov"))
-        if rt is 0
-            rt: load_file(join(self_dir, "/../runtime.sov"))
-        if rt is 0
-            rt: load_file(join(dirname(dirname(self_dir)), "/runtime.sov"))
-        if rt is 0
+    heap_size: 12582912
+    needs_runtime: uses_runtime(src)
+    runtime: blank
+    if no_runtime = 1
+        needs_runtime: 0
+    if needs_runtime = 1
+        heap_size: 1073741824
+        runtime: load_file("runtime.sov")
+        if runtime = 0
+            runtime: load_file("linux/runtime.sov")
+        if runtime = 0
+            runtime: load_file(join(compiler_folder, "/runtime.sov"))
+        if runtime = 0
+            runtime: load_file(join(compiler_folder, "/../runtime.sov"))
+        if runtime = 0
+            runtime: load_file(join(dirname(dirname(compiler_folder)), "/runtime.sov"))
+        if runtime = 0
             print "Error: cannot read runtime"
-            fail()
-    src_base: 1
-    if length(rt) > 0
-        src_base: src_base + _sov_list_len(lines_of(rt))
+            fail
+    first_user_line: 1
+    if length(runtime) > 0
+        first_user_line: first_user_line + _sov_list_len(lines_of(runtime))
     if length(extra) > 0
-        src_base: src_base + _sov_list_len(lines_of(extra))
-    nl: _sov_alloc(2)
-    dummy: _sov_set_byte(nl, 0, 10)
-    dummy: _sov_set_byte(nl, 1, 0)
-    all: join(rt, nl)
-    src_base: src_base + 1
+        first_user_line: first_user_line + _sov_list_len(lines_of(extra))
+    newline: "\n"
+    all: join(runtime, newline)
+    first_user_line: first_user_line + 1
     # the runtime's thread paths end themselves through this
-    # injected task; it is emitted unconditionally because runtime.sov
+    # injected task; it = emitted unconditionally because runtime.sov
     # calls it whether or not the program ever makes a syscall
-    # (ios threads are detached arm64 clones, so ending one is exit)
-    all: join(all, nl)
+    # (ios threads are detached arm64 clones, so ending one = exit)
+    all: join(all, newline)
         all: join(all, "# mem_copy and mem_set, injected for the arm targets: the x86 back\n# end has them as one rep movsb / rep stosb each, and a shared library\n# may not use a builtin that only one machine has. written with\n# peek_byte and poke_byte, which are builtins on every target.\n_sov_mem_copy d s n:\n    i: 0\n    as long as i < n\n        poke_byte(d, i, peek_byte(s, i))\n        i: i + 1\n    return d\n\n_sov_mem_set d v n:\n    j: 0\n    as long as j < n\n        poke_byte(d, j, v)\n        j: j + 1\n    return d\n")
-        src_base: src_base + 20
-    # ios is XNU, not arm64 Linux: Apple numbers its BSD calls its
+        first_user_line: first_user_line + 20
+    # ios = XNU, not arm64 Linux: Apple numbers its BSD calls its
     # own way, so a raw syscall from library code has to be
     # translated or it lands on the wrong call entirely. In
     # pieces because one line this long will not compile.
-    all: join(all, "# x86-64 number in, XNU number out. Apple numbers its BSD\n# calls its own way and has no pause, nanosleep, futex, prctl\n# or plain getcwd, so only calls whose argument lists match\n# both ways are translated; the rest fall through. Every pair\n# here was read out of XNU bsd/kern/syscalls.master.\n_sov_sysnum n:\n    if n is 0\n        return 3\n    if n is 1\n        return 4\n    if n is 3\n        return 6\n    if n is 7\n        return 230\n    if n is 8\n        return 199\n    if n is 9\n        return 197\n    if n is 16\n        return 54\n    if n is 22\n        return 42\n    if n is 27\n        return 93\n    if n is 28\n        return 75\n    if n is 39\n        return 20\n    if n is 41\n        return 97\n")
-    all: join(all, "    if n is 42\n        return 98\n    if n is 43\n        return 30\n    if n is 44\n        return 133\n    if n is 45\n        return 29\n    if n is 49\n        return 104\n    if n is 50\n        return 106\n    if n is 56\n        return 360\n    if n is 57\n        return 2\n    if n is 59\n        return 59\n    if n is 60\n        return 1\n    if n is 61\n        return 7\n    if n is 74\n        return 95\n    if n is 77\n        return 201\n    if n is 80\n        return 12\n    if n is 82\n        return 128\n    if n is 83\n        return 136\n    if n is 84\n        return 137\n    if n is 87\n        return 10\n    if n is 90\n        return 15\n    if n is 102\n        return 24\n")
-    all: join(all, "    if n is 104\n        return 47\n    if n is 107\n        return 25\n    if n is 257\n        return 463\n    if n is 262\n        return 469\n    if n is 263\n        return 472\n    if n is 318\n        return 500\n    return n\n")
-    all: join(all, nl)
-    src_base: src_base + 80
-    all: join(all, join("_sov_thread_exit:", nl))
-    all: join(all, join("    syscall(60, 0, 0, 0, 0, 0, 0)", nl))
-    all: join(all, join("    return 0 - 1", nl))
-    src_base: src_base + 4
+    all: join(all, "# x86-64 number in, XNU number out. Apple numbers its BSD\n# calls its own way and has no pause, nanosleep, futex, prctl\n# or plain getcwd, so only calls whose argument lists match\n# both ways are translated; the rest fall through. Every pair\n# here was read out of XNU bsd/kern/syscalls.master.\n_sov_sysnum n:\n    if n = 0\n        return 3\n    if n = 1\n        return 4\n    if n = 3\n        return 6\n    if n = 7\n        return 230\n    if n = 8\n        return 199\n    if n = 9\n        return 197\n    if n = 16\n        return 54\n    if n = 22\n        return 42\n    if n = 27\n        return 93\n    if n = 28\n        return 75\n    if n = 39\n        return 20\n    if n = 41\n        return 97\n")
+    all: join(all, "    if n = 42\n        return 98\n    if n = 43\n        return 30\n    if n = 44\n        return 133\n    if n = 45\n        return 29\n    if n = 49\n        return 104\n    if n = 50\n        return 106\n    if n = 56\n        return 360\n    if n = 57\n        return 2\n    if n = 59\n        return 59\n    if n = 60\n        return 1\n    if n = 61\n        return 7\n    if n = 74\n        return 95\n    if n = 77\n        return 201\n    if n = 80\n        return 12\n    if n = 82\n        return 128\n    if n = 83\n        return 136\n    if n = 84\n        return 137\n    if n = 87\n        return 10\n    if n = 90\n        return 15\n    if n = 102\n        return 24\n")
+    all: join(all, "    if n = 104\n        return 47\n    if n = 107\n        return 25\n    if n = 257\n        return 463\n    if n = 262\n        return 469\n    if n = 263\n        return 472\n    if n = 318\n        return 500\n    return n\n")
+    all: join(all, newline)
+    first_user_line: first_user_line + 80
+    all: join(all, join("_sov_thread_exit:", newline))
+    all: join(all, join("    syscall(60, 0, 0, 0, 0, 0, 0)", newline))
+    all: join(all, join("    return 0 - 1", newline))
+    first_user_line: first_user_line + 4
     all: join(all, src)
     compile(all)
-    write_elf(outf)
-    if had_err is 1
-        fail()
-    print "Wrote"
-    _sov_print(outf)
+    write_program(out_file)
+    if saw_error = 1
+        fail
+    print "Wrote" : out_file
+start
 push_reg n:
     emitw(4162785248 + n)
 
@@ -705,23 +680,23 @@ emit_write_lit s:
     off: intern_nz(s)
     at: here()
     emitw(268435457)
-    addp(at, "adr", off)
+    later_fill(at, "adr", off)
     set_reg(2, n)
     set_reg(8, sc_write)
-    sysc()
+    ask_kernel
 
 # mmap(0, sz, RW, PRIVATE|ANON, -1, 0) -> x0
 emit_print:
-    fn_names: _sov_list_add(fn_names, "_sov_print")
-    fn_offs: _sov_list_add(fn_offs, here())
+    task_names: _sov_list_add(task_names, "_sov_print")
+    task_at: _sov_list_add(task_at, here())
     # a value under 65536 is not a real address. reading from it
     # would crash, so hand it to the number printer instead.
     emitw(4047519775)
     hi: here()
     emitw(1409286146)
-    used_pi: 1
-    calln("_sov_print_int")
-    ret()
+    used_print_number: 1
+    print_number
+    ret
     put_arm(hi, here() - hi)
     emitw(2847702013)
     emitw(2835436531)
@@ -746,20 +721,20 @@ emit_print:
     mov_reg(1, 19)
     mov_reg(2, 20)
     set_reg(8, sc_write)
-    sysc()
+    ask_kernel
     set_reg(0, 1)
     nl_at: here()
     emitw(268435457)
-    addp(nl_at, "adr", intern_nz("\n"))
+    later_fill(nl_at, "adr", intern_nz("\n"))
     set_reg(2, 1)
     set_reg(8, sc_write)
-    sysc()
+    ask_kernel
     emitw(2432697279)
     emitw(2839630835)
     emitw(2839698421)
     emitw(4181728247)
     emitw(2831449085)
-    ret()
+    ret
 
 # x0 = number, writes it in decimal then a newline
 put_sub_sp at n:
@@ -794,133 +769,133 @@ sha_ss1 x:
     return wxor(wxor(rotr(x, 17), rotr(x, 19)), shr(x, 10))
 
 sha_k i:
-    if i is 0
+    if i = 0
         return 1116352408
-    if i is 1
+    if i = 1
         return 1899447441
-    if i is 2
+    if i = 2
         return 3049323471
-    if i is 3
+    if i = 3
         return 3921009573
-    if i is 4
+    if i = 4
         return 961987163
-    if i is 5
+    if i = 5
         return 1508970993
-    if i is 6
+    if i = 6
         return 2453635748
-    if i is 7
+    if i = 7
         return 2870763221
-    if i is 8
+    if i = 8
         return 3624381080
-    if i is 9
+    if i = 9
         return 310598401
-    if i is 10
+    if i = 10
         return 607225278
-    if i is 11
+    if i = 11
         return 1426881987
-    if i is 12
+    if i = 12
         return 1925078388
-    if i is 13
+    if i = 13
         return 2162078206
-    if i is 14
+    if i = 14
         return 2614888103
-    if i is 15
+    if i = 15
         return 3248222580
-    if i is 16
+    if i = 16
         return 3835390401
-    if i is 17
+    if i = 17
         return 4022224774
-    if i is 18
+    if i = 18
         return 264347078
-    if i is 19
+    if i = 19
         return 604807628
-    if i is 20
+    if i = 20
         return 770255983
-    if i is 21
+    if i = 21
         return 1249150122
-    if i is 22
+    if i = 22
         return 1555081692
-    if i is 23
+    if i = 23
         return 1996064986
-    if i is 24
+    if i = 24
         return 2554220882
-    if i is 25
+    if i = 25
         return 2821834349
-    if i is 26
+    if i = 26
         return 2952996808
-    if i is 27
+    if i = 27
         return 3210313671
-    if i is 28
+    if i = 28
         return 3336571891
-    if i is 29
+    if i = 29
         return 3584528711
-    if i is 30
+    if i = 30
         return 113926993
-    if i is 31
+    if i = 31
         return 338241895
-    if i is 32
+    if i = 32
         return 666307205
-    if i is 33
+    if i = 33
         return 773529912
-    if i is 34
+    if i = 34
         return 1294757372
-    if i is 35
+    if i = 35
         return 1396182291
-    if i is 36
+    if i = 36
         return 1695183700
-    if i is 37
+    if i = 37
         return 1986661051
-    if i is 38
+    if i = 38
         return 2177026350
-    if i is 39
+    if i = 39
         return 2456956037
-    if i is 40
+    if i = 40
         return 2730485921
-    if i is 41
+    if i = 41
         return 2820302411
-    if i is 42
+    if i = 42
         return 3259730800
-    if i is 43
+    if i = 43
         return 3345764771
-    if i is 44
+    if i = 44
         return 3516065817
-    if i is 45
+    if i = 45
         return 3600352804
-    if i is 46
+    if i = 46
         return 4094571909
-    if i is 47
+    if i = 47
         return 275423344
-    if i is 48
+    if i = 48
         return 430227734
-    if i is 49
+    if i = 49
         return 506948616
-    if i is 50
+    if i = 50
         return 659060556
-    if i is 51
+    if i = 51
         return 883997877
-    if i is 52
+    if i = 52
         return 958139571
-    if i is 53
+    if i = 53
         return 1322822218
-    if i is 54
+    if i = 54
         return 1537002063
-    if i is 55
+    if i = 55
         return 1747873779
-    if i is 56
+    if i = 56
         return 1955562222
-    if i is 57
+    if i = 57
         return 2024104815
-    if i is 58
+    if i = 58
         return 2227730452
-    if i is 59
+    if i = 59
         return 2361852424
-    if i is 60
+    if i = 60
         return 2428436474
-    if i is 61
+    if i = 61
         return 2756734187
-    if i is 62
+    if i = 62
         return 3204031479
-    if i is 63
+    if i = 63
         return 3329325298
     return 0
 
@@ -1012,14 +987,14 @@ sha256_bytes data n out:
 
 # spawn/join are linux features for now: the shared codegen calls
 # spawn_emit for any spawn, so every machine must define it. until
-# the <os> thread bridge lands, a spawn program is refused cleanly
-spawn_emit name argc:
+# the <os> thread bridge lands, a spawn program = refused cleanly
+spawn_emit name how_many:
     # no thread bridge on this machine yet. carm pushed the arguments
     # before calling here, so they come back off the stack, and spawn
     # answers -1 in x0 - the same value a real spawn returns when the
     # kernel refuses one. a caller that checks the handle therefore
     # works, instead of the whole library failing to build
-    ai: argc - 1
+    ai: how_many - 1
     as long as ai > 0 - 1
         pop_reg(0)
         ai: ai - 1

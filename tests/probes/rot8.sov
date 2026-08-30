@@ -1,13 +1,12 @@
-main:
-    i: 0
-    got: 0
-    as long as i < 5
-        try
-            if i is 3
-                raise 7
-            got: got + 10
-        except e
-            got: got + 100
-        i: i + 1
-    print got
-    print i
+i: 0
+got: 0
+as long as i < 5
+    try
+        if i is 3
+            raise 7
+        got: got + 10
+    except e
+        got: got + 100
+    i: i + 1
+print got
+print i

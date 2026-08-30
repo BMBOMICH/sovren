@@ -84,16 +84,16 @@ fz_try src want:
         return 0
     if str_num(str_trim(got)) is want
         return 1
-    _sov_print("MISMATCH")
-    _sov_print(src)
-    _sov_print(str_join3("  got  ", str_trim(got), ""))
-    _sov_print(str_join3("  want ", num_text(want), ""))
+    print "MISMATCH"
+    print "src" : src
+    print "got" : str_trim(got)
+    print "want" : want
     return 0
 
 # --- an expression: print <expr> ---
 fz_expr:
     e: fz_build(3)
-    src: str_join3("main:\n    print ", fz_txt, "\n")
+    src: str_join3("print ", fz_txt, "\n")
     return fz_try(src, e)
 
 # --- a condition: if <a> <op> <b> then print 1 else print 0 ---
@@ -128,22 +128,22 @@ fz_cond:
         ot: "is not"
         if a is not b
             want: 1
-    src: str_join3("main:\n    if ", at, " ")
+    src: str_join3("if ", at, " ")
     src: str_join3(src, ot, " ")
     src: str_join3(src, bt, "\n")
-    src: str_join3(src, "        print 1\n", "")
-    src: str_join3(src, "    if not\n", "")
-    src: str_join3(src, "        print 0\n", "")
+    src: str_join3(src, "    print 1\n", "")
+    src: str_join3(src, "if not\n", "")
+    src: str_join3(src, "    print 0\n", "")
     return fz_try(src, want)
 
 # --- a loop: accumulate while idx < lim ---
 fz_loop:
     lim: fz_pick(13)
     step: 1 + fz_pick(4)
-    src: str_join3("main:\n    acc: 0\n    idx: 0\n    as long as idx < ", num_text(lim), "\n")
-    src: str_join3(src, "        acc: acc + idx\n", "")
-    src: str_join3(src, "        idx: idx + ", num_text(step))
-    src: str_join3(src, "\n    print acc\n", "")
+    src: str_join3("acc: 0\nidx: 0\nas long as idx < ", num_text(lim), "\n")
+    src: str_join3(src, "    acc: acc + idx\n", "")
+    src: str_join3(src, "    idx: idx + ", num_text(step))
+    src: str_join3(src, "\nprint acc\n", "")
     e: 0
     i: 0
     as long as i < lim

@@ -2,9 +2,8 @@
 # thin air. untouched by pass 68; binary byte-identical.
 use sys
 
-main:
-    try
-        raise "boom"
-    except e
-        print 41
-    print 42
+try
+    raise "boom"
+except e
+    print 41
+print 42

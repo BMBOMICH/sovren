@@ -1,23 +1,22 @@
 # displaced scaled peek (dp = 16) against a name
-main:
-    arr: _sov_alloc(8000)
-    r: 1
-    poke_raw64(arr, 0, 770)
-    poke_raw64(arr, 8, 880)
-    poke_raw64(arr, 16, 33)
-    poke_raw64(arr, 24, 990)
-    v: 31
-    if v < peek_raw64(arr, (r + 2) * 8)
-        print 601
-    if not
-        print 602
-    v: 2222
-    if v < peek_raw64(arr, (r + 2) * 8)
-        print 603
-    if not
-        print 604
-    v: 32
-    if peek_raw64(arr, (r + 2) * 8) > v
-        print 605
-    if not
-        print 606
+arr: _sov_alloc(8000)
+r: 1
+poke_raw64(arr, 0, 770)
+poke_raw64(arr, 8, 880)
+poke_raw64(arr, 16, 33)
+poke_raw64(arr, 24, 990)
+v: 31
+if v < peek_raw64(arr, (r + 2) * 8)
+    print 601
+if not
+    print 602
+v: 2222
+if v < peek_raw64(arr, (r + 2) * 8)
+    print 603
+if not
+    print 604
+v: 32
+if peek_raw64(arr, (r + 2) * 8) > v
+    print 605
+if not
+    print 606

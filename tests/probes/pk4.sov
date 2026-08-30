@@ -1,17 +1,16 @@
 # gt sense, taken and not taken
-main:
-    b: _sov_alloc(8000)
-    k: 4
-    poke_raw64(b, k * 8, 640)
-    poke_raw64(b, (k + 1) * 8, 213)
-    if peek_raw64(b, k * 8) > peek_raw64(b, (k + 1) * 8)
-        k: k + 1
-    print k
-    print peek_raw64(b, k * 8)
-    k: 6
-    poke_raw64(b, k * 8, 152)
-    poke_raw64(b, (k + 1) * 8, 300)
-    if peek_raw64(b, k * 8) > peek_raw64(b, (k + 1) * 8)
-        k: k + 1
-    print k
-    print peek_raw64(b, k * 8)
+b: _sov_alloc(8000)
+k: 4
+poke_raw64(b, k * 8, 640)
+poke_raw64(b, (k + 1) * 8, 213)
+if peek_raw64(b, k * 8) > peek_raw64(b, (k + 1) * 8)
+    k: k + 1
+print k
+print peek_raw64(b, k * 8)
+k: 6
+poke_raw64(b, k * 8, 152)
+poke_raw64(b, (k + 1) * 8, 300)
+if peek_raw64(b, k * 8) > peek_raw64(b, (k + 1) * 8)
+    k: k + 1
+print k
+print peek_raw64(b, k * 8)

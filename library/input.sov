@@ -10,11 +10,11 @@ input_num:
     return str_num(key_line(64))
 
 input_ask q:
-    _sov_print(q)
+    print q
     return as text key_line(512)
 
 input_yes q:
-    _sov_print(q)
+    print q
     a: key_line(8)
     if str_len(a) is 0
         return 0

@@ -135,15 +135,14 @@ ac_run:
     ac_ok("tests/arm64/hello runs and prints the right words")
     return 0
 
-main:
-    ac_struct()
-    ac_run()
-    write_out(num_text(ac_pass))
-    write_out(" passed, ")
-    write_out(num_text(ac_fail))
-    write_out(" failed\n")
-    if ac_fail is 0
-        write_out("arm64 check passed\n")
-        sys_exit(0)
-    write_out("arm64 check FAILED\n")
-    sys_exit(1)
+ac_struct()
+ac_run()
+write_out(num_text(ac_pass))
+write_out(" passed, ")
+write_out(num_text(ac_fail))
+write_out(" failed\n")
+if ac_fail is 0
+    write_out("arm64 check passed\n")
+    sys_exit(0)
+write_out("arm64 check FAILED\n")
+sys_exit(1)
