@@ -1,0 +1,681 @@
+use mem
+use sha512
+use x25519
+ED_D: 0
+ED_D2: 0
+ED_SQ: 0
+ED_BX: 0
+ED_BY: 0
+ED_L: 0
+ED_EXP: 0
+ED_DF: 0
+ED_D2F: 0
+ED_SQF: 0
+ED_READY: 0
+ed_init:
+    if ED_READY is 1 -> return 0
+    ED_READY: 1
+    ED_D: _sov_alloc(32)
+    ED_D2: _sov_alloc(32)
+    ED_SQ: _sov_alloc(32)
+    ED_BX: _sov_alloc(32)
+    ED_BY: _sov_alloc(32)
+    ED_L: _sov_alloc(32)
+    ED_EXP: _sov_alloc(32)
+    ed_fill()
+    ED_DF: _sov_alloc(80)
+    ED_D2F: _sov_alloc(80)
+    ED_SQF: _sov_alloc(80)
+    x_decode(ED_DF, ED_D)
+    x_decode(ED_D2F, ED_D2)
+    x_decode(ED_SQF, ED_SQ)
+ed_one out:
+    fe_zero(out)
+    poke_i64(out, 0, 1)
+ed_fzero a:
+    z: _sov_alloc(80)
+    j: 0
+    as long as j < 10
+        poke_i64(z, j * 8, 0)
+        j: j + 1
+    return ed_feq(a, z)
+ed_settle f:
+    i: 0
+    as long as i < 9
+        c: peek_i64(f, i * 8) / 67108864
+        poke_i64(f, i * 8, peek_i64(f, i * 8) % 67108864)
+        poke_i64(f, (i + 1) * 8, peek_i64(f, (i + 1) * 8) + c)
+        i: i + 1
+    c: peek_i64(f, 72) / 67108864
+    poke_i64(f, 72, peek_i64(f, 72) % 67108864)
+    poke_i64(f, 0, peek_i64(f, 0) + 608 * c)
+    c: peek_i64(f, 0) / 67108864
+    poke_i64(f, 0, peek_i64(f, 0) % 67108864)
+    poke_i64(f, 8, peek_i64(f, 8) + c)
+ed_feq a b:
+    x: _sov_heap_alloc(80)
+    y: _sov_heap_alloc(80)
+    j: 0
+    as long as j < 10
+        poke_i64(x, j * 8, peek_i64(a, j * 8))
+        poke_i64(y, j * 8, peek_i64(b, j * 8))
+        j: j + 1
+    f: 0
+    as long as f < 2
+        q: x
+        if f is 1 -> q: y
+        j: 0
+        as long as j < 9
+            c: peek_i64(q, j * 8) / 67108864
+            poke_i64(q, j * 8, peek_i64(q, j * 8) % 67108864)
+            poke_i64(q, (j + 1) * 8, peek_i64(q, (j + 1) * 8) + c)
+            j: j + 1
+        c: peek_i64(q, 72) / 67108864
+        poke_i64(q, 72, peek_i64(q, 72) % 67108864)
+        poke_i64(q, 0, peek_i64(q, 0) + 608 * c)
+        c: peek_i64(q, 0) / 67108864
+        poke_i64(q, 0, peek_i64(q, 0) % 67108864)
+        poke_i64(q, 8, peek_i64(q, 8) + c)
+        n: 0
+        as long as n < 8
+            ge: 0
+            j: 9
+            as long as j >= 0
+                w: 67108863
+                if j is 0 -> w: 67108845
+                if j is 9 -> w: 2097151
+                xa: peek_i64(q, j * 8)
+                if xa > w -> ge: 1
+                if xa < w -> j: 0 - 1
+                j: j - 1
+            if ge is 1
+                br: 0
+                j: 0
+                as long as j < 10
+                    w: 67108863
+                    if j is 0 -> w: 67108845
+                    if j is 9 -> w: 2097151
+                    t: peek_i64(q, j * 8) - w - br
+                    if t < 0
+                        t: t + 67108864
+                        br: 1
+                    if not -> br: 0
+                    poke_i64(q, j * 8, t)
+                    j: j + 1
+            n: n + 1
+        f: f + 1
+    i: 0
+    as long as i < 10
+        if peek_i64(x, i * 8) is not peek_i64(y, i * 8) -> return 0
+        i: i + 1
+    return 1
+ed_neg out a:
+    z: _sov_heap_alloc(80)
+    fe_zero(z)
+    fe_sub(out, z, a)
+ed_pow out a e:
+    r: _sov_alloc(80)
+    ed_one(r)
+    i: 255
+    as long as i >= 0
+        fe_sqr(r, r)
+        bit: bshr(peek_byte(e, i / 8), i % 8) % 2
+        if bit is 1 -> fe_mul(r, r, a)
+        i: i - 1
+    fe_copy(out, r)
+ed_pzero p:
+    fe_zero(p)
+    ed_one(p + 80)
+    ed_one(p + 160)
+    fe_zero(p + 240)
+ed_pbase p:
+    ed_init()
+    x: _sov_heap_alloc(80)
+    y: _sov_heap_alloc(80)
+    x_decode(x, ED_BX)
+    x_decode(y, ED_BY)
+    fe_copy(p, x)
+    fe_copy(p + 80, y)
+    ed_one(p + 160)
+    fe_mul(p + 240, x, y)
+    fe_reduce(p + 240)
+ed_padd p3 p1 p2:
+    a: _sov_alloc(720)
+    t1: _sov_alloc(80)
+    fe_sub(a, p1 + 80, p1)
+    fe_sub(a + 80, p2 + 80, p2)
+    fe_mul(a, a, a + 80)
+    fe_add(a + 80, p1 + 80, p1)
+    fe_add(a + 160, p2 + 80, p2)
+    fe_mul(a + 80, a + 80, a + 160)
+    fe_mul(a + 240, p1 + 240, ED_D2F)
+    fe_mul(a + 240, a + 240, p2 + 240)
+    fe_add(a + 320, p1 + 160, p1 + 160)
+    fe_mul(a + 320, a + 320, p2 + 160)
+    fe_reduce(a)
+    fe_reduce(a + 80)
+    fe_reduce(a + 240)
+    fe_reduce(a + 320)
+    fe_sub(a + 400, a + 80, a)
+    ed_settle(a + 400)
+    fe_sub(a + 480, a + 320, a + 240)
+    ed_settle(a + 480)
+    fe_add(a + 560, a + 320, a + 240)
+    fe_add(t1, a + 80, a)
+    fe_mul(p3, a + 400, a + 480)
+    fe_mul(p3 + 80, a + 560, t1)
+    fe_mul(p3 + 240, a + 400, t1)
+    fe_mul(p3 + 160, a + 480, a + 560)
+    fe_reduce(p3)
+    fe_reduce(p3 + 80)
+    fe_reduce(p3 + 160)
+    fe_reduce(p3 + 240)
+ed_pdbl p2 p1:
+    t: _sov_alloc(320)
+    ed_padd(t, p1, p1)
+    fe_copy(p2, t)
+    fe_copy(p2 + 80, t + 80)
+    fe_copy(p2 + 160, t + 160)
+    fe_copy(p2 + 240, t + 240)
+ed_psel dst a b m:
+    i: 0
+    as long as i < 40
+        x: peek_i64(a, i * 8)
+        y: peek_i64(b, i * 8)
+        poke_i64(dst, i * 8, bxor(y, band(bxor(x, y), m)))
+        i: i + 1
+ed_pmul out p s:
+    r: _sov_alloc(320)
+    q: _sov_alloc(320)
+    t: _sov_alloc(320)
+    ed_pzero(r)
+    fe_copy(q, p)
+    fe_copy(q + 80, p + 80)
+    fe_copy(q + 160, p + 160)
+    fe_copy(q + 240, p + 240)
+    i: 255
+    as long as i >= 0
+        bit: bshr(peek_byte(s, i / 8), i % 8) % 2
+        m: 0 - bit
+        ed_pdbl(r, r)
+        ed_padd(t, r, q)
+        ed_psel(r, t, r, m)
+        i: i - 1
+    fe_copy(out, r)
+    fe_copy(out + 80, r + 80)
+    fe_copy(out + 160, r + 160)
+    fe_copy(out + 240, r + 240)
+ed_penc out p:
+    zi: _sov_alloc(80)
+    x: _sov_alloc(80)
+    y: _sov_alloc(80)
+    x_invert(zi, p + 160)
+    fe_mul(x, p, zi)
+    fe_mul(y, p + 80, zi)
+    fe_reduce(x)
+    fe_reduce(y)
+    i: 0
+    as long as i < 32
+        poke_byte(out, i, 0)
+        i: i + 1
+    x_encode(y, out)
+    if peek_i64(x, 0) % 2 is 1 -> poke_byte(out, 31, peek_byte(out, 31) + 128)
+ed_pdec p b:
+    ed_init()
+    sign: peek_byte(b, 31) / 128
+    s: _sov_alloc(1160)
+    i: 0
+    as long as i < 31
+        poke_byte(s, i, peek_byte(b, i))
+        i: i + 1
+    poke_byte(s, 31, peek_byte(b, 31) % 128)
+    x_decode(s + 40, s)
+    fe_reduce(s + 40)
+    fe_zero(s + 120)
+    poke_i64(s + 120, 0, 1)
+    fe_sqr(s + 200, s + 40)
+    fe_sub(s + 280, s + 200, s + 120)
+    fe_mul(s + 360, s + 200, ED_DF)
+    fe_add(s + 360, s + 360, s + 120)
+    fe_sqr(s + 440, s + 360)
+    fe_mul(s + 520, s + 440, s + 360)
+    fe_mul(s + 600, s + 520, s + 520)
+    fe_mul(s + 600, s + 600, s + 360)
+    fe_mul(s + 600, s + 600, s + 280)
+    ed_pow(s + 680, s + 600, ED_EXP)
+    fe_mul(s + 760, s + 280, s + 520)
+    fe_mul(s + 760, s + 760, s + 680)
+    fe_sqr(s + 840, s + 760)
+    fe_mul(s + 920, s + 360, s + 840)
+    ed_settle(s + 920)
+    fe_reduce(s + 920)
+    ed_settle(s + 280)
+    fe_reduce(s + 280)
+    ed_neg(s + 1000, s + 280)
+    ed_settle(s + 1000)
+    fe_reduce(s + 1000)
+    same: 1
+    i: 0
+    as long as i < 10
+        if peek_i64(s + 920, i * 8) is not peek_i64(s + 280, i * 8) -> same: 0
+        i: i + 1
+    if same is 0
+        same: 1
+        i: 0
+        as long as i < 10
+            if peek_i64(s + 920, i * 8) is not peek_i64(s + 1000, i * 8) -> same: 0
+            i: i + 1
+        if same is 1 -> fe_mul(s + 760, s + 760, ED_SQF)
+    if same is 0 -> return 0
+    ed_settle(s + 760)
+    fe_reduce(s + 760)
+    zed: 1
+    i: 0
+    as long as i < 10
+        if peek_i64(s + 760, i * 8) is not 0 -> zed: 0
+        i: i + 1
+    if zed is 1
+        if sign is 1 -> return 0
+    if peek_i64(s + 760, 0) % 2 is not sign -> ed_neg(s + 760, s + 760)
+    fe_copy(p, s + 760)
+    fe_copy(p + 80, s + 40)
+    fe_zero(p + 160)
+    poke_i64(p + 160, 0, 1)
+    fe_mul(p + 240, s + 760, s + 40)
+    fe_reduce(p + 240)
+    return 1
+sc_bit a i:
+    return bshr(peek_byte(a, i / 8), i % 8) % 2
+sc_geq_L r:
+    ge: 0
+    dec: 0
+    i: 31
+    as long as i >= 0
+        d: peek_byte(r, i) - peek_byte(ED_L, i)
+        lt: bshr(d, 63)
+        gt: bshr(0 - d, 63)
+        take: (lt + gt) * (1 - dec)
+        ge: ge + take * gt
+        dec: dec + take
+        i: i - 1
+    return ge + (1 - dec)
+sc_shl1 r:
+    carry: 0
+    i: 0
+    as long as i < 32
+        b: peek_byte(r, i)
+        poke_byte(r, i, (b % 128) * 2 + carry)
+        carry: b / 128
+        i: i + 1
+sc_sub_L r:
+    borrow: 0
+    i: 0
+    as long as i < 32
+        t: peek_byte(r, i) - peek_byte(ED_L, i) - borrow
+        if t < 0
+            t: t + 256
+            borrow: 1
+        if not -> borrow: 0
+        poke_byte(r, i, t)
+        i: i + 1
+sc_mod out h:
+    ed_init()
+    r: _sov_heap_alloc(32)
+    i: 0
+    as long as i < 32
+        poke_byte(r, i, 0)
+        i: i + 1
+    i: 511
+    as long as i >= 0
+        sc_shl1(r)
+        poke_byte(r, 0, peek_byte(r, 0) + sc_bit(h, i))
+        m: 0 - sc_geq_L(r)
+        borrow: 0
+        j: 0
+        as long as j < 32
+            t: peek_byte(r, j) - band(peek_byte(ED_L, j), m) - borrow
+            poke_byte(r, j, band(t, 255))
+            borrow: bshr(t, 63)
+            j: j + 1
+        i: i - 1
+    i: 0
+    as long as i < 32
+        poke_byte(out, i, peek_byte(r, i))
+        i: i + 1
+sc_mul out a b:
+    w: _sov_alloc(512)
+    i: 0
+    as long as i < 64
+        poke_i64(w, i * 8, 0)
+        i: i + 1
+    i: 0
+    as long as i < 32
+        j: 0
+        as long as j < 32
+            poke_i64(w, (i + j) * 8, peek_i64(w, (i + j) * 8) + peek_byte(a, i) * peek_byte(b, j))
+            j: j + 1
+        i: i + 1
+    carry: 0
+    i: 0
+    as long as i < 64
+        t: peek_i64(w, i * 8) + carry
+        poke_byte(out, i, band(t, 255))
+        carry: t / 256
+        i: i + 1
+sc_muladd out a b c:
+    t: _sov_alloc(64)
+    sc_mul(t, a, b)
+    carry: 0
+    i: 0
+    as long as i < 32
+        v: peek_byte(t, i) + peek_byte(c, i) + carry
+        poke_byte(t, i, v % 256)
+        carry: v / 256
+        i: i + 1
+    i: 32
+    as long as i < 64
+        v: peek_byte(t, i) + carry
+        poke_byte(t, i, band(v, 255))
+        carry: v / 256
+        i: i + 1
+    sc_mod(out, t)
+sc_clamp h:
+    poke_byte(h, 0, band(peek_byte(h, 0), 248))
+    poke_byte(h, 31, bor(band(peek_byte(h, 31), 127), 64))
+ed_pub seed:
+    ed_init()
+    h: _sov_heap_alloc(64)
+    sha512_bytes(seed, 32, h)
+    sc_clamp(h)
+    b: _sov_heap_alloc(320)
+    ed_pbase(b)
+    a: _sov_heap_alloc(320)
+    ed_pmul(a, b, h)
+    out: _sov_heap_alloc(32)
+    ed_penc(out, a)
+    return out
+ed_sign seed pub msg mlen:
+    ed_init()
+    h: _sov_heap_alloc(64)
+    sha512_bytes(seed, 32, h)
+    sc_clamp(h)
+    pm: _sov_alloc(32 + mlen + 8)
+    mem_copy(pm, h + 32, 32)
+    mem_copy(pm + 32, msg, mlen)
+    rh: _sov_alloc(64)
+    sha512_bytes(pm, 32 + mlen, rh)
+    r: _sov_alloc(32)
+    sc_mod(r, rh)
+    b: _sov_heap_alloc(320)
+    ed_pbase(b)
+    rp: _sov_heap_alloc(320)
+    ed_pmul(rp, b, r)
+    out: _sov_heap_alloc(64)
+    ed_penc(out, rp)
+    km: _sov_alloc(64 + mlen + 8)
+    mem_copy(km, out, 32)
+    mem_copy(km + 32, pub, 32)
+    mem_copy(km + 64, msg, mlen)
+    kh: _sov_heap_alloc(64)
+    sha512_bytes(km, 64 + mlen, kh)
+    k: _sov_heap_alloc(32)
+    sc_mod(k, kh)
+    sc_muladd(out + 32, k, h, r)
+    return out
+ed_verify pub msg mlen sig:
+    ed_init()
+    a: _sov_alloc(320)
+    if ed_pdec(a, pub) is 0 -> return 0
+    rp: _sov_alloc(320)
+    if ed_pdec(rp, sig) is 0 -> return 0
+    if sc_geq_L(sig + 32) is 1 -> return 0
+    km: _sov_alloc(64 + mlen + 8)
+    mem_copy(km, sig, 32)
+    mem_copy(km + 32, pub, 32)
+    mem_copy(km + 64, msg, mlen)
+    kh: _sov_heap_alloc(64)
+    sha512_bytes(km, 64 + mlen, kh)
+    k: _sov_heap_alloc(32)
+    sc_mod(k, kh)
+    ka: _sov_alloc(320)
+    ed_pmul(ka, a, k)
+    rrk: _sov_alloc(320)
+    ed_padd(rrk, rp, ka)
+    b: _sov_alloc(320)
+    ed_pbase(b)
+    sb: _sov_alloc(320)
+    ed_pmul(sb, b, sig + 32)
+    e1: _sov_alloc(32)
+    e2: _sov_alloc(32)
+    ed_penc(e1, sb)
+    ed_penc(e2, rrk)
+    i: 0
+    as long as i < 32
+        if peek_byte(e1, i) is not peek_byte(e2, i) -> return 0
+        i: i + 1
+    return 1
+ed_fill:
+    poke_byte(ED_D, 0, 163)
+    poke_byte(ED_D, 1, 120)
+    poke_byte(ED_D, 2, 89)
+    poke_byte(ED_D, 3, 19)
+    poke_byte(ED_D, 4, 202)
+    poke_byte(ED_D, 5, 77)
+    poke_byte(ED_D, 6, 235)
+    poke_byte(ED_D, 7, 117)
+    poke_byte(ED_D, 8, 171)
+    poke_byte(ED_D, 9, 216)
+    poke_byte(ED_D, 10, 65)
+    poke_byte(ED_D, 11, 65)
+    poke_byte(ED_D, 12, 77)
+    poke_byte(ED_D, 13, 10)
+    poke_byte(ED_D, 14, 112)
+    poke_byte(ED_D, 15, 0)
+    poke_byte(ED_D, 16, 152)
+    poke_byte(ED_D, 17, 232)
+    poke_byte(ED_D, 18, 121)
+    poke_byte(ED_D, 19, 119)
+    poke_byte(ED_D, 20, 121)
+    poke_byte(ED_D, 21, 64)
+    poke_byte(ED_D, 22, 199)
+    poke_byte(ED_D, 23, 140)
+    poke_byte(ED_D, 24, 115)
+    poke_byte(ED_D, 25, 254)
+    poke_byte(ED_D, 26, 111)
+    poke_byte(ED_D, 27, 43)
+    poke_byte(ED_D, 28, 238)
+    poke_byte(ED_D, 29, 108)
+    poke_byte(ED_D, 30, 3)
+    poke_byte(ED_D, 31, 82)
+    poke_byte(ED_D2, 0, 89)
+    poke_byte(ED_D2, 1, 241)
+    poke_byte(ED_D2, 2, 178)
+    poke_byte(ED_D2, 3, 38)
+    poke_byte(ED_D2, 4, 148)
+    poke_byte(ED_D2, 5, 155)
+    poke_byte(ED_D2, 6, 214)
+    poke_byte(ED_D2, 7, 235)
+    poke_byte(ED_D2, 8, 86)
+    poke_byte(ED_D2, 9, 177)
+    poke_byte(ED_D2, 10, 131)
+    poke_byte(ED_D2, 11, 130)
+    poke_byte(ED_D2, 12, 154)
+    poke_byte(ED_D2, 13, 20)
+    poke_byte(ED_D2, 14, 224)
+    poke_byte(ED_D2, 15, 0)
+    poke_byte(ED_D2, 16, 48)
+    poke_byte(ED_D2, 17, 209)
+    poke_byte(ED_D2, 18, 243)
+    poke_byte(ED_D2, 19, 238)
+    poke_byte(ED_D2, 20, 242)
+    poke_byte(ED_D2, 21, 128)
+    poke_byte(ED_D2, 22, 142)
+    poke_byte(ED_D2, 23, 25)
+    poke_byte(ED_D2, 24, 231)
+    poke_byte(ED_D2, 25, 252)
+    poke_byte(ED_D2, 26, 223)
+    poke_byte(ED_D2, 27, 86)
+    poke_byte(ED_D2, 28, 220)
+    poke_byte(ED_D2, 29, 217)
+    poke_byte(ED_D2, 30, 6)
+    poke_byte(ED_D2, 31, 36)
+    poke_byte(ED_SQ, 0, 176)
+    poke_byte(ED_SQ, 1, 160)
+    poke_byte(ED_SQ, 2, 14)
+    poke_byte(ED_SQ, 3, 74)
+    poke_byte(ED_SQ, 4, 39)
+    poke_byte(ED_SQ, 5, 27)
+    poke_byte(ED_SQ, 6, 238)
+    poke_byte(ED_SQ, 7, 196)
+    poke_byte(ED_SQ, 8, 120)
+    poke_byte(ED_SQ, 9, 228)
+    poke_byte(ED_SQ, 10, 47)
+    poke_byte(ED_SQ, 11, 173)
+    poke_byte(ED_SQ, 12, 6)
+    poke_byte(ED_SQ, 13, 24)
+    poke_byte(ED_SQ, 14, 67)
+    poke_byte(ED_SQ, 15, 47)
+    poke_byte(ED_SQ, 16, 167)
+    poke_byte(ED_SQ, 17, 215)
+    poke_byte(ED_SQ, 18, 251)
+    poke_byte(ED_SQ, 19, 61)
+    poke_byte(ED_SQ, 20, 153)
+    poke_byte(ED_SQ, 21, 0)
+    poke_byte(ED_SQ, 22, 77)
+    poke_byte(ED_SQ, 23, 43)
+    poke_byte(ED_SQ, 24, 11)
+    poke_byte(ED_SQ, 25, 223)
+    poke_byte(ED_SQ, 26, 193)
+    poke_byte(ED_SQ, 27, 79)
+    poke_byte(ED_SQ, 28, 128)
+    poke_byte(ED_SQ, 29, 36)
+    poke_byte(ED_SQ, 30, 131)
+    poke_byte(ED_SQ, 31, 43)
+    poke_byte(ED_BX, 0, 26)
+    poke_byte(ED_BX, 1, 213)
+    poke_byte(ED_BX, 2, 37)
+    poke_byte(ED_BX, 3, 143)
+    poke_byte(ED_BX, 4, 96)
+    poke_byte(ED_BX, 5, 45)
+    poke_byte(ED_BX, 6, 86)
+    poke_byte(ED_BX, 7, 201)
+    poke_byte(ED_BX, 8, 178)
+    poke_byte(ED_BX, 9, 167)
+    poke_byte(ED_BX, 10, 37)
+    poke_byte(ED_BX, 11, 149)
+    poke_byte(ED_BX, 12, 96)
+    poke_byte(ED_BX, 13, 199)
+    poke_byte(ED_BX, 14, 44)
+    poke_byte(ED_BX, 15, 105)
+    poke_byte(ED_BX, 16, 92)
+    poke_byte(ED_BX, 17, 220)
+    poke_byte(ED_BX, 18, 214)
+    poke_byte(ED_BX, 19, 253)
+    poke_byte(ED_BX, 20, 49)
+    poke_byte(ED_BX, 21, 226)
+    poke_byte(ED_BX, 22, 164)
+    poke_byte(ED_BX, 23, 192)
+    poke_byte(ED_BX, 24, 254)
+    poke_byte(ED_BX, 25, 83)
+    poke_byte(ED_BX, 26, 110)
+    poke_byte(ED_BX, 27, 205)
+    poke_byte(ED_BX, 28, 211)
+    poke_byte(ED_BX, 29, 54)
+    poke_byte(ED_BX, 30, 105)
+    poke_byte(ED_BX, 31, 33)
+    poke_byte(ED_BY, 0, 88)
+    poke_byte(ED_BY, 1, 102)
+    poke_byte(ED_BY, 2, 102)
+    poke_byte(ED_BY, 3, 102)
+    poke_byte(ED_BY, 4, 102)
+    poke_byte(ED_BY, 5, 102)
+    poke_byte(ED_BY, 6, 102)
+    poke_byte(ED_BY, 7, 102)
+    poke_byte(ED_BY, 8, 102)
+    poke_byte(ED_BY, 9, 102)
+    poke_byte(ED_BY, 10, 102)
+    poke_byte(ED_BY, 11, 102)
+    poke_byte(ED_BY, 12, 102)
+    poke_byte(ED_BY, 13, 102)
+    poke_byte(ED_BY, 14, 102)
+    poke_byte(ED_BY, 15, 102)
+    poke_byte(ED_BY, 16, 102)
+    poke_byte(ED_BY, 17, 102)
+    poke_byte(ED_BY, 18, 102)
+    poke_byte(ED_BY, 19, 102)
+    poke_byte(ED_BY, 20, 102)
+    poke_byte(ED_BY, 21, 102)
+    poke_byte(ED_BY, 22, 102)
+    poke_byte(ED_BY, 23, 102)
+    poke_byte(ED_BY, 24, 102)
+    poke_byte(ED_BY, 25, 102)
+    poke_byte(ED_BY, 26, 102)
+    poke_byte(ED_BY, 27, 102)
+    poke_byte(ED_BY, 28, 102)
+    poke_byte(ED_BY, 29, 102)
+    poke_byte(ED_BY, 30, 102)
+    poke_byte(ED_BY, 31, 102)
+    poke_byte(ED_L, 0, 237)
+    poke_byte(ED_L, 1, 211)
+    poke_byte(ED_L, 2, 245)
+    poke_byte(ED_L, 3, 92)
+    poke_byte(ED_L, 4, 26)
+    poke_byte(ED_L, 5, 99)
+    poke_byte(ED_L, 6, 18)
+    poke_byte(ED_L, 7, 88)
+    poke_byte(ED_L, 8, 214)
+    poke_byte(ED_L, 9, 156)
+    poke_byte(ED_L, 10, 247)
+    poke_byte(ED_L, 11, 162)
+    poke_byte(ED_L, 12, 222)
+    poke_byte(ED_L, 13, 249)
+    poke_byte(ED_L, 14, 222)
+    poke_byte(ED_L, 15, 20)
+    poke_byte(ED_L, 16, 0)
+    poke_byte(ED_L, 17, 0)
+    poke_byte(ED_L, 18, 0)
+    poke_byte(ED_L, 19, 0)
+    poke_byte(ED_L, 20, 0)
+    poke_byte(ED_L, 21, 0)
+    poke_byte(ED_L, 22, 0)
+    poke_byte(ED_L, 23, 0)
+    poke_byte(ED_L, 24, 0)
+    poke_byte(ED_L, 25, 0)
+    poke_byte(ED_L, 26, 0)
+    poke_byte(ED_L, 27, 0)
+    poke_byte(ED_L, 28, 0)
+    poke_byte(ED_L, 29, 0)
+    poke_byte(ED_L, 30, 0)
+    poke_byte(ED_L, 31, 16)
+    poke_byte(ED_EXP, 0, 253)
+    poke_byte(ED_EXP, 1, 255)
+    poke_byte(ED_EXP, 2, 255)
+    poke_byte(ED_EXP, 3, 255)
+    poke_byte(ED_EXP, 4, 255)
+    poke_byte(ED_EXP, 5, 255)
+    poke_byte(ED_EXP, 6, 255)
+    poke_byte(ED_EXP, 7, 255)
+    poke_byte(ED_EXP, 8, 255)
+    poke_byte(ED_EXP, 9, 255)
+    poke_byte(ED_EXP, 10, 255)
+    poke_byte(ED_EXP, 11, 255)
+    poke_byte(ED_EXP, 12, 255)
+    poke_byte(ED_EXP, 13, 255)
+    poke_byte(ED_EXP, 14, 255)
+    poke_byte(ED_EXP, 15, 255)
+    poke_byte(ED_EXP, 16, 255)
+    poke_byte(ED_EXP, 17, 255)
+    poke_byte(ED_EXP, 18, 255)
+    poke_byte(ED_EXP, 19, 255)
+    poke_byte(ED_EXP, 20, 255)
+    poke_byte(ED_EXP, 21, 255)
+    poke_byte(ED_EXP, 22, 255)
+    poke_byte(ED_EXP, 23, 255)
+    poke_byte(ED_EXP, 24, 255)
+    poke_byte(ED_EXP, 25, 255)
+    poke_byte(ED_EXP, 26, 255)
+    poke_byte(ED_EXP, 27, 255)
+    poke_byte(ED_EXP, 28, 255)
+    poke_byte(ED_EXP, 29, 255)
+    poke_byte(ED_EXP, 30, 255)
+    poke_byte(ED_EXP, 31, 15)

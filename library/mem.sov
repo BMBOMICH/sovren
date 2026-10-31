@@ -1,0 +1,8 @@
+# pad line so main is not first
+mem_new n:
+    return _sov_alloc(n)
+mem_zero p n:
+    dummy: _sov_mem_set(p, 0, n)
+    return p
+mem_copy dst src n:
+    return _sov_mem_copy(dst, src, n)

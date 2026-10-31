@@ -1,0 +1,188 @@
+# unsafe-module
+use kacpi
+KPCI_NODE_STRIDE: 32
+KPCI_NODE_PRESENT: 1
+KPCI_NODE_BRIDGE: 2
+KPCI_NODE_ACS: 4
+kpci_nodes_init nodes capacity:
+    if nodes is 0 -> return 0
+    if capacity < 1 -> return 0
+    if capacity > 65536 -> return 0
+    index: 0
+    as long as index < capacity
+        record: nodes + index * KPCI_NODE_STRIDE
+        poke_raw64(record, 0, 0)
+        poke_raw64(record + 8, 0, 0)
+        poke_raw64(record + 16, 0, 0)
+        poke_raw64(record + 24, 0, 0)
+        index: index + 1
+    return 1
+kpci_node_set nodes capacity index requester parent flags:
+    if nodes is 0 -> return 0
+    if index < 0 -> return 0
+    if index >= capacity -> return 0
+    if requester < 0 -> return 0
+    if requester > 65535 -> return 0
+    if parent < 0
+        if parent is not 0 - 1 -> return 0
+    if parent >= 0
+        if parent >= index -> return 0
+        parent_record: nodes + parent * KPCI_NODE_STRIDE
+        if band(peek_raw64(parent_record + 16, 0), KPCI_NODE_PRESENT) is 0 -> return 0
+        if band(peek_raw64(parent_record + 16, 0), KPCI_NODE_BRIDGE) is 0 -> return 0
+    record: nodes + index * KPCI_NODE_STRIDE
+    if band(peek_raw64(record + 16, 0), KPCI_NODE_PRESENT) is not 0 -> return 0
+    other: 0
+    as long as other < capacity
+        other_record: nodes + other * KPCI_NODE_STRIDE
+        if band(peek_raw64(other_record + 16, 0), KPCI_NODE_PRESENT) is not 0
+            if peek_raw64(other_record, 0) is requester -> return 0
+        other: other + 1
+    stored_parent: 0
+    if parent >= 0 -> stored_parent: parent + 1
+    poke_raw64(record, 0, requester)
+    poke_raw64(record + 8, 0, stored_parent)
+    poke_raw64(record + 16, 0, bor(band(flags, KPCI_NODE_BRIDGE + KPCI_NODE_ACS), KPCI_NODE_PRESENT))
+    poke_raw64(record + 24, 0, index + 1)
+    return 1
+kpci_group_key nodes capacity index:
+    if nodes is 0 -> return 0 - 1
+    if index < 0 -> return 0 - 1
+    if index >= capacity -> return 0 - 1
+    record: nodes + index * KPCI_NODE_STRIDE
+    flags: peek_raw64(record + 16, 0)
+    if band(flags, KPCI_NODE_PRESENT) is 0 -> return 0 - 1
+    key: peek_raw64(record, 0)
+    cursor: index
+    steps: 0
+    as long as steps < capacity
+        current: nodes + cursor * KPCI_NODE_STRIDE
+        encoded_parent: peek_raw64(current + 8, 0)
+        if encoded_parent is 0 -> return key
+        parent: encoded_parent - 1
+        if parent < 0 -> return 0 - 1
+        if parent >= cursor -> return 0 - 1
+        parent_record: nodes + parent * KPCI_NODE_STRIDE
+        parent_flags: peek_raw64(parent_record + 16, 0)
+        if band(parent_flags, KPCI_NODE_PRESENT + KPCI_NODE_BRIDGE) is not KPCI_NODE_PRESENT + KPCI_NODE_BRIDGE -> return 0 - 1
+        if band(parent_flags, KPCI_NODE_ACS) is not 0 -> return key
+        key: peek_raw64(parent_record, 0)
+        cursor: parent
+        steps: steps + 1
+    return 0 - 1
+kpci_same_group nodes capacity first second:
+    a: kpci_group_key(nodes, capacity, first)
+    b: kpci_group_key(nodes, capacity, second)
+    if a < 0 -> return 0
+    if b < 0 -> return 0
+    if a is b -> return 1
+kpci_node_find nodes capacity requester:
+    if nodes is 0 -> return 0 - 1
+    if requester < 0 -> return 0 - 1
+    if requester > 65535 -> return 0 - 1
+    index: 0
+    as long as index < capacity
+        record: nodes + index * KPCI_NODE_STRIDE
+        if band(peek_raw64(record + 16, 0), KPCI_NODE_PRESENT) is not 0
+            if peek_raw64(record, 0) is requester -> return index
+        index: index + 1
+    return 0 - 1
+kpci_scope_resolve nodes capacity scope:
+    if scope is 0 -> return 0 - 1
+    start_bus: peek_raw64(scope + 8, 0)
+    path_count: peek_raw64(scope + 24, 0)
+    if start_bus > 255 -> return 0 - 1
+    if path_count < 1 -> return 0 - 1
+    if path_count > 124 -> return 0 - 1
+    first_devfn: peek_raw8(scope + 32, 0)
+    current: kpci_node_find(nodes, capacity, start_bus * 256 + first_devfn)
+    if current < 0 -> return 0 - 1
+    step: 1
+    as long as step < path_count
+        current_record: nodes + current * KPCI_NODE_STRIDE
+        if band(peek_raw64(current_record + 16, 0), KPCI_NODE_BRIDGE) is 0 -> return 0 - 1
+        wanted: peek_raw8(scope + 32 + step, 0)
+        match: 0 - 1
+        index: 0
+        as long as index < capacity
+            record: nodes + index * KPCI_NODE_STRIDE
+            if band(peek_raw64(record + 16, 0), KPCI_NODE_PRESENT) is not 0
+                if peek_raw64(record + 8, 0) is current + 1
+                    if peek_raw64(record, 0) % 256 is wanted
+                        if match >= 0 -> return 0 - 1
+                        match: index
+            index: index + 1
+        if match < 0 -> return 0 - 1
+        current: match
+        step: step + 1
+    return current
+kpci_node_descends nodes capacity index ancestor:
+    if index < 0 -> return 0
+    if index >= capacity -> return 0
+    if ancestor < 0 -> return 0
+    if ancestor >= capacity -> return 0
+    cursor: index
+    steps: 0
+    as long as steps < capacity
+        if cursor is ancestor -> return 1
+        record: nodes + cursor * KPCI_NODE_STRIDE
+        encoded_parent: peek_raw64(record + 8, 0)
+        if encoded_parent is 0 -> return 0
+        cursor: encoded_parent - 1
+        if cursor < 0 -> return 0
+        if cursor >= capacity -> return 0
+        steps: steps + 1
+kpci_scope_matches nodes capacity scope requester:
+    if scope is 0 -> return 0 - 1
+    target: kpci_scope_resolve(nodes, capacity, scope)
+    if target < 0 -> return 0 - 1
+    node: kpci_node_find(nodes, capacity, requester)
+    if node < 0 -> return 0 - 1
+    typ: peek_raw64(scope, 0)
+    if typ is 1
+        if node is target -> return 1
+        return 0
+    if typ is 2 -> return kpci_node_descends(nodes, capacity, node, target)
+    return 0 - 2
+kpci_dmar_unit_for_requester table maximum nodes capacity scope_record drhd_record requester:
+    if scope_record is 0 -> return 0 - 1
+    if drhd_record is 0 -> return 0 - 1
+    if requester < 0 -> return 0 - 1
+    if requester > 65535 -> return 0 - 1
+    count: kacpi_dmar_drhd_count(table, maximum)
+    if count < 1 -> return 0 - 1
+    explicit: 0 - 1
+    fallback: 0 - 1
+    index: 0
+    as long as index < count
+        if kacpi_dmar_drhd_at(table, maximum, index, drhd_record) is not 1 -> return 0 - 1
+        segment: peek_raw64(drhd_record + 8, 0)
+        flags: peek_raw64(drhd_record + 16, 0)
+        if segment is 0
+            if band(flags, 1) is not 0
+                if fallback >= 0 -> return 0 - 1
+                fallback: index
+            scopes: kacpi_dmar_drhd_scope_count(table, maximum, index)
+            if scopes < 0 -> return 0 - 1
+            scope_index: 0
+            as long as scope_index < scopes
+                if kacpi_dmar_drhd_scope_at(table, maximum, index, scope_index, scope_record) is not 1 -> return 0 - 1
+                typ: peek_raw64(scope_record, 0)
+                if typ is 1
+                    match: kpci_scope_matches(nodes, capacity, scope_record, requester)
+                    if match < 0 -> return 0 - 1
+                    if match is 1
+                        if explicit >= 0
+                            if explicit is not index -> return 0 - 1
+                        explicit: index
+                if typ is 2
+                    match: kpci_scope_matches(nodes, capacity, scope_record, requester)
+                    if match < 0 -> return 0 - 1
+                    if match is 1
+                        if explicit >= 0
+                            if explicit is not index -> return 0 - 1
+                        explicit: index
+                scope_index: scope_index + 1
+        index: index + 1
+    if explicit >= 0 -> return explicit
+    return fallback

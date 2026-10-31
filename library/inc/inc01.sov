@@ -1,0 +1,2083 @@
+row: 0
+as long as row < 8 -> addr: peek_raw64(FB_, 0) + ((y + row) * 1024 + x) * 4
+    poke_raw64(UNDER + row * 40, 0, addr)
+    poke_raw64(UNDER + row * 40 + 8, 0, peek_raw64(addr, 0))
+    poke_raw64(UNDER + row * 40 + 16, 0, peek_raw64(addr + 8, 0))
+    poke_raw64(UNDER + row * 40 + 24, 0, peek_raw64(addr + 16, 0))
+    poke_raw64(UNDER + row * 40 + 32, 0, peek_raw64(addr + 24, 0))
+    row: row + 1
+# unsafe-module
+use ktest_c
+ATCB: 3276800
+BTCB: 3276808
+MCB:  3276816
+ASTK: 33554432
+BSTK: 34603008
+TSSZ: 16384
+# unsafe-module
+heap_ptr: 20000000
+heap_end: 30000000
+use:
+    sha256
+    x25519
+    gcm
+    hmac
+leave()
+ret()
+return
+file
+string
+num
+rx: 72
+if bs > 0 -> rx: rx + 1
+if i2 > 0 -> rx: rx + 2
+nd: 0
+if bs = 2 -> nd: 1
+if dp != 0 -> nd: 1
+0:
+    d
+    found
+m: new_at()
+at: X_AT + 4096
+x_w64(m, at, D_35)
+m: new_at()
+x_xset(m, 1, 0 - 81985529216486896, 81985529216486895)
+x_xset(m, 3, 0 - 8613303245920329199, 1089357896855742840)
+popgo: 1
+as long as popgo = 1 -> if _sov_list_len(bk) = 0
+        popgo: 0
+    if not -> last: _sov_list_len(bk) - 1
+        if ind > peek_i64(bi, 16 + last * 8) -> popgo: 0
+        if not -> stay: 0
+            if isel = 1 -> if ind = peek_i64(bi, 16 + last * 8)
+if starts(pre_t, "#") = 0 -> if starts(pre_t, 'use ') = 0
+        pre_c: find_col(pre_t)
+        if pre_c > 0 -> if pre_c = length(pre_t) - 1
+                pre_h: strip(cut(pre_t, 0, pre_c))
+                pre_sp: look(pre_h, ' ')
+                if pre_sp > 0 - 1 -> pre_cur: repl(strip(cut(pre_h, 0, pre_sp)), ' ', '_')
+                if not -> pre_cur: pre_h
+if can_here = 1 -> if no_frame = 0
+        if isfib = 0 -> canary_store()
+copyargs(_sov_list_len(ps))
+if isfib = 1 -> emit_fib_iter()
+if not -> if _sov_str_eq(nm, 'main') = 1
+        skip_al: dead_iota(peek_i64(bodies, 16 + fi * 8))
+        if need_priv = 1 -> emit_nodump()
+if i = 0 -> return 1
+if i = 1 -> return 2
+if i = 2 -> return 4
+if i = 3 -> return 8
+if i = 4 -> return 16
+if i = 5 -> return 32
+if i = 6 -> return 64
+if number = SOVSYS_CLOSE -> return -1
+if number = SOVSYS_SECCOMP_DENY -> return -1
+if number = SOVSYS_DROP_CAPABILITY -> return -1
+if number = SOVSYS_SIGNAL_INSTALL -> return -1
+if number = SOVSYS_SIGNAL_RETURN -> return -1
+if number = SOVSYS_MMAP_ANON -> return -1
+if number = SOVSYS_MUNMAP -> return -1
+as long as i < n -> cl: 4096
+    if n - i < 4096 -> cl: n - i
+    chunk: _sov_heap_alloc(4096)
+    j: 0
+    as long as j < cl -> poke_byte(chunk, j, peek_byte(req, i + j))
+        j: j + 1
+    en: _sov_heap_alloc(4200)
+SECT: 498
+LBA0: 499
+LBA1: 500
+LBA2: 501
+DRV:  502
+CMD:  503
+STS:  503
+b4: peek_byte(base + 4, 0)
+b5: peek_byte(base + 5, 0)
+b6: peek_byte(base + 6, 0)
+b7: peek_byte(base + 7, 0)
+x1: bor(bor(bshl(b0, 56), bshl(b1, 48)), bor(bshl(b2, 40), bshl(b3, 32)))
+x2: bor(bor(bshl(b4, 24), bshl(b5, 16)), bor(bshl(b6, 8), b7))
+return bor(x1, x2)
+fill_rect(0, 0, 1024, 140, FOGCOL)
+fill_rect(0, 140, 1024, 596, BGCOL)
+damage_note()
+present_flip()
+fill_rect(0, 736, 1024, 32, TBCOL)
+fill_rect(4, 741, 96, 22, SBCOL)
+rect_border(4, 741, 96, 22, INKW)
+skip_al: blank
+0:
+    used_al
+    self_dir
+if not -> if pre_in = 0
+        pre_na: pre_na + 1
+        pre_in: 1
+pre_k: pre_k + 1
+flat: _sov_heap_alloc(filesz + 64)
+dummy: _sov_bzero(flat, filesz + 64) ;; i: 0
+as long as i < 0 -> dummy: _sov_set_byte(flat, i, 0)
+    i: i + 1
+i: 0
+as long as i < _sov_list_len(patch_at) -> at: peek_i64(patch_at, 16 + i * 8)
+    kind: peek_i64(patch_kind, 16 + i * 8)
+    val: peek_i64(patch_val, 16 + i * 8)
+if w = 0 -> print 'Error: cannot write output (is it running?)'
+    fail()
+if need_priv = 1 -> _sov_chmod(path, 448)
+if not -> _sov_chmod(path, 493)
+poke_byte(o + 1, 0, band(bshr(limit, 8), 255))
+poke_byte(o + 2, 0, band(base, 255))
+poke_byte(o + 3, 0, band(bshr(base, 8), 255))
+poke_byte(o + 4, 0, band(bshr(base, 16), 255))
+rounded: (length + 4095) / 4096 * 4096
+if user_vma_anon_range_ok(address, rounded) != 1 -> syscall_result(frame, 0 - 22)
+    pop_all()
+    iretq()
+ATCB: 3276800
+BTCB: 3276808
+MCB:  3276816
+ASTK: 33554432
+poke_byte(buf, n, 128)
+i: n + 1
+as long as i < tot -> poke_byte(buf, i, 0)
+    i: i + 1
+bits: n * 8
+emit:
+    rx
+    137
+nd: 0
+if bs = 2 -> nd: 1
+j: 0
+as long as j < take -> poke_byte(okm, done + j, peek_byte(t, j))
+    j: j + 1
+done: done + take
+i: i + 1
+n: list_len(lst)
+a: 0
+as long as a < n -> b: 0
+    as long as b + 1 < n -> x: list_get(lst, b)
+        y: list_get(lst, b + 1)
+if number = SOVSYS_SIGNAL_NEXT -> return 0
+if number = SOVSYS_SERVICE_GRANT -> return 0
+if number = SOVSYS_SERVICE_GRANT_WAIT -> return 0
+if number = SOVSYS_SERVICE_REVOKE -> return 0
+if number = SOVSYS_EXIT -> return 0
+poke_i64(m, 152, c)
+na: x_neg_at(ua, size)
+nb: x_neg_at(ub, size)
+nr: x_neg_at(r, size)
+o: 0
+if ca != cb -> if ca < cb
+        return 0 - 1
+    return 1
+if ca = 0 -> return 0
+i: i + 1
+ide_gate vec hoff dpl:
+    d: IDT + vec * 16
+    poke_byte(d, 0, band(hoff, 255))
+    poke_byte(d, 1, band(bshr(hoff, 8), 255))
+    d: poke_byte 2 + i: 24 0 0 dpl
+sputs('damage rects: ')
+snum(peek_raw64(DMG, 0))
+sputs(' presents: ')
+snum(peek_raw64(PRES, 0))
+sputs("\n")
+bytes_same a b:
+    na: file_size(a)
+    nb: file_size(b)
+    if na != nb -> return 0
+    da: file_read_all(a)
+    db: file_read_all(b)
+    i: 0
+    as long as i < na -> if _sov_byte_at(da, i) != _sov_byte_at(db, i)
+            return 0
+        i: i + 1
+mov_rdi_rax()
+test_rax()
+wsk: jz()
+wtop: here()
+emitw(960495650)
+emitw(1895825503)
+wend: here()
+emitw(1409286144)
+emitw(956301375)
+emitw(2432697377)
+pref: join(var, ' + ')
+if starts(rhs, pref) = 1 -> other: strip(cut(rhs, length(pref), length(rhs)))
+    if length(other) > 0 -> if look(other, '(') < 0
+            if look(other, ' ') < 0 -> if digitb(_sov_byte_at(other, 0)) = 1
+                    add_imm(var, num_of(other))
+                    drop_str(var)
+                    return
+                add_into(var, repl(other, ' ', '_'))
+                drop_str(var)
+                return
+if _sov_str_eq(kind, 'fnaddr64') = 1 -> fi: list_idx(fn_names, val)
+    if fi > 0 - 1 -> fa: BASE + HDR + peek_i64(fn_offs, 16 + fi * 8)
+        poke4(flat, HDR + at, 3531603968 + (fa % 65536) * 32)
+        poke4(flat, HDR + at + 4, 4070572032 + ((fa / 65536) % 65536) * 32)
+        poke4(flat, HDR + at + 8, 4072669184 + ((fa / 4294967296) % 65536) * 32)
+        poke4(flat, HDR + at + 12, 4074766336 + ((fa / 281474976710656) % 65536) * 32)
+    if not -> print 'Error: no such task'
+        _sov_print(val)
+        had_err: 1
+if _sov_str_eq(kind, 'str64') = 1 -> sa: str_addr + val
+if _sov_str_eq(kind, 'cbz_trap') = 1 -> ti: list_idx(fn_names, '_sov_trap')
+    if ti > 0 - 1 -> tg: peek_i64(fn_offs, 16 + ti * 8)
+        rl: (tg - at) / 4
+        if rl < 0 -> rl: rl + 524288
+        poke4(flat, HDR + at, 3019898880 + (rl % 524288) * 32 + val)
+if _sov_str_eq(kind, 'b19_trap') = 1 -> ti: list_idx(fn_names, '_sov_trap')
+    if ti > 0 - 1 -> tg: peek_i64(fn_offs, 16 + ti * 8)
+        rl: (tg - at) / 4
+        if rl < 0 -> rl: rl + 524288
+        poke4(flat, HDR + at, 1409286144 + (rl % 524288) * 32 + 2)
+mov_reg(6, 5)
+mov_reg(5, 4)
+mov_reg(4, 3)
+mov_reg(3, 2)
+mov_reg(2, 1)
+mov_reg(1, 0)
+aat: here()
+movz_x(0, 0, 0)
+movk_x(0, 0, 1)
+movk_x(0, 0, 2)
+pad: _sov_list_len(glob_names) * 8
+rel_n: 0
+_sov_list_new():
+    rel_at
+    rel_nw
+rc_i: 0
+as long as rc_i < _sov_list_len(patch_at) -> rk: peek_i64(patch_kind, 16 + rc_i * 8)
+    if _sov_str_eq(rk, 'gw64s_a') = 1 -> rel_n: rel_n + 1
+    if _sov_str_eq(rk, 'gw64a') = 1 -> rel_n: rel_n + 1
+    if _sov_str_eq(rk, 'glob64') = 1 -> rel_n: rel_n + 1
+if _sov_str_eq(kind, 'gw64a') = 1 -> rel_at: _sov_list_add(rel_at, at)
+    rel_nw: _sov_list_add(rel_nw, 4)
+if _sov_str_eq(kind, 'glob64') = 1 -> rel_at: _sov_list_add(rel_at, at)
+    rel_nw: _sov_list_add(rel_nw, 3)
+if _sov_str_eq(kind, 'fnaddr64') = 1 -> rel_at: _sov_list_add(rel_at, at)
+    rel_nw: _sov_list_add(rel_nw, 4)
+if _sov_str_eq(kind, 'str64') = 1 -> rel_at: _sov_list_add(rel_at, at)
+    rel_nw: _sov_list_add(rel_nw, 2)
+if _sov_str_eq(kind, 'str64x0') = 1 -> rel_at: _sov_list_add(rel_at, at)
+    rel_nw: _sov_list_add(rel_nw, 2)
+poke4(flat, 24, 1)
+flat: poke4 32 + 4 * i: 25 72
+dummy: _sov_set_byte(flat, 40, 95)
+dummy: _sov_set_byte(flat, 41, 95)
+dummy: _sov_set_byte(flat, 42, 84)
+dummy: _sov_set_byte(flat, 43, 69)
+dummy: _sov_set_byte(flat, 44, 88)
+dummy: _sov_set_byte(flat, 45, 84)
+poke8(flat, 56, 4294967296)
+poke8(flat, 64, dfoff)
+poke8(flat, 80, hdr + clen)
+poke4(flat, 88, 5)
+poke4(flat, 92, 5)
+flat: poke4 104 + 4 * i: 25 72
+dummy: _sov_set_byte(flat, 112, 95)
+dummy: _sov_set_byte(flat, 113, 95)
+dummy: _sov_set_byte(flat, 114, 68)
+dummy: _sov_set_byte(flat, 115, 65)
+dummy: _sov_set_byte(flat, 116, 84)
+dummy: _sov_set_byte(flat, 117, 65)
+sha_ch x y z:
+    return wxor(wand(x, y), wand(wnot(x), z))
+sha_maj x y z:
+    return wxor(wxor(wand(x, y), wand(x, z)), wand(y, z))
+sha_bs0 x:
+    return wxor(wxor(rotr(x, 2), rotr(x, 13)), rotr(x, 22))
+sha_bs1 x:
+    return wxor(wxor(rotr(x, 6), rotr(x, 11)), rotr(x, 25))
+sha_ss0 x:
+    return wxor(wxor(rotr(x, 7), rotr(x, 18)), shr(x, 3))
+spawn_arg ai:
+    if ai = 0 -> mov_rdi_rax()
+    if ai = 1 -> mov_rsi_rax()
+    if ai = 2
+        emit(72)
+        emit(137)
+        emit(194)
+    if ai = 3 -> mov_rcx_rax()
+    if ai = 4
+        emit(73)
+        emit(137)
+        emit(192)
+    if ai = 5
+        emit(73)
+        emit(137)
+        emit(193)
+spawn_finish name:
+    emit:
+        76 137 200 73 137 194 77 137 193 73
+        137 200 72 137 209 72 137 242 72 137
+        254 72 191
+    fn_at: here()
+    emit8(0)
+    addp(fn_at, 'fnaddr', name)
+    calln('_sov_thread_spawn')
+    return 0
+emit(185)
+pw2: here()
+emit4(0)
+addp(pw2, 'rel_n', 0)
+emit:
+    73 186
+pw3: here()
+emit8(0)
+addp(pw3, 'rel_a', 0)
+emit:
+as long as csi < 5 -> sg: peek_i64(csigs, 16 + csi * 8)
+    emit:
+        72 184
+    cph: here()
+    emit8(0)
+    cwn: ''
+    if sg = 4 -> cwn: '_sov_cw_4'
+    if sg = 6 -> cwn: '_sov_cw_6'
+    if sg = 7 -> cwn: '_sov_cw_7'
+    if sg = 8 -> cwn: '_sov_cw_8'
+_sov_list_new():
+    sd_na
+    sd_nk
+    sd_nv
+    sd_nl
+sd_i: 0
+as long as sd_i < _sov_list_len(patch_at) -> sd_at: peek_i64(patch_at, 16 + sd_i * 8)
+    if sd_at < sd_cut_at -> sd_na: _sov_list_add(sd_na, sd_at)
+        sd_nk: _sov_list_add(sd_nk, peek_i64(patch_kind, 16 + sd_i * 8))
+        sd_nv: _sov_list_add(sd_nv, peek_i64(patch_val, 16 + sd_i * 8))
+patch_at: sd_na
+patch_kind: sd_nk
+patch_val: sd_nv
+patch_line: sd_nl
+sd_no: _sov_list_new()
+sd_pos: 0
+as long as sd_pos < oc_n -> if sd_pos = sd_cut_at
+        sd_pos: sd_pos + sd_cut
+    if not -> sd_no: _sov_list_add(sd_no, ocget(sd_pos))
+        sd_pos: sd_pos + 1
+stmt_dbg:
+    return 0
+stmt_reset_small:
+    return 0
+stmt_mark_print:
+    return 0
+stmt_join_op:
+    mov_rdi_rax()
+    calln('_sov_thread_join')
+stmt_leave_op:
+if sy > 7 -> sy: 7
+if sy > 6
+    emit(65)
+    emit(89)
+if sy > 5
+    emit(65)
+    emit(88)
+if sy > 4 -> emit(89)
+if sy > 3 -> emit(90)
+if sy > 2 -> emit(94)
+if sy > 1 -> emit(95)
+pop_rax()
+if _sov_str_eq(name, 'port_out8') = 1
+    emit(72)
+    emit(137)
+    emit(240)
+    emit(72)
+    emit(137)
+    emit(250)
+    emit(238)
+    emit(return)
+if _sov_str_eq(name, 'port_in8') = 1
+    emit(72)
+    emit(137)
+    emit(250)
+    emit(49)
+    emit(192)
+    emit(236)
+    emit(return)
+if _sov_str_eq(name, 'hlt') = 1 -> emit(244)
+    return
+if _sov_str_eq(name, 'cli') = 1 -> emit(250)
+    return
+0:
+    im_names
+    im_skip
+copyargs n:
+    if n > 0 -> mov_rax_rdi()
+        store_loc(0)
+    if n > 1
+        emit(72)
+        emit(137)
+        emit(240)
+        store_loc(1)
+    if n > 2
+if n > 3
+    emit(72)
+    emit(137)
+    emit(200)
+    store_loc(3)
+if n > 4
+    emit(76)
+    emit(137)
+    emit(192)
+    store_loc(4)
+if n > 5
+    emit(76)
+    emit(137)
+    emit(200)
+    store_loc(5)
+if n > 6
+emit_write_lit s:
+    n: length(s)
+    emit:
+        106 1 95
+    off: intern_nz(s)
+    emit:
+        72 141 53
+    at: here()
+    emit4(0)
+    addp(at, 'ripstr', off)
+emit_stack_wipe:
+    if list_idx(glob_names, 'heap_ptr') > 0 - 1
+        emit(72)
+        emit(184)
+        hp_at: here()
+        emit8(0)
+        addp(hp_at, 'glob', 'heap_ptr')
+        emit:
+        emit(72)
+        emit(139)
+        emit(0)
+        emit(72)
+        emit(133)
+        emit(192)
+        hp_sk: jz()
+        emit:
+emit:
+    49 192 185
+emit4(512)
+emit:
+    252 243 72 171 72 129 239
+emit4(8192)
+emit:
+    65 255 201
+hw_cap: jz()
+hw_back: jmp()
+if _sov_str_eq(nm, 'main') = 1 -> if need_priv = 1
+        emit_stack_wipe()
+    emit:
+        49 255
+    emit_sys_num(60)
+    emit_sys_do()
+if not -> if isfib = 0
+        if fw_done = 0 -> xor_rax()
+            leave()
+            ret()
+unesc s:
+    n: length(s)
+    r: _sov_heap_alloc(n + 1)
+    0:
+        j
+        i
+    as long as i < n -> b: _sov_byte_at(s, i)
+        if b = 92 -> if i + 1 < n
+                nxt: _sov_byte_at(s, i + 1)
+                out: nxt
+cflush_all:
+    i: 0
+    as long as i < _sov_list_len(cnms) -> if peek_i64(cemt, 16 + i * 8) = 0
+            cflush(peek_i64(cnms, 16 + i * 8))
+        i: i + 1
+cflush_globs:
+    i: 0
+    as long as i < _sov_list_len(cnms) -> nm: peek_i64(cnms, 16 + i * 8)
+        if peek_i64(cemt, 16 + i * 8) = 0 -> if list_find(glob_names, nm) > 0 - 1
+                if list_idx(locals, nm) < 0 -> cflush(nm)
+loadv name:
+    cflush(name)
+    g: list_idx(glob_names, name)
+    if g > 0 - 1 -> if list_idx(locals, name) < 0
+            load_glob(name)
+            return
+    i: list_idx(locals, name)
+    if i > 0 - 1 -> load_loc(i)
+        return
+    if g > 0 - 1 -> load_glob(name)
+storev name:
+    ci: list_idx(cnms, name)
+    if ci > 0 - 1 -> cemt: _sov_list_set(cemt, ci, 1)
+    g: list_idx(glob_names, name)
+    if g > 0 - 1 -> if list_idx(locals, name) < 0
+            store_glob(name)
+            return
+    i: list_idx(locals, name)
+    if i > 0 - 1 -> store_loc(i)
+        return
+repl text old new:
+    if _sov_find_text(text, old) < 0 -> return text
+    n: length(text)
+    o: length(old)
+    gn: length(new)
+    r: _sov_heap_alloc(n + gn + 8)
+    0:
+        p
+        j
+        ins
+    as long as p < n -> b: _sov_byte_at(text, p)
+if ins = 1 -> if b = 92
+        poke_byte(r, j, b)
+        j: j + 1
+        p: p + 1
+        if p < n -> poke_byte(r, j, _sov_byte_at(text, p))
+            j: j + 1
+            p: p + 1
+    if not -> poke_byte(r, j, b)
+        j: j + 1
+        p: p + 1
+if not -> if b = 34
+        ins: 1
+        poke_byte(r, j, b)
+        j: j + 1
+        p: p + 1
+    if not -> rp_m: 0
+        if p + o <= n -> rp_m: 1
+        rp_k: 0
+        as long as rp_k < o -> if rp_m = 1
+                if _sov_byte_at(text, p + rp_k) = _sov_byte_at(old, rp_k) -> dummy: 0
+dec_txt v:
+    if v = 0 -> return "0\n"
+    neg: 0
+    dv: v
+    if dv < 0 -> neg: 1
+    r: ""
+    as long as dv != 0 -> d: dv % 10
+        if d < 0 -> d: 0 - d
+        r: join(cut("0123456789", d, d + 1), r)
+        dv: dv / 10
+print_const arg:
+    0:
+        v
+        ok
+    if is_imm(arg) = 1 -> v: num_of(arg)
+        ok: 1
+    if ok = 0 -> if starts(arg, "-") = 1
+            if length(arg) > 1 -> tail: cut(arg, 1, length(arg))
+                    if is_imm(tail) = 1 -> v: 0 - num_of(tail)
+                            ok: 1
+do_print_one arg:
+    if length(arg) > 1 -> if _sov_byte_at(arg, 0) = 34
+            if _sov_byte_at(arg, length(arg) - 1) = 34 = 1 -> lit: unesc(cut(arg, 1, length(arg) - 1))
+                emit_write_lit(join(lit, "\n"))
+                return
+    typ: expr(arg)
+    mov_rdi_rax()
+    if typ = 1 -> used_pr: 1
+        calln("_sov_print")
+    if not -> used_pi: 1
+st: here()
+loadv("__pt_i")
+push_rax()
+loadv("__pt_c")
+mov_rcx_rax()
+pop_rax()
+cmp_rax_rcx()
+setcc("lt")
+test_rax()
+z: jz()
+if length(e) = 0 -> xor_rax()
+    return 0
+if length(e) >= 8 -> if sg_match(e, length(e) - 8, " as text") = 1
+        expr(cut(e, 0, length(e) - 8))
+        return 1
+if length(e) >= 7 -> if sg_match(e, length(e) - 7, " as ptr") = 1
+        expr(cut(e, 0, length(e) - 7))
+        return 1
+if length(e) > 0 -> if _sov_byte_at(e, 0) = 34
+        if length(e) > 1 -> rax_str(cut(e, 1, length(e) - 1))
+if starts(e, "length of ") = 1 -> expr(cut(e, 10, length(e)))
+    mov_rdi_rax()
+    used_sl: 1
+    calln("_sov_strlen")
+    return 0
+e: strip(cops(e))
+p: fop(e, "||")
+if p > 0 - 1 -> expr(cut(e, 0, p))
+    test_rax()
+    a: jnz()
+expr(cut(e, p + 2, length(e)))
+test_rax()
+b: jnz()
+xor_rax()
+d: jmp()
+patch(_):
+    a
+    b
+rax_imm(1)
+patch(d)
+p: fop(e, "&&")
+if p > 0 - 1 -> expr(cut(e, 0, p))
+    test_rax()
+    a: jz()
+    expr(cut(e, p + 2, length(e)))
+    test_rax()
+    b: jz()
+    rax_imm(1)
+    d: jmp()
+    patch(_):
+p: fop(e, "|")
+if p > 0 - 1 -> return bitop(e, p, "bor", 1)
+p: fop(e, "^")
+if p > 0 - 1 -> return bitop(e, p, "bxor", 1)
+p: fop(e, "&")
+if p > 0 - 1 -> return bitop(e, p, "band", 1)
+p: fop(e, "==")
+if p > 0 - 1 -> bin(cut(e, 0, p), cut(e, p + 2, length(e)), "eq")
+    return 0
+p: fop(e, "!=")
+if p > 0 - 1 -> bin(cut(e, 0, p), cut(e, p + 2, length(e)), "ne")
+    return 0
+p: fop(e, "<=")
+if p > 0 - 1 -> bin(cut(e, 0, p), cut(e, p + 2, length(e)), "le")
+    return 0
+p: fop(e, ">=")
+if p > 0 - 1 -> bin(cut(e, 0, p), cut(e, p + 2, length(e)), "ge")
+    return 0
+p: fopn(e, "<", "<")
+if p > 0 - 1 -> bin(cut(e, 0, p), cut(e, p + 1, length(e)), "lt")
+p: fopn(e, ">", ">")
+if p > 0 - 1 -> bin(cut(e, 0, p), cut(e, p + 1, length(e)), "gt")
+    return 0
+p: fop(e, ">>>")
+if p > 0 - 1 -> return bitop(e, p, "bshr", 3)
+p: fop(e, ">>")
+if p > 0 - 1 -> return bitop(e, p, "bsar", 2)
+p: fop(e, "<<")
+if p > 0 - 1 -> return bitop(e, p, "bshl", 2)
+p: fop2(e, "+", "-")
+if p > 0 -> if _sov_byte_at(e, p) = 43 = 1
+        bin(cut(e, 0, p), cut(e, p + 1, length(e)), "add")
+        return 0
+    bin(cut(e, 0, p), cut(e, p + 1, length(e)), "sub")
+    return 0
+if p = 0 -> if _sov_byte_at(e, p) = 43 = 1
+        bin(cut(e, 0, p), cut(e, p + 1, length(e)), "add")
+        return 0
+p: fop3(e)
+if p > 0 - 1 -> o: letter(e, p)
+if _sov_str_eq(e, "blank") = 1 -> rax_str("")
+    return 1
+if length(e) > 0 -> if _sov_byte_at(e, 0) = 34
+        rax_str(cut(e, 1, length(e) - 1))
+        return 1
+if starts(e, "(") = 1 -> if _sov_byte_at(e, length(e) - 1) = 41 = 1
+        t: expr(cut(e, 1, length(e) - 1))
+        return t
+lp: look(e, "(")
+if lp > 0 -> if _sov_byte_at(e, length(e) - 1) = 41 = 1
+if length(strip(inside)) > 0 -> 0:
+        depth
+        ins
+        start
+        i
+    ilen: length(inside)
+    as long as i < ilen -> c: _sov_byte_at(inside, i)
+        if ins = 1 -> if _sov_byte_at(inside, i) = 92
+                i: i + 1
+            if not -> if _sov_byte_at(inside, i) = 34
+if starts(s, "join ") = 1 -> expr(strip(cut(s, 5, length(s))))
+    stmt_join_op()
+    return
+if starts(s, "print ") = 1 -> arg: strip(cut(s, 6, length(s)))
+    if ends_times(arg) = 1 -> head: strip(cut(arg, 0, length(arg) - 6))
+        sp: find_last_sp(head)
+        if sp > 0 - 1 -> do_print_times(strip(cut(head, 0, sp)), strip(cut(head, sp + 1, length(head))))
+            return
+    if length(arg) >= 8 -> if sg_match(arg, length(arg) - 8, " as text") = 1
+            expr(cut(arg, 0, length(arg) - 8))
+if length(arg) >= 7 -> if sg_match(arg, length(arg) - 7, " as ptr") = 1
+        expr(cut(arg, 0, length(arg) - 7))
+        mov_rdi_rax()
+        used_pr: 1
+        calln("_sov_print")
+        return
+if length(arg) > 1 -> if _sov_byte_at(arg, 0) = 34
+        lit: unesc(cut(arg, 1, length(arg) - 1))
+        emit_write_lit(join(lit, "\n"))
+        return
+if length(rhs) > 0 -> if digitb(_sov_byte_at(rhs, 0)) = 1
+        if look(rhs, " ") < 0 -> if br_depth = 0
+                nv: num_of(rhs)
+                cset(var, nv)
+                if nv > 0 -> kn: var
+                    kv: nv
+                drop_str(var)
+                if has_vm = 0 -> return
+if try_alloc_imm(var, rhs) = 1 -> mark_str(var)
+    return
+if has_vm = 0 -> if _sov_byte_at(rhs, length(rhs) - 1) = 41 = 1
+        inn: strip(cut(rhs, 11, length(rhs) - 1))
+        asz: 0
+        if _sov_str_eq(inn, kn) = 1 -> if kv > 0
+                asz: kv
+        if asz = 0 -> if length(inn) > 0
+                if digitb(_sov_byte_at(inn, 0)) = 1 -> if look(inn, " ") < 0
+                        asz: num_of(inn)
+        if asz > 511 -> emit_mmap_k(asz)
+            storev(var)
+tname line:
+    s: strip(line)
+    if is_task_hdr(s) = 1 -> s: strip(cut(s, 0, length(s) - 1))
+        if starts(s, "task ") = 1 -> s: strip(cut(s, 5, length(s)))
+        wp: look(s, " with ")
+        if wp > 0 - 1 -> return repl(strip(cut(s, 0, wp)), " ", "_")
+        sp: look(s, " ")
+        if sp > 0 - 1 -> return strip(cut(s, 0, sp))
+        return s
+    rest: strip(cut(line, 5, length(line)))
+tparams_g th line:
+    if th = 0 -> return _sov_list_new()
+    return tparams(line)
+tparams line:
+    lst: _sov_list_new()
+    s: strip(line)
+    if is_task_hdr(s) = 1 -> s: strip(cut(s, 0, length(s) - 1))
+        if starts(s, "task ") = 1 -> s: strip(cut(s, 5, length(s)))
+        wp: look(s, " with ")
+        if wp > 0 - 1 -> s: strip(cut(s, wp + 6, length(s)))
+        if not -> sp: look(s, " ")
+            if sp < 0 -> return lst
+            s: strip(cut(s, sp + 1, length(s)))
+p: repl(s, ",", " ")
+p: repl(p, " and ", " ")
+0:
+    start
+    i
+n: length(p)
+as long as i < n -> tp_c: _sov_byte_at(p, i)
+        tp_sp: 0
+        if tp_c = 32 -> tp_sp: 1
+        if tp_sp = 1 -> one: strip(cut(p, start, i))
+        tp_ap: 0
+        if tp_sp = 1 -> tp_ap: 1
+        if length(one) = 0 -> tp_ap: 0
+        if tp_ap = 1 -> lst: _sov_list_add(lst, one)
+        if tp_sp = 1 -> start: i + 1
+# tparams: 2nd split loop was dead (i=n after 1st); removed, tail kept
+# dead loop line 2 (placeholder keeps include ranges stable)
+# dead loop line 3 (placeholder keeps include ranges stable)
+# dead loop line 4 (placeholder keeps include ranges stable)
+# dead loop line 5 (placeholder keeps include ranges stable)
+# dead loop line 6 (placeholder keeps include ranges stable)
+# dead loop line 7 (placeholder keeps include ranges stable)
+one: repl(strip(cut(p, start, n)), " ", "_")
+if length(one) > 0 -> lst: _sov_list_add(lst, one)
+return lst
+dead_iota lines:
+    an: blank
+    i: 0
+    as long as i < _sov_list_len(lines) -> s: strip(peek_i64(lines, 16 + i * 8))
+        if starts(s, "<-- ") = 1 -> if look(s, "_sov_heap_alloc(") > 0 - 1
+                rest: cut(s, 4, length(s))
+                t: find_sep(rest)
+                if t > 0 - 1 -> an: repl(strip(cut(rest, 0, t)), " ", "_")
+        i: i + 1
+    if length(an) = 0 -> return blank
+hits: 0
+ok: 1
+i: 0
+as long as i < _sov_list_len(lines) -> s: strip(peek_i64(lines, 16 + i * 8))
+    mark: join(an, ",")
+    hit: 0
+    if look(s, mark) > 0 - 1 -> hit: 1
+    if starts(s, join("<-- ", an)) = 1 -> hit: 1
+    if hit = 1 -> hits: hits + 1
+        good: 0
+i2s n:
+    r: ""
+    v: n
+    if v = 0 -> return "0\n"
+    neg: 0
+    if v < 0 -> neg: 1
+    as long as v != 0 -> d: v % 10
+        if d < 0 -> d: 0 - d
+        r: join(cut("0123456789", d, d + 1), r)
+        v: v / 10
+tidy_path s:
+    r: unquote(s)
+    n: length(r)
+    if n > 2 -> if _sov_byte_at(r, 1) = 58
+            r: cut(r, 2, n)
+            n: n - 2
+    o: _sov_heap_alloc(n + 1)
+    i: 0
+    as long as i < n -> b: _sov_byte_at(r, i)
+        if b = 92 -> b: 47
+dirname p:
+    n: length(p)
+    if n = 0 -> return "."
+    i: n
+    as long as i > 0 -> i: i - 1
+        b: _sov_byte_at(p, i)
+        if b = 92 -> b: 47
+        if b = 47 -> if i = 0
+                return "/"
+            return cut(p, 0, i)
+prep_main names params bodies:
+    thin_main: 0
+    blank:
+        skip_al
+        fib_nm
+    0:
+        fib_drop
+        fi
+    as long as fi < _sov_list_len(names) -> if _sov_str_eq(peek_i64(names, 16 + fi * 8), "main") = 1
+            if _sov_list_len(peek_i64(params, 16 + fi * 8)) = 0 -> thin_main: 1
+if length(fib_nm) > 0 -> fib_drop: 1
+    fi: 0
+    as long as fi < _sov_list_len(names) -> if _sov_str_eq(peek_i64(names, 16 + fi * 8), fib_nm) = 0
+            bln: peek_i64(bodies, 16 + fi * 8)
+            bi: 0
+            as long as bi < _sov_list_len(bln) -> if fib_call_var(peek_i64(bln, 16 + bi * 8), fib_nm) = 1
+                    fib_drop: 0
+                if look(peek_i64(bln, 16 + bi * 8), join("addr_of ", fib_nm)) > 0 - 1 -> fib_drop: 0
+                bi: bi + 1
+        fi: fi + 1
+warn_unused:
+    ui: 0 ;; w_hitn: 0 ;; w_hit: 0 ;; w_built: 0
+    as long as ui < _sov_list_len(names) -> nm: peek_i64(names, 16 + ui * 8)
+        do_w: 0
+        if length(nm) > 0 -> if _sov_str_eq(nm, "main") = 0
+                if starts(nm, "_sov_") = 0 -> if _sov_str_eq(nm, "spawn_emit") = 0
+                        if peek_i64(task_user, 16 + ui * 8) = 1 -> do_w: 1
+        if do_w = 1 -> if fib_drop = 1
+                if _sov_str_eq(nm, fib_nm) = 1 -> do_w: 0
+        if do_w = 1 -> 0:
+dce:
+    if had_err = 1 -> return
+    n: _sov_list_len(fn_names)
+    if n < 2 -> return
+    clen: oc_n
+    _sov_list_new():
+        dro
+        dri
+    i: 0
+    as long as i < n -> nm: peek_i64(fn_names, 16 + i * 8)
+nr: _sov_list_len(dro)
+if nr < 2 -> return
+first_off: peek_i64(dro, 16)
+dpos: _sov_list_new()
+i: 0
+as long as i < n -> dpos: _sov_list_add(dpos, 0 - 1)
+    i: i + 1
+i: 0
+as long as i < nr -> dpos: _sov_list_set(dpos, peek_i64(dri, 16 + i * 8), i)
+    i: i + 1
+pn: _sov_list_len(patch_at)
+downer: _sov_list_new()
+0:
+    ff
+    pp
+as long as pp < pn -> at: peek_i64(patch_at, 16 + pp * 8)
+    o: 0 - 1
+    if at >= first_off -> adv: 1
+        as long as adv = 1 -> if ff + 1 < nr
+                if at >= peek_i64(dro, 16 + (ff + 1) * 8) -> ff: ff + 1
+dreach: _sov_list_new()
+i: 0
+as long as i < nr -> dreach: _sov_list_add(dreach, 0)
+    i: i + 1
+dadj: _sov_list_new()
+i: 0
+as long as i < nr -> dadj: _sov_list_add(dadj, _sov_list_new())
+    i: i + 1
+dtodo: _sov_list_new()
+mi: list_idx(fn_names, "main")
+dhead: 0
+as long as dhead < _sov_list_len(dtodo) -> u: peek_i64(dtodo, 16 + dhead * 8)
+    dhead: dhead + 1
+    nbl: peek_i64(dadj, 16 + u * 8)
+    j: 0
+    as long as j < _sov_list_len(nbl) -> v: peek_i64(nbl, 16 + j * 8)
+        if peek_i64(dreach, 16 + v * 8) = 0 -> dreach: _sov_list_set(dreach, v, 1)
+            dtodo: _sov_list_add(dtodo, v)
+        j: j + 1
+as long as i < nr -> if peek_i64(dreach, 16 + i * 8) = 1
+        kept: kept + 1
+    i: i + 1
+if kept = nr -> return
+noc: _sov_list_new()
+i: 0
+as long as i < first_off -> noc: _sov_list_add(noc, ocget(i))
+    i: i + 1
+_sov_list_new():
+    nfn_names
+i: 0
+as long as i < nr -> dshift: _sov_list_add(dshift, 0)
+    i: i + 1
+cum: first_off
+i: 0
+as long as i < nr -> if peek_i64(dreach, 16 + i * 8) = 1
+        s: peek_i64(dro, 16 + i * 8)
+        e: clen
+        if i + 1 < nr -> e: peek_i64(dro, 16 + (i + 1) * 8)
+        j: s
+_sov_list_new():
+    npat_at
+    npat_kind
+    npat_val
+    npat_line
+pp: 0
+as long as pp < pn -> o: peek_i64(downer, 16 + pp * 8)
+    keep: 0
+    ns: peek_i64(patch_at, 16 + pp * 8)
+    if o = 0 - 1 -> keep: 1
+use_one name:
+    tail: join(name, ".sov")
+    path: join("library/", tail)
+    r: load_file(path)
+    if r != 0 -> return splice_inc(r, "library/")
+    path: join(self_dir, join("/library/", tail))
+    r: load_file(path)
+    if r != 0 -> return splice_inc(r, dir_of(path))
+    path: join(dirname(self_dir), join("/library/", tail))
+    r: load_file(path)
+load_file path:
+    fd: _sov_open(path, 0)
+    if fd < 0 -> return 0
+    _sov_lseek(fd, 0, 0)
+    if sz < 1 -> _sov_close(fd)
+        return 0
+    buf: _sov_heap_alloc(sz + 1)
+    got: _sov_read(fd, buf, sz)
+    _sov_close(fd)
+fiblike nm ps blines:
+    if _sov_str_eq(nm, "main") = 1 -> return 0
+    if _sov_list_len(ps) != 1 -> return 0
+    p: peek_i64(ps, 16)
+    if _sov_list_len(blines) != 3 -> return 0
+    l1: strip(peek_i64(blines, 16))
+    l2: strip(peek_i64(blines, 24))
+    l3: strip(peek_i64(blines, 32))
+    if _sov_str_eq(l1, join("if ", join(p, " < 2"))) = 0 -> return 0
+    if _sov_str_eq(l2, join("return ", p)) = 0 -> return 0
+is_imm s:
+    n: length(s)
+    if n = 0 -> return 0
+    i: 0
+    if starts(s, "-") = 1 -> i: 1
+    if i >= n -> return 0
+    as long as i < n -> if digitb(_sov_byte_at(s, i)) = 0
+            return 0
+        i: i + 1
+    return 1
+lcut lst n:
+    out: _sov_list_new()
+    i: 0
+    as long as i < n -> out: _sov_list_add(out, peek_i64(lst, 16 + i * 8))
+        i: i + 1
+    return out
+cnum s:
+    e: strip(s)
+    if length(e) = 0 -> return 0
+    i: 0
+cwrap s:
+    e: strip(s)
+    n: length(e)
+    if n < 2 -> return 0
+    if _sov_byte_at(e, 0) = 40 = 0 -> return 0
+    if _sov_byte_at(e, n - 1) = 41 = 0 -> return 0
+    1:
+        d
+        i
+    as long as i < n - 1 -> if _sov_byte_at(e, i) = 40 = 1
+ceval2 ls rs op2:
+    cstk: _sov_list_add:
+        ls
+        rs
+        op2
+    if ceval(peek_i64(cstk, 16 + (_sov_list_len(cstk) - 3) * 8)) = 0 -> cstk: lcut(cstk, _sov_list_len(cstk) - 3)
+        return 0
+    cstk: _sov_list_add(cstk, cval)
+    if ceval(peek_i64(cstk, 16 + (_sov_list_len(cstk) - 3) * 8)) = 0 -> cstk: lcut(cstk, _sov_list_len(cstk) - 4)
+        return 0
+lv: peek_i64(cstk, 16 + (_sov_list_len(cstk) - 1) * 8)
+rv: cval
+o2: peek_i64(cstk, 16 + (_sov_list_len(cstk) - 2) * 8)
+cstk: lcut(cstk, _sov_list_len(cstk) - 4)
+if o2 = 10 -> cval: 0
+    if lv = rv -> cval: 1
+if not -> if o2 = 11
+        cval: 0
+        if lv != rv -> cval: 1
+    if not -> if o2 = 12
+if not -> if o2 = 13
+        cval: 0
+        if lv >= rv -> cval: 1
+    if not -> if o2 = 14
+            cval: 0
+            if lv < rv -> cval: 1
+        if not -> if o2 = 15
+                cval: 0
+                if lv > rv -> cval: 1
+            if not -> if o2 = 20
+if not -> if o2 = 21
+        cval: lv - rv
+    if not -> if o2 = 30
+            cval: lv * rv
+        if not -> if o2 = 31
+                if rv = 0 -> return 0
+                cval: lv / rv
+            if not -> if o2 = 32
+                    if rv = 0 -> return 0
+                cval: lv % rv
+ceval s:
+    e: strip(s)
+    if length(e) = 0 -> return 0
+    if starts(e, "const(") = 1 -> if _sov_byte_at(e, length(e) - 1) = 41 = 1
+            return ceval(cut(e, 6, length(e) - 1))
+    if cnum(e) = 1 -> return 1
+    if cwrap(e) = 1 -> return ceval(cut(e, 1, length(e) - 1))
+    if _sov_byte_at(e, 0) = 45 = 1 -> if ceval(cut(e, 1, length(e))) = 1
+            cval: 0 - cval
+            return 1
+op: fop(e, "==")
+cvop: 10
+if op < 0 -> op: fop(e, "!=")
+    cvop: 11
+if op < 0 -> op: fop(e, "<=")
+    cvop: 12
+if op < 0 -> op: fop(e, ">=")
+    cvop: 13
+if op < 0 -> op: fop(e, "<")
+    cvop: 14
+if op < 0 -> op: fop(e, ">")
+    cvop: 15
+if op > 0 - 1 -> if ceval2(cut(e, 0, op), cut(e, op + 2, length(e)), cvop) = 0
+        return 0
+    return 1
+cspl: 0
+pa: fop(e, "+")
+if pa > 0 -> cspl: pa
+    cvop: 20
+if cspl <= 0 -> pm: fop(e, "-")
+if cspl > 0 -> if ceval2(cut(e, 0, cspl), cut(e, cspl + 1, length(e)), cvop) = 0
+        return 0
+    return 1
+cspl: 0
+px: fop(e, "*")
+if px > 0 -> cspl: px
+    cvop: 30
+if cspl <= 0 -> pd: fop(e, "/")
+    if pd > 0 -> cspl: pd
+        cvop: 31
+fib_of n:
+    if n < 2 -> return n
+    a: 0
+    b: 1
+    i: 2
+    as long as i <= n -> t: a + b
+        a: b
+        b: t
+        i: i + 1
+    return b
+fib_call_var line nm:
+    mark: join(nm, "(")
+    ln: length(line)
+    pos: 0
+    as long as pos < ln -> p: look(cut(line, pos, ln), mark)
+        if p < 0 -> return 0
+        p: p + pos
+        inn: cut(line, p + length(mark), ln)
+        c: look(inn, ")")
+        if c < 0 -> return 0
+"str_cat"
+"str_cut"
+"str_trim"
+"str_join3"
+"_sov_trim"
+"join"
+"strip"
+"cut"
+"repl"
+"letter"
+compound s:
+    if cfind1(s, 61) < 0 -> return s
+    i: 0
+    n: length(s)
+    intext: 0
+    as long as i + 1 < n -> c: _sov_byte_at(s, i)
+        if c = 34 -> if intext = 0
+                intext: 1
+            if not -> intext: 0
+        if intext = 0 -> if _sov_byte_at(s, i + 1) = 61
+                op: 0
+if c = 43 -> op: 1
+if c = 45 -> op: 1
+if c = 42 -> op: 1
+if c = 47 -> op: 1
+if c = 38 -> op: 1
+if c = 124 -> op: 1
+if c = 94 -> op: 1
+if op = 1 -> lhs: strip(cut(s, 0, i))
+    rhs: strip(cut(s, i + 2, n))
+    if length(lhs) > 0 -> if length(rhs) > 0
+dir_of path:
+    d: 0 - 1
+    i: 0
+    as long as i < length(path) -> if _sov_byte_at(path, i) = 47 = 1
+            d: i
+        i: i + 1
+    if d < 0 -> return blank
+    return cut(path, 0, d + 1)
+sp_is_include line:
+    # native first-token probe for splice_inc: the exact same answer as
+    # strip(line) + starts(t, "include ") on every line. the ws run walks
+    # every byte below 33 (strip's exact leading-trim set) and stops on the
+    # NUL terminator, so no read ever passes the line's own bytes.
+    pk: peek_byte(line, 0)
+    k: 0
+    as long as pk < 33
+        if pk is 0
+            return 0
+        k: k + 1
+        pk: peek_byte(line, k)
+    if pk is not 105
+        return 0
+    if peek_byte(line, k + 1) is not 110
+        return 0
+    if peek_byte(line, k + 2) is not 99
+        return 0
+    if peek_byte(line, k + 3) is not 108
+        return 0
+    if peek_byte(line, k + 4) is not 117
+        return 0
+    if peek_byte(line, k + 5) is not 100
+        return 0
+    if peek_byte(line, k + 6) is not 101
+        return 0
+    if peek_byte(line, k + 7) is not 32
+        return 0
+    return 1
+
+splice_inc src base:
+    b: base
+lst: lines_of(src)
+pass: 0
+go: 1
+as long as go = 1 -> go: 0
+    pass: pass + 1
+    if pass > 8 -> print "Error: include nesting too deep (cycle?)"
+        fail()
+    acc: _sov_list_new()
+    i: 0
+    n: _sov_list_len(lst)
+as long as i < n -> line: peek_i64(lst, 16 + i * 8)
+    if sp_is_include(line) = 1 -> t: strip(line)
+        # no new pass is needed for this line itself; a pass only runs
+        # again when a spliced line is itself an include
+        spec: strip(cut(t, 8, length(t)))
+        pname: spec
+        from: 0
+        nlin: 0
+        pars: _sov_list_new()
+        op: look(spec, '(')
+if op > 0 - 1 -> # values for a shared block: include inc/incNN.sov 4 3 (7 8 9)
+    pars: sg_toks(cut(spec, op + 1, length(spec) - 1))
+    spec: strip(cut(spec, 0, op))
+sp1: look(spec, ' ')
+if sp1 > 0 - 1 -> pname: cut(spec, 0, sp1)
+    w2: strip(cut(spec, sp1 + 1, length(spec)))
+    sp2: look(w2, ' ')
+    if sp2 > 0 - 1 -> from: num_of(cut(w2, 0, sp2))
+        nlin: num_of(cut(w2, sp2 + 1, length(w2)))
+    if not -> nlin: num_of(w2)
+f: load_file(pname)
+if f = 0 -> f: load_file(join(b, pname))
+    if f = 0 -> f: load_file(join("library/", pname))
+    if f = 0 -> print "Error: include not found:"
+        _sov_print(pname)
+        err_where()
+        had_err: 1
+        fail()
+fl: lines_of(f)
+ipc: 0 ;; as long as peek_byte(line, ipc) = 32 -> ipc: ipc + 1 ;; ip: cut(line, 0, ipc)
+j: 0
+m: _sov_list_len(fl)
+if nlin > 0 -> if from > 0
+        j: from - 1
+    m: j + nlin
+    if m > _sov_list_len(fl) -> m: _sov_list_len(fl)
+as long as j < m -> fj: peek_i64(fl, 16 + j * 8)
+    if length(pars) > 0
+        if length(strip(fj)) > 0 -> fj: sg_psub(fj, pars)
+wordchar b:
+    if b = 95 -> return 1
+    if b > 47 -> if b < 58
+            return 1
+    if b > 64 -> if b < 91
+            return 1
+    if b > 96 -> if b < 123
+            return 1
+ren_word old nw text:
+    out: blank
+i: 0
+n: length(text)
+q: 0
+ol: length(old)
+as long as i < n -> d: 0
+    b: _sov_byte_at(text, i)
+    if q = 1 -> out: join(out, letter(text, i))
+        if b = 34 -> q: 0
+        d: 1
+    if q = 2 -> out: join(out, letter(text, i))
+if d = 0 -> if b = 34
+        q: 1
+        out: join(out, letter(text, i))
+        i: i + 1
+        d: 1
+    if d = 0 -> if b = 96
+            q: 2
+            out: join(out, letter(text, i))
+            i: i + 1
+            d: 1
+if d = 0 -> pb: 32
+    if i > 0 -> pb: _sov_byte_at(text, i - 1)
+    if wordchar(pb) = 0 -> m: 0
+        if i + ol <= n -> if sg_match(text, i, old) = 1
+                ab: 32
+                if i + ol < n -> ab: _sov_byte_at(text, i + ol)
+                if wordchar(ab) = 0 -> m: 1
+        if m = 1 -> out: join(out, nw)
+            i: i + ol
+            d: 1
+topdefs t:
+    lst: _sov_list_new()
+    lns: lines_of(t)
+    i: 0
+    n: _sov_list_len(lns)
+    as long as i < n -> l: peek_i64(lns, 16 + i * 8)
+        if length(l) > 0 -> b0: _sov_byte_at(l, 0)
+            if b0 != 35 -> if b0 != 32
+                    if b0 != 9 -> j: 0
+                        w: blank
+qualify text alias:
+    lns: lines_of(text)
+    n: _sov_list_len(lns)
+    bt: 0
+    acc: _sov_list_new()
+    i: 0
+    as long as i < n -> ln: peek_i64(lns, 16 + i * 8)
+        m: length(ln)
+        al: length(alias)
+        res: blank
+0:
+    j
+    q
+as long as j < m -> d: 0
+    b: _sov_byte_at(ln, j)
+    if bt = 1 -> if b = 96
+            bt: 0
+        res: join(res, letter(ln, j))
+        j: j + 1
+        d: 1
+if d = 0 -> if b = 96
+        bt: 1
+        res: join(res, letter(ln, j))
+        j: j + 1
+        d: 1
+    if d = 0 -> if q = 1
+            if b = 34 -> q: 0
+            res: join(res, letter(ln, j))
+            j: j + 1
+            d: 1
+if d = 0 -> pb: 32
+    if j > 0 -> pb: _sov_byte_at(ln, j - 1)
+    if wordchar(pb) = 0 -> m2: 0
+        if j + al + 1 < m -> if sg_match(ln, j, alias) = 1
+                if _sov_byte_at(ln, j + al) = 46 -> if wordchar(_sov_byte_at(ln, j + al + 1)) = 1
+                        m2: 1
+        if m2 = 1 -> k: j + al + 1
+            w: blank
+            e: k
+            as long as k < m -> if wordchar(_sov_byte_at(ln, k)) = 1
+apply_aliases src:
+    if length(alias_pairs) = 0 -> return src
+    i: 0
+    n: length(alias_pairs)
+    cur: blank
+    as long as i < n -> if _sov_byte_at(alias_pairs, i) = 124 = 1
+            if length(cur) > 0 -> src: qualify(src, cur)
+                cur: blank
+        if not -> cur: join(cur, letter(alias_pairs, i))
+        i: i + 1
+cp: look(t, ': ')
+if cp > 0 - 1 -> left: strip(cut(t, 0, cp))
+    right: strip(cut(t, cp + 2, length(t)))
+    if sg_num(left) = 1 -> toks: sg_toks(right)
+        okv: 1
+        k: 0
+        as long as k < _sov_list_len(toks) -> if sg_word(peek_i64(toks, 16 + k * 8)) = 0
+                okv: 0
+            k: k + 1
+        if okv = 1 -> if _sov_list_len(toks) > 1
+emit8(v)
+if sl = 0
+    emit(72)
+    emit(57)
+    emit(203)
+if sl = 1
+    emit(73)
+    emit(57)
+    emit(204)
+if sl = 2
+    emit(73)
+    emit(57)
+    emit(205)
+if sl = 3
+    emit(73)
+    emit(57)
+    emit(206)
+if sl = 4
+p: look(ag, " - ")
+neg: 1
+if p < 0 -> p: look(ag, " + ")
+    neg: 0
+if p < 0 -> return 0
+nm: strip(cut(ag, 0, p))
+cs: strip(cut(ag, p + 3, length(ag)))
+if plain_name(nm) = 0 -> return 0
+if is_imm(cs) = 0 -> return 0
+v: num_of(cs)
+if starts(t, "peek_raw64(") = 0 -> return 0 - 1
+if _sov_byte_at(t, length(t) - 1) = 41 = 0 -> return 0 - 1
+mn: cut(t, 11, length(t) - 1)
+mc: look(mn, ",")
+if mc < 0 -> return 0 - 1
+mb: strip(cut(mn, 0, mc))
+mx: strip(cut(mn, mc + 1, length(mn)))
+if name_ok(mb) = 0 -> return 0 - 1
+mbs: reg_slot(mb)
+if mbs < 0 -> return 0 - 1
+if sg_match(e, length(e) - 4, " * 8") = 0 -> return 0
+head: strip(cut(e, 0, length(e) - 4))
+if length(head) = 0 -> return 0
+if _sov_byte_at(head, 0) = 40 = 1 -> if _sov_byte_at(head, length(head) - 1) = 41 = 1
+        inn: strip(cut(head, 1, length(head) - 1))
+        pp: look(inn, " + ")
+        sg: 1
+        if pp < 0 -> pp: look(inn, " - ")
+            sg: 0 - 1
+        if pp < 0 -> return 0
+lx: pk_x
+if pkpeek(R) = 1 -> if _sov_str_eq(pk_g, lg) = 1
+        hr: peek_home(pk_x)
+        if hr < 0 -> scaled_rdx(pk_x)
+            hr: 2
+        loadv_rdi(lg)
+        hl: peek_home(lx)
+        if hl < 0 -> scaled_rsi(lx)
+            hl: 6
+        peek_rax_h(hl)
+want0: join(iv, ": 0")
+jj: li - 1
+found: 0
+as long as jj >= 0 -> pl: strip(peek_i64(lines, 16 + jj * 8))
+    if length(pl) > 0 -> if starts(pl, "#") = 0
+            if starts(pl, "use ") = 0 -> if _sov_str_eq(pl, want0) = 1
+                    found: 1
+                jj: 0 - 1
+    jj: jj - 1
+if found = 0 -> return 0
+l1: strip(peek_i64(blines, 16))
+l2: strip(peek_i64(blines, 24))
+pb1: "poke_byte("
+fl: blank
+if starts(l1, pb1) = 1 -> fl: l1
+if starts(l2, pb1) = 1 -> fl: l2
+if length(fl) = 0 -> return 0
+inc_r: join(iv, join(": ", join(iv, " + 1")))
+bumped: 0
+if _sov_str_eq(l1, inc_r) = 1 -> bumped: 1
+if _sov_str_eq(name, "poke_byte") = 1 -> if argc = 3
+        if m0 > 0 - 1 -> if m1 > 0 - 1
+                if m2 > 0 - 1 -> mem_poke_byte_reg(m0, m1, m2)
+                    return 1
+                if i2 = 1 -> mem_poke_byte_imm(m0, m1, v2)
+                    return 1
+if _sov_str_eq(name, "peek_byte") = 1 -> if argc = 2
+        if m0 > 0 - 1 -> if m1 > 0 - 1
+                mem_peek_byte(m0, m1)
+                return 1
+x: band(origin, 65535)
+y: band(bshr(origin, 16), 65535)
+rect_width: band(extent, 65535)
+rect_height: band(bshr(extent, 16), 65535)
+if rect_width < 1 -> return 0
+if rect_height < 1 -> return 0
+if rect_width > width -> return 0
+if rect_height > height -> return 0
+if x > width - rect_width -> return 0
+if y > height - rect_height -> return 0
+first: peek_raw64(table + 16, 0)
+last: peek_raw64(table + 24, 0)
+if vector < first -> return 0
+if vector > last -> return 0
+entry: _kirq_entry(table, capacity, vector)
+if atomic_load(entry) != KIRQ_FREE -> return 0
+generation: atomic_load(entry + 8) + 1
+if generation = 0 -> generation: 1
+atomic_store(entry + 8, generation)
+atomic_store(entry + 16, owner)
+snum v:
+    if v < 0 -> sc(45)
+        v: 0 - v
+    if v = 0 -> sc(48)
+        return 0
+    d: 1000000000000000000
+    started: 0
+    as long as d != 0 -> q: v / d
+        q: q % 10
+        if q != 0 -> started: 1
+poke_byte(out, 0, n % 256)
+poke_byte(out, 1, (n / 256) % 256)
+poke_byte(out, 2, (n / 65536) % 256)
+poke_byte(out, 3, (n / 16777216) % 256)
+o: 4
+0:
+    ctrl
+    cnum
+    cat
+    pos
+n: peek_byte(p, 0) + peek_byte(p, 1) * 256 + peek_byte(p, 2) * 65536 + peek_byte(p, 3) * 16777216
+if n = 0 -> return ""
+out: mem_new(n + 1)
+o: 0
+i: 4
+ctrl: 0
+cnum: 8
+bad: 0
+as long as o < n -> if bad = 1
+        o: n
+poke_byte(out, 0, n % 256)
+poke_byte(out, 1, (n / 256) % 256)
+poke_byte(out, 2, (n / 65536) % 256)
+poke_byte(out, 3, (n / 16777216) % 256)
+poke_byte(out, 4, 0)
+poke_byte(out, 5, plen % 256)
+poke_byte(out, 6, (plen / 256) % 256)
+poke_byte(out, 7, (plen / 65536) % 256)
+poke_byte(out, 8, (plen / 16777216) % 256)
+o: 9
+s1: r1 * 5
+s2: r2 * 5
+s3: r3 * 5
+s4: r4 * 5
+0:
+    h0
+    h1
+    h2
+    h3
+    h4
+sov_NET_RESOLVE a0 a1:
+    return sovcall(SOVSYS_NET_RESOLVE, a0, a1)
+sov_NET_SOCKET a0 a1:
+    return sovcall(SOVSYS_NET_SOCKET, a0, a1)
+sov_NET_CONNECT a0 a1 a2:
+    return sovcall(SOVSYS_NET_CONNECT, a0, a1, a2)
+sov_NET_SEND a0 a1 a2:
+    return sovcall(SOVSYS_NET_SEND, a0, a1, a2)
+sov_NET_RECV a0 a1 a2:
+    return sovcall(SOVSYS_NET_RECV, a0, a1, a2)
+sov_FILE_READ a0 a1 a2:
+    return sovcall(SOVSYS_FILE_READ, a0, a1, a2)
+sov_FILE_WRITE a0 a1 a2:
+    return sovcall(SOVSYS_FILE_WRITE, a0, a1, a2)
+sov_FILE_STAT a0 a1:
+    return sovcall(SOVSYS_FILE_STAT, a0, a1)
+sov_FILE_LIST a0:
+    return sovcall(SOVSYS_FILE_LIST, a0)
+sov_FILE_MKDIR a0:
+    return sovcall(SOVSYS_FILE_MKDIR, a0)
+SOVSYS_ABI_VERSION: 1
+SOVSYS_MAX_ARGUMENTS: 6
+SOVSYS_AUDIT_RECORD_VERSION: 1
+SOVSYS_AUDIT_RECORD_SIZE: 32
+SOVSYS_ADD: 1
+SOVSYS_PATH_READ: 2
+SOVSYS_PATH_WRITE: 3
+SOVSYS_FORK: 4
+SOVSYS_PROCESS_SPAWN: 5
+SOVSYS_OPEN: 10
+SOVSYS_READ: 11
+SOVSYS_WRITE: 12
+SOVSYS_CLOSE: 13
+SOVSYS_SECCOMP_DENY: 14
+SOVSYS_DROP_CAPABILITY: 15
+SOVSYS_SIGNAL_INSTALL: 16
+SOVSYS_SIGNAL_RETURN: 17
+SOVSYS_MMAP_ANON: 18
+SOVSYS_MUNMAP: 19
+SOVSYS_PIPE: 21
+SOVSYS_DNS_QUERY: 22
+SOVSYS_POLL_ONE: 23
+SOVSYS_WAIT: 25
+SOVSYS_EXEC: 26
+SOVSYS_DUP: 27
+SOVSYS_ABI_QUERY: 28
+SOVSYS_DISPLAY_INFO: 29
+SOVSYS_DISPLAY_BLIT64: 30
+SOVSYS_DISPLAY_FILL: 31
+SOVSYS_READV: 32
+sov_ADD a0 a1:
+    return sovcall(SOVSYS_ADD, a0, a1)
+sov_PATH_READ a0 a1:
+    return sovcall(SOVSYS_PATH_READ, a0, a1)
+sov_PATH_WRITE a0 a1:
+    return sovcall(SOVSYS_PATH_WRITE, a0, a1)
+sov_FORK:
+    return sovcall(SOVSYS_FORK)
+sov_PROCESS_SPAWN a0:
+    return sovcall(SOVSYS_PROCESS_SPAWN, a0)
+sov_OPEN a0:
+    return sovcall(SOVSYS_OPEN, a0)
+sov_READ a0 a1 a2:
+    return sovcall(SOVSYS_READ, a0, a1, a2)
+sov_WRITE a0 a1 a2:
+    return sovcall(SOVSYS_WRITE, a0, a1, a2)
+sov_CLOSE a0:
+    return sovcall(SOVSYS_CLOSE, a0)
+sov_SECCOMP_DENY a0:
+    return sovcall(SOVSYS_SECCOMP_DENY, a0)
+sov_DROP_CAPABILITY a0:
+    return sovcall(SOVSYS_DROP_CAPABILITY, a0)
+sov_SIGNAL_INSTALL a0 a1:
+    return sovcall(SOVSYS_SIGNAL_INSTALL, a0, a1)
+sov_SIGNAL_RETURN:
+    return sovcall(SOVSYS_SIGNAL_RETURN)
+sov_MMAP_ANON a0:
+    return sovcall(SOVSYS_MMAP_ANON, a0)
+sov_MUNMAP a0 a1:
+    return sovcall(SOVSYS_MUNMAP, a0, a1)
+sov_PIPE a0:
+    return sovcall(SOVSYS_PIPE, a0)
+sov_DNS_QUERY a0:
+    return sovcall(SOVSYS_DNS_QUERY, a0)
+sov_POLL_ONE a0:
+    return sovcall(SOVSYS_POLL_ONE, a0)
+sov_WAIT a0:
+    return sovcall(SOVSYS_WAIT, a0)
+sov_EXEC a0:
+    return sovcall(SOVSYS_EXEC, a0)
+sov_DUP a0:
+    return sovcall(SOVSYS_DUP, a0)
+sov_ABI_QUERY a0:
+    return sovcall(SOVSYS_ABI_QUERY, a0)
+sov_DISPLAY_INFO a0:
+    return sovcall(SOVSYS_DISPLAY_INFO, a0)
+sov_DISPLAY_BLIT64 a0 a1 a2:
+    return sovcall(SOVSYS_DISPLAY_BLIT64, a0, a1, a2)
+sov_DISPLAY_FILL a0 a1 a2 a3 a4:
+    return sovcall(SOVSYS_DISPLAY_FILL, a0, a1, a2, a3, a4)
+sov_READV a0 a1 a2:
+    return sovcall(SOVSYS_READV, a0, a1, a2)
+sov_WRITEV a0 a1 a2:
+    return sovcall(SOVSYS_WRITEV, a0, a1, a2)
+sov_MPROTECT a0 a1 a2:
+    return sovcall(SOVSYS_MPROTECT, a0, a1, a2)
+sov_MADVISE a0 a1 a2:
+    return sovcall(SOVSYS_MADVISE, a0, a1, a2)
+sov_VM_QUERY a0 a1:
+    return sovcall(SOVSYS_VM_QUERY, a0, a1)
+if number = SOVSYS_PIPE -> return 16
+if number = SOVSYS_DNS_QUERY -> return 4
+if number = SOVSYS_POLL_ONE -> return 0
+if number = SOVSYS_WAIT -> return 0
+if number = SOVSYS_EXEC -> return 32
+if number = SOVSYS_DUP -> return 0
+if number = SOVSYS_ABI_QUERY -> return 0
+if number = SOVSYS_DISPLAY_INFO -> return 0
+if number = SOVSYS_DISPLAY_BLIT64 -> return 256
+if number = SOVSYS_DISPLAY_FILL -> return 0
+hs2: _sov_heap_alloc(64)
+sha256_bytes(hs, hlen, hs2)
+fseed: _sov_heap_alloc(32)
+j: 0
+as long as j < 8 -> v: peek_i64(hs2, j * 8)
+    poke_byte(fseed, j * 4, wand(shr(v, 24), 255))
+    poke_byte(fseed, j * 4 + 1, wand(shr(v, 16), 255))
+    poke_byte(fseed, j * 4 + 2, wand(shr(v, 8), 255))
+    poke_byte(fseed, j * 4 + 3, wand(v, 255))
+    j: j + 1
+ln: str_len(label)
+poke_byte(out, 0, want / 256)
+poke_byte(out, 1, want % 256)
+poke_byte(out, 2, 6 + ln)
+i: 0
+as long as i < 6 -> poke_byte(out, 3 + i, peek_byte("tls13 ", i))
+    i: i + 1
+i: 0
+as long as i < ln -> poke_byte(out, 9 + i, peek_byte(label, i))
+    i: i + 1
+x: TR_K1
+0:
+    y
+    i
+as long as i < 28 -> aa: tr_shr(y, i)
+    bb: tr_shr(x, i)
+    if z > 0 -> x: x - aa
+        y: y + bb
+        z: z - tr_tab(i)
+    if not -> x: x + aa
+r: 0
+if pre = 1 -> if x_xlo(m, t) < 0
+        r: 1
+    if x_xhi(m, t) < 0 -> r: r + 2
+if not -> if x_bit(x_xlo(m, t), 31) = 1
+        r: 1
+    if x_bit(x_xlo(m, t), 63) = 1 -> r: r + 2
+    if x_bit(x_xhi(m, t), 31) = 1 -> r: r + 4
+    if x_bit(x_xhi(m, t), 63) = 1 -> r: r + 8
+x_rset(m, n, 8, r)
+s0: a
+s1: a
+s2: a
+s3: a
+if by % 4 = 1 -> s0: b
+if by % 4 = 2 -> s0: c
+if by % 4 = 3 -> s0: d
+if by / 4 % 4 = 1 -> s1: b
+if by / 4 % 4 = 2 -> s1: c
+if by / 4 % 4 = 3 -> s1: d
+t: zm_prop_table(n)
+tl: peek_byte(ZM_M, t)
+a: t + 1 + tl * 2
+m: zm_pmask()
+as long as 1 -> sz: peek_byte(ZM_M, a)
+    if sz = 0 -> return 0
+    pid: wand(sz, m)
+    plen: zm_plen_at(a)
+    skip: plen
+    if ZM_VER > 3 -> if wand(sz, 128) != 0
+n: _sov_strlen(hx)
+pos: 0
+st: 1
+as long as st = 1 -> if pos >= n - 1
+        st: 0
+    if not -> if peek_byte(hx, pos) != 48
+            st: 0
+        if not -> pos: pos + 1
+if pos >= n - 1 -> if peek_byte(hx, pos) = 48
+        return '0x0'
+# unsafe-module
+use ktest_c
+K: 16777216
+IV: 16777232
+PT: 16777248
+AAD: 16777280
+H: 16777296
+J0: 16777312
+S0: 16777328
+CTR: 16777344
+CT: 16777360
+LEN: 16777392
+AADP: 16777408
+ZBLK: 16777424
+TAG: 16777440
+ECT: 16777456
+ETAG: 16777488
+XL: 16777504
+XH: 16777512
+HL: 16777520
+poke_byte(16777226, 0, 10)
+poke_byte(16777227, 0, 11)
+poke_byte(16777228, 0, 12)
+poke_byte(16777229, 0, 13)
+poke_byte(16777230, 0, 14)
+poke_byte(16777231, 0, 15)
+poke_byte(16777232, 0, 1)
+poke_byte(16777233, 0, 2)
+poke_byte(16777234, 0, 3)
+poke_byte(16777235, 0, 4)
+poke_byte(16777236, 0, 5)
+poke_byte(16777237, 0, 6)
+poke_byte(16777238, 0, 7)
+poke_byte(16777239, 0, 8)
+poke_byte(16777240, 0, 9)
+poke_byte(16777241, 0, 10)
+poke_byte(16777242, 0, 11)
+poke_byte(16777243, 0, 12)
+poke_byte(16777248, 0, 0)
+poke_byte(16777249, 0, 1)
+poke_byte(16777250, 0, 2)
+poke_byte(16777251, 0, 3)
+poke_byte(16777252, 0, 4)
+poke_byte(16777253, 0, 5)
+poke_byte(16777254, 0, 6)
+poke_byte(16777255, 0, 7)
+poke_byte(16777256, 0, 8)
+poke_byte(16777257, 0, 9)
+poke_byte(16777258, 0, 10)
+poke_byte(16777259, 0, 11)
+poke_byte(16777260, 0, 12)
+poke_byte(16777261, 0, 13)
+poke_byte(16777262, 0, 14)
+poke_byte(16777263, 0, 15)
+poke_byte(16777264, 0, 16)
+poke_byte(16777265, 0, 17)
+poke_byte(16777266, 0, 18)
+poke_byte(16777267, 0, 19)
+poke_byte(16777268, 0, 20)
+poke_byte(16777269, 0, 21)
+poke_byte(16777270, 0, 22)
+poke_byte(16777271, 0, 23)
+poke_byte(16777272, 0, 24)
+poke_byte(16777273, 0, 25)
+poke_byte(16777274, 0, 26)
+poke_byte(16777275, 0, 27)
+poke_byte(16777276, 0, 28)
+poke_byte(16777277, 0, 29)
+poke_byte(16777278, 0, 30)
+poke_byte(16777279, 0, 31)
+poke_byte(16777280, 0, 104)
+poke_byte(16777281, 0, 101)
+poke_byte(16777282, 0, 108)
+poke_byte(16777283, 0, 108)
+poke_byte(16777284, 0, 111)
+poke_byte(16777312, 0, 1)
+poke_byte(16777313, 0, 2)
+poke_byte(16777314, 0, 3)
+poke_byte(16777315, 0, 4)
+poke_byte(16777316, 0, 5)
+poke_byte(16777317, 0, 6)
+poke_byte(16777318, 0, 7)
+poke_byte(16777319, 0, 8)
+poke_byte(16777320, 0, 9)
+poke_byte(16777321, 0, 10)
+poke_byte(16777322, 0, 11)
+poke_byte(16777323, 0, 12)
+poke_byte(16777324, 0, 0)
+poke_byte(16777325, 0, 0)
+poke_byte(16777326, 0, 0)
+poke_byte(16777327, 0, 1)
+poke_byte(16777392, 0, 0)
+poke_byte(16777393, 0, 0)
+poke_byte(16777394, 0, 0)
+poke_byte(16777395, 0, 0)
+poke_byte(16777396, 0, 0)
+poke_byte(16777397, 0, 0)
+poke_byte(16777398, 0, 0)
+poke_byte(16777399, 0, 40)
+poke_byte(16777400, 0, 0)
+poke_byte(16777401, 0, 0)
+poke_byte(16777402, 0, 0)
+poke_byte(16777403, 0, 0)
+poke_byte(16777404, 0, 0)
+poke_byte(16777405, 0, 0)
+poke_byte(16777406, 0, 1)
+poke_byte(16777407, 0, 0)
+poke_byte(16777408, 0, 104)
+poke_byte(16777409, 0, 101)
+poke_byte(16777410, 0, 108)
+poke_byte(16777411, 0, 108)
+poke_byte(16777412, 0, 111)
+poke_byte(16777413, 0, 0)
+poke_byte(16777414, 0, 0)
+poke_byte(16777415, 0, 0)
+poke_byte(16777416, 0, 0)
+poke_byte(16777417, 0, 0)
+poke_byte(16777418, 0, 0)
+poke_byte(16777419, 0, 0)
+poke_byte(16777420, 0, 0)
+poke_byte(16777457, 0, 4)
+poke_byte(16777458, 0, 106)
+poke_byte(16777459, 0, 37)
+poke_byte(16777460, 0, 55)
+poke_byte(16777461, 0, 240)
+poke_byte(16777462, 0, 89)
+poke_byte(16777463, 0, 194)
+poke_byte(16777464, 0, 48)
+poke_byte(16777465, 0, 85)
+poke_byte(16777466, 0, 7)
+poke_byte(16777467, 0, 78)
+poke_byte(16777468, 0, 161)
+poke_byte(16777469, 0, 213)
+poke_byte(16777470, 0, 99)
+poke_byte(16777471, 0, 58)
+poke_byte(16777472, 0, 209)
+poke_byte(16777473, 0, 218)
+poke_byte(16777474, 0, 245)
+poke_byte(16777475, 0, 78)
+poke_byte(16777476, 0, 250)
+poke_byte(16777477, 0, 180)
+poke_byte(16777478, 0, 250)
+poke_byte(16777479, 0, 123)
+poke_byte(16777480, 0, 69)
+poke_byte(16777481, 0, 188)
+poke_byte(16777482, 0, 33)
+poke_byte(16777483, 0, 76)
+poke_byte(16777484, 0, 248)
+poke_byte(16777485, 0, 148)
+poke_byte(16777486, 0, 114)
+poke_byte(16777487, 0, 67)
+poke_byte(16777488, 0, 209)
+poke_byte(16777489, 0, 65)
+poke_byte(16777490, 0, 65)
+poke_byte(16777491, 0, 84)
+poke_byte(16777492, 0, 157)
+poke_byte(16777493, 0, 244)
+poke_byte(16777494, 0, 42)
+poke_byte(16777495, 0, 164)
+poke_byte(16777496, 0, 145)
+poke_byte(16777497, 0, 238)
+poke_byte(16777498, 0, 141)
+poke_byte(16777499, 0, 170)
+poke_byte(16777500, 0, 50)
+poke_byte(16777501, 0, 218)
+poke_byte(16777502, 0, 33)
+poke_byte(16777503, 0, 15)
+set_key()
+aes_enc(16777296, 16777424)
+poke_raw64(HLO, 0, be8(16777296 + 8))
+poke_raw64(HHI, 0, be8(16777296))
+aes_enc(16777328, 16777312)
+poke_raw64(S0LO, 0, be8(16777328 + 8))
+poke_raw64(S0HI, 0, be8(16777328))
+ctr2: 2
+as long as ctr2 < 4 -> j: 0
+    as long as j < 12 -> poke_byte(16777344 + j, 0, peek_byte(16777232 + j, 0))
+        j: j + 1
+    poke_byte(16777344 + 12, 0, 0)
+    poke_byte(16777344 + 13, 0, 0)
+poke_raw64(YLO, 0, 0)
+poke_raw64(YHI, 0, 0)
+ghash_step(16777408)
+ghash_step(16777360)
+ghash_step(16777360 + 16)
+ghash_step(16777392)
+tl: bxor(peek_raw64(YLO, 0), peek_raw64(S0LO, 0))
+th: bxor(peek_raw64(YHI, 0), peek_raw64(S0HI, 0))
+poke_byte(16777440 + 0, 0, band(bshr(th, 56), 255))
+poke_byte(16777440 + 1, 0, band(bshr(th, 48), 255))
+poke_byte(16777440 + 2, 0, band(bshr(th, 40), 255))
+poke_byte(16777440 + 3, 0, band(bshr(th, 32), 255))
+poke_byte(16777440 + 4, 0, band(bshr(th, 24), 255))
+poke_byte(16777440 + 5, 0, band(bshr(th, 16), 255))
+poke_byte(16777440 + 6, 0, band(bshr(th, 8), 255))
+poke_byte(16777440 + 7, 0, band(th, 255))
+poke_byte(16777440 + 8, 0, band(bshr(tl, 56), 255))
+poke_byte(16777440 + 9, 0, band(bshr(tl, 48), 255))
+poke_byte(16777440 + 10, 0, band(bshr(tl, 40), 255))
+poke_byte(16777440 + 11, 0, band(bshr(tl, 32), 255))
+poke_byte(16777440 + 12, 0, band(bshr(tl, 24), 255))
+poke_byte(16777440 + 13, 0, band(bshr(tl, 16), 255))
+poke_byte(16777440 + 14, 0, band(bshr(tl, 8), 255))
+poke_byte(16777440 + 15, 0, band(tl, 255))
+0:
+    ok
+    i
+as long as i < 32 -> if peek_byte(16777360 + i, 0) = peek_byte(16777456 + i, 0)
+        ok: ok + 1
+    i: i + 1
+i: 0
+as long as i < 16 -> if peek_byte(16777440 + i, 0) = peek_byte(16777488 + i, 0)
+        ok: ok + 1
+    i: i + 1
+sputs('ct =')
+print_hex_blk(16777360, 32)
+sputs("\ntag=")
+print_hex_blk(16777440, 16)
+sputs("\n")
+if ok = 48 -> sputs("AESGCM OK\n")
+set_key:
+    p: 0
+    as long as p < 32 -> poke_byte(WK + p, 0, peek_byte(KA + p, 0))
+        p: p + 1
+    i: 8
+    rcon: 1
+    as long as i < 60 -> k0: peek_byte(WK + (i - 1) * 4 + 0, 0)
+        k1: peek_byte(WK + (i - 1) * 4 + 1, 0)
+        k2: peek_byte(WK + (i - 1) * 4 + 2, 0)
+        k3: peek_byte(WK + (i - 1) * 4 + 3, 0)
+port_out8(CMD, 48)
+wait_rdy()
+i: 0
+as long as i < 512 -> lo: peek_byte(BUF + i, 0)
+    i: i + 1
+    hi: peek_byte(BUF + i, 0)
+    i: i + 1
+    port_out16(DATA, lo + hi * 256)
+as long as 1 = 1 -> if band(port_in8(STS), 128) = 0
+        leave
+qr4 ia ib ic id:
+    a: peek_raw64(ST + ia * 8, 0)
+    b: peek_raw64(ST + ib * 8, 0)
+    c: peek_raw64(ST + ic * 8, 0)
+    d: peek_raw64(ST + id * 8, 0)
+    a: band(a + b, 4294967295)
+    d: rotl(bxor(d, a), 16)
+    c: band(c + d, 4294967295)
+    b: rotl(bxor(b, c), 12)
+    a: band(a + b, 4294967295)
+r: 0
+as long as r < 10 -> qr4(0, 4, 8, 12)
+    qr4(1, 5, 9, 13)
+    qr4(2, 6, 10, 14)
+    qr4(3, 7, 11, 15)
+    qr4(0, 5, 10, 15)
+    qr4(1, 6, 11, 12)
+    qr4(2, 7, 8, 13)
+    qr4(3, 4, 9, 14)
+    r: r + 1
+rd16 a:
+    hi: peek_raw8(a, 0)
+    lo: peek_raw8(a + 1, 0)
+    return hi * 256 + lo
+st16 a v:
+    poke_raw8(a, 0, band(v, 255))
+    poke_raw8(a + 1, 0, band(v / 256, 255))
+st16n a v:
+    poke_raw8(a, 0, band(v / 256, 255))
+    poke_raw8(a + 1, 0, band(v, 255))
+w32 a v:
+    poke_raw32(a, 0, v)
+r32 a:
+    return peek_raw32(a, 0)
+RXDES:  20971520
+RXBUF:  20972032
+TXDES:  21037568
+TXBUF:  21037632
+MYMAC:  21039680
+HISM:   21039744
+ND: 32
+spin n:
+    t: 0
+    as long as t < n -> t: t + 1
+    return 0
+WAIT_TICKS: 21039936
+WAIT_IDT: 2097152
+WAIT_PTR: 2105344
+wait_timer_ih:
+    poke_raw64(WAIT_TICKS, 0, peek_raw64(WAIT_TICKS, 0) + 1)
+ipck a:
+    0:
+        s
+        i
+    as long as i < 10 -> s: s + rd16(a + i * 2)
+        i: i + 1
+    as long as 1 = 1 -> s: band(s, 65535) + bshr(s, 16)
+        if bshr(s, 16) = 0 -> leave
+    return band(65535 - s, 65535)
+udp_build buf dstmac srcmac sport dport paylen:
+i: 0
+as long as i < 6 -> poke_raw8(buf + i, 0, peek_raw8(dstmac + i, 0))
+    poke_raw8(buf + 6 + i, 0, peek_raw8(srcmac + i, 0))
+    i: i + 1
+buf + 12: poke_raw8 i, 0: 8 0
+hi: buf + 14
+tot: 20 + 8 + paylen
+poke_raw8(hi, 0, 69)
+poke_raw8(hi + 1, 0, 0)
+hi + 2: st16n i * 2: tot 0 0
+hi + 8: poke_raw8 i, 0: 64 17
+st16n(hi + 10, 0)
+j: 0
+as long as j < 4 -> poke_raw8(hi + 12 + j, 0, peek_raw8(G_SRC + j, 0))
+    poke_raw8(hi + 16 + j, 0, peek_raw8(G_DST + j, 0))
+    j: j + 1
+csum: ipck(hi)
+st16n(hi + 10, csum)
+ui: hi + 20
+st16n(ui, sport)
+MMIO_STATE: 21039840
+RXI_STATE: 21039848
+rx_poll:
+    ri: peek_raw64(RXI_STATE, 0)
+    i: 0
+    as long as i < 4000 -> st: peek_raw8(RXDES + ri * 16 + 12, 0)
+        if band(st, 1) = 1 -> return rd16(RXDES + ri * 16 + 8)
+        i: i + 1
+rx_done:
+    ri: peek_raw64(RXI_STATE, 0)
+pci_w32(BDF, 4, bor(pci_r32(BDF, 4), 6))
+ctrl: r32(mmio)
+w32(mmio, bor(ctrl, 67108864))
+as long as 1 = 1 -> ctrl: r32(mmio)
+    if band(ctrl, 67108864) = 0 -> leave
+ctrl: r32(mmio)
+w32(mmio, bor(ctrl, 64))
+w32(mmio + 216, 4294967295)
+maclo: r32(mmio + 21504)
+poke_raw8(MYMAC, 0, band(maclo, 255))
+w32(mmio + 14344, 64)
+w32(mmio + 14352, 0)
+w32(mmio + 14360, 0)
+mmio + 1024: w32 i * 16: 10 6299658
+sputs("rings up\n")
+poke_raw8(G_SRC, 0, 10)
+poke_raw8(G_SRC + 1, 0, 0)
+poke_raw8(G_SRC + 2, 0, 2)
+poke_raw8(G_SRC + 3, 0, 15)
+poke_raw8(G_DST, 0, 10)
+st16n(P + 6, 1)
+i: 0
+as long as i < 6 -> poke_raw8(P + 8 + i, 0, peek_raw8(MYMAC + i, 0))
+    i: i + 1
+i: 0
+as long as i < 4 -> poke_raw8(P + 14 + i, 0, peek_raw8(G_SRC + i, 0))
+    poke_raw8(P + 24 + i, 0, peek_raw8(G_DST + i, 0))
+    i: i + 1
+tx_send(42)
+sputs("arp sent\n")
+rlen: rx_poll()
+if rlen = 0 -> spin(100000)
+    att: att + 1
+if not -> ri: peek_raw64(RXI_STATE, 0)
+    B1: RXBUF + ri * 2048
+    if peek_raw8(B1 + 12, 0) = 8 -> if peek_raw8(B1 + 13, 0) = 6
+            Q: B1 + 14
+            op: rd16(Q + 6)
+            if op = 2 -> i: 0
+                as long as i < 6 -> poke_raw8(HISM + i, 0, peek_raw8(Q + 8 + i, 0))
+snum(r32(mmio + 10256))
+sputs(' rdt=')
+snum(r32(mmio + 10264))
+sputs(' rdba=')
+snum(r32(mmio + 10240))
+sputs(' rdlen=')
+snum(r32(mmio + 10248))
+sputs(' rctl=')
+snum(r32(mmio + 256))
+sputs(' status0=')
+if rlen = 0 -> spin(100000)
+    att: att + 1
+if not -> ri: peek_raw64(RXI_STATE, 0)
+    B0: RXBUF + ri * 2048
+    if peek_raw8(B0 + 12, 0) = 8 -> if peek_raw8(B0 + 13, 0) = 0
+            dport: rd16(B0 + 36)
+            if dport = 5353 -> DP: B0 + 42
+                answers: rd16(DP + 6)
+                if answers > 0 -> ANS: DP + 29
+                    atype: rd16(ANS + 2)
+if atype = 1
+    sputs('resolved example.com -> ')
+    snum(peek_raw8(ANS + 12, 0))
+    sc(46)
+    snum(peek_raw8(ANS + 13, 0))
+    sc(46)
+    snum(peek_raw8(ANS + 14, 0))
+    sc(46)
+    snum(peek_raw8(ANS + 15, 0))
+    sputs("\n")
+fexp base expbuf nbits out:
+    copyfe(1, out)
+    t: nbits - 1
+    as long as t >= 0 -> mont2(out, out, out)
+        bt: fbit(expbuf, t)
+        if bt = 1 -> mont2(out, base, out)
+        t: t - 1
+padd p q o:
+    fesub(p + 1, p, 30)
+    fesub(q + 1, q, 31)

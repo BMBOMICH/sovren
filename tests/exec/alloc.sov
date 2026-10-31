@@ -1,0 +1,10 @@
+use string
+main:
+    s: 0
+    i: 0
+    as long as i < 2000000
+        t: str_cat("hello ", "world!")
+        s: s + str_len(t)
+        i: i + 1
+    print s
+    return 0

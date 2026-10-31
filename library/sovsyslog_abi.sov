@@ -1,0 +1,7 @@
+use sovsys_abi
+SOVSYS_SYSLOG_APPEND: 74 
+SOVSYS_SYSLOG_READ: 75
+sov_SYSLOG_APPEND a0:
+    return sovcall(SOVSYS_SYSLOG_APPEND, a0)
+sov_SYSLOG_READ a0 a1:
+    return sovcall(SOVSYS_SYSLOG_READ, a0, a1)

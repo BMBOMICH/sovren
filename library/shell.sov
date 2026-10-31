@@ -1,0 +1,70 @@
+use string
+use sys
+use proc
+shell_run name:
+    pid: proc_fork()
+    if pid is 0
+        argv: _sov_alloc(24)
+        poke_i64(argv, 0, name)
+        poke_i64(argv, 8, 0)
+        syscall(59, name, argv, 0, 0, 0, 0)
+        sys_exit(127)
+    if pid > 0
+        proc_wait_pid(pid)
+        return 1
+shell_run_arg name arg:
+    pid: proc_fork()
+    if pid is 0
+        argv: _sov_alloc(32)
+        poke_i64(argv, 0, name)
+        poke_i64(argv, 8, arg)
+        poke_i64(argv, 16, 0)
+        syscall(59, name, argv, 0, 0, 0, 0)
+        sys_exit(127)
+    if pid > 0
+        proc_wait_pid(pid)
+        return 1
+shell_sh cmd:
+    pid: proc_fork()
+    if pid is 0
+        argv: _sov_alloc(40)
+        poke_i64(argv, 0, "/bin/sh")
+        poke_i64(argv, 8, "-c")
+        poke_i64(argv, 16, cmd)
+        poke_i64(argv, 24, 0)
+        syscall(59, "/bin/sh", argv, 0, 0, 0, 0)
+        sys_exit(127)
+    if pid > 0
+        proc_wait_pid(pid)
+        return 1
+sh_pr fds:
+    return peek_i64(fds, 0) % 4294967296
+sh_pw fds:
+    return peek_i64(fds, 0) / 4294967296
+shell_out cmd:
+    fds: _sov_alloc(16)
+    sys_pipe(fds)
+    pid: proc_fork()
+    if pid is 0
+        sys_dup2(sh_pw(fds), 1)
+        sys_close(sh_pr(fds))
+        argv: _sov_heap_alloc(40)
+        poke_i64(argv, 0, "/bin/sh")
+        poke_i64(argv, 8, "-c")
+        poke_i64(argv, 16, cmd)
+        poke_i64(argv, 24, 0)
+        syscall(59, "/bin/sh", argv, 0, 0, 0, 0)
+        sys_exit(127)
+    sys_close(sh_pw(fds))
+    out: ""
+    buf: _sov_heap_alloc(4096)
+    more: 1
+    as long as more is 1
+        n: sys_read(sh_pr(fds), buf, 4096)
+        if n <= 0 -> more: 0
+        if not
+            poke_byte(buf, n, 0)
+            out: str_cat(out, as text buf)
+    sys_close(sh_pr(fds))
+    proc_wait_pid(pid)
+    return out

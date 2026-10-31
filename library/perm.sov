@@ -1,0 +1,7 @@
+use sys
+perm_set path mode:
+    if syscall(90, path, mode, 0, 0, 0, 0) is 0 -> return 1
+perm_exec path:
+    return perm_set(path, 493)
+perm_priv path:
+    return perm_set(path, 384)

@@ -1,0 +1,231 @@
+use list
+use string
+use vec
+lq_swap l a b:
+    if a is b
+        return l
+    qt: list_get(l, a)
+    list_set(l, a, list_get(l, b))
+    list_set(l, b, qt)
+    return l
+lqsi_part l lo hi:
+    qm: (lo + hi) / 2
+    if list_get(l, qm) < list_get(l, lo)
+        lq_swap(l, lo, qm)
+    if list_get(l, hi) < list_get(l, lo)
+        lq_swap(l, lo, hi)
+    if list_get(l, hi) < list_get(l, qm)
+        lq_swap(l, qm, hi)
+    qp: list_get(l, hi)
+    qi: lo - 1
+    qj: lo
+    as long as qj < hi
+        if list_get(l, qj) <= qp
+            qi: qi + 1
+            lq_swap(l, qi, qj)
+        qj: qj + 1
+    lq_swap(l, qi + 1, hi)
+    return qi + 1
+lqsi_sort l lo hi:
+    as long as lo < hi
+        qp: lqsi_part(l, lo, hi)
+        if qp - lo < hi - qp
+            lqsi_sort(l, lo, qp - 1)
+            lo: qp + 1
+        if not
+            lqsi_sort(l, qp + 1, hi)
+            hi: qp - 1
+    return l
+sort_ints lst:
+    qn: list_len(lst)
+    if qn > 1
+        lqsi_sort(lst, 0, qn - 1)
+    return lst
+lqsd_part l lo hi:
+    qm: (lo + hi) / 2
+    if list_get(l, qm) > list_get(l, lo)
+        lq_swap(l, lo, qm)
+    if list_get(l, hi) > list_get(l, lo)
+        lq_swap(l, lo, hi)
+    if list_get(l, hi) > list_get(l, qm)
+        lq_swap(l, qm, hi)
+    qp: list_get(l, hi)
+    qi: lo - 1
+    qj: lo
+    as long as qj < hi
+        if list_get(l, qj) >= qp
+            qi: qi + 1
+            lq_swap(l, qi, qj)
+        qj: qj + 1
+    lq_swap(l, qi + 1, hi)
+    return qi + 1
+lqsd_sort l lo hi:
+    as long as lo < hi
+        qp: lqsd_part(l, lo, hi)
+        if qp - lo < hi - qp
+            lqsd_sort(l, lo, qp - 1)
+            lo: qp + 1
+        if not
+            lqsd_sort(l, qp + 1, hi)
+            hi: qp - 1
+    return l
+sort_ints_desc lst:
+    qn: list_len(lst)
+    if qn > 1
+        lqsd_sort(lst, 0, qn - 1)
+    return lst
+lqss_part l lo hi:
+    qm: (lo + hi) / 2
+    if str_less(list_get(l, qm), list_get(l, lo)) is 1
+        lq_swap(l, lo, qm)
+    if str_less(list_get(l, hi), list_get(l, lo)) is 1
+        lq_swap(l, lo, hi)
+    if str_less(list_get(l, hi), list_get(l, qm)) is 1
+        lq_swap(l, qm, hi)
+    qp: list_get(l, hi)
+    qi: lo - 1
+    qj: lo
+    as long as qj < hi
+        if str_less(qp, list_get(l, qj)) is 0
+            qi: qi + 1
+            lq_swap(l, qi, qj)
+        qj: qj + 1
+    lq_swap(l, qi + 1, hi)
+    return qi + 1
+lqss_sort l lo hi:
+    as long as lo < hi
+        qp: lqss_part(l, lo, hi)
+        if qp - lo < hi - qp
+            lqss_sort(l, lo, qp - 1)
+            lo: qp + 1
+        if not
+            lqss_sort(l, qp + 1, hi)
+            hi: qp - 1
+    return l
+sort_strs lst:
+    qn: list_len(lst)
+    if qn > 1
+        lqss_sort(lst, 0, qn - 1)
+    return lst
+lqsds_part l lo hi:
+    qm: (lo + hi) / 2
+    if str_less(list_get(l, lo), list_get(l, qm)) is 1
+        lq_swap(l, lo, qm)
+    if str_less(list_get(l, lo), list_get(l, hi)) is 1
+        lq_swap(l, lo, hi)
+    if str_less(list_get(l, qm), list_get(l, hi)) is 1
+        lq_swap(l, qm, hi)
+    qp: list_get(l, hi)
+    qi: lo - 1
+    qj: lo
+    as long as qj < hi
+        if str_less(list_get(l, qj), qp) is 0
+            qi: qi + 1
+            lq_swap(l, qi, qj)
+        qj: qj + 1
+    lq_swap(l, qi + 1, hi)
+    return qi + 1
+lqsds_sort l lo hi:
+    as long as lo < hi
+        qp: lqsds_part(l, lo, hi)
+        if qp - lo < hi - qp
+            lqsds_sort(l, lo, qp - 1)
+            lo: qp + 1
+        if not
+            lqsds_sort(l, qp + 1, hi)
+            hi: qp - 1
+    return l
+sort_strs_desc lst:
+    qn: list_len(lst)
+    if qn > 1
+        lqsds_sort(lst, 0, qn - 1)
+    return lst
+use vec
+sx_swap v i j:
+    t: vec_get(v, i)
+    vec_set(v, i, vec_get(v, j))
+    vec_set(v, j, t)
+    return v
+sx_ins v lo hi:
+    ii: lo + 1
+    as long as ii <= hi
+        kx: peek_i64(v, 16 + ii * 8)
+        jj: ii - 1
+        mv: 1
+        as long as mv is 1
+            if jj < lo
+                mv: 0
+            if mv is 1
+                if peek_i64(v, 16 + jj * 8) > kx
+                    poke_i64(v, 16 + (jj + 1) * 8, peek_i64(v, 16 + jj * 8))
+                    jj: jj - 1
+                if not
+                    mv: 0
+        poke_i64(v, 16 + (jj + 1) * 8, kx)
+        ii: ii + 1
+    return v
+sx_part v lo hi:
+    qm: (lo + hi) / 2
+    a0: peek_i64(v, 16 + lo * 8)
+    a1: peek_i64(v, 16 + qm * 8)
+    a2: peek_i64(v, 16 + hi * 8)
+    if a1 < a0
+        tt: a0
+        a0: a1
+        a1: tt
+    if a2 < a1
+        tt: a1
+        a1: a2
+        a2: tt
+    if a1 < a0
+        tt: a0
+        a0: a1
+        a1: tt
+    pivot: a1
+    i: lo - 1
+    j: hi + 1
+    done: 0
+    as long as done is 0
+        i: i + 1
+        as long as peek_i64(v, 16 + i * 8) < pivot
+            i: i + 1
+        j: j - 1
+        as long as peek_i64(v, 16 + j * 8) > pivot
+            j: j - 1
+        if i >= j
+            done: 1
+        if not
+            tw: peek_i64(v, 16 + i * 8)
+            poke_i64(v, 16 + i * 8, peek_i64(v, 16 + j * 8))
+            poke_i64(v, 16 + j * 8, tw)
+    return j
+sx_qs v lo hi:
+    as long as hi - lo > 16
+        p: sx_part(v, lo, hi)
+        if p - lo < hi - (p + 1)
+            sx_qs(v, lo, p)
+            lo: p + 1
+        if not
+            sx_qs(v, p + 1, hi)
+            hi: p
+    if lo < hi
+        sx_ins(v, lo, hi)
+    return v
+sx_sort v:
+    return sx_qs(v, 0, vec_len(v) - 1)
+sx_search v x:
+    lo: 0
+    hi: vec_len(v) - 1
+    as long as lo <= hi
+        mid: (lo + hi) / 2
+        m: vec_get(v, mid)
+        if m is x -> return mid
+        if m < x -> lo: mid + 1
+        if not -> hi: mid - 1
+    return 0 - 1
+sx_sorted v:
+    i: 1
+    as long as i < vec_len(v)
+        if vec_get(v, i - 1) > vec_get(v, i) -> return 0
+        i: i + 1
+    return 1

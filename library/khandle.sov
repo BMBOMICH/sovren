@@ -1,0 +1,105 @@
+# unsafe-module
+KH_STRIDE: 40
+KH_TYPE_NONE: 0
+KH_TYPE_FILE: 1
+KH_TYPE_PIPE_READ: 2
+KH_TYPE_PIPE_WRITE: 3
+KH_TYPE_CONSOLE: 4
+KH_RIGHT_READ: 1
+KH_RIGHT_WRITE: 2
+KH_RIGHT_POLL: 4
+KH_RIGHT_DUP: 8
+KH_RIGHT_ADMIN: 16
+KH_FLAG_CLOEXEC: 1
+KH_FLAG_INHERIT: 2
+kh_entry table capacity handle:
+    if table is 0 -> return 0
+    if handle < 0 -> return 0
+    if handle >= capacity -> return 0
+    return table + handle * KH_STRIDE
+kh_table_init table capacity:
+    if table is 0 -> return 0
+    if capacity < 1 -> return 0
+    i: 0
+    as long as i < capacity * KH_STRIDE
+        poke_byte(table, i, 0)
+        i: i + 1
+    return 1
+kh_install table capacity handle object kind rights flags:
+    ent: kh_entry(table, capacity, handle)
+    if ent is 0 -> return 0
+    if object is 0 -> return 0
+    if kind is KH_TYPE_NONE -> return 0
+    if peek_raw64(ent + 8, 0) is not 0 -> return 0
+    generation: peek_raw64(ent, 0) + 1
+    if generation is 0 -> generation: 1
+    poke_raw64(ent, 0, generation)
+    poke_raw64(ent + 8, 0, object)
+    poke_raw64(ent + 16, 0, kind)
+    poke_raw64(ent + 24, 0, rights)
+    poke_raw64(ent + 32, 0, flags)
+    return 1
+kh_lookup table capacity handle kind rights:
+    ent: kh_entry(table, capacity, handle)
+    if ent is 0 -> return 0
+    object: peek_raw64(ent + 8, 0)
+    if object is 0 -> return 0
+    actual_kind: peek_raw64(ent + 16, 0)
+    if kind is not KH_TYPE_NONE
+        if actual_kind is not kind -> return 0
+    actual_rights: peek_raw64(ent + 24, 0)
+    if band(actual_rights, rights) is not rights -> return 0
+    return object
+kh_type table capacity handle:
+    ent: kh_entry(table, capacity, handle)
+    if ent is 0 -> return KH_TYPE_NONE
+    if peek_raw64(ent + 8, 0) is 0 -> return KH_TYPE_NONE
+    return peek_raw64(ent + 16, 0)
+kh_rights table capacity handle:
+    ent: kh_entry(table, capacity, handle)
+    if ent is 0 -> return 0
+    if peek_raw64(ent + 8, 0) is 0 -> return 0
+    return peek_raw64(ent + 24, 0)
+kh_flags table capacity handle:
+    ent: kh_entry(table, capacity, handle)
+    if ent is 0 -> return 0
+    if peek_raw64(ent + 8, 0) is 0 -> return 0
+    return peek_raw64(ent + 32, 0)
+kh_generation table capacity handle:
+    ent: kh_entry(table, capacity, handle)
+    if ent is 0 -> return 0
+    return peek_raw64(ent, 0)
+kh_set_flags table capacity handle flags:
+    ent: kh_entry(table, capacity, handle)
+    if ent is 0 -> return 0
+    if peek_raw64(ent + 8, 0) is 0 -> return 0
+    poke_raw64(ent + 32, 0, flags)
+    return 1
+kh_close table capacity handle:
+    ent: kh_entry(table, capacity, handle)
+    if ent is 0 -> return 0
+    object: peek_raw64(ent + 8, 0)
+    if object is 0 -> return 0
+    poke_raw64(ent + 8, 0, 0)
+    poke_raw64(ent + 16, 0, KH_TYPE_NONE)
+    poke_raw64(ent + 24, 0, 0)
+    poke_raw64(ent + 32, 0, 0)
+    return object
+kh_active table capacity:
+    if table is 0 -> return 0
+    if capacity < 1 -> return 0
+    count: 0
+    slot: 0
+    as long as slot < capacity
+        if kh_type(table, capacity, slot) is not KH_TYPE_NONE -> count: count + 1
+        slot: slot + 1
+    return count
+kh_first_free table capacity first:
+    if first < 0 -> first: 0
+    i: first
+    as long as i < capacity
+        ent: kh_entry(table, capacity, i)
+        if ent is not 0
+            if peek_raw64(ent + 8, 0) is 0 -> return i
+        i: i + 1
+    return 0 - 1

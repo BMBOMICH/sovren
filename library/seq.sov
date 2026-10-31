@@ -1,0 +1,24 @@
+use audio
+use mem
+seq_new n:
+    return mem_new(n * 8)
+seq_note freq us:
+    return freq * 1000000 + us
+seq_play p seq n wave amp:
+    return seq_play_at(p, 0, seq, n, wave, amp)
+seq_play_at p at seq n wave amp:
+    t: at
+    i: 0
+    as long as i < n
+        v: peek_i64(seq, i * 8)
+        f: v / 1000000
+        d: v % 1000000
+        if wave is 1 -> aud_square(p, t, t + d, f, amp)
+        if not
+            if wave is 2 -> aud_triangle(p, t, t + d, f, amp)
+            if not
+                if wave is 3 -> aud_saw(p, t, t + d, f, amp)
+                if not -> aud_sine(p, t, t + d, f, amp)
+        t: t + d
+        i: i + 1
+    return t

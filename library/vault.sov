@@ -1,0 +1,52 @@
+# unsafe-module
+use pbkdf2
+use chacha20
+use chachapoly
+use rand
+use file
+use mem
+use secret
+use sys
+vault_save path data pass iters:
+    private
+    # F-12: enforce a work-factor floor; 1-iteration PBKDF2 is a footgun.
+    if iters < 100000 -> iters: 100000
+    n: _sov_strlen(data)
+    buf: _sov_alloc(52 + n + 8)
+    poke_i64(buf, 0, iters)
+    rb: rand_bytes(28)
+    _sov_mem_copy(buf + 8, rb, 28)
+    key: _sov_alloc(32)
+    pbkdf2_sha256(pass, _sov_strlen(pass), buf + 8, 16, iters, 32, key)
+    cp_seal(key, buf + 24, buf, 36, data, n, buf + 52)
+    _sov_mem_copy(buf + 36, cp_tag, 16)
+    secret_wipe_bytes(key, 32)
+    return file_write_secret_bytes(path, buf, 52 + n)
+vault_load path pass:
+    private
+    sz: file_size(path)
+    if sz < 52 -> return 0
+    fd: file_open_read(path)
+    if fd < 0 -> return 0
+    buf: _sov_alloc(sz + 8)
+    got: sys_read(fd, buf, sz)
+    sys_close(fd)
+    if got is not sz -> return 0
+    iters: peek_i64(buf, 0)
+    if iters < 1 -> return 0
+    if iters > 10000000 -> return 0
+    key: _sov_alloc(32)
+    pbkdf2_sha256(pass, _sov_strlen(pass), buf + 8, 16, iters, 32, key)
+    n: sz - 52
+    ok: cp_verify(key, buf + 24, buf, 36, buf + 52, n, buf + 36)
+    if ok is 0
+        secret_wipe_bytes(key, 32)
+        return 0
+    out: _sov_alloc(n + 1)
+    cc_crypt(key, buf + 24, 1, buf + 52, n, out)
+    poke_byte(out, n, 0)
+    secret_wipe_bytes(key, 32)
+    return as text out
+vault_delete path pass:
+    if vault_load(path, pass) is 0 -> return 0
+    return file_shred(path)

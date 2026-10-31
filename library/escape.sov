@@ -1,0 +1,65 @@
+use string
+escape_html s:
+    n: _sov_strlen(s)
+    out: _sov_alloc(n * 6 + 1)
+    i: 0
+    j: 0
+    as long as i < n
+        c: peek_byte(s, i)
+        if c is 60
+            poke_byte(out, j, 38)
+            poke_byte(out, j + 1, 108)
+            poke_byte(out, j + 2, 116)
+            poke_byte(out, j + 3, 59)
+            j: j + 4
+        if not
+            if c is 62
+                poke_byte(out, j, 38)
+                poke_byte(out, j + 1, 103)
+                poke_byte(out, j + 2, 116)
+                poke_byte(out, j + 3, 59)
+                j: j + 4
+            if not
+                if c is 38
+                    poke_byte(out, j, 38)
+                    poke_byte(out, j + 1, 97)
+                    poke_byte(out, j + 2, 109)
+                    poke_byte(out, j + 3, 112)
+                    poke_byte(out, j + 4, 59)
+                    j: j + 5
+                if not
+                    if c is 34
+                        poke_byte(out, j, 38)
+                        poke_byte(out, j + 1, 113)
+                        poke_byte(out, j + 2, 117)
+                        poke_byte(out, j + 3, 111)
+                        poke_byte(out, j + 4, 116)
+                        poke_byte(out, j + 5, 59)
+                        j: j + 6
+                    if not
+                        poke_byte(out, j, c)
+                        j: j + 1
+        i: i + 1
+    poke_byte(out, j, 0)
+    return as text out
+escape_shell s:
+    n: str_len(s)
+    o: _sov_heap_alloc(n * 4 + 3)
+    poke_byte(o, 0, 39)
+    j: 1
+    i: 0
+    as long as i < n
+        c: peek_byte(s, i)
+        if c is 39
+            poke_byte(o, j, 39)
+            poke_byte(o, j + 1, 92)
+            poke_byte(o, j + 2, 39)
+            poke_byte(o, j + 3, 39)
+            j: j + 4
+        if not
+            poke_byte(o, j, c)
+            j: j + 1
+        i: i + 1
+    poke_byte(o, j, 39)
+    poke_byte(o, j + 1, 0)
+    return as text o

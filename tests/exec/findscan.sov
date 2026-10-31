@@ -1,0 +1,15 @@
+use string
+main:
+    hay: "abcdefghij"
+    r: 0
+    as long as r < 14
+        hay: str_cat(hay, hay)
+        r: r + 1
+    s: 0
+    i: 0
+    as long as i < 3000
+        s: s + str_find(hay, "ghijabz")
+        i: i + 1
+    print s
+    print str_len(hay)
+    return 0

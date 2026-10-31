@@ -1,0 +1,222 @@
+# unsafe-module
+KDEFER_QUEUE_STRIDE: 40
+KDEFER_RECORD_STRIDE: 80
+KDEFER_FREE: 0
+KDEFER_RESERVED: 1
+KDEFER_READY: 2
+KDEFER_RUNNING: 3
+KDEFER_DONE: 4
+KDEFER_CANCELED: 5
+kdefer_lock queue:
+    spins: 0
+    as long as spins < 1000000
+        old: atomic_add(queue + 24, 1)
+        if old is 0 -> return 1
+        atomic_add(queue + 24, 0 - 1)
+        spins: spins + 1
+kdefer_unlock queue:
+    atomic_store(queue + 24, 0)
+    return 1
+kdefer_init queue records capacity:
+    if queue is 0 -> return 0
+    if records is 0 -> return 0
+    if capacity < 1 -> return 0
+    poke_raw64(queue, 0, records)
+    poke_raw64(queue + 8, 0, capacity)
+    atomic_store(queue + 16, 0)
+    atomic_store(queue + 24, 0)
+    poke_raw64(queue + 32, 0, 0)
+    i: 0
+    as long as i < capacity
+        record: records + i * KDEFER_RECORD_STRIDE
+        j: 0
+        as long as j < KDEFER_RECORD_STRIDE
+            poke_byte(record, j, 0)
+            j: j + 1
+        poke_raw64(record, 0, 1)
+        atomic_store(record + 8, KDEFER_FREE)
+        i: i + 1
+    return 1
+kdefer_capacity queue:
+    if queue is 0 -> return 0
+    return peek_raw64(queue + 8, 0)
+kdefer_record queue ticket:
+    if queue is 0 -> return 0
+    capacity: peek_raw64(queue + 8, 0)
+    if capacity < 1 -> return 0
+    if ticket < 1 -> return 0
+    slot: (ticket - 1) % capacity
+    generation: (ticket - 1) / capacity
+    if generation < 1 -> return 0
+    record: peek_raw64(queue, 0) + slot * KDEFER_RECORD_STRIDE
+    if peek_raw64(record, 0) is not generation -> return 0
+    return record
+kdefer_submit queue kind arg0 arg1 arg2 producer:
+    if queue is 0 -> return 0
+    if kind < 1 -> return 0
+    if producer < 1 -> return 0
+    if kdefer_lock(queue) is not 1 -> return 0
+    if atomic_load(queue + 16) is not 0
+        kdefer_unlock(queue)
+        return 0
+    capacity: peek_raw64(queue + 8, 0)
+    records: peek_raw64(queue, 0)
+    slot: 0
+    found: 0
+    as long as slot < capacity
+        record: records + slot * KDEFER_RECORD_STRIDE
+        if atomic_load(record + 8) is KDEFER_FREE
+            atomic_store(record + 8, KDEFER_RESERVED)
+            found: record
+            slot: capacity
+        if not -> slot: slot + 1
+    if found is 0
+        kdefer_unlock(queue)
+        return 0
+    generation: peek_raw64(found, 0)
+    poke_raw64(found + 16, 0, kind)
+    poke_raw64(found + 24, 0, arg0)
+    poke_raw64(found + 32, 0, arg1)
+    poke_raw64(found + 40, 0, arg2)
+    poke_raw64(found + 48, 0, 0)
+    poke_raw64(found + 56, 0, producer)
+    poke_raw64(found + 64, 0, 0)
+    poke_raw64(found + 72, 0, 0)
+    atomic_store(found + 8, KDEFER_READY)
+    actual_slot: (found - records) / KDEFER_RECORD_STRIDE
+    ticket: generation * capacity + actual_slot + 1
+    kdefer_unlock(queue)
+    return ticket
+kdefer_claim queue consumer:
+    if queue is 0 -> return 0
+    if consumer < 1 -> return 0
+    if kdefer_lock(queue) is not 1 -> return 0
+    capacity: peek_raw64(queue + 8, 0)
+    records: peek_raw64(queue, 0)
+    slot: 0
+    found: 0
+    as long as slot < capacity
+        record: records + slot * KDEFER_RECORD_STRIDE
+        if atomic_load(record + 8) is KDEFER_READY
+            atomic_store(record + 8, KDEFER_RUNNING)
+            poke_raw64(record + 64, 0, consumer)
+            found: record
+            slot: capacity
+        if not -> slot: slot + 1
+    if found is 0
+        kdefer_unlock(queue)
+        return 0
+    generation: peek_raw64(found, 0)
+    actual_slot: (found - records) / KDEFER_RECORD_STRIDE
+    ticket: generation * capacity + actual_slot + 1
+    kdefer_unlock(queue)
+    return ticket
+kdefer_kind queue ticket consumer:
+    record: kdefer_record(queue, ticket)
+    if record is 0 -> return 0
+    if atomic_load(record + 8) is not KDEFER_RUNNING -> return 0
+    if peek_raw64(record + 64, 0) is not consumer -> return 0
+    return peek_raw64(record + 16, 0)
+kdefer_arg queue ticket consumer index:
+    if index < 0 -> return 0
+    if index > 2 -> return 0
+    record: kdefer_record(queue, ticket)
+    if record is 0 -> return 0
+    if atomic_load(record + 8) is not KDEFER_RUNNING -> return 0
+    if peek_raw64(record + 64, 0) is not consumer -> return 0
+    return peek_raw64(record + 24 + index * 8, 0)
+kdefer_cancel queue ticket producer:
+    if kdefer_lock(queue) is not 1 -> return 0
+    record: kdefer_record(queue, ticket)
+    if record is 0
+        kdefer_unlock(queue)
+        return 0
+    if peek_raw64(record + 56, 0) is not producer
+        kdefer_unlock(queue)
+        return 0
+    state: atomic_load(record + 8)
+    if state is KDEFER_READY
+        atomic_store(record + 8, KDEFER_CANCELED)
+        kdefer_unlock(queue)
+        return 1
+    if state is KDEFER_RUNNING
+        poke_raw64(record + 72, 0, 1)
+        kdefer_unlock(queue)
+        return 2
+    if state is KDEFER_CANCELED
+        kdefer_unlock(queue)
+        return 1
+    kdefer_unlock(queue)
+kdefer_finish queue ticket consumer result:
+    if kdefer_lock(queue) is not 1 -> return 0
+    record: kdefer_record(queue, ticket)
+    if record is 0
+        kdefer_unlock(queue)
+        return 0
+    if atomic_load(record + 8) is not KDEFER_RUNNING
+        kdefer_unlock(queue)
+        return 0
+    if peek_raw64(record + 64, 0) is not consumer
+        kdefer_unlock(queue)
+        return 0
+    poke_raw64(record + 48, 0, result)
+    if peek_raw64(record + 72, 0) is 1 -> atomic_store(record + 8, KDEFER_CANCELED)
+    if not -> atomic_store(record + 8, KDEFER_DONE)
+    kdefer_unlock(queue)
+    return 1
+kdefer_state queue ticket producer:
+    record: kdefer_record(queue, ticket)
+    if record is 0 -> return 0 - 1
+    if peek_raw64(record + 56, 0) is not producer -> return 0 - 1
+    return atomic_load(record + 8)
+kdefer_result queue ticket producer:
+    record: kdefer_record(queue, ticket)
+    if record is 0 -> return 0
+    if peek_raw64(record + 56, 0) is not producer -> return 0
+    state: atomic_load(record + 8)
+    if state is not KDEFER_DONE
+        if state is not KDEFER_CANCELED -> return 0
+    return peek_raw64(record + 48, 0)
+kdefer_release queue ticket producer:
+    if kdefer_lock(queue) is not 1 -> return 0
+    record: kdefer_record(queue, ticket)
+    if record is 0
+        kdefer_unlock(queue)
+        return 0
+    if peek_raw64(record + 56, 0) is not producer
+        kdefer_unlock(queue)
+        return 0
+    state: atomic_load(record + 8)
+    if state is not KDEFER_DONE
+        if state is not KDEFER_CANCELED
+            kdefer_unlock(queue)
+            return 0
+    generation: peek_raw64(record, 0) + 1
+    if generation < 1 -> generation: 1
+    poke_raw64(record, 0, generation)
+    poke_raw64(record + 16, 0, 0)
+    poke_raw64(record + 24, 0, 0)
+    poke_raw64(record + 32, 0, 0)
+    poke_raw64(record + 40, 0, 0)
+    poke_raw64(record + 48, 0, 0)
+    poke_raw64(record + 56, 0, 0)
+    poke_raw64(record + 64, 0, 0)
+    poke_raw64(record + 72, 0, 0)
+    atomic_store(record + 8, KDEFER_FREE)
+    kdefer_unlock(queue)
+    return 1
+kdefer_stop queue:
+    if queue is 0 -> return 0
+    if kdefer_lock(queue) is not 1 -> return 0
+    atomic_store(queue + 16, 1)
+    kdefer_unlock(queue)
+    return 1
+kdefer_drained queue:
+    if queue is 0 -> return 0
+    capacity: peek_raw64(queue + 8, 0)
+    records: peek_raw64(queue, 0)
+    i: 0
+    as long as i < capacity
+        if atomic_load(records + i * KDEFER_RECORD_STRIDE + 8) is not KDEFER_FREE -> return 0
+        i: i + 1
+    return 1

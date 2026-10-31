@@ -1,0 +1,24 @@
+use string
+main:
+    s: "aaaaabbbbbcccccddddd"
+    r: 0
+    as long as r < 4
+        s: str_cat(s, s)
+        r: r + 1
+    print str_len(s)
+    a: 0
+    bad: 0
+    as long as a < 16
+        n: 0
+        as long as n < 41
+            p: str_cut(s, a, a + n)
+            if str_len(p) is not n
+                bad: bad + 1
+            n: n + 1
+        a: a + 1
+    print bad
+    t: str_cat(str_cut(s, 3, 103), str_cut(s, 7, 207))
+    print str_len(t)
+    print str_len("")
+    print str_len("x")
+    return 0

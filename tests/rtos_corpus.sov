@@ -1,0 +1,10 @@
+use runtime
+main:
+    x: 0
+    i: 0
+    as long as i < 20000
+        x: x + i
+        i: i + 1
+    if x isnt 199990000
+        print "bad bad runtime fold"
+    print x

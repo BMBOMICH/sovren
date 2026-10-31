@@ -1,0 +1,19 @@
+use sovsys_abi
+SOVSYS_NET_RESOLVE: 68
+SOVSYS_NET_SOCKET: 69
+SOVSYS_NET_CONNECT: 70
+SOVSYS_NET_SEND: 71
+SOVSYS_NET_RECV: 72
+SOVSYS_NET_CLOSE: 73
+sov_NET_RESOLVE a0 a1:
+    return sovcall(SOVSYS_NET_RESOLVE, a0, a1)
+sov_NET_SOCKET a0 a1:
+    return sovcall(SOVSYS_NET_SOCKET, a0, a1)
+sov_NET_CONNECT a0 a1 a2:
+    return sovcall(SOVSYS_NET_CONNECT, a0, a1, a2)
+sov_NET_SEND a0 a1 a2:
+    return sovcall(SOVSYS_NET_SEND, a0, a1, a2)
+sov_NET_RECV a0 a1 a2:
+    return sovcall(SOVSYS_NET_RECV, a0, a1, a2)
+sov_NET_CLOSE a0:
+    return sovcall(SOVSYS_NET_CLOSE, a0)

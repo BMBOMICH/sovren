@@ -1,0 +1,10 @@
+main argc argv:
+    n: _sov_atoi(peek_ptr(argv, 1))
+    r: 1
+    i: 0
+    as long as i < n
+        r: r + 100
+        i: i + 1
+    print r + 100
+    print r
+    return 0

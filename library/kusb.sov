@@ -1,0 +1,218 @@
+# unsafe-module
+KUSB_CLASS_HID: 1
+KUSB_CLASS_STORAGE: 2
+KUSB_CLASS_OTHER: 4
+KUSB_SCSI_FAIL: 0
+KUSB_SCSI_RETRY: 1
+KUSB_SCSI_RESET: 2
+KUSB_SCSI_MEDIA_CHANGED: 3
+KUSB_SCSI_NO_MEDIA: 4
+kusb_configuration_parse descriptor total output:
+    if output is not 0 -> cleared: _sov_mem_set(output, 0, 64)
+    if descriptor is 0 -> return 0
+    if total < 9 -> return 0
+    if total > 65535 -> return 0
+    if peek_raw8(descriptor, 0) is not 9 -> return 0
+    if peek_raw8(descriptor + 1, 0) is not 2 -> return 0
+    if peek_raw16(descriptor + 2, 0) is not total -> return 0
+    wanted_interfaces: peek_raw8(descriptor + 4, 0)
+    if wanted_interfaces < 1 -> return 0
+    if peek_raw8(descriptor + 5, 0) is 0 -> return 0
+    if band(peek_raw8(descriptor + 7, 0), 128) is 0 -> return 0
+    offset: 0
+    interfaces: 0
+    current_interface: 0
+    current_class: 0
+    current_expected: 0
+    current_seen: 0
+    class_mask: 0
+    hid_interrupt: 0
+    storage_in: 0
+    storage_out: 0
+    in_address: 0
+    out_address: 0
+    in_packet: 0
+    out_packet: 0
+    in_interval: 0
+    out_interval: 0
+    as long as offset < total
+        if total - offset < 2 -> return 0
+        item_length: peek_raw8(descriptor + offset, 0)
+        item_type: peek_raw8(descriptor + offset + 1, 0)
+        if item_length < 2 -> return 0
+        if item_length > total - offset -> return 0
+        if item_type is 2
+            if offset is not 0 -> return 0
+            if item_length < 9 -> return 0
+        if item_type is 4
+            if current_interface is 1
+                if current_seen is not current_expected -> return 0
+            if item_length < 9 -> return 0
+            alternate: peek_raw8(descriptor + offset + 3, 0)
+            current_interface: 1
+            current_class: 0
+            current_expected: peek_raw8(descriptor + offset + 4, 0)
+            current_seen: 0
+            if alternate is 0
+                interfaces: interfaces + 1
+                current_expected: peek_raw8(descriptor + offset + 4, 0)
+                current_class: peek_raw8(descriptor + offset + 5, 0)
+                if current_class is 3 -> class_mask: bor(class_mask, KUSB_CLASS_HID)
+                if current_class is 8 -> class_mask: bor(class_mask, KUSB_CLASS_STORAGE)
+                if current_class is not 3
+                    if current_class is not 8 -> class_mask: bor(class_mask, KUSB_CLASS_OTHER)
+        if item_type is 5
+            if item_length < 7 -> return 0
+            if current_interface is not 1 -> return 0
+            address: peek_raw8(descriptor + offset + 2, 0)
+            if band(address, 15) is 0 -> return 0
+            transfer_type: band(peek_raw8(descriptor + offset + 3, 0), 3)
+            packet: band(peek_raw16(descriptor + offset + 4, 0), 2047)
+            if packet is 0 -> return 0
+            current_seen: current_seen + 1
+            if current_seen > current_expected -> return 0
+            interval: peek_raw8(descriptor + offset + 6, 0)
+            if current_class is 3
+                if transfer_type is 3
+                    if band(address, 128) is 128
+                        if in_address is not 0 -> return 0
+                        hid_interrupt: 1
+                        in_address: address
+                        in_packet: packet
+                        in_interval: interval
+            if current_class is 8
+                if transfer_type is 2
+                    if band(address, 128) is 128
+                        if in_address is not 0 -> return 0
+                        storage_in: 1
+                        in_address: address
+                        in_packet: packet
+                        in_interval: interval
+                    if band(address, 128) is 0
+                        if out_address is not 0 -> return 0
+                        storage_out: 1
+                        out_address: address
+                        out_packet: packet
+                        out_interval: interval
+        offset: offset + item_length
+    if offset is not total -> return 0
+    if current_interface is 1
+        if current_seen is not current_expected -> return 0
+    if interfaces is not wanted_interfaces -> return 0
+    if band(class_mask, KUSB_CLASS_HID) is KUSB_CLASS_HID
+        if hid_interrupt is not 1 -> return 0
+    if band(class_mask, KUSB_CLASS_STORAGE) is KUSB_CLASS_STORAGE
+        if storage_in is not 1 -> return 0
+        if storage_out is not 1 -> return 0
+    if output is not 0
+        poke_raw64(output, 0, class_mask)
+        poke_raw64(output + 8, 0, peek_raw8(descriptor + 5, 0))
+        poke_raw64(output + 16, 0, in_address)
+        poke_raw64(output + 24, 0, out_address)
+        poke_raw64(output + 32, 0, in_packet)
+        poke_raw64(output + 40, 0, out_packet)
+        poke_raw64(output + 48, 0, in_interval)
+        poke_raw64(output + 56, 0, out_interval)
+    return class_mask
+kusb_configuration_classes descriptor total:
+    return kusb_configuration_parse(descriptor, total, 0)
+kusb_interface_token descriptor total class_code:
+    if descriptor is 0 -> return 0
+    if total < 9 -> return 0
+    if total > 65535 -> return 0
+    if class_code < 1 -> return 0
+    if class_code > 255 -> return 0
+    if peek_raw8(descriptor, 0) is not 9 -> return 0
+    if peek_raw8(descriptor + 1, 0) is not 2 -> return 0
+    if peek_raw16(descriptor + 2, 0) is not total -> return 0
+    offset: 0
+    found: 0
+    as long as offset < total
+        if total - offset < 2 -> return 0
+        item_length: peek_raw8(descriptor + offset, 0)
+        item_type: peek_raw8(descriptor + offset + 1, 0)
+        if item_length < 2 -> return 0
+        if item_length > total - offset -> return 0
+        if item_type is 4
+            if item_length < 9 -> return 0
+            if peek_raw8(descriptor + offset + 3, 0) is 0
+                if peek_raw8(descriptor + offset + 5, 0) is class_code
+                    if found is not 0 -> return 0
+                    found: peek_raw8(descriptor + offset + 2, 0) + 1
+        offset: offset + item_length
+    if offset is not total -> return 0
+    return found
+kusb_setup_mass_reset interface_token:
+    if interface_token < 1 -> return 0
+    if interface_token > 256 -> return 0
+    return 33 + bshl(255, 8) + bshl(interface_token - 1, 32)
+kusb_setup_clear_halt endpoint_address:
+    if endpoint_address < 1 -> return 0
+    if endpoint_address > 255 -> return 0
+    if band(endpoint_address, 15) is 0 -> return 0
+    if band(endpoint_address, 112) is not 0 -> return 0
+    return 2 + bshl(1, 8) + bshl(endpoint_address, 32)
+kusb_bot_cbw buffer tag transfer_length direction_in cdb_length:
+    if buffer is 0 -> return 0
+    if direction_in is not 0
+        if direction_in is not 1 -> return 0
+    if cdb_length < 1 -> return 0
+    if cdb_length > 16 -> return 0
+    poke_raw32(buffer, 0, 1128420181)
+    poke_raw32(buffer + 4, 0, tag)
+    poke_raw32(buffer + 8, 0, transfer_length)
+    poke_raw8(buffer + 12, 0, bshl(direction_in, 7))
+    poke_raw8(buffer + 13, 0, 0)
+    poke_raw8(buffer + 14, 0, cdb_length)
+    return 1
+kusb_bot_csw buffer expected_tag expected_length:
+    if buffer is 0 -> return 0
+    if peek_raw32(buffer, 0) is not 1396855637 -> return 0
+    if peek_raw32(buffer + 4, 0) is not expected_tag -> return 0
+    residue: peek_raw32(buffer + 8, 0)
+    if residue > expected_length -> return 0
+    status: peek_raw8(buffer + 12, 0)
+    if status is 0
+        if residue is not 0 -> return 0
+        return 1
+    if status is 1 -> return 2
+kusb_be32 address:
+    if address is 0 -> return 0
+    return bshl(peek_raw8(address, 0), 24) + bshl(peek_raw8(address + 1, 0), 16) + bshl(peek_raw8(address + 2, 0), 8) + peek_raw8(address + 3, 0)
+kusb_scsi_sense_matches sense length wanted_key wanted_asc:
+    if sense is 0 -> return 0
+    if length < 14 -> return 0
+    response: band(peek_raw8(sense, 0), 127)
+    if response is not 112
+        if response is not 113 -> return 0
+    if band(peek_raw8(sense + 2, 0), 15) is not wanted_key -> return 0
+    if peek_raw8(sense + 12, 0) is not wanted_asc -> return 0
+    return 1
+kusb_scsi_sense_action sense length retries:
+    if sense is 0 -> return KUSB_SCSI_FAIL
+    if length < 14 -> return KUSB_SCSI_FAIL
+    if retries < 0 -> return KUSB_SCSI_FAIL
+    if retries > 16 -> return KUSB_SCSI_FAIL
+    response: band(peek_raw8(sense, 0), 127)
+    if response is not 112
+        if response is not 113 -> return KUSB_SCSI_FAIL
+    key: band(peek_raw8(sense + 2, 0), 15)
+    asc: peek_raw8(sense + 12, 0)
+    ascq: peek_raw8(sense + 13, 0)
+    if key is 2
+        if asc is 58 -> return KUSB_SCSI_NO_MEDIA
+        if asc is 4
+            if retries < 3 -> return KUSB_SCSI_RETRY
+            return KUSB_SCSI_RESET
+        return KUSB_SCSI_FAIL
+    if key is 5 -> return KUSB_SCSI_FAIL
+    if key is 6 -> return KUSB_SCSI_MEDIA_CHANGED
+    if key is 11
+        if retries < 3 -> return KUSB_SCSI_RETRY
+        return KUSB_SCSI_RESET
+    if key is 4 -> return KUSB_SCSI_RESET
+    if key is 0
+        if asc is 0
+            if ascq is 0
+                if retries < 1 -> return KUSB_SCSI_RETRY
+    return KUSB_SCSI_FAIL

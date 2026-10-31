@@ -1,0 +1,28 @@
+# unsafe-module
+use ksurface
+bad m:
+    print m
+    badn: badn + 1
+main:
+    surface: _sov_alloc(KSURF_STRIDE) ;; pixels: _sov_alloc(128)
+    target: _sov_alloc(512) ;; span: _sov_alloc(8)
+    poke_raw32(span, 0, 287454020) ;; poke_raw32(span + 4, 0, 1432778632)
+    if ksurf_init(surface, pixels, 8, 4, 128) != 1 -> bad('init')
+    generation: peek_raw64(surface, 0)
+    if ksurf_init(surface, pixels, 8, 4, 127) != 0 -> bad('short surface')
+    if ksurf_fill32(surface, 65537, 131074, 2864434397) != 4 -> bad('fill')
+    if ksurf_span32(surface, 4, 0, span, 2) != 2 -> bad('span')
+    if ksurf_damage_origin(surface) != 1 -> bad('damage origin')
+    if ksurf_damage_extent(surface) != 196613 -> bad('damage extent')
+    if ksurf_present32(surface, target, 16, 8, 131075) != 15 -> bad('present')
+    if peek_raw32(target + (3 * 16 + 4) * 4, 0) != 2864434397 -> bad('fill presented')
+    if peek_raw32(target + (2 * 16 + 7) * 4, 0) != 287454020 -> bad('span first presented')
+    if peek_raw32(target + (2 * 16 + 8) * 4, 0) != 1432778632 -> bad('span last presented')
+    if peek_raw32(target + (2 * 16 + 3) * 4, 0) != 0 -> bad('outside damage touched')
+    if ksurf_damage_valid(surface) != 0 -> bad('damage not cleared')
+    if ksurf_fill32(surface, 0, 65537, 17) != 1 -> bad('second fill')
+    if ksurf_present32(surface, target, 16, 8, 524303) != 0 -> bad('bad destination')
+    if ksurf_damage_valid(surface) != 1 -> bad('failed present lost damage')
+    if ksurf_init(surface, pixels, 8, 4, 128) != 1 -> bad('reinit')
+    if peek_raw64(surface, 0) != generation + 1 -> bad('generation')
+    print 'ksurface OK'

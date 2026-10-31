@@ -1,0 +1,205 @@
+use file
+use mem
+use trig
+aud_new us:
+    n: (us * 44100) / 1000000
+    return mem_new(n * 2 + 4)
+aud_sine p t0 t1 freq amp:
+    i: t0
+    as long as i < t1
+        ang: (6283185 * freq * i) / 1000000000
+        s: tri_sin(ang)
+        v: (s * amp) / 1000000
+        v: (v * 32767) / 1000000
+        if v < 0 -> v: v + 65536
+        off: (i * 44100) / 1000000
+        poke_byte(p, off * 2, v % 256)
+        poke_byte(p, off * 2 + 1, v / 256)
+        i: i + 1
+aud_period freq:
+    return 1000000000 / freq
+aud_put p i v:
+    if v < 0 -> v: v + 65536
+    off: (i * 44100) / 1000000
+    poke_byte(p, off * 2, v % 256)
+    poke_byte(p, off * 2 + 1, v / 256)
+aud_sget p s:
+    v: peek_byte(p, s * 2) + peek_byte(p, s * 2 + 1) * 256
+    if v >= 32768 -> v: v - 65536
+    return v
+aud_sput p s v:
+    if v < 0 -> v: v + 65536
+    poke_byte(p, s * 2, v % 256)
+    poke_byte(p, s * 2 + 1, v / 256)
+aud_square p t0 t1 freq amp:
+    per: 1000000000 / freq
+    half: per / 2
+    i: t0
+    as long as i < t1
+        ph: i % per
+        v: 0 - amp
+        if ph < half -> v: amp
+        v: (v * 32767) / 1000000
+        aud_put(p, i, v)
+        i: i + 1
+aud_triangle p t0 t1 freq amp:
+    per: 1000000000 / freq
+    half: per / 2
+    i: t0
+    as long as i < t1
+        ph: i % per
+        q: ph
+        if ph > half -> q: per - ph
+        v: (4 * amp * q) / per - amp
+        v: (v * 32767) / 1000000
+        aud_put(p, i, v)
+        i: i + 1
+aud_saw p t0 t1 freq amp:
+    per: 1000000000 / freq
+    i: t0
+    as long as i < t1
+        ph: i % per
+        v: (2 * amp * ph) / per - amp
+        v: (v * 32767) / 1000000
+        aud_put(p, i, v)
+        i: i + 1
+aud_noise p t0 t1 seed amp:
+    s: seed
+    i: t0
+    as long as i < t1
+        s: (s * 1103515245 + 12345) % 2147483648
+        v: (s % 65536) - 32768
+        v: (v * amp) / 1000000
+        aud_put(p, i, v)
+        i: i + 1
+aud_gain p t0 t1 g:
+    s0: (t0 * 44100) / 1000000
+    s1: ((t1 - 1) * 44100) / 1000000 + 1
+    s: s0
+    as long as s < s1
+        v: aud_sget(p, s)
+        v: (v * g) / 1000000
+        aud_sput(p, s, v)
+        s: s + 1
+aud_fade_in p t0 t1:
+    span: t1 - t0
+    s0: (t0 * 44100) / 1000000
+    s1: ((t1 - 1) * 44100) / 1000000 + 1
+    s: s0
+    as long as s < s1
+        ie: ((s + 1) * 1000000 - 1) / 44100
+        f: ie - t0
+        if f > span -> f: span
+        if f < 0 -> f: 0
+        v: aud_sget(p, s)
+        v: (v * f) / span
+        aud_sput(p, s, v)
+        s: s + 1
+aud_fade_out p t0 t1:
+    span: t1 - t0
+    s0: (t0 * 44100) / 1000000
+    s1: ((t1 - 1) * 44100) / 1000000 + 1
+    s: s0
+    as long as s < s1
+        ie: ((s + 1) * 1000000 - 1) / 44100
+        f: t1 - ie
+        if f > span -> f: span
+        if f < 0 -> f: 0
+        v: aud_sget(p, s)
+        v: (v * f) / span
+        aud_sput(p, s, v)
+        s: s + 1
+aud_echo p t0 t1 delay decay:
+    d: (delay * 44100) / 1000000
+    s0: (t0 * 44100) / 1000000
+    s1: ((t1 - 1) * 44100) / 1000000 + 1
+    s: s0
+    as long as s < s1
+        if s >= d
+            a: aud_sget(p, s)
+            b: aud_sget(p, s - d)
+            v: a + (b * decay) / 1000000
+            aud_sput(p, s, v)
+        s: s + 1
+aud_mix p src t0 t1 amp:
+    i: t0
+    as long as i < t1
+        a: aud_sget(p, i)
+        b: aud_sget(src, i - t0)
+        v: a + (b * amp) / 1000000
+        aud_sput(p, i, v)
+        i: i + 1
+aud_mix_at p src at us amp:
+    return aud_mix(p, src, at, at + us, amp)
+aud_adsr p t0 t1 atk dec sus rel:
+    span: t1 - t0
+    s0: (t0 * 44100) / 1000000
+    s1: ((t1 - 1) * 44100) / 1000000 + 1
+    s: s0
+    as long as s < s1
+        ie: ((s + 1) * 1000000 - 1) / 44100
+        t: ie - t0
+        f: sus
+        if t < atk -> f: (sus * t) / atk
+        if not
+            if t < atk + dec -> f: 1000000 - ((1000000 - sus) * (t - atk)) / dec
+            if not
+                if t >= span - rel -> f: (sus * (span - t)) / rel
+        v: aud_sget(p, s)
+        v: (v * f) / 1000000
+        aud_sput(p, s, v)
+        s: s + 1
+aud_wav path p us:
+    n: (us * 44100) / 1000000
+    d: n * 2
+    b: mem_new(44 + d)
+    poke_byte(b, 0, 82)
+    poke_byte(b, 1, 73)
+    poke_byte(b, 2, 70)
+    poke_byte(b, 3, 70)
+    sz: 36 + d
+    poke_byte(b, 4, sz % 256)
+    poke_byte(b, 5, (sz / 256) % 256)
+    poke_byte(b, 6, (sz / 65536) % 256)
+    poke_byte(b, 7, sz / 16777216)
+    poke_byte(b, 8, 87)
+    poke_byte(b, 9, 65)
+    poke_byte(b, 10, 86)
+    poke_byte(b, 11, 69)
+    poke_byte(b, 12, 102)
+    poke_byte(b, 13, 109)
+    poke_byte(b, 14, 116)
+    poke_byte(b, 15, 32)
+    poke_byte(b, 16, 16)
+    poke_byte(b, 17, 0)
+    poke_byte(b, 18, 0)
+    poke_byte(b, 19, 0)
+    poke_byte(b, 20, 1)
+    poke_byte(b, 21, 0)
+    poke_byte(b, 22, 1)
+    poke_byte(b, 23, 0)
+    poke_byte(b, 24, 68)
+    poke_byte(b, 25, 172)
+    poke_byte(b, 26, 0)
+    poke_byte(b, 27, 0)
+    poke_byte(b, 28, 136)
+    poke_byte(b, 29, 88)
+    poke_byte(b, 30, 1)
+    poke_byte(b, 31, 0)
+    poke_byte(b, 32, 2)
+    poke_byte(b, 33, 0)
+    poke_byte(b, 34, 16)
+    poke_byte(b, 35, 0)
+    poke_byte(b, 36, 100)
+    poke_byte(b, 37, 97)
+    poke_byte(b, 38, 116)
+    poke_byte(b, 39, 97)
+    poke_byte(b, 40, d % 256)
+    poke_byte(b, 41, (d / 256) % 256)
+    poke_byte(b, 42, (d / 65536) % 256)
+    poke_byte(b, 43, d / 16777216)
+    i: 0
+    as long as i < d
+        poke_byte(b, 44 + i, peek_byte(p, i))
+        i: i + 1
+    file_write_bytes(path, b, 44 + d)

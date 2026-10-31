@@ -1,0 +1,34 @@
+# unsafe-module
+use khandle
+main:
+    table: _sov_alloc(320)
+    if kh_table_init(table, 8) != 1 -> print 'init failed'
+        stop
+    if kh_first_free(table, 8, 3) != 3 -> print 'free failed'
+        stop
+    if kh_install(table, 8, 3, 99, KH_TYPE_FILE, KH_RIGHT_READ + KH_RIGHT_POLL + KH_RIGHT_DUP, KH_FLAG_INHERIT) != 1 -> print 'install failed'
+        stop
+    if kh_install(table, 8, 3, 88, KH_TYPE_FILE, KH_RIGHT_READ, 0) != 0 -> print 'replace accepted'
+        stop
+    if kh_active(table, 8) != 1 -> print 'active count after install'
+        stop
+    if kh_lookup(table, 8, 3, KH_TYPE_FILE, KH_RIGHT_READ) != 99 -> print 'lookup failed'
+        stop
+    if kh_lookup(table, 8, 3, KH_TYPE_FILE, KH_RIGHT_WRITE) != 0 -> print 'rights bypass'
+        stop
+    if kh_lookup(table, 8, 3, KH_TYPE_PIPE_READ, KH_RIGHT_READ) != 0 -> print 'type bypass'
+        stop
+    generation: kh_generation(table, 8, 3)
+    if generation = 0 -> print 'generation missing'
+        stop
+    if kh_close(table, 8, 3) != 99 -> print 'close failed'
+        stop
+    if kh_lookup(table, 8, 3, KH_TYPE_NONE, 0) != 0 -> print 'closed lookup'
+        stop
+    if kh_active(table, 8) != 0 -> print 'active count after close'
+        stop
+    if kh_install(table, 8, 3, 77, KH_TYPE_CONSOLE, KH_RIGHT_WRITE, 0) != 1 -> print 'reuse failed'
+        stop
+    if kh_generation(table, 8, 3) != generation + 1 -> print 'generation did not advance'
+        stop
+    print 'khandle OK'

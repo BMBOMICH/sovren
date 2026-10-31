@@ -1,0 +1,66 @@
+use string
+use list
+use num
+use sys
+bounds_live: 1
+bounds_on:
+    bounds_live: 1
+    return 1
+bounds_off:
+    bounds_live: 0
+bounds_fail what i n:
+    write_out("bounds: ")
+    write_out(what)
+    write_out(" index ")
+    write_out(num_text(i))
+    write_out(" of length ")
+    write_out(num_text(n))
+    write_out("\n")
+    sys_exit(1)
+bounds_ok what i n:
+    if bounds_live is 0 -> return 1
+    if i < 0 -> bounds_fail(what, i, n)
+    if i >= n -> bounds_fail(what, i, n)
+    return 1
+bounds_list lst i:
+    n: list_len(lst)
+    dummy: bounds_ok("list", i, n)
+    if i < 0 -> return ""
+    if i >= n -> return ""
+    return str_cat(list_get(lst, i), "")
+bounds_set lst i v:
+    n: list_len(lst)
+    dummy: bounds_ok("list", i, n)
+    if i < 0 -> return 0
+    if i >= n -> return 0
+    return list_set(lst, i, v)
+bounds_i64 p i n:
+    dummy: bounds_ok("i64", i, n)
+    if i < 0 -> return 0
+    if i >= n -> return 0
+    off: i * 8
+    return peek_i64(p, off)
+bounds_poke p i n v:
+    dummy: bounds_ok("i64", i, n)
+    if i < 0 -> return 0
+    if i >= n -> return 0
+    off: i * 8
+    poke_i64(p, off, v)
+    return 1
+bounds_byte p i n:
+    dummy: bounds_ok("byte", i, n)
+    if i < 0 -> return 0
+    if i >= n -> return 0
+    return peek_byte(p, i)
+bounds_poke_byte p i n v:
+    dummy: bounds_ok("byte", i, n)
+    if i < 0 -> return 0
+    if i >= n -> return 0
+    poke_byte(p, i, v)
+    return 1
+bounds_char s i:
+    n: str_len(s)
+    dummy: bounds_ok("text", i, n)
+    if i < 0 -> return 0
+    if i >= n -> return 0
+    return peek_byte(s, i)

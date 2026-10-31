@@ -1,0 +1,14 @@
+# sxe_payload - SXE-mode payload program
+main p:
+    i: 0
+    s: 0
+    as long as i < 10
+        s: s + i * i
+        i: i + 1
+    print s
+    print plen()
+    if p > 0 -> print p
+    print 0
+
+plen:
+    return 7

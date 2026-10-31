@@ -1,0 +1,40 @@
+use hmac
+use secret
+use mem
+use bit32
+hkdf_extract salt salt_n ikm ikm_n prk:
+    hmac_raw(salt, salt_n, ikm, ikm_n, prk)
+    return 1
+hkdf_expand prk info info_n n okm:
+    blk: _sov_heap_alloc(33 + info_n)
+    t: _sov_heap_alloc(32)
+    have_t: 0
+    done: 0
+    i: 1
+    private
+    as long as done < n
+        blen: 0
+        if have_t is 1
+            j: 32
+            mem_copy(blk, t, 32)
+            blen: 32
+        j: 0
+        as long as j < info_n
+            poke_byte(blk, blen + j, peek_byte(info, j))
+            j: j + 1
+        blen: blen + info_n
+        poke_byte(blk, blen, i)
+        blen: blen + 1
+        hmac_raw(prk, 32, blk, blen, t)
+        have_t: 1
+        take: 32
+        if n - done < 32 -> take: n - done
+        j: 0
+        as long as j < take
+            poke_byte(okm, done + j, peek_byte(t, j))
+            j: j + 1
+        done: done + take
+        i: i + 1
+    secret_wipe_bytes(t, 32)
+    secret_wipe_bytes(blk, 33 + info_n)
+    return 1

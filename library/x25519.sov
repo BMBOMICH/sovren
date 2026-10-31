@@ -1,0 +1,272 @@
+# unsafe-module
+use mem
+
+fe_zero out:
+    i: 0
+    as long as i < 10
+        poke_i64(out, i * 8, 0)
+        i: i + 1
+    return 0
+
+fe_copy out a:
+    i: 0
+    as long as i < 10
+        poke_i64(out, i * 8, peek_i64(a, i * 8))
+        i: i + 1
+    return 0
+
+fe_reduce f:
+    k: 0
+    as long as k < 2
+        i: 0
+        as long as i < 9
+            v: peek_i64(f, i * 8)
+            c: v / 67108864
+            if v < 0
+                if v % 67108864 is not 0 -> c: c - 1
+            poke_i64(f, i * 8, v - c * 67108864)
+            poke_i64(f, (i + 1) * 8, peek_i64(f, (i + 1) * 8) + c)
+            i: i + 1
+        v9: peek_i64(f, 72)
+        c9: v9 / 2097152
+        if v9 < 0
+            if v9 % 2097152 is not 0 -> c9: c9 - 1
+        poke_i64(f, 72, v9 - c9 * 2097152)
+        poke_i64(f, 0, peek_i64(f, 0) + 19 * c9)
+        k: k + 1
+    ge: 1
+    if peek_i64(f, 72) < 2097151 -> ge: 0
+    i: 1
+    as long as i < 9
+        if peek_i64(f, i * 8) < 67108863 -> ge: 0
+        i: i + 1
+    if peek_i64(f, 0) < 67108845 -> ge: 0
+    if ge is 1
+        poke_i64(f, 0, peek_i64(f, 0) - 67108845)
+        i: 1
+        as long as i < 10
+            poke_i64(f, i * 8, 0)
+            i: i + 1
+    return 0
+
+fe_add out a b:
+    i: 0
+    as long as i < 10
+        poke_i64(out, i * 8, peek_i64(a, i * 8) + peek_i64(b, i * 8))
+        i: i + 1
+    fe_reduce(out)
+    return 0
+
+fe_sub out a b:
+    i: 0
+    as long as i < 10
+        w: 134217726
+        if i is 0 -> w: 134216512
+        poke_i64(out, i * 8, peek_i64(a, i * 8) + w - peek_i64(b, i * 8))
+        i: i + 1
+    fe_reduce(out)
+    return 0
+
+fe_mul out a b:
+    t: _sov_alloc(160)
+    i: 0
+    as long as i < 20
+        poke_i64(t, i * 8, 0)
+        i: i + 1
+    i: 0
+    as long as i < 10
+        ai: peek_i64(a, i * 8)
+        j: 0
+        as long as j < 10
+            idx: (i + j) * 8
+            poke_i64(t, idx, peek_i64(t, idx) + ai * peek_i64(b, j * 8))
+            j: j + 1
+        i: i + 1
+    k: 0
+    as long as k < 19
+        vk: peek_i64(t, k * 8)
+        ck: vk / 67108864
+        poke_i64(t, k * 8, vk % 67108864)
+        poke_i64(t, (k + 1) * 8, peek_i64(t, (k + 1) * 8) + ck)
+        k: k + 1
+    i: 10
+    as long as i < 20
+        m: (i - 10) * 8
+        poke_i64(t, m, peek_i64(t, m) + 608 * peek_i64(t, i * 8))
+        i: i + 1
+    i: 0
+    as long as i < 10
+        poke_i64(out, i * 8, peek_i64(t, i * 8))
+        i: i + 1
+    fe_reduce(out)
+    return 0
+
+fe_sqr out a:
+    return fe_mul(out, a, a)
+
+x_decode out b:
+    fe_zero(out)
+    bit: 0
+    as long as bit < 255
+        bv: band(bshr(peek_byte(b, bit / 8), bit % 8), 1)
+        if bv is 1
+            lmb: bit / 26
+            sh: bit % 26
+            poke_i64(out, lmb * 8, peek_i64(out, lmb * 8) + bshl(1, sh))
+        bit: bit + 1
+    fe_reduce(out)
+    return 0
+
+x_encode f out:
+    q: _sov_alloc(80)
+    fe_copy(q, f)
+    fe_reduce(q)
+    v9: peek_i64(q, 72)
+    c9: v9 / 2097152
+    poke_i64(q, 72, v9 % 2097152)
+    poke_i64(q, 0, peek_i64(q, 0) + 19 * c9)
+    i: 0
+    as long as i < 9
+        c: peek_i64(q, i * 8) / 67108864
+        poke_i64(q, i * 8, peek_i64(q, i * 8) % 67108864)
+        poke_i64(q, (i + 1) * 8, peek_i64(q, (i + 1) * 8) + c)
+        i: i + 1
+    v9b: peek_i64(q, 72)
+    c9b: v9b / 2097152
+    poke_i64(q, 72, v9b % 2097152)
+    poke_i64(q, 0, peek_i64(q, 0) + 19 * c9b)
+    i: 0
+    as long as i < 9
+        c2: peek_i64(q, i * 8) / 67108864
+        poke_i64(q, i * 8, peek_i64(q, i * 8) % 67108864)
+        poke_i64(q, (i + 1) * 8, peek_i64(q, (i + 1) * 8) + c2)
+        i: i + 1
+    ge: 1
+    j: 9
+    as long as j >= 0
+        w: 67108863
+        if j is 0 -> w: 67108845
+        if j is 9 -> w: 2097151
+        xa: peek_i64(q, j * 8)
+        if xa > w -> j: 0 - 1
+        if xa < w
+            ge: 0
+            j: 0 - 1
+        j: j - 1
+    if ge is 1
+        br: 0
+        j2: 0
+        as long as j2 < 10
+            w2: 67108863
+            if j2 is 0 -> w2: 67108845
+            if j2 is 9 -> w2: 2097151
+            t: peek_i64(q, j2 * 8) - w2 - br
+            br: 0
+            if t < 0
+                t: t + (w2 + 1)
+                br: 1
+            poke_i64(q, j2 * 8, t)
+            j2: j2 + 1
+    i: 0
+    as long as i < 32
+        poke_byte(out, i, 0)
+        i: i + 1
+    bit: 0
+    as long as bit < 255
+        lmb: bit / 26
+        sh: bit % 26
+        bv: band(bshr(peek_i64(q, lmb * 8), sh), 1)
+        if bv is 1
+            bi: bit / 8
+            poke_byte(out, bi, peek_byte(out, bi) + bshl(1, bit % 8))
+        bit: bit + 1
+    return 0
+
+x_invert out z:
+    r: _sov_alloc(80)
+    fe_zero(r)
+    poke_i64(r, 0, 1)
+    i: 254
+    as long as i >= 0
+        fe_sqr(r, r)
+        bit: 1
+        if i is 2 -> bit: 0
+        if i is 4 -> bit: 0
+        if bit is 1 -> fe_mul(r, r, z)
+        i: i - 1
+    fe_copy(out, r)
+    return 0
+
+x_cswap swap a b:
+    # Constant-time conditional swap: `swap` derives from secret
+    # scalar bits, so it must never branch.  Masked XOR exchange
+    # always touches both elements in the same sequence.
+    m: 0 - swap
+    i: 0
+    as long as i < 10
+        va: peek_i64(a, i * 8)
+        vb: peek_i64(b, i * 8)
+        t: band(m, bxor(va, vb))
+        poke_i64(a, i * 8, bxor(va, t))
+        poke_i64(b, i * 8, bxor(vb, t))
+        i: i + 1
+    return 0
+
+x19 out scalar u_in:
+    e: _sov_alloc(32)
+    i: 0
+    as long as i < 32
+        poke_byte(e, i, peek_byte(scalar, i))
+        i: i + 1
+    poke_byte(e, 0, band(peek_byte(e, 0), 248))
+    poke_byte(e, 31, bor(band(peek_byte(e, 31), 127), 64))
+    x1: _sov_alloc(80)
+    x2: _sov_alloc(80)
+    z2: _sov_alloc(80)
+    x3: _sov_alloc(80)
+    z3: _sov_alloc(80)
+    tmp0: _sov_alloc(80)
+    tmp1: _sov_alloc(80)
+    a24: _sov_alloc(80)
+    x_decode(x1, u_in)
+    fe_zero(x2)
+    poke_i64(x2, 0, 1)
+    fe_zero(z2)
+    fe_copy(x3, x1)
+    fe_zero(z3)
+    poke_i64(z3, 0, 1)
+    fe_zero(a24)
+    poke_i64(a24, 0, 121666)
+    swap: 0
+    pos: 254
+    as long as pos >= 0
+        b: band(bshr(peek_byte(e, pos / 8), pos % 8), 1)
+        swap: bxor(swap, b)
+        x_cswap(swap, x2, x3)
+        x_cswap(swap, z2, z3)
+        swap: b
+        fe_sub(tmp0, x3, z3)
+        fe_sub(tmp1, x2, z2)
+        fe_add(x2, x2, z2)
+        fe_add(z2, x3, z3)
+        fe_mul(z3, tmp0, x2)
+        fe_mul(z2, z2, tmp1)
+        fe_sqr(tmp0, tmp1)
+        fe_sqr(tmp1, x2)
+        fe_add(x3, z3, z2)
+        fe_sub(z2, z3, z2)
+        fe_mul(x2, tmp1, tmp0)
+        fe_sub(tmp1, tmp1, tmp0)
+        fe_sqr(z2, z2)
+        fe_mul(z3, tmp1, a24)
+        fe_sqr(x3, x3)
+        fe_add(tmp0, tmp0, z3)
+        fe_mul(z3, x1, z2)
+        fe_mul(z2, tmp1, tmp0)
+        pos: pos - 1
+    x_cswap(swap, x2, x3)
+    x_cswap(swap, z2, z3)
+    x_invert(z2, z2)
+    fe_mul(x2, x2, z2)
+    x_encode(x2, out)
+    return 0

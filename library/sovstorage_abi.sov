@@ -1,0 +1,19 @@
+use sovsys_abi
+SOVSYS_FILE_READ: 62
+SOVSYS_FILE_WRITE: 63
+SOVSYS_FILE_STAT: 64
+SOVSYS_FILE_LIST: 65
+SOVSYS_FILE_MKDIR: 66
+SOVSYS_FILE_UNLINK: 67
+sov_FILE_READ a0 a1 a2:
+    return sovcall(SOVSYS_FILE_READ, a0, a1, a2)
+sov_FILE_WRITE a0 a1 a2:
+    return sovcall(SOVSYS_FILE_WRITE, a0, a1, a2)
+sov_FILE_STAT a0 a1:
+    return sovcall(SOVSYS_FILE_STAT, a0, a1)
+sov_FILE_LIST a0:
+    return sovcall(SOVSYS_FILE_LIST, a0)
+sov_FILE_MKDIR a0:
+    return sovcall(SOVSYS_FILE_MKDIR, a0)
+sov_FILE_UNLINK a0:
+    return sovcall(SOVSYS_FILE_UNLINK, a0)

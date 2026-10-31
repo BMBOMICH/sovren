@@ -1,0 +1,12 @@
+# unsafe-module
+# cx86 — the compiler core, split for reviewability (lightest item 9).
+# The parts concatenate in this exact order; together they are the old
+# single-file cx86.sov byte for byte (minus this header). Include order
+# is semantic: do not reorder.
+include compilers/shared/cx86_p1.sov
+include compilers/shared/cx86_p2.sov
+include compilers/shared/cx86_p3.sov
+include compilers/shared/cx86_p4.sov
+include compilers/shared/cx86_p5.sov
+include compilers/shared/cx86_p6.sov
+include compilers/shared/cx86_p7.sov

@@ -1,0 +1,85 @@
+# unsafe-module
+KD_STRIDE: 32
+KD_DISCOVERED: 1
+KD_BOUND: 2
+KD_STARTED: 3
+KD_STOPPING: 4 
+KD_REMOVED: 5
+KD_FAILED: 6
+kd_init device:
+    if device is 0 -> return 0
+    generation: peek_raw64(device, 0) + 1
+    if generation is 0 -> generation: 1
+    poke_raw64(device, 0, generation)
+    poke_raw64(device + 8, 0, KD_DISCOVERED)
+    poke_raw64(device + 16, 0, 0)
+    poke_raw64(device + 24, 0, 0)
+    return 1
+kd_generation device:
+    if device is 0 -> return 0
+    return peek_raw64(device, 0)
+kd_state device:
+    if device is 0 -> return 0
+    return peek_raw64(device + 8, 0)
+kd_owner device:
+    if device is 0 -> return 0
+    return peek_raw64(device + 16, 0)
+kd_inflight device:
+    if device is 0 -> return 0
+    return peek_raw64(device + 24, 0)
+kd_bind device owner:
+    if device is 0 -> return 0
+    if owner < 1 -> return 0
+    if kd_state(device) is not KD_DISCOVERED -> return 0
+    poke_raw64(device + 16, 0, owner)
+    poke_raw64(device + 8, 0, KD_BOUND)
+    return 1
+kd_start device owner:
+    if kd_state(device) is not KD_BOUND -> return 0
+    if kd_owner(device) is not owner -> return 0
+    poke_raw64(device + 8, 0, KD_STARTED)
+    return 1
+kd_request_begin device owner:
+    if kd_state(device) is not KD_STARTED -> return 0
+    if kd_owner(device) is not owner -> return 0
+    active: kd_inflight(device)
+    if active is 0 - 1 -> return 0
+    poke_raw64(device + 24, 0, active + 1)
+    return 1
+kd_request_end device owner:
+    if kd_owner(device) is not owner -> return 0
+    active: kd_inflight(device)
+    if active < 1 -> return 0
+    poke_raw64(device + 24, 0, active - 1)
+    return 1
+kd_stop device owner:
+    if kd_state(device) is not KD_STARTED -> return 0
+    if kd_owner(device) is not owner -> return 0
+    if kd_inflight(device) is not 0 -> return 0
+    poke_raw64(device + 8, 0, KD_BOUND)
+    return 1
+kd_unbind device owner:
+    if kd_state(device) is not KD_BOUND -> return 0
+    if kd_owner(device) is not owner -> return 0
+    if kd_inflight(device) is not 0 -> return 0
+    poke_raw64(device + 16, 0, 0)
+    poke_raw64(device + 8, 0, KD_DISCOVERED)
+    generation: kd_generation(device) + 1
+    if generation is 0 -> generation: 1
+    poke_raw64(device, 0, generation)
+    return 1
+kd_remove device:
+    if device is 0 -> return 0
+    if kd_inflight(device) is not 0 -> return 0
+    state: kd_state(device)
+    if state is KD_STARTED -> return 0
+    poke_raw64(device + 16, 0, 0)
+    poke_raw64(device + 8, 0, KD_REMOVED)
+    generation: kd_generation(device) + 1
+    if generation is 0 -> generation: 1
+    poke_raw64(device, 0, generation)
+    return 1
+kd_fail device:
+    if device is 0 -> return 0
+    poke_raw64(device + 8, 0, KD_FAILED)
+    return 1

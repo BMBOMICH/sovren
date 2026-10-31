@@ -1,0 +1,29 @@
+# pad line so main is not first
+M32: 4294967296
+M32M: 4294967295
+w32 x:
+    return band(x, M32M)
+wand a b:
+    return band(band(a, b), M32M)
+wor a b:
+    return band(bor(a, b), M32M)
+wxor a b:
+    return band(bxor(a, b), M32M)
+wnot a:
+    return bxor(w32(a), M32M)
+shr a n:
+    if n >= 32
+        return 0
+    if n <= 0
+        return w32(a)
+    return bshr(w32(a), n)
+shl a n:
+    if n >= 32
+        return 0
+    if n <= 0
+        return w32(a)
+    return band(bshl(w32(a), n), M32M)
+rotr a n:
+    return wor(shr(a, n), shl(a, 32 - n))
+wadd a b:
+    return band(a + b, M32M)

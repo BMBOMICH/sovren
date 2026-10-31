@@ -1,0 +1,261 @@
+use aes
+use bit32
+use mem
+gm_tag: 0
+gw0: 0
+gw1: 0
+gw2: 0
+gw3: 0
+ga0: 0
+ga1: 0
+ga2: 0
+ga3: 0
+gb0: 0
+gb1: 0
+gb2: 0
+gb3: 0
+gm_c: 0
+gm_rev32 _gm_r7f9f11_w:
+    _gm_r7f9f11_r: 0
+    _gm_r7f9f11_i: 0
+    as long as _gm_r7f9f11_i < 32
+        _gm_r7f9f11_r: _gm_r7f9f11_r * 2
+        if _gm_r7f9f11_w % 2 is 1 -> _gm_r7f9f11_r: _gm_r7f9f11_r + 1
+        _gm_r7f9f11_w: _gm_r7f9f11_w / 2
+        _gm_r7f9f11_i: _gm_r7f9f11_i + 1
+    return _gm_r7f9f11_r
+rw0: 0
+rw1: 0
+rw2: 0
+rw3: 0
+gm_rev4 a0 a1 a2 a3:
+    rw0: gm_rev32(a3)
+    rw1: gm_rev32(a2)
+    rw2: gm_rev32(a1)
+    rw3: gm_rev32(a0)
+gm_shift:
+    gm_c: wand(shr(gw3, 31), 1)
+    _gm_s8e74d2_c0: wand(shr(gw0, 31), 1)
+    gw0: shl(gw0, 1)
+    _gm_s8e74d2_c1: wand(shr(gw1, 31), 1)
+    gw1: shl(gw1, 1)
+    _gm_s8e74d2_c2: wand(shr(gw2, 31), 1)
+    gw2: shl(gw2, 1)
+    gw3: shl(gw3, 1)
+    gw1: wor(gw1, _gm_s8e74d2_c0)
+    gw2: wor(gw2, _gm_s8e74d2_c1)
+    gw3: wor(gw3, _gm_s8e74d2_c2)
+gm_mul:
+    _gm_m23e1d6_r0: 0
+    _gm_m23e1d6_r1: 0
+    _gm_m23e1d6_r2: 0
+    _gm_m23e1d6_r3: 0
+    _gm_m23e1d6_k: 0
+    as long as _gm_m23e1d6_k < 128
+        _gm_m23e1d6_bk: 0
+        _gm_m23e1d6_w: _gm_m23e1d6_k / 32
+        _gm_m23e1d6_s: _gm_m23e1d6_k % 32
+        if _gm_m23e1d6_w is 0 -> _gm_m23e1d6_bk: wand(shr(gb0, _gm_m23e1d6_s), 1)
+        if _gm_m23e1d6_w is 1 -> _gm_m23e1d6_bk: wand(shr(gb1, _gm_m23e1d6_s), 1)
+        if _gm_m23e1d6_w is 2 -> _gm_m23e1d6_bk: wand(shr(gb2, _gm_m23e1d6_s), 1)
+        if _gm_m23e1d6_w is 3 -> _gm_m23e1d6_bk: wand(shr(gb3, _gm_m23e1d6_s), 1)
+        if _gm_m23e1d6_bk is 1
+            _gm_m23e1d6_r0: wxor(_gm_m23e1d6_r0, ga0)
+            _gm_m23e1d6_r1: wxor(_gm_m23e1d6_r1, ga1)
+            _gm_m23e1d6_r2: wxor(_gm_m23e1d6_r2, ga2)
+            _gm_m23e1d6_r3: wxor(_gm_m23e1d6_r3, ga3)
+        gw0: ga0
+        gw1: ga1
+        gw2: ga2
+        gw3: ga3
+        gm_shift()
+        ga0: gw0
+        ga1: gw1
+        ga2: gw2
+        ga3: gw3
+        if gm_c is 1 -> ga0: wxor(ga0, 135)
+        _gm_m23e1d6_k: _gm_m23e1d6_k + 1
+    gw0: _gm_m23e1d6_r0
+    gw1: _gm_m23e1d6_r1
+    gw2: _gm_m23e1d6_r2
+    gw3: _gm_m23e1d6_r3
+gm_ghash data n h0 h1 h2 h3:
+    gw0: 0
+    gw1: 0
+    gw2: 0
+    gw3: 0
+    _gm_gfa5a8a_i: 0
+    as long as _gm_gfa5a8a_i < n
+        _gm_gfa5a8a_w0: peek_byte(data, _gm_gfa5a8a_i + 12) * 16777216 + peek_byte(data, _gm_gfa5a8a_i + 13) * 65536 + peek_byte(data, _gm_gfa5a8a_i + 14) * 256 + peek_byte(data, _gm_gfa5a8a_i + 15)
+        _gm_gfa5a8a_w1: peek_byte(data, _gm_gfa5a8a_i + 8) * 16777216 + peek_byte(data, _gm_gfa5a8a_i + 9) * 65536 + peek_byte(data, _gm_gfa5a8a_i + 10) * 256 + peek_byte(data, _gm_gfa5a8a_i + 11)
+        _gm_gfa5a8a_w2: peek_byte(data, _gm_gfa5a8a_i + 4) * 16777216 + peek_byte(data, _gm_gfa5a8a_i + 5) * 65536 + peek_byte(data, _gm_gfa5a8a_i + 6) * 256 + peek_byte(data, _gm_gfa5a8a_i + 7)
+        _gm_gfa5a8a_w3: peek_byte(data, _gm_gfa5a8a_i) * 16777216 + peek_byte(data, _gm_gfa5a8a_i + 1) * 65536 + peek_byte(data, _gm_gfa5a8a_i + 2) * 256 + peek_byte(data, _gm_gfa5a8a_i + 3)
+        gm_rev4(_gm_gfa5a8a_w0, _gm_gfa5a8a_w1, _gm_gfa5a8a_w2, _gm_gfa5a8a_w3)
+        gw0: wxor(gw0, rw0)
+        gw1: wxor(gw1, rw1)
+        gw2: wxor(gw2, rw2)
+        gw3: wxor(gw3, rw3)
+        ga0: gw0
+        ga1: gw1
+        ga2: gw2
+        ga3: gw3
+        gb0: h0
+        gb1: h1
+        gb2: h2
+        gb3: h3
+        gm_mul()
+        _gm_gfa5a8a_i: _gm_gfa5a8a_i + 16
+gm_len8 out off a:
+    _gm_le5c280_j: 0
+    _gm_le5c280_p: 1
+    as long as _gm_le5c280_j < 8
+        poke_byte(out, off + 7 - _gm_le5c280_j, (a / _gm_le5c280_p) % 256)
+        _gm_le5c280_p: _gm_le5c280_p * 256
+        _gm_le5c280_j: _gm_le5c280_j + 1
+gm_tag_out:
+    if gm_tag is 0 -> gm_tag: _sov_alloc(16)
+    gm_rev4(gw0, gw1, gw2, gw3)
+    _gm_t297a6c_i: 0
+    as long as _gm_t297a6c_i < 4
+        poke_byte(gm_tag, 15 - _gm_t297a6c_i, wand(shr(rw0, _gm_t297a6c_i * 8), 255))
+        poke_byte(gm_tag, 11 - _gm_t297a6c_i, wand(shr(rw1, _gm_t297a6c_i * 8), 255))
+        poke_byte(gm_tag, 7 - _gm_t297a6c_i, wand(shr(rw2, _gm_t297a6c_i * 8), 255))
+        poke_byte(gm_tag, 3 - _gm_t297a6c_i, wand(shr(rw3, _gm_t297a6c_i * 8), 255))
+        _gm_t297a6c_i: _gm_t297a6c_i + 1
+gm_ctr rk j0 k out o n:
+    _gm_ca40381_cb: _sov_alloc(16)
+    _gm_ca40381_i: 16
+    mem_copy(_gm_ca40381_cb, j0, 16)
+    _gm_ca40381_v: k
+    _gm_ca40381_i: 0
+    as long as _gm_ca40381_i < 4
+        poke_byte(_gm_ca40381_cb, 15 - _gm_ca40381_i, _gm_ca40381_v % 256)
+        _gm_ca40381_v: _gm_ca40381_v / 256
+        _gm_ca40381_i: _gm_ca40381_i + 1
+    _gm_ca40381_eb: _sov_alloc(16)
+    ae_enc_block(rk, _gm_ca40381_cb, _gm_ca40381_eb)
+    _gm_ca40381_i: 0
+    as long as _gm_ca40381_i < n
+        poke_byte(out, o + _gm_ca40381_i, wxor(peek_byte(out, o + _gm_ca40381_i), peek_byte(_gm_ca40381_eb, _gm_ca40381_i)))
+        _gm_ca40381_i: _gm_ca40381_i + 1
+gm_hwords hb:
+    ga0: peek_byte(hb, 12) * 16777216 + peek_byte(hb, 13) * 65536 + peek_byte(hb, 14) * 256 + peek_byte(hb, 15)
+    ga1: peek_byte(hb, 8) * 16777216 + peek_byte(hb, 9) * 65536 + peek_byte(hb, 10) * 256 + peek_byte(hb, 11)
+    ga2: peek_byte(hb, 4) * 16777216 + peek_byte(hb, 5) * 65536 + peek_byte(hb, 6) * 256 + peek_byte(hb, 7)
+    ga3: peek_byte(hb, 0) * 16777216 + peek_byte(hb, 1) * 65536 + peek_byte(hb, 2) * 256 + peek_byte(hb, 3)
+gm_finish key iv aad aad_n ct ct_n:
+    _gm_fdd1556_rk: _sov_heap_alloc(176)
+    ae_expand(key, _gm_fdd1556_rk)
+    _gm_fdd1556_z: _sov_heap_alloc(16)
+    _gm_fdd1556_j: 0
+    as long as _gm_fdd1556_j < 16
+        poke_byte(_gm_fdd1556_z, _gm_fdd1556_j, 0)
+        _gm_fdd1556_j: _gm_fdd1556_j + 1
+    _gm_fdd1556_hb: _sov_alloc(16)
+    ae_enc_block(_gm_fdd1556_rk, _gm_fdd1556_z, _gm_fdd1556_hb)
+    gm_hwords(_gm_fdd1556_hb)
+    gm_rev4(ga0, ga1, ga2, ga3)
+    _gm_fdd1556_h0: rw0
+    _gm_fdd1556_h1: rw1
+    _gm_fdd1556_h2: rw2
+    _gm_fdd1556_h3: rw3
+    _gm_fdd1556_j0: _sov_alloc(16)
+    _gm_fdd1556_i: 12
+    mem_copy(_gm_fdd1556_j0, iv, 12)
+    poke_byte(_gm_fdd1556_j0, 12, 0)
+    poke_byte(_gm_fdd1556_j0, 13, 0)
+    poke_byte(_gm_fdd1556_j0, 14, 0)
+    poke_byte(_gm_fdd1556_j0, 15, 1)
+    _gm_fdd1556_ab: aad_n
+    as long as _gm_fdd1556_ab % 16 is not 0
+        _gm_fdd1556_ab: _gm_fdd1556_ab + 1
+    _gm_fdd1556_cb: ct_n
+    as long as _gm_fdd1556_cb % 16 is not 0
+        _gm_fdd1556_cb: _gm_fdd1556_cb + 1
+    _gm_fdd1556_buf: _sov_alloc(_gm_fdd1556_ab + _gm_fdd1556_cb + 16)
+    _gm_fdd1556_i: aad_n
+    mem_copy(_gm_fdd1556_buf, aad, aad_n)
+    _gm_fdd1556_i: aad_n
+    as long as _gm_fdd1556_i < _gm_fdd1556_ab
+        poke_byte(_gm_fdd1556_buf, _gm_fdd1556_i, 0)
+        _gm_fdd1556_i: _gm_fdd1556_i + 1
+    _gm_fdd1556_i: 0
+    as long as _gm_fdd1556_i < ct_n
+        poke_byte(_gm_fdd1556_buf, _gm_fdd1556_ab + _gm_fdd1556_i, peek_byte(ct, _gm_fdd1556_i))
+        _gm_fdd1556_i: _gm_fdd1556_i + 1
+    _gm_fdd1556_i: ct_n
+    as long as _gm_fdd1556_i < _gm_fdd1556_cb
+        poke_byte(_gm_fdd1556_buf, _gm_fdd1556_ab + _gm_fdd1556_i, 0)
+        _gm_fdd1556_i: _gm_fdd1556_i + 1
+    gm_len8(_gm_fdd1556_buf, _gm_fdd1556_ab + _gm_fdd1556_cb, aad_n * 8)
+    gm_len8(_gm_fdd1556_buf, _gm_fdd1556_ab + _gm_fdd1556_cb + 8, ct_n * 8)
+    gm_ghash(_gm_fdd1556_buf, _gm_fdd1556_ab + _gm_fdd1556_cb + 16, _gm_fdd1556_h0, _gm_fdd1556_h1, _gm_fdd1556_h2, _gm_fdd1556_h3)
+    _gm_fdd1556_gb: _sov_alloc(16)
+    gm_tag_out()
+    _gm_fdd1556_i: 16
+    mem_copy(_gm_fdd1556_gb, gm_tag, 16)
+    _gm_fdd1556_eb: _sov_alloc(16)
+    ae_enc_block(_gm_fdd1556_rk, _gm_fdd1556_j0, _gm_fdd1556_eb)
+    _gm_fdd1556_i: 0
+    as long as _gm_fdd1556_i < 16
+        _gm_fdd1556_xa: peek_byte(_gm_fdd1556_gb, _gm_fdd1556_i)
+        _gm_fdd1556_xb: peek_byte(_gm_fdd1556_eb, _gm_fdd1556_i)
+        poke_byte(gm_tag, _gm_fdd1556_i, wxor(_gm_fdd1556_xa, _gm_fdd1556_xb))
+        _gm_fdd1556_i: _gm_fdd1556_i + 1
+    _gm_fdd1556_i: 0
+    as long as _gm_fdd1556_i < 176
+        poke_byte(_gm_fdd1556_rk, _gm_fdd1556_i, 0)
+        _gm_fdd1556_i: _gm_fdd1556_i + 1
+    _gm_fdd1556_i: 0
+    as long as _gm_fdd1556_i < 16
+        poke_byte(_gm_fdd1556_eb, _gm_fdd1556_i, 0)
+        poke_byte(_gm_fdd1556_z, _gm_fdd1556_i, 0)
+        _gm_fdd1556_i: _gm_fdd1556_i + 1
+gm_enc key iv aad aad_n pt pt_n ct:
+    _gm_e01dddd_rk: _sov_heap_alloc(176)
+    ae_expand(key, _gm_e01dddd_rk)
+    _gm_e01dddd_j0: _sov_heap_alloc(16)
+    _gm_e01dddd_i: 12
+    mem_copy(_gm_e01dddd_j0, iv, 12)
+    poke_byte(_gm_e01dddd_j0, 12, 0)
+    poke_byte(_gm_e01dddd_j0, 13, 0)
+    poke_byte(_gm_e01dddd_j0, 14, 0)
+    poke_byte(_gm_e01dddd_j0, 15, 1)
+    _gm_e01dddd_i: pt_n
+    mem_copy(ct, pt, pt_n)
+    _gm_e01dddd_k: 2
+    _gm_e01dddd_i: 0
+    as long as _gm_e01dddd_i < pt_n
+        _gm_e01dddd_n: 16
+        if pt_n - _gm_e01dddd_i < 16 -> _gm_e01dddd_n: pt_n - _gm_e01dddd_i
+        gm_ctr(_gm_e01dddd_rk, _gm_e01dddd_j0, _gm_e01dddd_k, ct, _gm_e01dddd_i, _gm_e01dddd_n)
+        _gm_e01dddd_k: _gm_e01dddd_k + 1
+        _gm_e01dddd_i: _gm_e01dddd_i + 16
+    gm_finish(key, iv, aad, aad_n, ct, pt_n)
+gm_tag_of key iv aad aad_n ct ct_n:
+    _gm_t23315a_tg: gm_finish(key, iv, aad, aad_n, ct, ct_n)
+    return _gm_t23315a_tg
+gm_ctr_dec key iv ct ct_n pt:
+    _gm_c0771c0_rk: _sov_heap_alloc(176)
+    ae_expand(key, _gm_c0771c0_rk)
+    _gm_c0771c0_j0: _sov_heap_alloc(16)
+    _gm_c0771c0_i: 12
+    mem_copy(_gm_c0771c0_j0, iv, 12)
+    poke_byte(_gm_c0771c0_j0, 12, 0)
+    poke_byte(_gm_c0771c0_j0, 13, 0)
+    poke_byte(_gm_c0771c0_j0, 14, 0)
+    poke_byte(_gm_c0771c0_j0, 15, 1)
+    _gm_c0771c0_i: ct_n
+    mem_copy(pt, ct, ct_n)
+    _gm_c0771c0_k: 2
+    _gm_c0771c0_i: 0
+    as long as _gm_c0771c0_i < ct_n
+        _gm_c0771c0_n: 16
+        if ct_n - _gm_c0771c0_i < 16 -> _gm_c0771c0_n: ct_n - _gm_c0771c0_i
+        gm_ctr(_gm_c0771c0_rk, _gm_c0771c0_j0, _gm_c0771c0_k, pt, _gm_c0771c0_i, _gm_c0771c0_n)
+        _gm_c0771c0_k: _gm_c0771c0_k + 1
+        _gm_c0771c0_i: _gm_c0771c0_i + 16
+    _gm_c0771c0_i: 0
+    as long as _gm_c0771c0_i < 176
+        poke_byte(_gm_c0771c0_rk, _gm_c0771c0_i, 0)
+        _gm_c0771c0_i: _gm_c0771c0_i + 1

@@ -1,0 +1,17 @@
+use mem
+AR_STACK: 64
+ar_marks: 0
+ar_top: 0
+arn_begin:
+    if ar_marks is 0 -> ar_marks: mem_new(AR_STACK * 8)
+    if ar_top < AR_STACK
+        poke_i64(ar_marks, ar_top * 8, heap_ptr)
+        ar_top: ar_top + 1
+arn_end:
+    if ar_top > 0
+        ar_top: ar_top - 1
+        heap_ptr: peek_i64(ar_marks, ar_top * 8)
+arn_depth:
+    return ar_top
+arn_used:
+    return heap_ptr

@@ -1,0 +1,21 @@
+# unsafe-module
+# wasm: placeholder module. The interpreter was not part of the published tree;
+# these stand-ins keep sources that `use wasm` compilable. Every wasm test
+# reports a clean fail instead of crashing.
+aes: 0
+gcm: 0
+tls: 0
+json: 0
+x25519: 0
+cr_pass: 0
+cr_fail: 0
+cr_skipn: 0
+sh: 0
+wasm_load buf n:
+    return 0
+wasm_call h fn a b c d:
+    return 0 - 1
+wasm_trap h:
+    return 1
+wasm_exit_code h:
+    return 0 - 1

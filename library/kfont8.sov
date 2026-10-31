@@ -1,0 +1,237 @@
+# unsafe-module
+KFONT_FIRST: 32
+KFONT_LAST: 126
+KFONT_COUNT: 95
+KFONT_032: 0
+KFONT_033: 6755502926871576
+KFONT_034: 13878
+KFONT_035: 15259568745428534
+KFONT_036: 3411991242948108
+KFONT_037: 27978224826016512
+KFONT_038: 31018577781601820
+KFONT_039: 198150
+KFONT_040: 6768619451452440
+KFONT_041: 1702147483241478
+KFONT_042: 112412166219264
+KFONT_043: 13246736894976
+KFONT_044: 435736458087628800
+KFONT_045: 1056964608
+KFONT_046: 3390893860061184
+KFONT_047: 284799484309600
+KFONT_048: 17565177066251070
+KFONT_049: 17746169414028812
+KFONT_050: 17789024868512542
+KFONT_051: 8500531025687326
+KFONT_052: 33830320083450936
+KFONT_053: 8500531360105279
+KFONT_054: 8500543957960220
+KFONT_055: 3390945805480767
+KFONT_056: 8500543944340254
+KFONT_057: 3967245154988830
+KFONT_058: 3390893860850688
+KFONT_059: 435736458088418304
+KFONT_060: 6768619401120792
+KFONT_061: 69269236678656
+KFONT_062: 1702147885894662
+KFONT_063: 3377751665947422
+KFONT_064: 8448078188864318
+KFONT_065: 14411570347187724
+KFONT_066: 17845512852366911
+KFONT_067: 17000661724128828
+KFONT_068: 8785537710568991
+KFONT_069: 35824382850254463
+KFONT_070: 4228816714483327
+KFONT_071: 35015541269947964
+KFONT_072: 14411519008912179
+KFONT_073: 8457495182576670
+KFONT_074: 8500544246132856
+KFONT_075: 29104305222346343
+KFONT_076: 35859772977055247
+KFONT_077: 27975336046065507
+KFONT_078: 27975370337642339
+KFONT_079: 7941099845006876
+KFONT_080: 4228748537128511
+KFONT_081: 15795838306693918
+KFONT_082: 29104305762362943
+KFONT_083: 8500565147857694
+KFONT_084: 8457495182585151
+KFONT_085: 17789218528113459
+KFONT_086: 3410904971686707
+KFONT_087: 27997411840582499
+KFONT_088: 27925517054665571
+KFONT_089: 8457495487132467
+KFONT_090: 35859799051690879
+KFONT_091: 8450872241948190
+KFONT_092: 18120158187619843
+KFONT_093: 8470741063833630
+KFONT_094: 1664490504
+KFONT_095: 18374686479671623680
+KFONT_096: 1575948
+KFONT_097: 31018589626433536
+KFONT_098: 16719612939208199
+KFONT_099: 8500338136842240
+KFONT_100: 31018542617866296
+KFONT_101: 8447819276746752
+KFONT_102: 4228747742295580
+KFONT_103: 2247364603684978688
+KFONT_104: 29104512722929159
+KFONT_105: 8457495182704652
+KFONT_106: 2176139327009980464
+KFONT_107: 29051425990772231
+KFONT_108: 8457495182576654
+KFONT_109: 27984218033422336
+KFONT_110: 14411518806261760
+KFONT_111: 8500544295272448
+KFONT_112: 1082621369951911936
+KFONT_113: 8660490473060564992
+KFONT_114: 4229161656451072
+KFONT_115: 8778629739577344
+KFONT_116: 6803829697678344
+KFONT_117: 31018542433501184
+KFONT_118: 3410904971673600
+KFONT_119: 15339833981599744
+KFONT_120: 27925517493796864
+KFONT_121: 2247364603681112064
+KFONT_122: 17774756937793536
+KFONT_123: 15775844493167672
+KFONT_124: 6781890800916504
+KFONT_125: 1983571456429063 
+KFONT_126: 15214
+kfont_index c:
+    if c < KFONT_FIRST -> return 0 - 1
+    if c > KFONT_LAST -> return 0 - 1
+    return c - KFONT_FIRST
+kfont_glyph i:
+    if i < 0 -> return 0
+    if i >= KFONT_COUNT -> return 0
+    if i is 0 -> return KFONT_032
+    if i is 1 -> return KFONT_033
+    if i is 2 -> return KFONT_034
+    if i is 3 -> return KFONT_035
+    if i is 4 -> return KFONT_036
+    if i is 5 -> return KFONT_037
+    if i is 6 -> return KFONT_038
+    if i is 7 -> return KFONT_039
+    if i is 8 -> return KFONT_040
+    if i is 9 -> return KFONT_041
+    if i is 10 -> return KFONT_042
+    if i is 11 -> return KFONT_043
+    if i is 12 -> return KFONT_044
+    if i is 13 -> return KFONT_045
+    if i is 14 -> return KFONT_046
+    if i is 15 -> return KFONT_047
+    if i is 16 -> return KFONT_048
+    if i is 17 -> return KFONT_049
+    if i is 18 -> return KFONT_050
+    if i is 19 -> return KFONT_051
+    if i is 20 -> return KFONT_052
+    if i is 21 -> return KFONT_053
+    if i is 22 -> return KFONT_054
+    if i is 23 -> return KFONT_055
+    if i is 24 -> return KFONT_056
+    if i is 25 -> return KFONT_057
+    if i is 26 -> return KFONT_058
+    if i is 27 -> return KFONT_059
+    if i is 28 -> return KFONT_060
+    if i is 29 -> return KFONT_061
+    if i is 30 -> return KFONT_062
+    if i is 31 -> return KFONT_063
+    if i is 32 -> return KFONT_064
+    if i is 33 -> return KFONT_065
+    if i is 34 -> return KFONT_066
+    if i is 35 -> return KFONT_067
+    if i is 36 -> return KFONT_068
+    if i is 37 -> return KFONT_069
+    if i is 38 -> return KFONT_070
+    if i is 39 -> return KFONT_071
+    if i is 40 -> return KFONT_072
+    if i is 41 -> return KFONT_073
+    if i is 42 -> return KFONT_074
+    if i is 43 -> return KFONT_075
+    if i is 44 -> return KFONT_076
+    if i is 45 -> return KFONT_077
+    if i is 46 -> return KFONT_078
+    if i is 47 -> return KFONT_079
+    if i is 48 -> return KFONT_080
+    if i is 49 -> return KFONT_081
+    if i is 50 -> return KFONT_082
+    if i is 51 -> return KFONT_083
+    if i is 52 -> return KFONT_084
+    if i is 53 -> return KFONT_085
+    if i is 54 -> return KFONT_086
+    if i is 55 -> return KFONT_087
+    if i is 56 -> return KFONT_088
+    if i is 57 -> return KFONT_089
+    if i is 58 -> return KFONT_090
+    if i is 59 -> return KFONT_091
+    if i is 60 -> return KFONT_092
+    if i is 61 -> return KFONT_093
+    if i is 62 -> return KFONT_094
+    if i is 63 -> return KFONT_095
+    if i is 64 -> return KFONT_096
+    if i is 65 -> return KFONT_097
+    if i is 66 -> return KFONT_098
+    if i is 67 -> return KFONT_099
+    if i is 68 -> return KFONT_100
+    if i is 69 -> return KFONT_101
+    if i is 70 -> return KFONT_102
+    if i is 71 -> return KFONT_103
+    if i is 72 -> return KFONT_104
+    if i is 73 -> return KFONT_105
+    if i is 74 -> return KFONT_106
+    if i is 75 -> return KFONT_107
+    if i is 76 -> return KFONT_108
+    if i is 77 -> return KFONT_109
+    if i is 78 -> return KFONT_110
+    if i is 79 -> return KFONT_111
+    if i is 80 -> return KFONT_112
+    if i is 81 -> return KFONT_113
+    if i is 82 -> return KFONT_114
+    if i is 83 -> return KFONT_115
+    if i is 84 -> return KFONT_116
+    if i is 85 -> return KFONT_117
+    if i is 86 -> return KFONT_118
+    if i is 87 -> return KFONT_119
+    if i is 88 -> return KFONT_120
+    if i is 89 -> return KFONT_121
+    if i is 90 -> return KFONT_122
+    if i is 91 -> return KFONT_123
+    if i is 92 -> return KFONT_124
+    if i is 93 -> return KFONT_125
+    if i is 94 -> return KFONT_126
+kfont_draw_glyph framebuffer width x y code fg bg:
+    if framebuffer is 0 -> return 0 - 1
+    if width < 8 -> return 0 - 1
+    if x < 0 -> return 0 - 1
+    if y < 0 -> return 0 - 1
+    if x + 8 > width -> return 0 - 1
+    if y < 0 -> return 0 - 1
+    idx: kfont_index(code)
+    if idx < 0 -> idx: kfont_index(63)
+    glyph: kfont_glyph(idx)
+    row: 0
+    as long as row < 8
+        bits: bshr(glyph, row * 8) % 256
+        col: 0
+        as long as col < 8
+            pixel: bg
+            if band(bshr(bits, col), 1) is 1 -> pixel: fg
+            if pixel is not 0 - 1 -> poke_raw32(framebuffer + ((y + row) * width + x + col) * 4, 0, pixel)
+            col: col + 1
+        row: row + 1
+    return 8
+kfont_draw_text framebuffer width x y text fg bg:
+    if framebuffer is 0 -> return 0 - 1
+    if width < 8 -> return 0 - 1
+    if text is 0 -> return 0 - 1
+    cx: x
+    i: 0
+    as long as 1 is 1
+        c: peek_byte(text, i)
+        if c is 0 -> leave
+        advanced: kfont_draw_glyph(framebuffer, width, cx, y, c, fg, bg)
+        if advanced < 0 -> return 0 - 1
+        cx: cx + advanced
+        if cx + 8 > width -> leave
+        i: i + 1
+    return cx - x

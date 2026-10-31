@@ -1,0 +1,520 @@
+# f64.sov - IEEE-754 binary64 floating point on pure integer ops.
+# A double is held as its exact 64-bit pattern inside an i64:
+#   bit 63 = sign, bits 62..52 = biased exponent (1023 = 2^0), bits 51..0 = mantissa.
+# Exact, correctly rounded (round-to-nearest-even, one rounding step per op):
+# from_i64, to_i64, add, sub, mul, div, cmp, neg, abs, from_frac.
+# inf/NaN produced by overflow, x/0, 0/0, inf-inf, 0*inf, and reported by cmp as 2.
+F64_MANH: 4503599627370496
+F64_MANL: 4503599627370495
+F64_INFB: 9218868437227405312
+f64_o_sign: 0
+f64_o_exp: 0
+f64_o_man: 0
+q_hi: 0
+q_lo: 0
+q_lw: 0
+q_ln: 0
+q_si: 0
+q_st: 0
+q_g: 0
+q_r: 0
+ua_r: 0
+ua_c: 0
+
+# mod-2^64 pattern add: ua_r = (a + b) mod 2^64, ua_c = carry bit.
+# 32-bit carry-split — no signed overflow is ever possible.
+u64_add a b:
+    c: 0
+    ls: band(a, 4294967295) + band(b, 4294967295)
+    if ls >= 4294967296 -> c: 1
+    hs: band(bshr(a, 32), 4294967295) + band(bshr(b, 32), 4294967295) + c
+    ua_c: 0
+    if hs >= 4294967296 -> ua_c: 1
+    ua_r: bor(bshl(band(hs, 4294967295), 32), band(ls, 4294967295))
+    return 0
+
+f64_sign x:
+    if x < 0 -> return 1
+    return 0
+
+f64_absbits x:
+    return band(x, 9223372036854775807)
+
+f64_is_zero x:
+    if band(f64_absbits(x), 9223372036854775807) = 0 -> return 1
+    return 0
+
+f64_is_inf x:
+    if band(f64_absbits(x), 9223372036854775807) = F64_INFB -> return 1
+    return 0
+
+f64_is_nan x:
+    a: f64_absbits(x)
+    if a <= F64_INFB -> return 0
+    if band(a, F64_MANL) = 0 -> return 0
+    return 1
+
+f64_neg x:
+    return bxor(x, bshl(1, 63))
+
+f64_abs x:
+    return band(x, 9223372036854775807)
+
+# unpack into f64_o_sign/f64_o_exp/f64_o_man:
+# value = man * 2^exp, man in [2^52, 2^53) for normals (subnormal: man < 2^52)
+f64_unpack x:
+    a: f64_absbits(x)
+    f64_o_sign: f64_sign(x)
+    e: band(bshr(a, 52), 2047)
+    m: band(a, F64_MANL)
+    if e = 2047
+        f64_o_exp: 0 - 1000000
+        f64_o_man: a
+        return 0
+    if e = 0
+        if m = 0
+            f64_o_exp: 0 - 2000000
+            f64_o_man: 0
+            return 0
+        f64_o_exp: 0 - 1074
+        f64_o_man: m
+        return 0
+    f64_o_exp: e - 1075
+    f64_o_man: bor(m, F64_MANH)
+    return 0
+
+# highest set bit index (0..63), 0 - 1 if none
+f64_top v:
+    n: 63
+    found: 0
+    as long as found = 0
+        if band(bshr(v, n), 1) = 1 -> found: 1
+        if not -> n: n - 1
+    if found = 0 -> return 0 - 1
+    return n
+
+f64_mk sign exp man:
+    return bor(bshl(sign, 63), bor(bshl(exp, 52), man))
+
+# ---- final rounding of an exact magnitude ----
+# value = (q_lo + q_lw/2^q_ln) * 2^exp + q_si * tiny, with q_lo >= 0 and
+# 0 <= q_lw < 2^q_ln. q_lw carries the dropped bits EXACTLY so a left-side
+# renormalization can shift them back in; q_si is sticky from drops too deep
+# to represent. Round-to-nearest-even, one rounding step, no double rounding.
+f64_round sign exp:
+    if q_lo = 0
+        if q_lw = 0 -> return 0
+        ntop: f64_top(q_lw)
+        sh: 52 - ntop
+        q_lo: bshl(q_lw, sh)
+        exp: exp - q_ln - sh
+        q_lw: 0
+        q_ln: 0
+    ntop: f64_top(q_lo)
+    if ntop > 52
+        sh: ntop - 52
+        q_lw: bor(bshl(band(q_lo, bshl(1, sh) - 1), q_ln), q_lw)
+        q_ln: q_ln + sh
+        q_lo: bshr(q_lo, sh)
+        exp: exp + sh
+    if ntop < 52
+        sh: 52 - ntop
+        if q_ln >= sh
+            q_lo: bor(bshl(q_lo, sh), bshr(q_lw, q_ln - sh))
+            q_lw: band(q_lw, bshl(1, q_ln - sh) - 1)
+            q_ln: q_ln - sh
+            exp: exp - sh
+    if ntop < 52
+        sh: 52 - ntop
+        if q_ln < sh
+            q_lo: bor(bshl(q_lo, sh), bshl(q_lw, sh - q_ln))
+            q_lw: 0
+            q_ln: 0
+            exp: exp - sh
+    q_g: 0
+    q_r: 0
+    q_st: q_si
+    if q_ln > 0 -> q_g: band(bshr(q_lw, q_ln - 1), 1)
+    if q_ln > 1 -> q_r: band(bshr(q_lw, q_ln - 2), 1)
+    if q_ln > 2 -> if band(q_lw, bshl(1, q_ln - 2) - 1) != 0 -> q_st: 1
+    man: band(q_lo, F64_MANL)
+    inc: 0
+    if q_g = 1 -> inc: q_r
+    if q_g = 1 -> if inc = 0 -> inc: q_st
+    if q_g = 1 -> if inc = 0 -> inc: band(man, 1)
+    if inc = 1 -> q_lo: q_lo + 1
+    if q_lo >= 9007199254740992
+        q_lo: 4503599627370496
+        exp: exp + 1
+    e: exp + 1075
+    if e >= 2047 -> return bor(bshl(sign, 63), F64_INFB)
+    if e <= 0
+        sh: 1 - e
+        if q_lw != 0 -> st0: 1
+        st0: 0
+        if q_lw != 0 -> st0: 1
+        if q_si != 0 -> st0: 1
+        if sh > 62
+            # everything drops; keep min subnormal iff value strictly above
+            # half of it (a tie rounds to even = 0)
+            keep: 0
+            topb: band(bshr(q_lo, sh - 1), 1)
+            rest: band(q_lo, bshl(1, sh - 1) - 1)
+            if topb = 1 -> if rest != 0 -> keep: 1
+            if topb = 1 -> if q_lw != 0 -> keep: 1
+            if topb = 1 -> if q_si != 0 -> keep: 1
+            if keep = 1 -> return bor(bshl(sign, 63), 1)
+            return 0
+        lg: 0
+        st: st0
+        as long as sh > 0
+            if lg = 1 -> st: 1
+            lg: band(q_lo, 1)
+            q_lo: bshr(q_lo, 1)
+            sh: sh - 1
+        inc: 0
+        if lg = 1 -> inc: st
+        if lg = 1 -> if inc = 0 -> inc: band(q_lo, 1)
+        if inc = 1 -> q_lo: q_lo + 1
+        if q_lo = 0 -> return 0
+        return bor(bshl(sign, 63), q_lo)
+    return f64_mk(sign, e, band(q_lo, F64_MANL))
+
+f64_from_i64 n:
+    q_lw: 0
+    q_ln: 0
+    q_si: 0
+    if n = 0 -> return 0
+    sign: 0
+    m: n
+    if m < 0
+        sign: 1
+        m: 0 - m
+    e: 0
+    m0: m
+    as long as m >= 9007199254740992
+        m: bshr(m, 1)
+        e: e + 1
+    if e > 0
+        q_lw: band(m0, bshl(1, e) - 1)
+        q_ln: e
+    q_lo: m
+    return f64_round(sign, e)
+
+f64_to_i64 x:
+    if f64_is_nan(x) -> return 0
+    if f64_is_zero(x) -> return 0
+    if f64_is_inf(x)
+        if f64_sign(x) = 1 -> return bshl(1, 63)
+        return 9223372036854775807
+    f64_unpack(x)
+    if f64_o_exp < 0
+        if f64_o_exp <= 0 - 54 -> return 0
+        k: 0 - f64_o_exp
+        out: bshr(f64_o_man, k)
+        if f64_o_sign = 1 -> return 0 - out
+        return out
+    # value = man * 2^exp with man in [2^52, 2^53): exp >= 11 cannot fit i64.
+    # Saturate sign-aware: INT64_MIN is its own pattern; INT64_MAX is a legal literal.
+    if f64_o_exp > 10
+        if f64_o_sign = 1 -> return bshl(1, 63)
+        return 9223372036854775807
+    m: f64_o_man
+    as long as f64_o_exp > 0
+        m: bshl(m, 1)
+        f64_o_exp: f64_o_exp - 1
+    as long as f64_o_exp < 0
+        m: bshr(m, 1)
+        f64_o_exp: f64_o_exp + 1
+    if f64_o_sign = 1 -> return 0 - m
+    return m
+
+# exact magnitude addition/subtraction at aligned exponents, then one rounding
+f64_addm aman aexp bman bexp:
+    q_lw: 0
+    q_ln: 0
+    q_si: 0
+    d: aexp - bexp
+    if d > 0
+        if d > 53
+            q_si: 1
+            q_lo: aman
+            return f64_round(0, aexp)
+        d0: d
+        b0: bman
+        as long as d > 0
+            bman: bshr(bman, 1)
+            d: d - 1
+        q_lw: band(b0, bshl(1, d0) - 1)
+        q_ln: d0
+        q_lo: aman + bman
+        return f64_round(0, aexp)
+    if d < 0
+        nd: 0 - d
+        if nd > 53
+            q_si: 1
+            q_lo: bman
+            return f64_round(0, bexp)
+        d0: nd
+        a0: aman
+        as long as nd > 0
+            aman: bshr(aman, 1)
+            nd: nd - 1
+        q_lw: band(a0, bshl(1, d0) - 1)
+        q_ln: d0
+        q_lo: aman + bman
+        return f64_round(0, bexp)
+    q_lo: aman + bman
+    return f64_round(0, aexp)
+
+f64_subm aman aexp bman bexp:
+    q_lw: 0
+    q_ln: 0
+    q_si: 0
+    d: aexp - bexp
+    if d > 0
+        if d > 53
+            q_si: 1
+            q_lo: aman
+            return f64_round(0, aexp)
+        d0: d
+        b0: bman
+        as long as d > 0
+            bman: bshr(bman, 1)
+            d: d - 1
+        q_lw: band(b0, bshl(1, d0) - 1)
+        q_ln: d0
+        man: aman - bman
+        print 2000001
+        print d0
+        print q_lw
+        print q_ln
+        print bman
+        print man
+        if man = 0
+            if q_lw = 0 -> return 0
+            q_lo: 0
+            return f64_round(0, aexp)
+        if man > 0
+            q_lo: man - 1
+            q_lw: bshl(1, d0) - q_lw
+            print 2000002
+            print q_lo
+            print q_lw
+            full: 0
+            if q_lw = bshl(1, d0) -> full: 1
+            if full = 1 -> q_lw: 0
+            if full = 1 -> q_lo: man
+            return f64_round(0, aexp)
+        q_lo: 0 - man
+        return f64_round(0, aexp)
+    if d < 0
+        nd: 0 - d
+        if nd > 53
+            q_si: 1
+            q_lo: bman
+            return f64_round(0, bexp)
+        d0: nd
+        a0: aman
+        as long as nd > 0
+            aman: bshr(aman, 1)
+            nd: nd - 1
+        q_lw: band(a0, bshl(1, d0) - 1)
+        q_ln: d0
+        man: bman - aman
+        if man = 0
+            if q_lw = 0 -> return 0
+            q_lo: 0
+            return f64_round(0, bexp)
+        if man > 0
+            q_lo: man - 1
+            q_lw: bshl(1, d0) - q_lw
+            full: 0
+            if q_lw = bshl(1, d0) -> full: 1
+            if full = 1 -> q_lw: 0
+            if full = 1 -> q_lo: man
+            return f64_round(0, bexp)
+        q_lo: 0 - man
+        return f64_round(0, bexp)
+    man: aman - bman
+    print 4000001
+    print aman
+    print aexp
+    print bman
+    print bexp
+    print man
+    if man = 0 -> return 0
+    if man < 0 -> man: 0 - man
+    q_lo: man
+    print 4000002
+    print q_lo
+    return f64_round(0, aexp)
+
+f64_add x y:
+    if f64_is_nan(x) -> return x
+    if f64_is_nan(y) -> return y
+    sx: f64_sign(x)
+    sy: f64_sign(y)
+    if f64_is_inf(x)
+        if f64_is_inf(y)
+            if sx != sy -> return f64_mk(0, 2047, 1)
+            return x
+        return x
+    if f64_is_inf(y) -> return y
+    f64_unpack(x)
+    ax: f64_o_man
+    ex: f64_o_exp
+    f64_unpack(y)
+    ay: f64_o_man
+    ey: f64_o_exp
+    print 3000001
+    print sx
+    print sy
+    print ax
+    print ex
+    print ay
+    print ey
+    if sx = sy
+        r: f64_addm(ax, ex, ay, ey)
+        return bor(bshl(sx, 63), r)
+    r: f64_subm(ax, ex, ay, ey)
+    if r = 0 -> return 0
+    # result sign = sign of the operand with the larger magnitude
+    # (lexicographic (exp, man) compare; exp/man are unpack outputs)
+    gt: 1
+    if ey > ex -> gt: 0
+    if ex = ey -> if ax < ay -> gt: 0
+    print 2000003
+    print r
+    if gt = 1 -> return bor(bshl(sx, 63), band(r, 9223372036854775807))
+    return bor(bshl(sy, 63), band(r, 9223372036854775807))
+
+f64_sub x y:
+    return f64_add(x, f64_neg(y))
+
+f64_mul x y:
+    if f64_is_nan(x) -> return x
+    if f64_is_nan(y) -> return y
+    sign: bxor(f64_sign(x), f64_sign(y))
+    if f64_is_inf(x)
+        if f64_is_zero(y) -> return f64_mk(0, 2047, 1)
+        return bor(bshl(sign, 63), F64_INFB)
+    if f64_is_inf(y)
+        if f64_is_zero(x) -> return f64_mk(0, 2047, 1)
+        return bor(bshl(sign, 63), F64_INFB)
+    f64_unpack(x)
+    aman: f64_o_man
+    aexp: f64_o_exp
+    f64_unpack(y)
+    bman: f64_o_man
+    bexp: f64_o_exp
+    if aman = 0 -> return bshl(sign, 63)
+    if bman = 0 -> return bshl(sign, 63)
+    ah: bshr(aman, 26)
+    al: band(aman, 67108863)
+    bh: bshr(bman, 26)
+    bl: band(bman, 67108863)
+    p1: ah * bh
+    p2: ah * bl + al * bh
+    p3: al * bl
+    # V = p1*2^52 + p2*2^26 + p3, assembled as 128-bit (H, L).
+    # Every 64-bit wrap goes through u64_add — no signed overflow traps.
+    # p3 lands in L, so every dropped bit feeds g/r/st: exact rounding.
+    u64_add(p3, bshl(p2, 26))
+    L: ua_r
+    c: ua_c
+    u64_add(L, bshl(band(p1, 4095), 52))
+    L: ua_r
+    H: bshr(p1, 12) + bshr(p2, 38) + c + ua_c
+    # V in [2^104, 2^106) => H > 0, ntop = 64 + top(H) in {104, 105}
+    ntop: 64 + f64_top(H)
+    sh: ntop - 63
+    # window: top 63 bits of V; g/r/st from the bits dropped below it
+    q_lo: bor(bshl(H, 64 - sh), band(bshr(L, sh), bshl(1, 64 - sh) - 1))
+    q_lw: band(L, bshl(1, sh) - 1)
+    q_ln: sh
+    q_si: 0
+    exp: aexp + bexp + ntop - 63
+    return f64_round(sign, exp)
+
+f64_div x y:
+    if f64_is_nan(x) -> return x
+    if f64_is_nan(y) -> return y
+    sign: bxor(f64_sign(x), f64_sign(y))
+    if f64_is_inf(x)
+        if f64_is_inf(y) -> return f64_mk(0, 2047, 1)
+        return bor(bshl(sign, 63), F64_INFB)
+    if f64_is_inf(y) -> return bshl(sign, 63)
+    if f64_is_zero(y)
+        if f64_is_zero(x) -> return f64_mk(0, 2047, 1)
+        return bor(bshl(sign, 63), F64_INFB)
+    if f64_is_zero(x) -> return bshl(sign, 63)
+    f64_unpack(x)
+    aman: f64_o_man
+    aexp: f64_o_exp
+    f64_unpack(y)
+    bman: f64_o_man
+    bexp: f64_o_exp
+    # long division: 56 quotient bits; invariant rem < bman < 2^53.
+    # Both mantissas are in [2^52, 2^53), so aman may be >= bman (x > y):
+    # peel one divisor first: the quotient's leading 1 enters at weight 1
+    # and the 56 doublings land it at 2^56; normalization below absorbs it.
+    q: 0
+    rem: aman
+    if aman >= bman
+        rem: rem - bman
+        q: 1
+    i: 0
+    as long as i < 56
+        rem: rem * 2
+        q: q * 2
+        if rem >= bman
+            rem: rem - bman
+            q: q + 1
+        i: i + 1
+    # q = floor(aman/bman * 2^56) in [2^52, 2^55); st from remainder
+    ntop: f64_top(q)
+    sh2: ntop - 52
+    q_lo: bshr(q, sh2)
+    q_lw: band(q, bshl(1, sh2) - 1)
+    q_ln: sh2
+    if rem > 0 -> q_lw: bor(bshl(q_lw, 1), 1)
+    if rem > 0 -> q_ln: sh2 + 1
+    if rem = 0 -> q_lw: bshl(q_lw, 1)
+    if rem = 0 -> q_ln: sh2 + 1
+    q_si: 0
+    return f64_round(sign, aexp - bexp - 56 + sh2)
+
+f64_from_frac num den:
+    return f64_div(f64_from_i64(num), f64_from_i64(den))
+
+f64_cmp x y:
+    if f64_is_nan(x) -> return 2
+    if f64_is_nan(y) -> return 2
+    zx: f64_is_zero(x)
+    zy: f64_is_zero(y)
+    if zx = 1
+        if zy = 1 -> return 0
+        if f64_sign(y) = 0 -> return 0 - 1
+        return 1
+    if zy = 1
+        if f64_sign(x) = 0 -> return 1
+        return 0 - 1
+    if f64_sign(x) != f64_sign(y)
+        if f64_sign(x) = 1 -> return 0 - 1
+        return 1
+    ax: f64_absbits(x)
+    ay: f64_absbits(y)
+    if ax = ay -> return 0
+    if ax > ay -> r: 1
+    if not -> r: 0 - 1
+    if f64_sign(x) = 1 -> r: 0 - r
+    return r
+
+f64_lt x y:
+    if f64_cmp(x, y) = 0 - 1 -> return 1
+    return 0
+
+f64_eq x y:
+    if f64_cmp(x, y) = 0 -> return 1
+    return 0

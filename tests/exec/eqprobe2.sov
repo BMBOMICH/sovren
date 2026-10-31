@@ -1,0 +1,15 @@
+use string
+main:
+    g: "x"
+    r: 0
+    as long as r < 12
+        g: str_cat(g, g)
+        r: r + 1
+    h: str_cat(g, "")
+    i: 0
+    s: 0
+    as long as i < 20000
+        s: s + _sov_str_eq(g, h)
+        i: i + 1
+    print s
+    return 0

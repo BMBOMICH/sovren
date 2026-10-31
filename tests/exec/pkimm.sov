@@ -1,0 +1,35 @@
+use string
+helper p:
+    return peek_byte(p, 0) + peek_byte(p, 3)
+big p:
+    a1: 1
+    a2: 2
+    a3: 3
+    a4: 4
+    a5: 5
+    a6: 6
+    a7: 7
+    a8: 8
+    a9: 9
+    a10: 10
+    s: a1 + a2 + a3 + a4 + a5 + a6 + a7 + a8 + a9 + a10
+    r: peek_byte(p, 1)
+    r2: peek_byte(p, 200)
+    if peek_byte(p, 2) is 108
+        r: r + 1000
+    return r + r2 + s
+main:
+    buf: _sov_heap_alloc(512)
+    i: 0
+    as long as i < 256
+        poke_byte(buf, i, i % 256)
+        i: i + 1
+    poke_byte(buf, 0, 65)
+    poke_byte(buf, 1, 66)
+    poke_byte(buf, 2, 108)
+    poke_byte(buf, 3, 67)
+    poke_byte(buf, 200, 77)
+    print helper(buf)
+    print big(buf)
+    x: peek_byte(buf, 0) * 100 + peek_byte(buf, 3)
+    print x

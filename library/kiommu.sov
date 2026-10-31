@@ -1,0 +1,1397 @@
+# unsafe-module
+KIOMMU_PAGE_SIZE: 4096
+KIOMMU_ROOT_SIZE: 4096
+KIOMMU_CONTEXT_SIZE: 4096
+KIOMMU_FAULT_STRIDE: 24
+KIOMMU_FAULT_ACCOUNT_STRIDE: 64
+KIOMMU_FAULT_ACCOUNT_DOMAIN: 1
+KIOMMU_FAULT_ACCOUNT_INTERRUPT: 2
+KIOMMU_FAULT_POLICY_HEADER: 16
+KIOMMU_FAULT_POLICY_STRIDE: 96
+KIOMMU_FAULT_POLICY_LOCK_LIMIT: 10000
+KIOMMU_FAULT_POLICY_MONITOR: 1
+KIOMMU_FAULT_POLICY_QUARANTINE: 2
+KIOMMU_FAULT_POLICY_BLOCK: 3
+KIOMMU_DOMAIN_STRIDE: 48
+KIOMMU_DOMAIN_FREE: 0
+KIOMMU_DOMAIN_ALLOCATED: 1
+KIOMMU_DOMAIN_ATTACHED: 2
+KIOMMU_UNIT_STRIDE: 48
+KIOMMU_UNIT_FREE: 0
+KIOMMU_UNIT_READY: 1
+KIOMMU_UNIT_ACTIVE: 2
+KIOMMU_IR_OWNER_STRIDE: 48
+KIOMMU_IR_OWNER_FREE: 0
+KIOMMU_IR_OWNER_RESERVED: 1
+KIOMMU_IR_OWNER_BOUND: 2
+KIOMMU_IR_OWNER_RETIRING: 3
+KIOMMU_POOL_STRIDE: 32
+KIOMMU_READ: 1
+KIOMMU_WRITE: 2
+KIOMMU_LARGE_PAGE: 128
+KIOMMU_GCMD_TE: 2147483648
+KIOMMU_GCMD_SRTP: 1073741824
+KIOMMU_GSTS_TES: 2147483648
+KIOMMU_GSTS_RTPS: 1073741824
+KIOMMU_GCMD_IRE: 33554432
+KIOMMU_GCMD_SIRTP: 16777216
+KIOMMU_GSTS_IRES: 33554432
+KIOMMU_GSTS_IRTPS: 16777216
+KIOMMU_GCMD_QIE: 67108864
+KIOMMU_GSTS_QIES: 67108864
+KIOMMU_ECAP_QI: 2
+KIOMMU_ECAP_IR: 8
+KIOMMU_QI_PAGE_SIZE: 4096
+KIOMMU_QI_DESCRIPTOR_SIZE: 16
+KIOMMU_QI_HEAD_OFFSET: 128
+KIOMMU_QI_TAIL_OFFSET: 136
+KIOMMU_QI_ADDRESS_OFFSET: 144
+KIOMMU_QI_HEAD_TAIL_MASK: 524272
+KIOMMU_QI_DESC_CONTEXT_GLOBAL: 17
+KIOMMU_QI_DESC_IOTLB_GLOBAL: 18
+KIOMMU_QI_DESC_IEC: 4
+KIOMMU_QI_DESC_WAIT_SW: 37
+KIOMMU_FSTS_IQE: 16
+KIOMMU_FSTS_PPF: 2
+kiommu_zero_page page:
+    if page < KIOMMU_PAGE_SIZE -> return 0
+    if page % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    i: 0
+    as long as i < KIOMMU_PAGE_SIZE
+        poke_raw64(page + i, 0, 0)
+        i: i + 8
+    return 1
+kiommu_pool_init pool base pages bitmap bitmap_bytes:
+    if pool is 0 -> return 0
+    if base < KIOMMU_PAGE_SIZE -> return 0
+    if base % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    if pages < 1 -> return 0
+    if bitmap is 0 -> return 0
+    if bitmap_bytes < 1 -> return 0
+    if pages > bitmap_bytes * 8 -> return 0
+    if base + pages * KIOMMU_PAGE_SIZE < base -> return 0
+    i: 0
+    as long as i < bitmap_bytes
+        poke_raw8(bitmap + i, 0, 0)
+        i: i + 1
+    poke_raw64(pool, 0, base)
+    poke_raw64(pool + 8, 0, pages)
+    poke_raw64(pool + 16, 0, bitmap)
+    poke_raw64(pool + 24, 0, bitmap_bytes)
+    return 1
+kiommu_pool_alloc pool:
+    if pool is 0 -> return 0
+    base: peek_raw64(pool, 0)
+    pages: peek_raw64(pool + 8, 0)
+    bitmap: peek_raw64(pool + 16, 0)
+    bitmap_bytes: peek_raw64(pool + 24, 0)
+    if base < KIOMMU_PAGE_SIZE -> return 0
+    if pages < 1 -> return 0
+    if bitmap is 0 -> return 0
+    if pages > bitmap_bytes * 8 -> return 0
+    page: 0
+    as long as page < pages
+        byte_index: page / 8
+        mask: bshl(1, page % 8)
+        value: peek_raw8(bitmap + byte_index, 0)
+        if band(value, mask) is 0
+            poke_raw8(bitmap + byte_index, 0, bor(value, mask))
+            address: base + page * KIOMMU_PAGE_SIZE
+            if kiommu_zero_page(address) is not 1
+                poke_raw8(bitmap + byte_index, 0, value)
+                return 0
+            return address
+        page: page + 1
+kiommu_pool_free pool address:
+    if pool is 0 -> return 0
+    base: peek_raw64(pool, 0)
+    pages: peek_raw64(pool + 8, 0)
+    bitmap: peek_raw64(pool + 16, 0)
+    if address < base -> return 0
+    if address >= base + pages * KIOMMU_PAGE_SIZE -> return 0
+    if address % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    page: (address - base) / KIOMMU_PAGE_SIZE
+    byte_index: page / 8
+    mask: bshl(1, page % 8)
+    value: peek_raw8(bitmap + byte_index, 0)
+    if band(value, mask) is 0 -> return 0
+    if kiommu_zero_page(address) is not 1 -> return 0
+    poke_raw8(bitmap + byte_index, 0, band(value, 255 - mask))
+    return 1
+kiommu_pool_used pool:
+    if pool is 0 -> return 0
+    pages: peek_raw64(pool + 8, 0)
+    bitmap: peek_raw64(pool + 16, 0)
+    used: 0
+    page: 0
+    as long as page < pages
+        value: peek_raw8(bitmap + page / 8, 0)
+        if band(value, bshl(1, page % 8)) is not 0 -> used: used + 1
+        page: page + 1
+    return used
+kiommu_pool_owns pool address:
+    if pool is 0 -> return 0
+    base: peek_raw64(pool, 0)
+    pages: peek_raw64(pool + 8, 0)
+    bitmap: peek_raw64(pool + 16, 0)
+    if address < base -> return 0
+    if address >= base + pages * KIOMMU_PAGE_SIZE -> return 0
+    if address % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    page: (address - base) / KIOMMU_PAGE_SIZE
+    return band(peek_raw8(bitmap + page / 8, 0), bshl(1, page % 8))
+kiommu_page_empty page:
+    if page < KIOMMU_PAGE_SIZE -> return 0
+    if page % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    offset: 0
+    as long as offset < KIOMMU_PAGE_SIZE
+        if peek_raw64(page + offset, 0) is not 0 -> return 0
+        offset: offset + 8
+    return 1
+kiommu_tree_init pool root:
+    if kiommu_pool_owns(pool, root) is 0 -> return 0
+    return kiommu_zero_page(root)
+kiommu_tree_map pool root iova physical permissions:
+    if kiommu_pool_owns(pool, root) is 0 -> return 0
+    if iova < 0 -> return 0
+    if iova >= 549755813888 -> return 0
+    if iova % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    if physical < KIOMMU_PAGE_SIZE -> return 0
+    if physical % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    rights: band(permissions, KIOMMU_READ + KIOMMU_WRITE)
+    if rights is 0 -> return 0
+    pdpt_index: band(bshr(iova, 30), 511)
+    pd_index: band(bshr(iova, 21), 511)
+    pt_index: band(bshr(iova, 12), 511)
+    pd_slot: root + pdpt_index * 8
+    pd_entry: peek_raw64(pd_slot, 0)
+    pd: 0
+    new_pd: 0
+    if band(pd_entry, KIOMMU_READ + KIOMMU_WRITE) is 0
+        pd: kiommu_pool_alloc(pool)
+        if pd is 0 -> return 0
+        poke_raw64(pd_slot, 0, pd + KIOMMU_READ + KIOMMU_WRITE)
+        new_pd: 1
+    if not
+        pd: pd_entry - pd_entry % KIOMMU_PAGE_SIZE
+        if kiommu_pool_owns(pool, pd) is 0 -> return 0
+    pt_slot: pd + pd_index * 8
+    pt_entry: peek_raw64(pt_slot, 0)
+    pt: 0
+    if band(pt_entry, KIOMMU_READ + KIOMMU_WRITE) is 0
+        pt: kiommu_pool_alloc(pool)
+        if pt is 0
+            if new_pd is 1
+                poke_raw64(pd_slot, 0, 0)
+                kiommu_pool_free(pool, pd)
+            return 0
+        poke_raw64(pt_slot, 0, pt + KIOMMU_READ + KIOMMU_WRITE)
+    if not
+        pt: pt_entry - pt_entry % KIOMMU_PAGE_SIZE
+        if kiommu_pool_owns(pool, pt) is 0 -> return 0
+    leaf: pt + pt_index * 8
+    if peek_raw64(leaf, 0) is not 0 -> return 0
+    poke_raw64(leaf, 0, physical + rights)
+    return 1
+kiommu_tree_lookup pool root iova:
+    if kiommu_pool_owns(pool, root) is 0 -> return 0
+    if iova < 0 -> return 0
+    if iova >= 549755813888 -> return 0
+    if iova % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    pdpt_index: band(bshr(iova, 30), 511)
+    pd_index: band(bshr(iova, 21), 511)
+    pt_index: band(bshr(iova, 12), 511)
+    pd_entry: peek_raw64(root + pdpt_index * 8, 0)
+    if band(pd_entry, KIOMMU_READ + KIOMMU_WRITE) is 0 -> return 0
+    pd: pd_entry - pd_entry % KIOMMU_PAGE_SIZE
+    if kiommu_pool_owns(pool, pd) is 0 -> return 0
+    pt_entry: peek_raw64(pd + pd_index * 8, 0)
+    if band(pt_entry, KIOMMU_READ + KIOMMU_WRITE) is 0 -> return 0
+    pt: pt_entry - pt_entry % KIOMMU_PAGE_SIZE
+    if kiommu_pool_owns(pool, pt) is 0 -> return 0
+    return peek_raw64(pt + pt_index * 8, 0)
+kiommu_tree_set_permissions pool root iova permissions:
+    if kiommu_pool_owns(pool, root) is 0 -> return 0
+    if iova < 0 -> return 0
+    if iova >= 549755813888 -> return 0
+    if iova % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    rights: band(permissions, KIOMMU_READ + KIOMMU_WRITE)
+    if rights is 0 -> return 0
+    pdpt_index: band(bshr(iova, 30), 511)
+    pd_index: band(bshr(iova, 21), 511)
+    pt_index: band(bshr(iova, 12), 511)
+    pd_entry: peek_raw64(root + pdpt_index * 8, 0)
+    if band(pd_entry, KIOMMU_READ + KIOMMU_WRITE) is 0 -> return 0
+    if band(pd_entry, KIOMMU_LARGE_PAGE) is not 0 -> return 0
+    pd: pd_entry - pd_entry % KIOMMU_PAGE_SIZE
+    if kiommu_pool_owns(pool, pd) is 0 -> return 0
+    pt_entry: peek_raw64(pd + pd_index * 8, 0)
+    if band(pt_entry, KIOMMU_READ + KIOMMU_WRITE) is 0 -> return 0
+    if band(pt_entry, KIOMMU_LARGE_PAGE) is not 0 -> return 0
+    pt: pt_entry - pt_entry % KIOMMU_PAGE_SIZE
+    if kiommu_pool_owns(pool, pt) is 0 -> return 0
+    leaf: pt + pt_index * 8
+    entry: peek_raw64(leaf, 0)
+    if band(entry, KIOMMU_READ + KIOMMU_WRITE) is 0 -> return 0
+    if band(entry, KIOMMU_LARGE_PAGE) is not 0 -> return 0
+    physical: entry - entry % KIOMMU_PAGE_SIZE
+    poke_raw64(leaf, 0, physical + rights)
+    return 1
+kiommu_tree_unmap pool root iova:
+    if kiommu_pool_owns(pool, root) is 0 -> return 0
+    if iova < 0 -> return 0
+    if iova >= 549755813888 -> return 0
+    if iova % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    pdpt_index: band(bshr(iova, 30), 511)
+    pd_index: band(bshr(iova, 21), 511)
+    pt_index: band(bshr(iova, 12), 511)
+    pd_slot: root + pdpt_index * 8
+    pd_entry: peek_raw64(pd_slot, 0)
+    if band(pd_entry, KIOMMU_READ + KIOMMU_WRITE) is 0 -> return 0
+    pd: pd_entry - pd_entry % KIOMMU_PAGE_SIZE
+    if kiommu_pool_owns(pool, pd) is 0 -> return 0
+    pt_slot: pd + pd_index * 8
+    pt_entry: peek_raw64(pt_slot, 0)
+    if band(pt_entry, KIOMMU_READ + KIOMMU_WRITE) is 0 -> return 0
+    pt: pt_entry - pt_entry % KIOMMU_PAGE_SIZE
+    if kiommu_pool_owns(pool, pt) is 0 -> return 0
+    leaf: pt + pt_index * 8
+    if peek_raw64(leaf, 0) is 0 -> return 0
+    poke_raw64(leaf, 0, 0)
+    if kiommu_page_empty(pt) is 1
+        poke_raw64(pt_slot, 0, 0)
+        if kiommu_pool_free(pool, pt) is not 1 -> return 0
+    if kiommu_page_empty(pd) is 1
+        poke_raw64(pd_slot, 0, 0)
+        if kiommu_pool_free(pool, pd) is not 1 -> return 0
+    return 1
+kiommu_tree_map_identity_range pool root base finish permissions:
+    if finish < base -> return 0
+    first: base - base % KIOMMU_PAGE_SIZE
+    last: finish - finish % KIOMMU_PAGE_SIZE
+    if first < KIOMMU_PAGE_SIZE -> return 0
+    if last >= 549755813888 -> return 0
+    page: first
+    as long as page <= last
+        if kiommu_tree_map(pool, root, page, page, permissions) is not 1
+            rollback: first
+            as long as rollback < page
+                kiommu_tree_unmap(pool, root, rollback)
+                rollback: rollback + KIOMMU_PAGE_SIZE
+            return 0
+        page: page + KIOMMU_PAGE_SIZE
+    return 1
+kiommu_tree_unmap_identity_range pool root base finish:
+    if finish < base -> return 0
+    first: base - base % KIOMMU_PAGE_SIZE
+    last: finish - finish % KIOMMU_PAGE_SIZE
+    if first < KIOMMU_PAGE_SIZE -> return 0
+    if last >= 549755813888 -> return 0
+    page: first
+    as long as page <= last
+        entry: kiommu_tree_lookup(pool, root, page)
+        if entry is 0 -> return 0
+        if entry - entry % KIOMMU_PAGE_SIZE is not page -> return 0
+        page: page + KIOMMU_PAGE_SIZE
+    page: first
+    as long as page <= last
+        if kiommu_tree_unmap(pool, root, page) is not 1 -> return 0
+        page: page + KIOMMU_PAGE_SIZE
+    return 1
+kiommu_cap_2m capability:
+    return band(bshr(capability, 34), 1)
+kiommu_tree_map_identity_2m pool root base finish permissions:
+    if kiommu_pool_owns(pool, root) is 0 -> return 0
+    if base < 0 -> return 0
+    if base % 2097152 is not 0 -> return 0
+    if finish < base -> return 0
+    if finish >= 549755813888 -> return 0
+    if (finish + 1) % 2097152 is not 0 -> return 0
+    rights: band(permissions, KIOMMU_READ + KIOMMU_WRITE)
+    if rights is 0 -> return 0
+    page: base
+    as long as page <= finish
+        pdpt_index: band(bshr(page, 30), 511)
+        pd_index: band(bshr(page, 21), 511)
+        pd_slot: root + pdpt_index * 8
+        pd_entry: peek_raw64(pd_slot, 0)
+        pd: 0
+        new_pd: 0
+        if band(pd_entry, KIOMMU_READ + KIOMMU_WRITE) is 0
+            pd: kiommu_pool_alloc(pool)
+            if pd is 0
+                rollback: base
+                as long as rollback < page
+                    rollback_pdpt: band(bshr(rollback, 30), 511)
+                    rollback_index: band(bshr(rollback, 21), 511)
+                    rollback_pd_slot: root + rollback_pdpt * 8
+                    rollback_entry: peek_raw64(rollback_pd_slot, 0)
+                    rollback_pd: rollback_entry - rollback_entry % KIOMMU_PAGE_SIZE
+                    poke_raw64(rollback_pd + rollback_index * 8, 0, 0)
+                    if kiommu_page_empty(rollback_pd) is 1
+                        poke_raw64(rollback_pd_slot, 0, 0)
+                        kiommu_pool_free(pool, rollback_pd)
+                    rollback: rollback + 2097152
+                return 0
+            poke_raw64(pd_slot, 0, pd + KIOMMU_READ + KIOMMU_WRITE)
+            new_pd: 1
+        if not
+            pd: pd_entry - pd_entry % KIOMMU_PAGE_SIZE
+            if kiommu_pool_owns(pool, pd) is 0 -> return 0
+        leaf: pd + pd_index * 8
+        if peek_raw64(leaf, 0) is not 0
+            if new_pd is 1
+                poke_raw64(pd_slot, 0, 0)
+                kiommu_pool_free(pool, pd)
+            rollback: base
+            as long as rollback < page
+                rollback_pdpt: band(bshr(rollback, 30), 511)
+                rollback_index: band(bshr(rollback, 21), 511)
+                rollback_pd_slot: root + rollback_pdpt * 8
+                rollback_entry: peek_raw64(rollback_pd_slot, 0)
+                rollback_pd: rollback_entry - rollback_entry % KIOMMU_PAGE_SIZE
+                poke_raw64(rollback_pd + rollback_index * 8, 0, 0)
+                if kiommu_page_empty(rollback_pd) is 1
+                    poke_raw64(rollback_pd_slot, 0, 0)
+                    kiommu_pool_free(pool, rollback_pd)
+                rollback: rollback + 2097152
+            return 0
+        poke_raw64(leaf, 0, page + rights + KIOMMU_LARGE_PAGE)
+        page: page + 2097152
+    return 1
+kiommu_tree_unmap_identity_2m pool root base finish:
+    if kiommu_pool_owns(pool, root) is 0 -> return 0
+    if base < 0 -> return 0
+    if base % 2097152 is not 0 -> return 0
+    if finish < base -> return 0
+    if finish >= 549755813888 -> return 0
+    if (finish + 1) % 2097152 is not 0 -> return 0
+    page: base
+    as long as page <= finish
+        pdpt_index: band(bshr(page, 30), 511)
+        pd_index: band(bshr(page, 21), 511)
+        pd_entry: peek_raw64(root + pdpt_index * 8, 0)
+        if band(pd_entry, KIOMMU_READ + KIOMMU_WRITE) is 0 -> return 0
+        pd: pd_entry - pd_entry % KIOMMU_PAGE_SIZE
+        if kiommu_pool_owns(pool, pd) is 0 -> return 0
+        leaf: peek_raw64(pd + pd_index * 8, 0)
+        if band(leaf, KIOMMU_LARGE_PAGE) is 0 -> return 0
+        physical: leaf - leaf % 2097152
+        if physical is not page -> return 0
+        page: page + 2097152
+    page: base
+    as long as page <= finish
+        pdpt_index: band(bshr(page, 30), 511)
+        pd_index: band(bshr(page, 21), 511)
+        pd_slot: root + pdpt_index * 8
+        pd_entry: peek_raw64(pd_slot, 0)
+        pd: pd_entry - pd_entry % KIOMMU_PAGE_SIZE
+        poke_raw64(pd + pd_index * 8, 0, 0)
+        if kiommu_page_empty(pd) is 1
+            poke_raw64(pd_slot, 0, 0)
+            if kiommu_pool_free(pool, pd) is not 1 -> return 0
+        page: page + 2097152
+    return 1
+kiommu_cap_aw capability:
+    sagaw: band(bshr(capability, 8), 31)
+    if band(sagaw, 2) is not 0 -> return 1
+    if band(sagaw, 4) is not 0 -> return 2
+    return 0 - 1
+kiommu_legacy_root_add root context bus:
+    if root < KIOMMU_PAGE_SIZE -> return 0
+    if context < KIOMMU_PAGE_SIZE -> return 0
+    if root % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    if context % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    if bus < 0 -> return 0
+    if bus > 255 -> return 0
+    entry: root + bus * 16
+    if peek_raw64(entry, 0) is not 0 -> return 0
+    if peek_raw64(entry + 8, 0) is not 0 -> return 0
+    if kiommu_zero_page(context) is not 1 -> return 0
+    poke_raw64(entry + 8, 0, 0)
+    poke_raw64(entry, 0, context + 1)
+    return 1
+kiommu_legacy_root_init root context bus:
+    if root < KIOMMU_PAGE_SIZE -> return 0
+    if root % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    if kiommu_zero_page(root) is not 1 -> return 0
+    return kiommu_legacy_root_add(root, context, bus)
+kiommu_context_bind context devfn slpt domain aw:
+    if context < KIOMMU_PAGE_SIZE -> return 0
+    if context % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    if devfn < 0 -> return 0
+    if devfn > 255 -> return 0
+    if slpt < KIOMMU_PAGE_SIZE -> return 0
+    if slpt % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    if domain < 1 -> return 0
+    if domain > 65535 -> return 0
+    if aw < 1 -> return 0
+    if aw > 2 -> return 0
+    entry: context + devfn * 16
+    poke_raw64(entry + 8, 0, domain * 256 + aw)
+    poke_raw64(entry, 0, slpt + 1)
+    return 1
+kiommu_context_unbind context devfn:
+    if context < KIOMMU_PAGE_SIZE -> return 0
+    if context % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    if devfn < 0 -> return 0
+    if devfn > 255 -> return 0
+    entry: context + devfn * 16
+    poke_raw64(entry, 0, 0)
+    poke_raw64(entry + 8, 0, 0)
+    return 1
+kiommu_domains_init registry capacity:
+    if registry is 0 -> return 0
+    if capacity < 1 -> return 0
+    if capacity > 256 -> return 0
+    slot: 0
+    as long as slot < capacity
+        record: registry + slot * KIOMMU_DOMAIN_STRIDE
+        poke_raw64(record, 0, 1)
+        poke_raw64(record + 8, 0, KIOMMU_DOMAIN_FREE)
+        poke_raw64(record + 16, 0, 0)
+        poke_raw64(record + 24, 0, 0)
+        poke_raw64(record + 32, 0, 0)
+        poke_raw64(record + 40, 0, 0)
+        slot: slot + 1
+    return 1
+kiommu_domain_alloc registry capacity domain slpt aw:
+    if registry is 0 -> return 0 - 1
+    if capacity < 1 -> return 0 - 1
+    if capacity > 256 -> return 0 - 1
+    if domain < 1 -> return 0 - 1
+    if domain > 65535 -> return 0 - 1
+    if slpt < KIOMMU_PAGE_SIZE -> return 0 - 1
+    if slpt % KIOMMU_PAGE_SIZE is not 0 -> return 0 - 1
+    if aw < 1 -> return 0 - 1
+    if aw > 2 -> return 0 - 1
+    free_slot: 0 - 1
+    slot: 0
+    as long as slot < capacity
+        record: registry + slot * KIOMMU_DOMAIN_STRIDE
+        state: peek_raw64(record + 8, 0)
+        if state is not KIOMMU_DOMAIN_FREE
+            if peek_raw64(record + 16, 0) is domain -> return 0 - 1
+        if state is KIOMMU_DOMAIN_FREE
+            if free_slot < 0 -> free_slot: slot
+        slot: slot + 1
+    if free_slot < 0 -> return 0 - 1
+    record: registry + free_slot * KIOMMU_DOMAIN_STRIDE
+    poke_raw64(record + 8, 0, KIOMMU_DOMAIN_ALLOCATED)
+    poke_raw64(record + 16, 0, domain)
+    poke_raw64(record + 24, 0, 0)
+    poke_raw64(record + 32, 0, slpt)
+    poke_raw64(record + 40, 0, aw)
+    return free_slot
+kiommu_domain_generation registry capacity slot:
+    if registry is 0 -> return 0
+    if slot < 0 -> return 0
+    if slot >= capacity -> return 0
+    return peek_raw64(registry + slot * KIOMMU_DOMAIN_STRIDE, 0)
+kiommu_domain_state registry capacity slot generation:
+    if registry is 0 -> return KIOMMU_DOMAIN_FREE
+    if slot < 0 -> return KIOMMU_DOMAIN_FREE
+    if slot >= capacity -> return KIOMMU_DOMAIN_FREE
+    record: registry + slot * KIOMMU_DOMAIN_STRIDE
+    if peek_raw64(record, 0) is not generation -> return KIOMMU_DOMAIN_FREE
+    return peek_raw64(record + 8, 0)
+kiommu_domain_find_requester registry capacity requester:
+    if registry is 0 -> return 0 - 1
+    if requester < 0 -> return 0 - 1
+    if requester > 65535 -> return 0 - 1
+    slot: 0
+    as long as slot < capacity
+        record: registry + slot * KIOMMU_DOMAIN_STRIDE
+        if peek_raw64(record + 8, 0) is KIOMMU_DOMAIN_ATTACHED
+            if peek_raw64(record + 24, 0) is requester -> return slot
+        slot: slot + 1
+    return 0 - 1
+kiommu_domain_id registry capacity slot generation:
+    if kiommu_domain_state(registry, capacity, slot, generation) is KIOMMU_DOMAIN_FREE -> return 0
+    return peek_raw64(registry + slot * KIOMMU_DOMAIN_STRIDE + 16, 0)
+kiommu_domain_attach registry capacity slot generation context requester:
+    if kiommu_domain_state(registry, capacity, slot, generation) is not KIOMMU_DOMAIN_ALLOCATED -> return 0
+    if requester < 0 -> return 0
+    if requester > 65535 -> return 0
+    other: 0
+    as long as other < capacity
+        record2: registry + other * KIOMMU_DOMAIN_STRIDE
+        if peek_raw64(record2 + 8, 0) is KIOMMU_DOMAIN_ATTACHED
+            if peek_raw64(record2 + 24, 0) is requester -> return 0
+        other: other + 1
+    record: registry + slot * KIOMMU_DOMAIN_STRIDE
+    domain: peek_raw64(record + 16, 0)
+    slpt: peek_raw64(record + 32, 0)
+    aw: peek_raw64(record + 40, 0)
+    devfn: requester % 256
+    if kiommu_context_bind(context, devfn, slpt, domain, aw) is not 1 -> return 0
+    poke_raw64(record + 24, 0, requester)
+    poke_raw64(record + 8, 0, KIOMMU_DOMAIN_ATTACHED)
+    return 1
+kiommu_domain_detach registry capacity slot generation context:
+    if kiommu_domain_state(registry, capacity, slot, generation) is not KIOMMU_DOMAIN_ATTACHED -> return 0
+    record: registry + slot * KIOMMU_DOMAIN_STRIDE
+    requester: peek_raw64(record + 24, 0)
+    devfn: requester % 256
+    if kiommu_context_unbind(context, devfn) is not 1 -> return 0
+    poke_raw64(record + 24, 0, 0)
+    poke_raw64(record + 8, 0, KIOMMU_DOMAIN_ALLOCATED)
+    return 1
+kiommu_domain_release registry capacity slot generation:
+    if kiommu_domain_state(registry, capacity, slot, generation) is not KIOMMU_DOMAIN_ALLOCATED -> return 0
+    record: registry + slot * KIOMMU_DOMAIN_STRIDE
+    next: peek_raw64(record, 0) + 1
+    if next is 0 -> next: 1
+    poke_raw64(record + 16, 0, 0)
+    poke_raw64(record + 24, 0, 0)
+    poke_raw64(record + 32, 0, 0)
+    poke_raw64(record + 40, 0, 0)
+    poke_raw64(record + 8, 0, KIOMMU_DOMAIN_FREE)
+    poke_raw64(record, 0, next)
+    return 1
+kiommu_window_init pdpt pd pt window:
+    if pdpt < KIOMMU_PAGE_SIZE -> return 0
+    if pd < KIOMMU_PAGE_SIZE -> return 0
+    if pt < KIOMMU_PAGE_SIZE -> return 0
+    if pdpt % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    if pd % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    if pt % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    if window < 0 -> return 0
+    if window % 2097152 is not 0 -> return 0
+    if window >= 549755813888 -> return 0
+    if kiommu_zero_page(pdpt) is not 1 -> return 0
+    if kiommu_zero_page(pd) is not 1 -> return 0
+    if kiommu_zero_page(pt) is not 1 -> return 0
+    pdpt_index: band(bshr(window, 30), 511)
+    pd_index: band(bshr(window, 21), 511)
+    poke_raw64(pdpt + pdpt_index * 8, 0, pd + KIOMMU_READ + KIOMMU_WRITE)
+    poke_raw64(pd + pd_index * 8, 0, pt + KIOMMU_READ + KIOMMU_WRITE)
+    return 1
+kiommu_window_map pt window iova physical permissions:
+    if pt < KIOMMU_PAGE_SIZE -> return 0
+    if pt % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    if window % 2097152 is not 0 -> return 0
+    if iova < window -> return 0
+    if iova >= window + 2097152 -> return 0
+    if iova % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    if physical < KIOMMU_PAGE_SIZE -> return 0
+    if physical % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    rights: band(permissions, KIOMMU_READ + KIOMMU_WRITE)
+    if rights is 0 -> return 0
+    index: (iova - window) / KIOMMU_PAGE_SIZE
+    poke_raw64(pt + index * 8, 0, physical + rights)
+    return 1
+kiommu_window_unmap pt window iova:
+    if pt < KIOMMU_PAGE_SIZE -> return 0
+    if pt % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    if window % 2097152 is not 0 -> return 0
+    if iova < window -> return 0
+    if iova >= window + 2097152 -> return 0
+    if iova % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    index: (iova - window) / KIOMMU_PAGE_SIZE
+    poke_raw64(pt + index * 8, 0, 0)
+    return 1
+kiommu_ir_size_code entries:
+    if entries < 2 -> return 0 - 1
+    if entries > 256 -> return 0 - 1
+    size: 2
+    code: 0
+    as long as size < entries
+        size: size * 2
+        code: code + 1
+    if size is not entries -> return 0 - 1
+    return code
+kiommu_ir_table_init table entries:
+    if kiommu_ir_size_code(entries) < 0 -> return 0
+    return kiommu_zero_page(table)
+kiommu_ir_entry_bind table entries index vector destination requester trigger:
+    if table < KIOMMU_PAGE_SIZE -> return 0
+    if table % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    if kiommu_ir_size_code(entries) < 0 -> return 0
+    if index < 0 -> return 0
+    if index >= entries -> return 0
+    if vector < 32 -> return 0
+    if vector > 254 -> return 0
+    if destination < 0 -> return 0
+    if destination > 255 -> return 0
+    if requester < 0 -> return 0
+    if requester > 65535 -> return 0
+    if trigger < 0 -> return 0
+    if trigger > 1 -> return 0
+    entry: table + index * 16
+    if band(peek_raw64(entry, 0), 1) is not 0 -> return 0
+    high: requester + bshl(1, 18)
+    low: trigger * 16 + vector * 65536 + destination * 1099511627776
+    poke_raw64(entry + 8, 0, high)
+    poke_raw64(entry, 0, low + 1)
+    return 1
+kiommu_ir_entry_unbind table entries index:
+    if table < KIOMMU_PAGE_SIZE -> return 0
+    if table % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    if kiommu_ir_size_code(entries) < 0 -> return 0
+    if index < 0 -> return 0
+    if index >= entries -> return 0
+    entry: table + index * 16
+    if band(peek_raw64(entry, 0), 1) is 0 -> return 0
+    poke_raw64(entry, 0, 0)
+    poke_raw64(entry + 8, 0, 0)
+    return 1
+kiommu_ir_owners_init ioreg iocap iofirst ioentries:
+    if ioreg is 0 -> return 0
+    if iocap < 1 -> return 0
+    if iocap > ioentries -> return 0
+    if kiommu_ir_size_code(ioentries) < 0 -> return 0
+    if iofirst < 0 -> return 0
+    if iofirst + iocap > ioentries -> return 0
+    irsl: 0
+    as long as irsl < iocap
+        irrec: ioreg + irsl * KIOMMU_IR_OWNER_STRIDE
+        poke_raw64(irrec, 0, 1)
+        poke_raw64(irrec + 8, 0, KIOMMU_IR_OWNER_FREE)
+        poke_raw64(irrec + 16, 0, iofirst + irsl)
+        poke_raw64(irrec + 24, 0, 0)
+        poke_raw64(irrec + 32, 0, 0)
+        poke_raw64(irrec + 40, 0, ioentries)
+        irsl: irsl + 1
+    return 1
+kiommu_ir_owner_acquire ioreg iocap ioown ioreq:
+    if ioreg is 0 -> return 0 - 1
+    if iocap < 1 -> return 0 - 1
+    if ioown is 0 -> return 0 - 1
+    if ioreq < 0 -> return 0 - 1
+    if ioreq > 65535 -> return 0 - 1
+    irsl: 0
+    as long as irsl < iocap
+        irrec: ioreg + irsl * KIOMMU_IR_OWNER_STRIDE
+        if peek_raw64(irrec + 8, 0) is KIOMMU_IR_OWNER_FREE
+            poke_raw64(irrec + 24, 0, ioown)
+            poke_raw64(irrec + 32, 0, ioreq)
+            poke_raw64(irrec + 8, 0, KIOMMU_IR_OWNER_RESERVED)
+            return irsl
+        irsl: irsl + 1
+    return 0 - 1
+kiommu_ir_owner_generation registry capacity irsl:
+    if registry is 0 -> return 0
+    if irsl < 0 -> return 0
+    if irsl >= capacity -> return 0
+    return peek_raw64(registry + irsl * KIOMMU_IR_OWNER_STRIDE, 0)
+kiommu_ir_owner_index registry capacity irsl generation:
+    if registry is 0 -> return 0 - 1
+    if irsl < 0 -> return 0 - 1
+    if irsl >= capacity -> return 0 - 1
+    irrec: registry + irsl * KIOMMU_IR_OWNER_STRIDE
+    if peek_raw64(irrec, 0) is not generation -> return 0 - 1
+    if peek_raw64(irrec + 8, 0) is KIOMMU_IR_OWNER_FREE -> return 0 - 1
+    return peek_raw64(irrec + 16, 0)
+kiommu_ir_owner_find_index registry capacity index:
+    if registry is 0 -> return 0 - 1
+    if index < 0 -> return 0 - 1
+    if index > 65535 -> return 0 - 1
+    slot: 0
+    as long as slot < capacity
+        record: registry + slot * KIOMMU_IR_OWNER_STRIDE
+        state: peek_raw64(record + 8, 0)
+        if state is KIOMMU_IR_OWNER_BOUND
+            if peek_raw64(record + 16, 0) is index -> return slot
+        if state is KIOMMU_IR_OWNER_RETIRING
+            if peek_raw64(record + 16, 0) is index -> return slot
+        slot: slot + 1
+    return 0 - 1
+kiommu_ir_owner_identity registry capacity slot generation:
+    if registry is 0 -> return 0
+    if slot < 0 -> return 0
+    if slot >= capacity -> return 0
+    record: registry + slot * KIOMMU_IR_OWNER_STRIDE
+    if peek_raw64(record, 0) is not generation -> return 0
+    if peek_raw64(record + 8, 0) is KIOMMU_IR_OWNER_FREE -> return 0
+    return peek_raw64(record + 24, 0)
+kiommu_ir_owner_bind table registry capacity slot generation vector destination:
+    if registry is 0 -> return 0
+    if slot < 0 -> return 0
+    if slot >= capacity -> return 0
+    record: registry + slot * KIOMMU_IR_OWNER_STRIDE
+    if peek_raw64(record, 0) is not generation -> return 0
+    if peek_raw64(record + 8, 0) is not KIOMMU_IR_OWNER_RESERVED -> return 0
+    index: peek_raw64(record + 16, 0)
+    requester: peek_raw64(record + 32, 0)
+    entries: peek_raw64(record + 40, 0)
+    if kiommu_ir_entry_bind(table, entries, index, vector, destination, requester, 0) is not 1 -> return 0
+    poke_raw64(record + 8, 0, KIOMMU_IR_OWNER_BOUND)
+    return 1
+kiommu_ir_owner_bind_level table registry capacity slot generation vector destination:
+    if registry is 0 -> return 0
+    if slot < 0 -> return 0
+    if slot >= capacity -> return 0
+    record: registry + slot * KIOMMU_IR_OWNER_STRIDE
+    if peek_raw64(record, 0) is not generation -> return 0
+    if peek_raw64(record + 8, 0) is not KIOMMU_IR_OWNER_RESERVED -> return 0
+    index: peek_raw64(record + 16, 0)
+    requester: peek_raw64(record + 32, 0)
+    entries: peek_raw64(record + 40, 0)
+    if kiommu_ir_entry_bind(table, entries, index, vector, destination, requester, 1) is not 1 -> return 0
+    poke_raw64(record + 8, 0, KIOMMU_IR_OWNER_BOUND)
+    return 1
+kiommu_ir_owner_retire table registry capacity slot generation owner:
+    if registry is 0 -> return 0
+    if slot < 0 -> return 0
+    if slot >= capacity -> return 0
+    record: registry + slot * KIOMMU_IR_OWNER_STRIDE
+    if peek_raw64(record, 0) is not generation -> return 0
+    if peek_raw64(record + 8, 0) is not KIOMMU_IR_OWNER_BOUND -> return 0
+    if peek_raw64(record + 24, 0) is not owner -> return 0
+    index: peek_raw64(record + 16, 0)
+    entries: peek_raw64(record + 40, 0)
+    if kiommu_ir_entry_unbind(table, entries, index) is not 1 -> return 0
+    poke_raw64(record + 8, 0, KIOMMU_IR_OWNER_RETIRING)
+    return 1
+kiommu_ir_owner_reclaim registry capacity slot generation owner:
+    if registry is 0 -> return 0
+    if slot < 0 -> return 0
+    if slot >= capacity -> return 0
+    record: registry + slot * KIOMMU_IR_OWNER_STRIDE
+    if peek_raw64(record, 0) is not generation -> return 0
+    if peek_raw64(record + 8, 0) is not KIOMMU_IR_OWNER_RETIRING -> return 0
+    if peek_raw64(record + 24, 0) is not owner -> return 0
+    next: peek_raw64(record, 0) + 1
+    if next is 0 -> next: 1
+    poke_raw64(record + 24, 0, 0)
+    poke_raw64(record + 32, 0, 0)
+    poke_raw64(record + 8, 0, KIOMMU_IR_OWNER_FREE)
+    poke_raw64(record, 0, next)
+    return 1
+kiommu_ir_owner_cancel registry capacity slot generation owner:
+    if registry is 0 -> return 0
+    if slot < 0 -> return 0
+    if slot >= capacity -> return 0
+    record: registry + slot * KIOMMU_IR_OWNER_STRIDE
+    if peek_raw64(record, 0) is not generation -> return 0
+    if peek_raw64(record + 8, 0) is not KIOMMU_IR_OWNER_RESERVED -> return 0
+    if peek_raw64(record + 24, 0) is not owner -> return 0
+    next: peek_raw64(record, 0) + 1
+    if next is 0 -> next: 1
+    poke_raw64(record + 24, 0, 0)
+    poke_raw64(record + 32, 0, 0)
+    poke_raw64(record + 8, 0, KIOMMU_IR_OWNER_FREE)
+    poke_raw64(record, 0, next)
+    return 1
+kiommu_ir_msi_address index:
+    if index < 0 -> return 0
+    if index > 65535 -> return 0
+    low_index: band(index, 32767)
+    high_index: bshr(index, 15)
+    return 4276092944 + low_index * 32 + high_index * 4
+kiommu_ir_hw_set_table_mode base extended table entries eim limit:
+    if base < KIOMMU_PAGE_SIZE -> return 0
+    if base % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    if table < KIOMMU_PAGE_SIZE -> return 0
+    if table % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    if eim < 0 -> return 0
+    if eim > 1 -> return 0
+    if eim is 1
+        if band(extended, 16) is 0 -> return 0
+    code: kiommu_ir_size_code(entries)
+    if code < 0 -> return 0
+    poke_raw64(base + 184, 0, table + code + eim * 2048)
+    status: peek_raw32(base + 28, 0)
+    persistent: band(status, 2256535552)
+    poke_raw32(base + 24, 0, bor(persistent, KIOMMU_GCMD_SIRTP))
+    return kiommu_wait32(base + 28, KIOMMU_GSTS_IRTPS, KIOMMU_GSTS_IRTPS, limit)
+kiommu_ir_hw_set_table base table entries limit:
+    return kiommu_ir_hw_set_table_mode(base, 0, table, entries, 0, limit)
+kiommu_ir_hw_enable base extended limit:
+    if band(extended, KIOMMU_ECAP_IR) is 0 -> return 0
+    status: peek_raw32(base + 28, 0)
+    persistent: band(status, 2256535552)
+    poke_raw32(base + 24, 0, bor(persistent, KIOMMU_GCMD_IRE))
+    return kiommu_wait32(base + 28, KIOMMU_GSTS_IRES, KIOMMU_GSTS_IRES, limit)
+kiommu_ir_hw_disable base limit:
+    if base < KIOMMU_PAGE_SIZE -> return 0
+    status: peek_raw32(base + 28, 0)
+    persistent: band(status, 2222981120)
+    poke_raw32(base + 24, 0, persistent)
+    return kiommu_wait32(base + 28, KIOMMU_GSTS_IRES, 0, limit)
+kiommu_qi_hw_enable base extended queue limit:
+    if base < KIOMMU_PAGE_SIZE -> return 0
+    if base % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    if band(extended, KIOMMU_ECAP_QI) is 0 -> return 0
+    if queue < KIOMMU_PAGE_SIZE -> return 0
+    if queue % KIOMMU_QI_PAGE_SIZE is not 0 -> return 0
+    if limit < 1 -> return 0
+    if band(peek_raw32(base + 28, 0), KIOMMU_GSTS_QIES) is not 0 -> return 0
+    if kiommu_zero_page(queue) is not 1 -> return 0
+    poke_raw64(base + KIOMMU_QI_ADDRESS_OFFSET, 0, queue)
+    poke_raw64(base + KIOMMU_QI_TAIL_OFFSET, 0, 0)
+    status: peek_raw32(base + 28, 0)
+    persistent: band(status, 2189426688)
+    poke_raw32(base + 24, 0, bor(persistent, KIOMMU_GCMD_QIE))
+    return kiommu_wait32(base + 28, KIOMMU_GSTS_QIES, KIOMMU_GSTS_QIES, limit)
+kiommu_qi_global_invalidate base queue completion limit:
+    if base < KIOMMU_PAGE_SIZE -> return 0
+    if queue < KIOMMU_PAGE_SIZE -> return 0
+    if queue % KIOMMU_QI_PAGE_SIZE is not 0 -> return 0
+    if completion < 4 -> return 0
+    if completion % 4 is not 0 -> return 0
+    if limit < 1 -> return 0
+    if band(peek_raw32(base + 28, 0), KIOMMU_GSTS_QIES) is 0 -> return 0
+    head: band(peek_raw64(base + KIOMMU_QI_HEAD_OFFSET, 0), KIOMMU_QI_HEAD_TAIL_MASK)
+    tail: band(peek_raw64(base + KIOMMU_QI_TAIL_OFFSET, 0), KIOMMU_QI_HEAD_TAIL_MASK)
+    iotlb: (tail + KIOMMU_QI_DESCRIPTOR_SIZE) % KIOMMU_QI_PAGE_SIZE
+    wait: (iotlb + KIOMMU_QI_DESCRIPTOR_SIZE) % KIOMMU_QI_PAGE_SIZE
+    done: (wait + KIOMMU_QI_DESCRIPTOR_SIZE) % KIOMMU_QI_PAGE_SIZE
+    if done is head -> return 0
+    poke_raw32(completion, 0, 0)
+    poke_raw64(queue + tail, 0, KIOMMU_QI_DESC_CONTEXT_GLOBAL)
+    poke_raw64(queue + tail + 8, 0, 0)
+    poke_raw64(queue + iotlb, 0, KIOMMU_QI_DESC_IOTLB_GLOBAL)
+    poke_raw64(queue + iotlb + 8, 0, 0)
+    poke_raw64(queue + wait, 0, KIOMMU_QI_DESC_WAIT_SW + 4294967296)
+    poke_raw64(queue + wait + 8, 0, completion)
+    poke_raw64(base + KIOMMU_QI_TAIL_OFFSET, 0, done)
+    spin: 0
+    as long as spin < limit
+        if peek_raw32(completion, 0) is 1 -> return 1
+        if band(peek_raw32(base + 52, 0), KIOMMU_FSTS_IQE) is not 0 -> return 0
+        spin: spin + 1
+kiommu_qi_ir_invalidate base queue completion index limit:
+    if base < KIOMMU_PAGE_SIZE -> return 0
+    if queue < KIOMMU_PAGE_SIZE -> return 0
+    if queue % KIOMMU_QI_PAGE_SIZE is not 0 -> return 0
+    if completion < 4 -> return 0
+    if completion % 4 is not 0 -> return 0
+    if index < 0 -> return 0
+    if index > 65535 -> return 0
+    if limit < 1 -> return 0
+    if band(peek_raw32(base + 28, 0), KIOMMU_GSTS_QIES) is 0 -> return 0
+    head: band(peek_raw64(base + KIOMMU_QI_HEAD_OFFSET, 0), KIOMMU_QI_HEAD_TAIL_MASK)
+    tail: band(peek_raw64(base + KIOMMU_QI_TAIL_OFFSET, 0), KIOMMU_QI_HEAD_TAIL_MASK)
+    next: (tail + KIOMMU_QI_DESCRIPTOR_SIZE) % KIOMMU_QI_PAGE_SIZE
+    done: (next + KIOMMU_QI_DESCRIPTOR_SIZE) % KIOMMU_QI_PAGE_SIZE
+    if done is head -> return 0
+    poke_raw32(completion, 0, 0)
+    poke_raw64(queue + tail, 0, KIOMMU_QI_DESC_IEC + index * 4294967296)
+    poke_raw64(queue + tail + 8, 0, 0)
+    poke_raw64(queue + next, 0, KIOMMU_QI_DESC_WAIT_SW + 4294967296)
+    poke_raw64(queue + next + 8, 0, completion)
+    poke_raw64(base + KIOMMU_QI_TAIL_OFFSET, 0, done)
+    spin: 0
+    as long as spin < limit
+        if peek_raw32(completion, 0) is 1 -> return 1
+        if band(peek_raw32(base + 52, 0), KIOMMU_FSTS_IQE) is not 0 -> return 0
+        spin: spin + 1
+kiommu_qi_hw_disable base limit:
+    if base < KIOMMU_PAGE_SIZE -> return 0
+    if limit < 1 -> return 0
+    spin: 0
+    as long as spin < limit
+        head: band(peek_raw64(base + KIOMMU_QI_HEAD_OFFSET, 0), KIOMMU_QI_HEAD_TAIL_MASK)
+        tail: band(peek_raw64(base + KIOMMU_QI_TAIL_OFFSET, 0), KIOMMU_QI_HEAD_TAIL_MASK)
+        if head is tail
+            status: peek_raw32(base + 28, 0)
+            persistent: band(status, 2189426688)
+            poke_raw32(base + 24, 0, persistent)
+            return kiommu_wait32(base + 28, KIOMMU_GSTS_QIES, 0, limit)
+        spin: spin + 1
+kiommu_wait32 address mask expected limit:
+    if address is 0 -> return 0
+    if limit < 1 -> return 0
+    i: 0
+    as long as i < limit
+        if band(peek_raw32(address, 0), mask) is expected -> return 1
+        i: i + 1
+kiommu_hw_set_root base root limit:
+    if base < KIOMMU_PAGE_SIZE -> return 0
+    if base % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    if root < KIOMMU_PAGE_SIZE -> return 0
+    if root % KIOMMU_PAGE_SIZE is not 0 -> return 0
+    poke_raw64(base + 32, 0, root)
+    status: peek_raw32(base + 28, 0)
+    poke_raw32(base + 24, 0, bor(status, KIOMMU_GCMD_SRTP))
+    return kiommu_wait32(base + 28, KIOMMU_GSTS_RTPS, KIOMMU_GSTS_RTPS, limit)
+kiommu_hw_context_global_invalidate base limit:
+    if base < KIOMMU_PAGE_SIZE -> return 0
+    command: bor(bshl(1, 63), bshl(1, 61))
+    poke_raw64(base + 40, 0, command)
+    i: 0
+    as long as i < limit
+        if band(peek_raw64(base + 40, 0), bshl(1, 63)) is 0 -> return 1
+        i: i + 1
+kiommu_hw_iotlb_global_invalidate base extended limit:
+    if base < KIOMMU_PAGE_SIZE -> return 0
+    offset: band(bshr(extended, 8), 1023) * 16
+    if offset < 64 -> return 0
+    command: bor(bshl(1, 63), bshl(1, 60))
+    poke_raw64(base + offset + 8, 0, command)
+    i: 0
+    as long as i < limit
+        if band(peek_raw64(base + offset + 8, 0), bshl(1, 63)) is 0 -> return 1
+        i: i + 1
+kiommu_hw_enable base limit:
+    if base < KIOMMU_PAGE_SIZE -> return 0
+    status: peek_raw32(base + 28, 0)
+    poke_raw32(base + 24, 0, bor(status, KIOMMU_GCMD_TE))
+    return kiommu_wait32(base + 28, KIOMMU_GSTS_TES, KIOMMU_GSTS_TES, limit)
+kiommu_hw_disable base limit:
+    if base < KIOMMU_PAGE_SIZE -> return 0
+    status: peek_raw32(base + 28, 0)
+    poke_raw32(base + 24, 0, band(status, 2147483647))
+    return kiommu_wait32(base + 28, KIOMMU_GSTS_TES, 0, limit)
+kiommu_units_init registry capacity:
+    if registry is 0 -> return 0
+    if capacity < 1 -> return 0
+    if capacity > 32 -> return 0
+    slot: 0
+    as long as slot < capacity
+        record: registry + slot * KIOMMU_UNIT_STRIDE
+        poke_raw64(record, 0, 1)
+        poke_raw64(record + 8, 0, KIOMMU_UNIT_FREE)
+        poke_raw64(record + 16, 0, 0)
+        poke_raw64(record + 24, 0, 0)
+        poke_raw64(record + 32, 0, 0)
+        poke_raw64(record + 40, 0, 0)
+        slot: slot + 1
+    return 1
+kiommu_unit_configure registry capacity base extended:
+    if registry is 0 -> return 0 - 1
+    if capacity < 1 -> return 0 - 1
+    if capacity > 32 -> return 0 - 1
+    if base < KIOMMU_PAGE_SIZE -> return 0 - 1
+    if base % KIOMMU_PAGE_SIZE is not 0 -> return 0 - 1
+    free_slot: 0 - 1
+    slot: 0
+    as long as slot < capacity
+        record: registry + slot * KIOMMU_UNIT_STRIDE
+        state: peek_raw64(record + 8, 0)
+        if state is not KIOMMU_UNIT_FREE
+            if peek_raw64(record + 16, 0) is base -> return 0 - 1
+        if state is KIOMMU_UNIT_FREE
+            if free_slot < 0 -> free_slot: slot
+        slot: slot + 1
+    if free_slot < 0 -> return 0 - 1
+    record: registry + free_slot * KIOMMU_UNIT_STRIDE
+    poke_raw64(record + 16, 0, base)
+    poke_raw64(record + 24, 0, extended)
+    poke_raw64(record + 32, 0, 0)
+    poke_raw64(record + 8, 0, KIOMMU_UNIT_READY)
+    return free_slot
+kiommu_unit_generation registry capacity slot:
+    if registry is 0 -> return 0
+    if slot < 0 -> return 0
+    if slot >= capacity -> return 0
+    return peek_raw64(registry + slot * KIOMMU_UNIT_STRIDE, 0)
+kiommu_unit_state registry capacity slot generation:
+    if registry is 0 -> return KIOMMU_UNIT_FREE
+    if slot < 0 -> return KIOMMU_UNIT_FREE
+    if slot >= capacity -> return KIOMMU_UNIT_FREE
+    record: registry + slot * KIOMMU_UNIT_STRIDE
+    if peek_raw64(record, 0) is not generation -> return KIOMMU_UNIT_FREE
+    return peek_raw64(record + 8, 0)
+kiommu_unit_activate registry capacity slot generation root limit:
+    if kiommu_unit_state(registry, capacity, slot, generation) is not KIOMMU_UNIT_READY -> return 0
+    record: registry + slot * KIOMMU_UNIT_STRIDE
+    base: peek_raw64(record + 16, 0)
+    extended: peek_raw64(record + 24, 0)
+    if kiommu_hw_set_root(base, root, limit) is not 1 -> return 0
+    if kiommu_hw_context_global_invalidate(base, limit) is not 1 -> return 0
+    if kiommu_hw_iotlb_global_invalidate(base, extended, limit) is not 1 -> return 0
+    if kiommu_hw_enable(base, limit) is not 1
+        kiommu_hw_disable(base, limit)
+        return 0
+    poke_raw64(record + 32, 0, root)
+    poke_raw64(record + 8, 0, KIOMMU_UNIT_ACTIVE)
+    return 1
+kiommu_units_activate_all registry capacity count root limit:
+    if registry is 0 -> return 0
+    if count < 1 -> return 0
+    if count > capacity -> return 0
+    slot: 0
+    as long as slot < count
+        generation: kiommu_unit_generation(registry, capacity, slot)
+        if kiommu_unit_state(registry, capacity, slot, generation) is not KIOMMU_UNIT_READY -> return 0
+        slot: slot + 1
+    slot: 0
+    as long as slot < count
+        generation: kiommu_unit_generation(registry, capacity, slot)
+        if kiommu_unit_activate(registry, capacity, slot, generation, root, limit) is not 1
+            rollback: slot
+            as long as rollback > 0
+                rollback: rollback - 1
+                rollback_generation: kiommu_unit_generation(registry, capacity, rollback)
+                kiommu_unit_deactivate(registry, capacity, rollback, rollback_generation, limit)
+            return 0
+        slot: slot + 1
+    return 1
+kiommu_units_global_invalidate registry capacity count limit:
+    if registry is 0 -> return 0
+    if count < 1 -> return 0
+    if count > capacity -> return 0
+    slot: 0
+    as long as slot < count
+        generation: kiommu_unit_generation(registry, capacity, slot)
+        if kiommu_unit_state(registry, capacity, slot, generation) is not KIOMMU_UNIT_ACTIVE -> return 0
+        slot: slot + 1
+    slot: 0
+    as long as slot < count
+        record: registry + slot * KIOMMU_UNIT_STRIDE
+        base: peek_raw64(record + 16, 0)
+        extended: peek_raw64(record + 24, 0)
+        if kiommu_hw_context_global_invalidate(base, limit) is not 1 -> return 0
+        if kiommu_hw_iotlb_global_invalidate(base, extended, limit) is not 1 -> return 0
+        slot: slot + 1
+    return 1
+kiommu_units_deactivate_all registry capacity count limit:
+    if registry is 0 -> return 0
+    if count < 1 -> return 0
+    if count > capacity -> return 0
+    slot: count
+    as long as slot > 0
+        slot: slot - 1
+        generation: kiommu_unit_generation(registry, capacity, slot)
+        if kiommu_unit_deactivate(registry, capacity, slot, generation, limit) is not 1 -> return 0
+    return 1
+kiommu_unit_deactivate registry capacity slot generation limit:
+    if kiommu_unit_state(registry, capacity, slot, generation) is not KIOMMU_UNIT_ACTIVE -> return 0
+    record: registry + slot * KIOMMU_UNIT_STRIDE
+    base: peek_raw64(record + 16, 0)
+    if kiommu_hw_disable(base, limit) is not 1 -> return 0
+    poke_raw64(record + 32, 0, 0)
+    poke_raw64(record + 8, 0, KIOMMU_UNIT_READY)
+    return 1
+kiommu_unit_release registry capacity slot generation:
+    if kiommu_unit_state(registry, capacity, slot, generation) is not KIOMMU_UNIT_READY -> return 0
+    record: registry + slot * KIOMMU_UNIT_STRIDE
+    next: peek_raw64(record, 0) + 1
+    if next is 0 -> next: 1
+    poke_raw64(record + 16, 0, 0)
+    poke_raw64(record + 24, 0, 0)
+    poke_raw64(record + 32, 0, 0)
+    poke_raw64(record + 40, 0, 0)
+    poke_raw64(record + 8, 0, KIOMMU_UNIT_FREE)
+    poke_raw64(record, 0, next)
+    return 1
+kiommu_fault_offset capability:
+    return band(bshr(capability, 24), 1023) * 16
+kiommu_fault_read base capability record:
+    if base < KIOMMU_PAGE_SIZE -> return 0
+    if record is 0 -> return 0
+    offset: kiommu_fault_offset(capability)
+    if offset < 64 -> return 0
+    status: peek_raw32(base + 52, 0)
+    high: peek_raw64(base + offset + 8, 0)
+    if band(status, KIOMMU_FSTS_PPF) is 0 -> return 0
+    if band(high, bshl(1, 63)) is 0 -> return 0
+    poke_raw64(record, 0, peek_raw64(base + offset, 0))
+    poke_raw64(record + 8, 0, high)
+    poke_raw64(record + 16, 0, status)
+    return 1
+kiommu_fault_address record:
+    if record is 0 -> return 0
+    return peek_raw64(record, 0) - peek_raw64(record, 0) % KIOMMU_PAGE_SIZE
+kiommu_fault_source record:
+    if record is 0 -> return 0 - 1
+    return band(peek_raw64(record + 8, 0), 65535)
+kiommu_fault_reason record:
+    if record is 0 -> return 0 - 1
+    return band(bshr(peek_raw64(record + 8, 0), 32), 255)
+kiommu_fault_ir_index record:
+    if record is 0 -> return 0 - 1
+    reason: kiommu_fault_reason(record)
+    if reason < 32 -> return 0 - 1
+    if reason > 47 -> return 0 - 1
+    return band(bshr(peek_raw64(record, 0), 48), 65535)
+kiommu_fault_account_init account:
+    if account is 0 -> return 0
+    offset: 0
+    as long as offset < KIOMMU_FAULT_ACCOUNT_STRIDE
+        poke_raw64(account + offset, 0, 0)
+        offset: offset + 8
+    return 1
+kiommu_fault_account record domains domain_capacity owners owner_capacity account:
+    if record is 0 -> return 0
+    if account is 0 -> return 0
+    reason: kiommu_fault_reason(record)
+    source: kiommu_fault_source(record)
+    if reason < 0 -> return 0
+    if source < 0 -> return 0
+    domain_id: 0
+    ir_owner: 0
+    index: 65536
+    flags: 0
+    domain_slot: kiommu_domain_find_requester(domains, domain_capacity, source)
+    if domain_slot >= 0
+        domain_generation: kiommu_domain_generation(domains, domain_capacity, domain_slot)
+        domain_id: kiommu_domain_id(domains, domain_capacity, domain_slot, domain_generation)
+        if domain_id is not 0 -> flags: bor(flags, KIOMMU_FAULT_ACCOUNT_DOMAIN)
+    if reason >= 32
+        if reason <= 47
+            index: kiommu_fault_ir_index(record)
+            owner_slot: kiommu_ir_owner_find_index(owners, owner_capacity, index)
+            if owner_slot >= 0
+                owner_generation: kiommu_ir_owner_generation(owners, owner_capacity, owner_slot)
+                ir_owner: kiommu_ir_owner_identity(owners, owner_capacity, owner_slot, owner_generation)
+                if ir_owner is not 0 -> flags: bor(flags, KIOMMU_FAULT_ACCOUNT_INTERRUPT)
+    count: peek_raw64(account, 0) + 1
+    poke_raw64(account, 0, count)
+    poke_raw64(account + 8, 0, reason)
+    poke_raw64(account + 16, 0, source)
+    poke_raw64(account + 24, 0, index)
+    poke_raw64(account + 32, 0, domain_id)
+    poke_raw64(account + 40, 0, ir_owner)
+    poke_raw64(account + 48, 0, flags)
+    poke_raw64(account + 56, 0, 0)
+    return flags
+kiommu_fault_policy_valid policies capacity:
+    if policies is 0 -> return 0
+    if capacity < 1 -> return 0
+    if capacity > 256 -> return 0
+    if peek_raw64(policies + 8, 0) is not capacity -> return 0
+    return 1
+kiommu_fault_policy_lock policies:
+    spin: 0
+    as long as spin < KIOMMU_FAULT_POLICY_LOCK_LIMIT
+        if atomic_cas(policies, 0, 1) is 0 -> return 1
+        spin: spin + 1
+kiommu_fault_policy_unlock policies:
+    atomic_store(policies, 0)
+    return 1
+kiommu_fault_policy_record policies slot:
+    return policies + KIOMMU_FAULT_POLICY_HEADER + slot * KIOMMU_FAULT_POLICY_STRIDE
+kiommu_fault_policies_init policies capacity:
+    if policies is 0 -> return 0
+    if capacity < 1 -> return 0
+    if capacity > 256 -> return 0
+    poke_raw64(policies, 0, 0)
+    poke_raw64(policies + 8, 0, capacity)
+    slot: 0
+    as long as slot < capacity
+        record: kiommu_fault_policy_record(policies, slot)
+        offset: 0
+        as long as offset < KIOMMU_FAULT_POLICY_STRIDE
+            poke_raw64(record + offset, 0, 0)
+            offset: offset + 8
+        slot: slot + 1
+    return 1
+kiommu_fault_policy_configure policies capacity domain threshold window quota recovery_limit:
+    if kiommu_fault_policy_valid(policies, capacity) is not 1 -> return 0
+    if domain < 1 -> return 0
+    if threshold < 1 -> return 0
+    if window < 0 -> return 0
+    if quota < 0 -> return 0
+    if recovery_limit < 0 -> return 0
+    if window is 0
+        if quota is not 0 -> return 0
+    if window is not 0
+        if quota < 1 -> return 0
+    if kiommu_fault_policy_lock(policies) is not 1 -> return 0
+    selected: 0 - 1
+    free_slot: 0 - 1
+    slot: 0
+    as long as slot < capacity
+        record: kiommu_fault_policy_record(policies, slot)
+        current: peek_raw64(record, 0)
+        if current is domain
+            selected: slot
+            slot: capacity
+        if current is 0
+            if free_slot < 0 -> free_slot: slot
+        slot: slot + 1
+    if selected < 0 -> selected: free_slot
+    if selected < 0
+        kiommu_fault_policy_unlock(policies)
+        return 0
+    record: kiommu_fault_policy_record(policies, selected)
+    current: peek_raw64(record, 0)
+    if current is domain
+        same: 1
+        if peek_raw64(record + 48, 0) is not threshold -> same: 0
+        if peek_raw64(record + 56, 0) is not window -> same: 0
+        if peek_raw64(record + 64, 0) is not quota -> same: 0
+        if peek_raw64(record + 80, 0) is not recovery_limit -> same: 0
+        kiommu_fault_policy_unlock(policies)
+        return same
+    poke_raw64(record, 0, domain)
+    poke_raw64(record + 8, 0, 0)
+    poke_raw64(record + 16, 0, KIOMMU_FAULT_POLICY_MONITOR)
+    poke_raw64(record + 24, 0, 0)
+    poke_raw64(record + 32, 0, 0)
+    poke_raw64(record + 40, 0, 0)
+    poke_raw64(record + 48, 0, threshold)
+    poke_raw64(record + 56, 0, window)
+    poke_raw64(record + 64, 0, quota)
+    poke_raw64(record + 72, 0, 0)
+    poke_raw64(record + 80, 0, recovery_limit)
+    poke_raw64(record + 88, 0, 0)
+    kiommu_fault_policy_unlock(policies)
+    return 1
+kiommu_fault_policy_note_at policies capacity account now:
+    if kiommu_fault_policy_valid(policies, capacity) is not 1 -> return 0 - 1
+    if account is 0 -> return 0 - 1
+    if now < 0 -> return 0 - 1
+    domain: peek_raw64(account + 32, 0)
+    if domain is 0 -> return 0 - 1
+    if kiommu_fault_policy_lock(policies) is not 1 -> return 0 - 1
+    selected: 0 - 1
+    slot: 0
+    as long as slot < capacity
+        record: kiommu_fault_policy_record(policies, slot)
+        if peek_raw64(record, 0) is domain
+            selected: slot
+            slot: capacity
+        slot: slot + 1
+    if selected < 0
+        kiommu_fault_policy_unlock(policies)
+        return 0 - 1
+    record: kiommu_fault_policy_record(policies, selected)
+    count: peek_raw64(record + 8, 0)
+    last: peek_raw64(record + 88, 0)
+    if count > 0
+        if now < last
+            kiommu_fault_policy_unlock(policies)
+            return 0 - 1
+    count: count + 1
+    window: peek_raw64(record + 56, 0)
+    quota: peek_raw64(record + 64, 0)
+    window_count: 0
+    window_start: now
+    if window > 0
+        window_count: peek_raw64(record + 40, 0)
+        window_start: peek_raw64(record + 32, 0)
+        if window_count is 0
+            window_start: now
+            window_count: 1
+        if not
+            if now - window_start >= window
+                window_start: now
+                window_count: 1
+            if not -> window_count: window_count + 1
+    action: peek_raw64(record + 16, 0)
+    if action is not KIOMMU_FAULT_POLICY_BLOCK
+        if action is not KIOMMU_FAULT_POLICY_QUARANTINE
+            action: KIOMMU_FAULT_POLICY_MONITOR
+            if count >= peek_raw64(record + 48, 0) -> action: KIOMMU_FAULT_POLICY_QUARANTINE
+            if window > 0
+                if window_count > quota -> action: KIOMMU_FAULT_POLICY_QUARANTINE
+            if action is KIOMMU_FAULT_POLICY_QUARANTINE
+                recovery_limit: peek_raw64(record + 80, 0)
+                if recovery_limit > 0
+                    if peek_raw64(record + 72, 0) >= recovery_limit -> action: KIOMMU_FAULT_POLICY_BLOCK
+    poke_raw64(record + 8, 0, count)
+    poke_raw64(record + 16, 0, action)
+    poke_raw64(record + 24, 0, peek_raw64(account + 8, 0))
+    poke_raw64(record + 32, 0, window_start)
+    poke_raw64(record + 40, 0, window_count)
+    poke_raw64(record + 88, 0, now)
+    kiommu_fault_policy_unlock(policies)
+    return action
+kiommu_fault_policy_note policies capacity account threshold:
+    if account is 0 -> return 0 - 1
+    domain: peek_raw64(account + 32, 0)
+    if kiommu_fault_policy_configure(policies, capacity, domain, threshold, 0, 0, 0) is not 1 -> return 0 - 1
+    now: peek_raw64(account, 0)
+    return kiommu_fault_policy_note_at(policies, capacity, account, now)
+kiommu_fault_policy_count policies capacity domain:
+    if kiommu_fault_policy_valid(policies, capacity) is not 1 -> return 0 - 1
+    if kiommu_fault_policy_lock(policies) is not 1 -> return 0 - 1
+    result: 0
+    slot: 0
+    as long as slot < capacity
+        record: kiommu_fault_policy_record(policies, slot)
+        if peek_raw64(record, 0) is domain
+            result: peek_raw64(record + 8, 0)
+            slot: capacity
+        slot: slot + 1
+    kiommu_fault_policy_unlock(policies)
+    return result
+kiommu_fault_policy_action policies capacity domain:
+    if kiommu_fault_policy_valid(policies, capacity) is not 1 -> return 0
+    if kiommu_fault_policy_lock(policies) is not 1 -> return 0
+    result: 0
+    slot: 0
+    as long as slot < capacity
+        record: kiommu_fault_policy_record(policies, slot)
+        if peek_raw64(record, 0) is domain
+            result: peek_raw64(record + 16, 0)
+            slot: capacity
+        slot: slot + 1
+    kiommu_fault_policy_unlock(policies)
+    return result
+kiommu_fault_policy_window_count policies capacity domain:
+    if kiommu_fault_policy_valid(policies, capacity) is not 1 -> return 0 - 1
+    if kiommu_fault_policy_lock(policies) is not 1 -> return 0 - 1
+    result: 0
+    slot: 0
+    as long as slot < capacity
+        record: kiommu_fault_policy_record(policies, slot)
+        if peek_raw64(record, 0) is domain
+            result: peek_raw64(record + 40, 0)
+            slot: capacity
+        slot: slot + 1
+    kiommu_fault_policy_unlock(policies)
+    return result
+kiommu_fault_policy_recoveries policies capacity domain:
+    if kiommu_fault_policy_valid(policies, capacity) is not 1 -> return 0 - 1
+    if kiommu_fault_policy_lock(policies) is not 1 -> return 0 - 1
+    result: 0
+    slot: 0
+    as long as slot < capacity
+        record: kiommu_fault_policy_record(policies, slot)
+        if peek_raw64(record, 0) is domain
+            result: peek_raw64(record + 72, 0)
+            slot: capacity
+        slot: slot + 1
+    kiommu_fault_policy_unlock(policies)
+    return result
+kiommu_fault_policy_reset policies capacity domain:
+    if kiommu_fault_policy_valid(policies, capacity) is not 1 -> return 0
+    if domain is 0 -> return 0
+    if kiommu_fault_policy_lock(policies) is not 1 -> return 0
+    slot: 0
+    as long as slot < capacity
+        record: kiommu_fault_policy_record(policies, slot)
+        if peek_raw64(record, 0) is domain
+            if peek_raw64(record + 16, 0) is not KIOMMU_FAULT_POLICY_QUARANTINE
+                kiommu_fault_policy_unlock(policies)
+                return 0
+            poke_raw64(record + 8, 0, 0)
+            poke_raw64(record + 16, 0, KIOMMU_FAULT_POLICY_MONITOR)
+            poke_raw64(record + 24, 0, 0)
+            poke_raw64(record + 32, 0, 0)
+            poke_raw64(record + 40, 0, 0)
+            poke_raw64(record + 72, 0, peek_raw64(record + 72, 0) + 1)
+            poke_raw64(record + 88, 0, 0)
+            kiommu_fault_policy_unlock(policies)
+            return 1
+        slot: slot + 1
+    kiommu_fault_policy_unlock(policies)
+kiommu_fault_policy_release policies capacity domain:
+    if kiommu_fault_policy_valid(policies, capacity) is not 1 -> return 0
+    if domain is 0 -> return 0
+    if kiommu_fault_policy_lock(policies) is not 1 -> return 0
+    slot: 0
+    as long as slot < capacity
+        record: kiommu_fault_policy_record(policies, slot)
+        if peek_raw64(record, 0) is domain
+            offset: 0
+            as long as offset < KIOMMU_FAULT_POLICY_STRIDE
+                poke_raw64(record + offset, 0, 0)
+                offset: offset + 8
+            kiommu_fault_policy_unlock(policies)
+            return 1
+        slot: slot + 1
+    kiommu_fault_policy_unlock(policies)
+kiommu_fault_policy_active policies capacity:
+    if kiommu_fault_policy_valid(policies, capacity) is not 1 -> return 0 - 1
+    if kiommu_fault_policy_lock(policies) is not 1 -> return 0 - 1
+    active: 0
+    slot: 0
+    as long as slot < capacity
+        record: kiommu_fault_policy_record(policies, slot)
+        if peek_raw64(record, 0) is not 0 -> active: active + 1
+        slot: slot + 1
+    kiommu_fault_policy_unlock(policies)
+    return active
+kiommu_fault_clear base capability:
+    if base < KIOMMU_PAGE_SIZE -> return 0
+    offset: kiommu_fault_offset(capability)
+    if offset < 64 -> return 0
+    poke_raw64(base + offset + 8, 0, bshl(1, 63))
+    poke_raw32(base + 52, 0, 1)
+    return 1

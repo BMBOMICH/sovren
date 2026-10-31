@@ -1,0 +1,588 @@
+# unsafe-module
+KIO_REQ_STRIDE: 96
+KIO_REQ_FREE: 0
+KIO_REQ_QUEUED: 1
+KIO_REQ_ACTIVE: 2
+KIO_REQ_DONE: 3
+KIO_REQ_CANCELLED: 4
+KIO_REQ_TIMED_OUT: 5
+KIO_REQ_FAILED: 6
+KIO_CANCEL_NONE: 0
+KIO_CANCEL_REQUESTED: 1
+KIO_CANCEL_ACKNOWLEDGED: 2
+KIO_CANCEL_TOO_LATE: 3
+KIO_TIMEOUT_NONE: 0
+KIO_TIMEOUT_REQUESTED: 1
+KIO_TIMEOUT_ACKNOWLEDGED: 2
+KIO_TIMEOUT_TOO_LATE: 3
+KIO_QUEUE_STRIDE: 32
+KIO_RING_STRIDE: 72
+KIO_SG_STRIDE: 32
+KIO_SG_ENTRY_STRIDE: 16
+KIO_SG_MAX_ENTRIES: 256
+KIO_DMA_MAP_STRIDE: 64
+KIO_DMA_LIMITS_STRIDE: 24
+KIO_DMA_FREE: 0
+KIO_DMA_MAPPED: 1
+KIO_DMA_DEVICE: 2
+KIO_DMA_COMPLETE: 3
+KIO_DMA_TO_DEVICE: 1
+KIO_DMA_FROM_DEVICE: 2
+KIO_DMA_BIDIRECTIONAL: 3
+KIO_MAX_I64: 9223372036854775807
+KIO_CTL_STRIDE: 48
+KIO_CTL_ONLINE: 1
+KIO_CTL_QUIESCING: 2
+KIO_CTL_RESETTING: 3
+KIO_CTL_RECOVERING: 4
+KIO_CTL_FAILED: 5
+kio_req_init request:
+    if request is 0 -> return 0
+    generation: peek_raw64(request, 0) + 1
+    if generation is 0 -> generation: 1
+    poke_raw64(request, 0, generation)
+    poke_raw64(request + 8, 0, KIO_REQ_FREE)
+    poke_raw64(request + 16, 0, 0)
+    poke_raw64(request + 24, 0, 0)
+    poke_raw64(request + 32, 0, 0)
+    poke_raw64(request + 40, 0, 0)
+    poke_raw64(request + 48, 0, 0)
+    poke_raw64(request + 56, 0, 0)
+    poke_raw64(request + 64, 0, 0)
+    poke_raw64(request + 72, 0, 0)
+    poke_raw64(request + 80, 0, 0)
+    poke_raw64(request + 88, 0, KIO_CANCEL_NONE)
+    return 1
+kio_req_state request:
+    if request is 0 -> return KIO_REQ_FAILED
+    return peek_raw64(request + 8, 0)
+kio_req_generation request:
+    if request is 0 -> return 0
+    return peek_raw64(request, 0)
+kio_req_owner request:
+    if request is 0 -> return 0
+    return peek_raw64(request + 64, 0)
+kio_req_status request:
+    if request is 0 -> return 0 - 22
+    return peek_raw64(request + 48, 0)
+kio_req_transferred request:
+    if request is 0 -> return 0
+    return peek_raw64(request + 40, 0)
+kio_req_cancel_state request:
+    if request is 0 -> return KIO_CANCEL_NONE
+    return band(peek_raw64(request + 88, 0), 255)
+kio_req_timeout_state request:
+    if request is 0 -> return KIO_TIMEOUT_NONE
+    return band(bshr(peek_raw64(request + 88, 0), 8), 255)
+_kio_req_set_cancel request disposition:
+    meta: peek_raw64(request + 88, 0)
+    poke_raw64(request + 88, 0, bor(band(meta, 65280), disposition))
+    return 1
+_kio_req_set_timeout request disposition:
+    meta: peek_raw64(request + 88, 0)
+    poke_raw64(request + 88, 0, bor(band(meta, 255), bshl(disposition, 8)))
+    return 1
+kio_req_cancel_pending request:
+    if request is 0 -> return 0
+    if kio_req_state(request) is not KIO_REQ_ACTIVE -> return 0
+    if kio_req_cancel_state(request) is not KIO_CANCEL_REQUESTED -> return 0
+    return 1
+kio_req_timeout_pending request:
+    if request is 0 -> return 0
+    if kio_req_state(request) is not KIO_REQ_ACTIVE -> return 0
+    if kio_req_timeout_state(request) is not KIO_TIMEOUT_REQUESTED -> return 0
+    return 1
+kio_req_set_retry_limit request limit:
+    if request is 0 -> return 0
+    if kio_req_state(request) is not KIO_REQ_FREE -> return 0
+    if limit < 0 -> return 0
+    if limit > 16 -> return 0
+    poke_raw64(request + 80, 0, limit)
+    return 1
+kio_req_prepare request owner operation buffer length deadline:
+    if request is 0 -> return 0
+    if kio_req_state(request) is not KIO_REQ_FREE -> return 0
+    if owner < 1 -> return 0
+    if operation < 1 -> return 0
+    if length < 0 -> return 0
+    if length > 0
+        if buffer is 0 -> return 0
+    if deadline < 0 -> return 0
+    poke_raw64(request + 16, 0, operation)
+    poke_raw64(request + 24, 0, buffer)
+    poke_raw64(request + 32, 0, length)
+    poke_raw64(request + 40, 0, 0)
+    poke_raw64(request + 48, 0, 0)
+    poke_raw64(request + 56, 0, deadline)
+    poke_raw64(request + 64, 0, owner)
+    poke_raw64(request + 72, 0, 0)
+    poke_raw64(request + 88, 0, KIO_CANCEL_NONE)
+    poke_raw64(request + 8, 0, KIO_REQ_QUEUED)
+    return 1
+kio_req_activate request owner:
+    if request is 0 -> return 0
+    if kio_req_state(request) is not KIO_REQ_QUEUED -> return 0
+    if kio_req_owner(request) is not owner -> return 0
+    poke_raw64(request + 8, 0, KIO_REQ_ACTIVE)
+    return 1
+kio_req_complete request owner status transferred:
+    if request is 0 -> return 0
+    if kio_req_state(request) is not KIO_REQ_ACTIVE -> return 0
+    if kio_req_owner(request) is not owner -> return 0
+    if transferred < 0 -> return 0
+    if transferred > peek_raw64(request + 32, 0) -> return 0
+    if kio_req_cancel_state(request) is KIO_CANCEL_REQUESTED -> _kio_req_set_cancel(request, KIO_CANCEL_TOO_LATE)
+    if kio_req_timeout_state(request) is KIO_TIMEOUT_REQUESTED -> _kio_req_set_timeout(request, KIO_TIMEOUT_TOO_LATE)
+    poke_raw64(request + 40, 0, transferred)
+    poke_raw64(request + 48, 0, status)
+    if status is 0 -> poke_raw64(request + 8, 0, KIO_REQ_DONE)
+    if status is not 0 -> poke_raw64(request + 8, 0, KIO_REQ_FAILED)
+    return 1
+kio_req_cancel request owner:
+    if request is 0 -> return 0
+    state: kio_req_state(request)
+    if state is not KIO_REQ_QUEUED
+        if state is not KIO_REQ_ACTIVE -> return 0
+    if kio_req_owner(request) is not owner -> return 0
+    if kio_req_cancel_state(request) is not KIO_CANCEL_NONE -> return 0
+    if kio_req_timeout_state(request) is not KIO_TIMEOUT_NONE -> return 0
+    if state is KIO_REQ_QUEUED
+        poke_raw64(request + 48, 0, 0 - 125)
+        _kio_req_set_cancel(request, KIO_CANCEL_ACKNOWLEDGED)
+        poke_raw64(request + 8, 0, KIO_REQ_CANCELLED)
+        return 1
+    _kio_req_set_cancel(request, KIO_CANCEL_REQUESTED)
+    return 1
+kio_req_cancel_ack request owner transferred:
+    if request is 0 -> return 0
+    if kio_req_state(request) is not KIO_REQ_ACTIVE -> return 0
+    if kio_req_owner(request) is not owner -> return 0
+    if kio_req_cancel_state(request) is not KIO_CANCEL_REQUESTED -> return 0
+    if transferred < 0 -> return 0
+    if transferred > peek_raw64(request + 32, 0) -> return 0
+    poke_raw64(request + 40, 0, transferred)
+    poke_raw64(request + 48, 0, 0 - 125)
+    _kio_req_set_cancel(request, KIO_CANCEL_ACKNOWLEDGED)
+    poke_raw64(request + 8, 0, KIO_REQ_CANCELLED)
+    return 1
+kio_req_timeout request owner now:
+    if request is 0 -> return 0
+    state: kio_req_state(request)
+    if state is not KIO_REQ_QUEUED
+        if state is not KIO_REQ_ACTIVE -> return 0
+    if kio_req_owner(request) is not owner -> return 0
+    if kio_req_timeout_state(request) is not KIO_TIMEOUT_NONE -> return 0
+    if kio_req_cancel_state(request) is not KIO_CANCEL_NONE -> return 0
+    deadline: peek_raw64(request + 56, 0)
+    if deadline is 0 -> return 0
+    if now < deadline -> return 0
+    if state is KIO_REQ_QUEUED
+        poke_raw64(request + 48, 0, 0 - 110)
+        _kio_req_set_timeout(request, KIO_TIMEOUT_ACKNOWLEDGED)
+        poke_raw64(request + 8, 0, KIO_REQ_TIMED_OUT)
+        return 1
+    _kio_req_set_timeout(request, KIO_TIMEOUT_REQUESTED)
+    return 1
+kio_req_timeout_ack request owner transferred:
+    if request is 0 -> return 0
+    if kio_req_state(request) is not KIO_REQ_ACTIVE -> return 0
+    if kio_req_owner(request) is not owner -> return 0
+    if kio_req_timeout_state(request) is not KIO_TIMEOUT_REQUESTED -> return 0
+    if transferred < 0 -> return 0
+    if transferred > peek_raw64(request + 32, 0) -> return 0
+    poke_raw64(request + 40, 0, transferred)
+    poke_raw64(request + 48, 0, 0 - 110)
+    _kio_req_set_timeout(request, KIO_TIMEOUT_ACKNOWLEDGED)
+    poke_raw64(request + 8, 0, KIO_REQ_TIMED_OUT)
+    return 1
+kio_req_retry request owner deadline:
+    if request is 0 -> return 0
+    state: kio_req_state(request)
+    if state is not KIO_REQ_FAILED
+        if state is not KIO_REQ_TIMED_OUT -> return 0
+    if kio_req_owner(request) is not owner -> return 0
+    retries: peek_raw64(request + 72, 0)
+    if retries >= peek_raw64(request + 80, 0) -> return 0
+    if deadline < 0 -> return 0
+    poke_raw64(request + 72, 0, retries + 1)
+    poke_raw64(request + 40, 0, 0)
+    poke_raw64(request + 48, 0, 0)
+    poke_raw64(request + 56, 0, deadline)
+    poke_raw64(request + 88, 0, KIO_CANCEL_NONE)
+    poke_raw64(request + 8, 0, KIO_REQ_QUEUED)
+    return 1
+kio_queue_init queue slots capacity:
+    if queue is 0 -> return 0
+    if slots is 0 -> return 0
+    if capacity < 1 -> return 0
+    if capacity > 1024 -> return 0
+    poke_raw64(queue, 0, slots)
+    poke_raw64(queue + 8, 0, capacity)
+    poke_raw64(queue + 16, 0, 0)
+    poke_raw64(queue + 24, 0, 0)
+    i: 0
+    as long as i < capacity
+        poke_raw64(slots + i * 8, 0, 0)
+        i: i + 1
+    return 1
+kio_queue_count queue:
+    if queue is 0 -> return 0
+    return peek_raw64(queue + 24, 0)
+kio_queue_contains queue request:
+    if queue is 0 -> return 0
+    if request is 0 -> return 0
+    slots: peek_raw64(queue, 0)
+    capacity: peek_raw64(queue + 8, 0)
+    head: peek_raw64(queue + 16, 0)
+    count: peek_raw64(queue + 24, 0)
+    i: 0
+    as long as i < count
+        index: (head + i) % capacity
+        if peek_raw64(slots + index * 8, 0) is request -> return 1
+        i: i + 1
+kio_queue_push queue request:
+    if queue is 0 -> return 0
+    if request is 0 -> return 0
+    if kio_req_state(request) is not KIO_REQ_QUEUED -> return 0
+    capacity: peek_raw64(queue + 8, 0)
+    count: peek_raw64(queue + 24, 0)
+    if capacity < 1 -> return 0
+    if count >= capacity -> return 0
+    if kio_queue_contains(queue, request) is 1 -> return 0
+    slots: peek_raw64(queue, 0)
+    head: peek_raw64(queue + 16, 0)
+    tail: (head + count) % capacity
+    poke_raw64(slots + tail * 8, 0, request)
+    poke_raw64(queue + 24, 0, count + 1)
+    return 1
+kio_queue_pop queue:
+    if queue is 0 -> return 0
+    count: peek_raw64(queue + 24, 0)
+    if count < 1 -> return 0
+    slots: peek_raw64(queue, 0)
+    capacity: peek_raw64(queue + 8, 0)
+    head: peek_raw64(queue + 16, 0)
+    request: peek_raw64(slots + head * 8, 0)
+    poke_raw64(slots + head * 8, 0, 0)
+    poke_raw64(queue + 16, 0, (head + 1) % capacity)
+    poke_raw64(queue + 24, 0, count - 1)
+    return request
+kio_queue_remove queue request:
+    if queue is 0 -> return 0
+    if request is 0 -> return 0
+    slots: peek_raw64(queue, 0)
+    capacity: peek_raw64(queue + 8, 0)
+    head: peek_raw64(queue + 16, 0)
+    count: peek_raw64(queue + 24, 0)
+    found: count
+    i: 0
+    as long as i < count
+        index: (head + i) % capacity
+        if peek_raw64(slots + index * 8, 0) is request
+            found: i
+            i: count
+        i: i + 1
+    if found is count -> return 0
+    i: found
+    as long as i + 1 < count
+        dst: (head + i) % capacity
+        src: (head + i + 1) % capacity
+        poke_raw64(slots + dst * 8, 0, peek_raw64(slots + src * 8, 0))
+        i: i + 1
+    tail: (head + count - 1) % capacity
+    poke_raw64(slots + tail * 8, 0, 0)
+    poke_raw64(queue + 24, 0, count - 1)
+    return 1
+kio_dma_valid address length alignment boundary maximum:
+    if address is 0 -> return 0
+    if length < 1 -> return 0
+    if alignment < 1 -> return 0
+    if band(alignment, alignment - 1) is not 0 -> return 0
+    if address % alignment is not 0 -> return 0
+    if maximum < address -> return 0
+    if length - 1 > maximum - address -> return 0
+    if boundary is not 0
+        if band(boundary, boundary - 1) is not 0 -> return 0
+        if length > boundary -> return 0
+        if address % boundary > boundary - length -> return 0
+    return 1
+kio_dma_limits_init limits alignment boundary maximum:
+    if limits is 0 -> return 0
+    if alignment < 1 -> return 0
+    if band(alignment, alignment - 1) is not 0 -> return 0
+    if boundary < 0 -> return 0
+    if boundary is not 0
+        if band(boundary, boundary - 1) is not 0 -> return 0
+    if maximum < 1 -> return 0
+    poke_raw64(limits, 0, alignment)
+    poke_raw64(limits + 8, 0, boundary)
+    poke_raw64(limits + 16, 0, maximum)
+    return 1
+kio_dma_map_init mapping:
+    if mapping is 0 -> return 0
+    if peek_raw64(mapping + 8, 0) is not KIO_DMA_FREE -> return 0
+    generation: peek_raw64(mapping, 0) + 1
+    if generation is 0 -> generation: 1
+    poke_raw64(mapping, 0, generation)
+    poke_raw64(mapping + 8, 0, KIO_DMA_FREE)
+    poke_raw64(mapping + 16, 0, 0)
+    poke_raw64(mapping + 24, 0, 0)
+    poke_raw64(mapping + 32, 0, 0)
+    poke_raw64(mapping + 40, 0, 0)
+    poke_raw64(mapping + 48, 0, 0)
+    poke_raw64(mapping + 56, 0, 0)
+    return 1
+kio_dma_map_pair mapping owner cpu_address device_address length direction limits:
+    if mapping is 0 -> return 0
+    if limits is 0 -> return 0
+    if peek_raw64(mapping + 8, 0) is not KIO_DMA_FREE -> return 0
+    if owner < 1 -> return 0
+    if cpu_address < 1 -> return 0
+    if cpu_address + length < cpu_address -> return 0
+    if direction is not KIO_DMA_TO_DEVICE
+        if direction is not KIO_DMA_FROM_DEVICE
+            if direction is not KIO_DMA_BIDIRECTIONAL -> return 0
+    alignment: peek_raw64(limits, 0)
+    boundary: peek_raw64(limits + 8, 0)
+    maximum: peek_raw64(limits + 16, 0)
+    if kio_dma_valid(device_address, length, alignment, boundary, maximum) is not 1 -> return 0
+    poke_raw64(mapping + 16, 0, owner)
+    poke_raw64(mapping + 24, 0, cpu_address)
+    poke_raw64(mapping + 32, 0, length)
+    poke_raw64(mapping + 40, 0, direction)
+    poke_raw64(mapping + 48, 0, 0)
+    poke_raw64(mapping + 56, 0, device_address)
+    poke_raw64(mapping + 8, 0, KIO_DMA_MAPPED)
+    return 1
+kio_dma_map mapping owner address length direction limits:
+    return kio_dma_map_pair(mapping, owner, address, address, length, direction, limits)
+kio_dma_map_generation mapping:
+    if mapping is 0 -> return 0
+    return peek_raw64(mapping, 0)
+kio_dma_map_state mapping:
+    if mapping is 0 -> return KIO_DMA_FREE
+    return peek_raw64(mapping + 8, 0)
+kio_dma_map_address mapping:
+    if mapping is 0 -> return 0
+    return peek_raw64(mapping + 24, 0)
+kio_dma_device_address mapping:
+    if mapping is 0 -> return 0
+    return peek_raw64(mapping + 56, 0)
+kio_dma_map_length mapping:
+    if mapping is 0 -> return 0
+    return peek_raw64(mapping + 32, 0)
+kio_dma_map_direction mapping:
+    if mapping is 0 -> return 0
+    return peek_raw64(mapping + 40, 0)
+kio_dma_map_transferred mapping:
+    if mapping is 0 -> return 0
+    return peek_raw64(mapping + 48, 0)
+kio_dma_device_begin mapping owner:
+    if mapping is 0 -> return 0
+    if peek_raw64(mapping + 8, 0) is not KIO_DMA_MAPPED -> return 0
+    if peek_raw64(mapping + 16, 0) is not owner -> return 0
+    poke_raw64(mapping + 8, 0, KIO_DMA_DEVICE)
+    return 1
+kio_dma_device_end mapping owner transferred:
+    if mapping is 0 -> return 0
+    if peek_raw64(mapping + 8, 0) is not KIO_DMA_DEVICE -> return 0
+    if peek_raw64(mapping + 16, 0) is not owner -> return 0
+    if transferred < 0 -> return 0
+    if transferred > peek_raw64(mapping + 32, 0) -> return 0
+    poke_raw64(mapping + 48, 0, transferred)
+    poke_raw64(mapping + 8, 0, KIO_DMA_COMPLETE)
+    return 1
+kio_dma_device_reclaim mapping owner transferred:
+    if mapping is 0 -> return 0
+    if peek_raw64(mapping + 8, 0) is not KIO_DMA_DEVICE -> return 0
+    if peek_raw64(mapping + 16, 0) is not owner -> return 0
+    if transferred < 0 -> return 0
+    if transferred > peek_raw64(mapping + 32, 0) -> return 0
+    poke_raw64(mapping + 48, 0, transferred)
+    poke_raw64(mapping + 8, 0, KIO_DMA_MAPPED)
+    return 1
+kio_dma_unmap mapping owner:
+    if mapping is 0 -> return 0
+    state: peek_raw64(mapping + 8, 0)
+    if state is not KIO_DMA_MAPPED
+        if state is not KIO_DMA_COMPLETE -> return 0
+    if peek_raw64(mapping + 16, 0) is not owner -> return 0
+    poke_raw64(mapping + 8, 0, KIO_DMA_FREE)
+    poke_raw64(mapping + 16, 0, 0)
+    poke_raw64(mapping + 24, 0, 0)
+    poke_raw64(mapping + 32, 0, 0)
+    poke_raw64(mapping + 40, 0, 0)
+    poke_raw64(mapping + 48, 0, 0)
+    poke_raw64(mapping + 56, 0, 0)
+    return 1
+kio_sg_init list entries capacity:
+    if list is 0 -> return 0
+    if entries is 0 -> return 0
+    if capacity < 1 -> return 0
+    if capacity > KIO_SG_MAX_ENTRIES -> return 0
+    poke_raw64(list, 0, entries)
+    poke_raw64(list + 8, 0, capacity)
+    poke_raw64(list + 16, 0, 0)
+    poke_raw64(list + 24, 0, 0)
+    i: 0
+    as long as i < capacity * KIO_SG_ENTRY_STRIDE
+        poke_raw64(entries + i, 0, 0)
+        i: i + 8
+    return 1
+kio_sg_add list address length alignment boundary maximum:
+    if list is 0 -> return 0
+    count: peek_raw64(list + 16, 0)
+    capacity: peek_raw64(list + 8, 0)
+    if capacity < 1 -> return 0
+    if capacity > KIO_SG_MAX_ENTRIES -> return 0
+    if count >= capacity -> return 0
+    if kio_dma_valid(address, length, alignment, boundary, maximum) is not 1 -> return 0
+    total: peek_raw64(list + 24, 0)
+    if length > KIO_MAX_I64 - total -> return 0
+    entries: peek_raw64(list, 0)
+    entry: entries + count * KIO_SG_ENTRY_STRIDE
+    poke_raw64(entry, 0, address)
+    poke_raw64(entry + 8, 0, length)
+    poke_raw64(list + 16, 0, count + 1)
+    poke_raw64(list + 24, 0, total + length)
+    return 1
+kio_sg_count list:
+    if list is 0 -> return 0
+    return peek_raw64(list + 16, 0)
+kio_sg_total list:
+    if list is 0 -> return 0
+    return peek_raw64(list + 24, 0)
+kio_sg_address list index:
+    if list is 0 -> return 0
+    if index < 0 -> return 0
+    if index >= peek_raw64(list + 16, 0) -> return 0
+    entries: peek_raw64(list, 0)
+    return peek_raw64(entries + index * KIO_SG_ENTRY_STRIDE, 0)
+kio_sg_length list index:
+    if list is 0 -> return 0
+    if index < 0 -> return 0
+    if index >= peek_raw64(list + 16, 0) -> return 0
+    entries: peek_raw64(list, 0)
+    return peek_raw64(entries + index * KIO_SG_ENTRY_STRIDE + 8, 0)
+kio_ring_init ring base capacity stride:
+    if ring is 0 -> return 0
+    if base is 0 -> return 0
+    if capacity < 2 -> return 0
+    if capacity > 4096 -> return 0
+    if stride < 8 -> return 0
+    if stride > 4096 -> return 0
+    if stride % 4 is not 0 -> return 0
+    generation: peek_raw64(ring + 64, 0) + 1
+    if generation is 0 -> generation: 1
+    poke_raw64(ring, 0, base)
+    poke_raw64(ring + 8, 0, capacity)
+    poke_raw64(ring + 16, 0, stride)
+    poke_raw64(ring + 24, 0, 0)
+    poke_raw64(ring + 32, 0, 0)
+    poke_raw64(ring + 40, 0, 0)
+    poke_raw64(ring + 48, 0, 1)
+    poke_raw64(ring + 56, 0, 0)
+    poke_raw64(ring + 64, 0, generation)
+    return 1
+kio_ring_count ring:
+    if ring is 0 -> return 0
+    return peek_raw64(ring + 40, 0)
+kio_ring_phase ring:
+    if ring is 0 -> return 0
+    return peek_raw64(ring + 48, 0)
+kio_ring_reserve ring:
+    if ring is 0 -> return 0
+    if peek_raw64(ring + 56, 0) is not 0 -> return 0
+    count: peek_raw64(ring + 40, 0)
+    capacity: peek_raw64(ring + 8, 0)
+    if count >= capacity -> return 0
+    poke_raw64(ring + 56, 0, 1)
+    return peek_raw64(ring, 0) + peek_raw64(ring + 24, 0) * peek_raw64(ring + 16, 0)
+kio_ring_abort ring:
+    if ring is 0 -> return 0
+    if peek_raw64(ring + 56, 0) is not 1 -> return 0
+    poke_raw64(ring + 56, 0, 0)
+    return 1
+kio_ring_commit ring:
+    if ring is 0 -> return 0
+    if peek_raw64(ring + 56, 0) is not 1 -> return 0
+    producer: peek_raw64(ring + 24, 0)
+    capacity: peek_raw64(ring + 8, 0)
+    poke_raw64(ring + 24, 0, (producer + 1) % capacity)
+    poke_raw64(ring + 40, 0, peek_raw64(ring + 40, 0) + 1)
+    poke_raw64(ring + 56, 0, 0)
+    return 1
+kio_ring_consumer ring:
+    if ring is 0 -> return 0
+    if peek_raw64(ring + 40, 0) < 1 -> return 0
+    return peek_raw64(ring, 0) + peek_raw64(ring + 32, 0) * peek_raw64(ring + 16, 0)
+kio_ring_release ring:
+    if ring is 0 -> return 0
+    count: peek_raw64(ring + 40, 0)
+    if count < 1 -> return 0
+    consumer: peek_raw64(ring + 32, 0) + 1
+    capacity: peek_raw64(ring + 8, 0)
+    if consumer is capacity
+        consumer: 0
+        if peek_raw64(ring + 48, 0) is 1 -> poke_raw64(ring + 48, 0, 0)
+        if not -> poke_raw64(ring + 48, 0, 1)
+    poke_raw64(ring + 32, 0, consumer)
+    poke_raw64(ring + 40, 0, count - 1)
+    return 1
+kio_ctl_init controller max_resets:
+    if controller is 0 -> return 0
+    if max_resets < 1 -> return 0
+    if max_resets > 64 -> return 0
+    epoch: peek_raw64(controller + 8, 0) + 1
+    if epoch is 0 -> epoch: 1
+    poke_raw64(controller, 0, KIO_CTL_ONLINE)
+    poke_raw64(controller + 8, 0, epoch)
+    poke_raw64(controller + 16, 0, 0)
+    poke_raw64(controller + 24, 0, 0)
+    poke_raw64(controller + 32, 0, max_resets)
+    poke_raw64(controller + 40, 0, 0)
+    return 1
+kio_ctl_state controller:
+    if controller is 0 -> return KIO_CTL_FAILED
+    return peek_raw64(controller, 0)
+kio_ctl_epoch controller:
+    if controller is 0 -> return 0
+    return peek_raw64(controller + 8, 0)
+kio_ctl_quiesce controller reason:
+    if controller is 0 -> return 0
+    if kio_ctl_state(controller) is not KIO_CTL_ONLINE -> return 0
+    poke_raw64(controller + 40, 0, reason)
+    poke_raw64(controller, 0, KIO_CTL_QUIESCING)
+    return 1
+kio_ctl_reset controller:
+    if controller is 0 -> return 0
+    state: kio_ctl_state(controller)
+    if state is not KIO_CTL_QUIESCING
+        if state is not KIO_CTL_ONLINE -> return 0
+    resets: peek_raw64(controller + 24, 0)
+    if resets >= peek_raw64(controller + 32, 0)
+        poke_raw64(controller, 0, KIO_CTL_FAILED)
+        return 0
+    poke_raw64(controller + 16, 0, peek_raw64(controller + 16, 0) + 1)
+    poke_raw64(controller + 24, 0, resets + 1)
+    poke_raw64(controller, 0, KIO_CTL_RESETTING)
+    return 1
+kio_ctl_recover controller:
+    if controller is 0 -> return 0
+    if kio_ctl_state(controller) is not KIO_CTL_RESETTING -> return 0
+    poke_raw64(controller, 0, KIO_CTL_RECOVERING)
+    return 1
+kio_ctl_online controller:
+    if controller is 0 -> return 0
+    if kio_ctl_state(controller) is not KIO_CTL_RECOVERING -> return 0
+    epoch: peek_raw64(controller + 8, 0) + 1
+    if epoch is 0 -> epoch: 1
+    poke_raw64(controller + 8, 0, epoch)
+    poke_raw64(controller + 40, 0, 0)
+    poke_raw64(controller, 0, KIO_CTL_ONLINE)
+    return 1
+kio_ctl_fail controller reason:
+    if controller is 0 -> return 0
+    poke_raw64(controller + 40, 0, reason)
+    poke_raw64(controller, 0, KIO_CTL_FAILED)
+    return 1

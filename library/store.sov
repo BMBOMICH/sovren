@@ -1,0 +1,11 @@
+use file
+use string
+store_put path line:
+    x: str_cat(line, "\n")
+    return file_append(path, x)
+store_load path:
+    return file_read_all(path)
+store_clear path:
+    return file_write_all(path, "")
+store_has path:
+    return file_exists(path)

@@ -1,0 +1,937 @@
+# Expanded compact source to match current shared front end.
+# Sovren -> wasm32 SIMD module emitter.
+# Emits the widened wasm32 command subset plus a SIMD helper carrying v128.const,
+# so the artifact is a real SIMD-feature wasm module while exported main remains
+# the normal i32 command entry.
+
+use arg
+use file
+use string
+use sys
+
+obuf: 0
+opos: 0
+tbuf: 0
+tpos: 0
+bbuf: 0
+bpos: 0
+src: 0
+fn_names: 0
+fn_params: 0
+fn_bodies: 0
+cur_params: ""
+locals: 0
+block_inds: 0
+block_kinds: 0
+block_n: 0
+last_block_kind: ""
+fn_return_seen: 0
+ep: 0
+eb: 0
+es: ""
+
+ob v:
+    poke_byte(obuf, opos, v & 255)
+    opos: opos + 1
+    return 0
+
+tb v:
+    poke_byte(tbuf, tpos, v & 255)
+    tpos: tpos + 1
+    return 0
+
+bb v:
+    poke_byte(bbuf, bpos, v & 255)
+    bpos: bpos + 1
+    return 0
+
+uleb v:
+    as long as 1 is 1
+        b: v & 127
+        v: v / 128
+        if v > 0
+            b: b + 128
+        ob(b)
+        if v is 0
+            return 0
+    return 0
+
+tb_uleb v:
+    as long as 1 is 1
+        b: v & 127
+        v: v / 128
+        if v > 0
+            b: b + 128
+        tb(b)
+        if v is 0
+            return 0
+    return 0
+
+bb_uleb v:
+    as long as 1 is 1
+        b: v & 127
+        v: v / 128
+        if v > 0
+            b: b + 128
+        bb(b)
+        if v is 0
+            return 0
+    return 0
+
+bb_sleb v:
+    more: 1
+    as long as more is 1
+        b: v & 127
+        v: v / 128
+        more: 0
+        if v is 0
+            if b >= 64
+                more: 1
+        if v > 0
+            more: 1
+        if more is 1
+            b: b + 128
+        bb(b)
+    return 0
+
+flush id:
+    ob(id)
+    uleb(tpos)
+    i: 0
+    as long as i < tpos
+        ob(peek_byte(tbuf, i))
+        i: i + 1
+    tpos: 0
+    return 0
+
+txt_tb s n:
+    i: 0
+    as long as i < n
+        tb(peek_byte(s, i))
+        i: i + 1
+    return 0
+
+is_sp c:
+    if c is 32
+        return 1
+    if c is 9
+        return 1
+    if c is 13
+        return 1
+    return 0
+
+is_dig c:
+    if c >= 48
+        if c <= 57
+            return 1
+    return 0
+
+is_alfa c:
+    if c >= 97
+        if c <= 122
+            return 1
+    if c >= 65
+        if c <= 90
+            return 1
+    if c is 95
+        return 1
+    return 0
+
+is_aln c:
+    if is_alfa(c) is 1
+        return 1
+    if is_dig(c) is 1
+        return 1
+    return 0
+
+ltrim s:
+    n: str_len(s)
+    i: 0
+    as long as i < n
+        if is_sp(peek_byte(s, i)) is 1
+            i: i + 1
+        if not
+            leave
+    return str_cut(s, i, n)
+
+rtrim s:
+    n: str_len(s)
+    as long as n > 0
+        if is_sp(peek_byte(s, n - 1)) is 1
+            n: n - 1
+        if not
+            leave
+    return str_cut(s, 0, n)
+
+trim s:
+    return rtrim(ltrim(s))
+
+starts s p:
+    pn: str_len(p)
+    if str_len(s) < pn
+        return 0
+    if str_eq(str_cut(s, 0, pn), p) is 1
+        return 1
+    return 0
+
+word_end s a:
+    n: str_len(s)
+    i: a
+    as long as i < n
+        if is_aln(peek_byte(s, i)) is 1
+            i: i + 1
+        if not
+            leave
+    return i
+
+find_ch s c:
+    n: str_len(s)
+    i: 0
+    as long as i < n
+        if peek_byte(s, i) is c
+            return i
+        i: i + 1
+    return 0 - 1
+
+find_arrow s:
+    n: str_len(s)
+    i: 0
+    as long as i + 1 < n
+        if peek_byte(s, i) is 45
+            if peek_byte(s, i + 1) is 62
+                return i
+        i: i + 1
+    return 0 - 1
+
+indent_of s:
+    n: str_len(s)
+    i: 0
+    w: 0
+    as long as i < n
+        c: peek_byte(s, i)
+        if c is 32
+            w: w + 1
+        if not
+            if c is 9
+                w: w + 4
+            if not
+                return w
+        i: i + 1
+    return w
+
+fn_index nm:
+    i: 0
+    as long as i < _sov_list_len(fn_names)
+        if str_eq(as text _sov_list_get(fn_names, i), nm) is 1
+            return i
+        i: i + 1
+    return 0
+
+param_count ps:
+    p: trim(ps)
+    if str_len(p) is 0
+        return 0
+    c: 0
+    as long as str_len(p) > 0
+        p: ltrim(p)
+        e: word_end(p, 0)
+        if e <= 0
+            leave
+        c: c + 1
+        p: trim(str_cut(p, e, str_len(p)))
+    return c
+
+param_index nm:
+    ps: trim(cur_params)
+    k: 0
+    as long as str_len(ps) > 0
+        ps: ltrim(ps)
+        e: word_end(ps, 0)
+        if e <= 0
+            leave
+        if str_eq(str_cut(ps, 0, e), nm) is 1
+            return k
+        k: k + 1
+        ps: trim(str_cut(ps, e, str_len(ps)))
+    return 0 - 1
+
+local_seen nm:
+    i: 0
+    as long as i < _sov_list_len(locals)
+        if str_eq(as text _sov_list_get(locals, i), nm) is 1
+            return 1
+        i: i + 1
+    return 0
+
+local_add nm:
+    if param_index(nm) >= 0
+        return 0
+    if local_seen(nm) is 0
+        locals: _sov_list_add(locals, nm)
+    return 0
+
+local_idx nm:
+    i: 0
+    as long as i < _sov_list_len(locals)
+        if str_eq(as text _sov_list_get(locals, i), nm) is 1
+            return i
+        i: i + 1
+    return 0 - 1
+
+var_index nm:
+    p: param_index(nm)
+    if p >= 0
+        return p
+    l: local_idx(nm)
+    if l >= 0
+        return param_count(cur_params) + l
+    return 0
+
+esk:
+    as long as ep < eb
+        if is_sp(peek_byte(es, ep)) is 1
+            ep: ep + 1
+        if not
+            leave
+    return 0
+
+fac:
+    esk()
+    if ep >= eb
+        bb(65)
+        bb_sleb(0)
+        return 0
+    c: peek_byte(es, ep)
+    if c is 40
+        ep: ep + 1
+        expr()
+        esk()
+        if ep < eb
+            if peek_byte(es, ep) is 41
+                ep: ep + 1
+        return 0
+    if c is 45
+        ep: ep + 1
+        bb(65)
+        bb_sleb(0)
+        fac()
+        bb(107)
+        return 0
+    if is_dig(c) is 1
+        v: 0
+        as long as ep < eb
+            if is_dig(peek_byte(es, ep)) is 1
+                v: v * 10 + peek_byte(es, ep) - 48
+                ep: ep + 1
+            if not
+                leave
+        bb(65)
+        bb_sleb(v)
+        return 0
+    if is_alfa(c) is 1
+        st2: ep
+        as long as ep < eb
+            if is_aln(peek_byte(es, ep)) is 1
+                ep: ep + 1
+            if not
+                leave
+        nm: str_cut(es, st2, ep)
+        esk()
+        if ep < eb
+            if peek_byte(es, ep) is 40
+                ep: ep + 1
+                as long as ep < eb
+                    esk()
+                    if ep < eb
+                        if peek_byte(es, ep) is 41
+                            ep: ep + 1
+                            leave
+                    expr()
+                    esk()
+                    if ep < eb
+                        if peek_byte(es, ep) is 44
+                            ep: ep + 1
+                bb(16)
+                bb_uleb(fn_index(nm) + 1)
+                return 0
+        bb(32)
+        bb_uleb(var_index(nm))
+        return 0
+    ep: ep + 1
+    bb(65)
+    bb_sleb(0)
+    return 0
+
+term:
+    fac()
+    as long as 1 is 1
+        esk()
+        if ep >= eb
+            return 0
+        c: peek_byte(es, ep)
+        if c is not 42
+            if c is not 47
+                return 0
+        ep: ep + 1
+        fac()
+        if c is 42
+            bb(108)
+        if c is 47
+            bb(109)
+    return 0
+
+expr:
+    term()
+    as long as 1 is 1
+        esk()
+        if ep >= eb
+            return 0
+        c: peek_byte(es, ep)
+        if c is not 43
+            if c is not 45
+                return 0
+        ep: ep + 1
+        term()
+        if c is 43
+            bb(106)
+        if c is 45
+            bb(107)
+    return 0
+
+emit_expr s:
+    es: trim(s)
+    ep: 0
+    eb: str_len(es)
+    expr()
+    return 0
+
+cmp_opcode op:
+    if str_eq(op, "eq") is 1
+        return 70
+    if str_eq(op, "ne") is 1
+        return 71
+    if str_eq(op, "lt") is 1
+        return 72
+    if str_eq(op, "gt") is 1
+        return 74
+    if str_eq(op, "le") is 1
+        return 76
+    if str_eq(op, "ge") is 1
+        return 78
+    return 70
+
+emit_cond cond:
+    s: trim(cond)
+    oi: 0 - 1
+    op: ""
+    step: 1
+    i: 0
+    as long as i < str_len(s)
+        c: peek_byte(s, i)
+        n: 0
+        if i + 1 < str_len(s)
+            n: peek_byte(s, i + 1)
+        if c is 33
+            if n is 61
+                op: "ne"
+            oi: i
+            step: 2
+            leave
+        if c is 60
+            op: "lt"
+            oi: i
+            step: 1
+            if n is 61
+                op: "le"
+                step: 2
+            leave
+        if c is 62
+            op: "gt"
+            oi: i
+            step: 1
+            if n is 61
+                op: "ge"
+                step: 2
+            leave
+        if c is 61
+            op: "eq"
+            oi: i
+            step: 1
+            leave
+        i: i + 1
+    if oi >= 0
+        emit_expr(str_cut(s, 0, oi))
+        emit_expr(str_cut(s, oi + step, str_len(s)))
+        bb(cmp_opcode(op))
+        return 0
+    emit_expr(s)
+    return 0
+
+push_block kind ind:
+    if block_n < _sov_list_len(block_inds)
+        block_inds: _sov_list_set(block_inds, block_n, ind)
+        block_kinds: _sov_list_set(block_kinds, block_n, kind)
+    if not
+        block_inds: _sov_list_add(block_inds, ind)
+        block_kinds: _sov_list_add(block_kinds, kind)
+    block_n: block_n + 1
+    return 0
+
+close_one:
+    if block_n > 0
+        kind: as text _sov_list_get(block_kinds, block_n - 1)
+        if str_eq(kind, "while") is 1
+            bb(12)
+            bb_uleb(0)
+            bb(11)
+            bb(11)
+            block_n: block_n - 1
+            return 0
+        bb(11)
+        block_n: block_n - 1
+    return 0
+
+close_blocks ind:
+    as long as block_n > 0
+        top: _sov_list_get(block_inds, block_n - 1)
+        if ind <= top
+            close_one()
+        if not
+            leave
+    return 0
+
+close_all:
+    as long as block_n > 0
+        close_one()
+    return 0
+
+emit_else_line s ind:
+    if block_n > 0
+        top: _sov_list_get(block_inds, block_n - 1)
+        kind: as text _sov_list_get(block_kinds, block_n - 1)
+        if ind <= top
+            if str_eq(kind, "if") is 1
+                bb(5)
+                block_n: block_n - 1
+                ar: find_arrow(s)
+                if ar >= 0
+                    body: trim(str_cut(s, ar + 2, str_len(s)))
+                    if str_len(body) > 0
+                        emit_stmt_parts(body)
+                push_block("else", ind)
+                return 1
+    close_blocks(ind)
+    return 0
+
+emit_stmt st:
+    s: trim(st)
+    if str_len(s) is 0
+        return 0
+    w: word_end(s, 0)
+    kw: str_cut(s, 0, w)
+    if starts(s, "as long as ") is 1
+        arw: find_arrow(s)
+        condw: ""
+        bodyw: ""
+        if arw < 0
+            condw: trim(str_cut(s, 11, str_len(s)))
+        if not
+            condw: trim(str_cut(s, 11, arw))
+            bodyw: trim(str_cut(s, arw + 2, str_len(s)))
+        bb(2)
+        bb(64)
+        bb(3)
+        bb(64)
+        emit_cond(condw)
+        bb(69)
+        bb(13)
+        bb_uleb(1)
+        if str_len(bodyw) > 0
+            emit_stmt_parts(bodyw)
+        last_block_kind: "while"
+        return 1
+    if str_eq(kw, "return") is 1
+        emit_expr(str_cut(s, w, str_len(s)))
+        bb(15)
+        fn_return_seen: 1
+        return 0
+    if str_eq(kw, "if") is 1
+        ar: find_arrow(s)
+        cond: ""
+        body: ""
+        if ar < 0
+            cond: trim(str_cut(s, w, str_len(s)))
+        if not
+            cond: trim(str_cut(s, w, ar))
+            body: trim(str_cut(s, ar + 2, str_len(s)))
+        if str_eq(cond, "not") is 1
+            return 0
+        emit_cond(cond)
+        bb(4)
+        bb(64)
+        if str_len(body) > 0
+            emit_stmt_parts(body)
+        last_block_kind: "if"
+        return 1
+    if str_eq(kw, "print") is 1
+        emit_expr(str_cut(s, w, str_len(s)))
+        bb(16)
+        bb_uleb(0)
+        return 0
+    col: find_ch(s, 58)
+    if col > 0
+        nm: trim(str_cut(s, 0, col))
+        local_add(nm)
+        emit_expr(str_cut(s, col + 1, str_len(s)))
+        bb(33)
+        bb_uleb(var_index(nm))
+        return 0
+    return 0
+
+emit_stmt_parts s:
+    t0: trim(s)
+    if starts(t0, "as long as ") is 1
+        return emit_stmt(t0)
+    if starts(t0, "if ") is 1
+        return emit_stmt(t0)
+    start: 0
+    n: str_len(s)
+    opened: 0
+    as long as start < n
+        i: start
+        found: 0
+        as long as i + 1 < n
+            if peek_byte(s, i) is 59
+                if peek_byte(s, i + 1) is 59
+                    found: 1
+                    leave
+            i: i + 1
+        if found is 0
+            i: n
+        one: emit_stmt(str_cut(s, start, i))
+        if one is 1
+            opened: 1
+        if found is 1
+            start: i + 2
+        if not
+            start: n
+    return opened
+
+collect_stmt st:
+    s: trim(st)
+    if str_len(s) is 0
+        return 0
+    if starts(s, "as long as ") is 1
+        arw: find_arrow(s)
+        if arw >= 0
+            bodyw: trim(str_cut(s, arw + 2, str_len(s)))
+            if str_len(bodyw) > 0
+                collect_parts(bodyw)
+        return 0
+    w: word_end(s, 0)
+    kw: str_cut(s, 0, w)
+    if str_eq(kw, "if") is 1
+        ar: find_arrow(s)
+        if ar >= 0
+            body: trim(str_cut(s, ar + 2, str_len(s)))
+            if str_len(body) > 0
+                collect_parts(body)
+        return 0
+    col: find_ch(s, 58)
+    if col > 0
+        nm: trim(str_cut(s, 0, col))
+        local_add(nm)
+    return 0
+
+collect_parts s:
+    t0: trim(s)
+    if starts(t0, "as long as ") is 1
+        collect_stmt(t0)
+        return 0
+    if starts(t0, "if ") is 1
+        collect_stmt(t0)
+        return 0
+    start: 0
+    n: str_len(s)
+    as long as start < n
+        i: start
+        found: 0
+        as long as i + 1 < n
+            if peek_byte(s, i) is 59
+                if peek_byte(s, i + 1) is 59
+                    found: 1
+                    leave
+            i: i + 1
+        if found is 0
+            i: n
+        collect_stmt(str_cut(s, start, i))
+        if found is 1
+            start: i + 2
+        if not
+            start: n
+    return 0
+
+collect_body body:
+    n: str_len(body)
+    i: 0
+    as long as i < n
+        e: i
+        as long as e < n
+            if peek_byte(body, e) is 10
+                leave
+            e: e + 1
+        raw: str_cut(body, i, e)
+        t: trim(raw)
+        if str_len(t) > 0
+            if peek_byte(t, 0) is not 35
+                collect_parts(t)
+        i: e + 1
+    return 0
+
+emit_body body:
+    block_inds: _sov_list_new()
+    block_kinds: _sov_list_new()
+    block_n: 0
+    fn_return_seen: 0
+    n: str_len(body)
+    i: 0
+    as long as i < n
+        e: i
+        as long as e < n
+            if peek_byte(body, e) is 10
+                leave
+            e: e + 1
+        raw: str_cut(body, i, e)
+        t: trim(raw)
+        if str_len(t) > 0
+            if peek_byte(t, 0) is not 35
+                ind: indent_of(raw)
+                if starts(t, "if not") is 1
+                    emit_else_line(t, ind)
+                if not
+                    close_blocks(ind)
+                    opened: emit_stmt_parts(t)
+                    if opened is 1
+                        push_block(last_block_kind, ind)
+        i: e + 1
+    close_all()
+    if fn_return_seen is 0
+        bb(65)
+        bb_sleb(0)
+    return 0
+
+parse_file path:
+    src: file_read_all(path)
+    if src is 0
+        print "wasm32: cannot read source"
+        sys_exit(1)
+    fn_names: _sov_list_new()
+    fn_params: _sov_list_new()
+    fn_bodies: _sov_list_new()
+    cur: 0 - 1
+    n: str_len(src)
+    if n >= 4096
+        n: 0
+    i: 0
+    as long as i < n
+        e: i
+        as long as e < n
+            if peek_byte(src, e) is 10
+                leave
+            e: e + 1
+        raw: str_cut(src, i, e)
+        t: trim(raw)
+        if str_len(t) > 0
+            if peek_byte(t, 0) is not 35
+                if is_sp(peek_byte(raw, 0)) is 0
+                    if peek_byte(t, str_len(t) - 1) is 58
+                        h: str_cut(t, 0, str_len(t) - 1)
+                        w: word_end(h, 0)
+                        nm: str_cut(h, 0, w)
+                        ps: trim(str_cut(h, w, str_len(h)))
+                        fn_names: _sov_list_add(fn_names, nm)
+                        fn_params: _sov_list_add(fn_params, ps)
+                        fn_bodies: _sov_list_add(fn_bodies, "")
+                        cur: _sov_list_len(fn_names) - 1
+                if is_sp(peek_byte(raw, 0)) is 1
+                    if cur >= 0
+                        old: as text _sov_list_get(fn_bodies, cur)
+                        old: str_cat(old, raw)
+                        old: str_cat(old, "\n")
+                        fn_bodies: _sov_list_set(fn_bodies, cur, old)
+        i: e + 1
+    if _sov_list_len(fn_names) is 0
+        fn_names: _sov_list_add(fn_names, "main")
+        fn_params: _sov_list_add(fn_params, "")
+        fn_bodies: _sov_list_add(fn_bodies, "    return 0\n")
+    return 0
+
+emit_module:
+    obuf: _sov_alloc(262144)
+    tbuf: _sov_alloc(65536)
+    bbuf: _sov_alloc(65536)
+    opos: 0
+    tpos: 0
+    bpos: 0
+    nfn: _sov_list_len(fn_names)
+    ob(0)
+    ob(97)
+    ob(115)
+    ob(109)
+    ob(1)
+    ob(0)
+    ob(0)
+    ob(0)
+    # type section: one signature per source function plus SIMD helpers.
+    tb_uleb(nfn + 3)
+    ti: 0
+    as long as ti < nfn
+        ps: as text _sov_list_get(fn_params, ti)
+        pc: param_count(ps)
+        tb(96)
+        tb_uleb(pc)
+        pj: 0
+        as long as pj < pc
+            tb(127)
+            pj: pj + 1
+        tb_uleb(1)
+        tb(127)
+        ti: ti + 1
+    # SIMD probe type: () -> v128 (0x7b).
+    tb(96)
+    tb_uleb(0)
+    tb_uleb(1)
+    tb(123)
+    # SIMD i32 lane helper type: () -> i32.
+    tb(96)
+    tb_uleb(0)
+    tb_uleb(1)
+    tb(127)
+    tb(96)
+    tb_uleb(1)
+    tb(127)
+    tb_uleb(0)
+    flush(1)
+    tb_uleb(1)
+    tb_uleb(3)
+    txt_tb("env", 3)
+    tb_uleb(12)
+    txt_tb("sovren_print", 12)
+    tb(0)
+    tb_uleb(nfn + 2)
+    flush(2)
+    # function section
+    tb_uleb(nfn + 2)
+    fi: 0
+    as long as fi < nfn
+        tb_uleb(fi)
+        fi: fi + 1
+    tb_uleb(nfn)
+    tb_uleb(nfn + 1)
+    flush(3)
+    # export section: every source function plus SIMD helpers.
+    tb_uleb(nfn + 2)
+    ei: 0
+    as long as ei < nfn
+        en: as text _sov_list_get(fn_names, ei)
+        tb_uleb(str_len(en))
+        txt_tb(en, str_len(en))
+        tb(0)
+        tb_uleb(ei + 1)
+        ei: ei + 1
+    tb_uleb(17)
+    txt_tb("sovren_simd_probe", 17)
+    tb(0)
+    tb_uleb(nfn + 1)
+    tb_uleb(26)
+    txt_tb("sovren_simd_i32x4_add_lane", 26)
+    tb(0)
+    tb_uleb(nfn + 2)
+    flush(7)
+    # code section
+    tb_uleb(nfn + 2)
+    ci: 0
+    as long as ci < nfn
+        bpos: 0
+        cur_params: as text _sov_list_get(fn_params, ci)
+        locals: _sov_list_new()
+        collect_body(as text _sov_list_get(fn_bodies, ci))
+        lc: _sov_list_len(locals)
+        if lc > 0
+            bb_uleb(1)
+            bb_uleb(lc)
+            bb(127)
+        if not
+            bb_uleb(0)
+        emit_body(as text _sov_list_get(fn_bodies, ci))
+        bb(11)
+        tb_uleb(bpos)
+        bi: 0
+        as long as bi < bpos
+            tb(peek_byte(bbuf, bi))
+            bi: bi + 1
+        ci: ci + 1
+    # SIMD probe body: v128.const lane bytes; end.  0xfd 0x0c is the SIMD v128.const opcode.
+    bpos: 0
+    bb_uleb(0)
+    bb(253)
+    bb_uleb(12)
+    si: 0
+    as long as si < 16
+        bb(si + 1)
+        si: si + 1
+    bb(11)
+    tb_uleb(bpos)
+    bi2: 0
+    as long as bi2 < bpos
+        tb(peek_byte(bbuf, bi2))
+        bi2: bi2 + 1
+    # SIMD add-lane helper: i32x4.splat, i32x4.add, i32x4.extract_lane 0.
+    bpos: 0
+    bb_uleb(0)
+    bb(65)
+    bb_sleb(40)
+    bb(253)
+    bb_uleb(17)
+    bb(65)
+    bb_sleb(2)
+    bb(253)
+    bb_uleb(17)
+    bb(253)
+    bb_uleb(174)
+    bb(253)
+    bb_uleb(27)
+    bb(0)
+    bb(11)
+    tb_uleb(bpos)
+    bi3: 0
+    as long as bi3 < bpos
+        tb(peek_byte(bbuf, bi3))
+        bi3: bi3 + 1
+    flush(10)
+    return 0
+
+main:
+    ac: arg_count()
+    if ac < 2
+        print "Usage: compiler src.sov -o out.wasm"
+        sys_exit(1)
+    inp: as text arg_at(1)
+    outp: "a-simd.wasm"
+    if ac is 3
+        if str_eq(as text arg_at(1), "-o") is 0
+            if str_eq(as text arg_at(2), "-o") is 0
+                outp: as text arg_at(2)
+    i: 2
+    as long as i + 1 < ac
+        if str_eq(as text arg_at(i), "-o") is 1
+            outp: as text arg_at(i + 1)
+            i: i + 2
+        if not
+            i: i + 1
+    parse_file(inp)
+    emit_module()
+    file_write_bytes(outp, obuf, opos)
+    print "wasm32-simd: wrote "
+    print outp
+    return 0

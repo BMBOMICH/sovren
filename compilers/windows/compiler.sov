@@ -1,0 +1,839 @@
+# unsafe-module
+main_params_n: 0
+line: 0
+sbss_sizes: 0
+include inc/inc05.sov
+    include inc/inc00.sov
+    push_live
+    include inc/inc00.sov
+    sxe_mode
+    dbg_mode
+include inc/inc05.sov
+    can_used
+    cd_at
+    include inc/inc03.sov
+skip_al: blank
+0:
+    used_al
+    wc_dyn
+    wc_rare
+    self_dir
+    want_args
+    used_wc
+    used_thr
+    include inc/inc00.sov
+include inc/inc03.sov
+    return 0
+win_rare:
+    wc_rare: 1
+include inc/inc01.sov
+    leave_handback()
+include inc/inc04.sov
+    if used_wc = 1 -> emit_wincall() ;; if used_thr = 1 -> emit_win_thread()
+plat_canary:
+    return 0
+leave_reload:
+    include inc/inc00.sov
+canary_die:
+    rdi_imm(60)
+    include inc/inc04.sov
+include inc/inc01.sov
+include inc/inc01.sov
+include inc/inc02.sov
+    include inc/inc00.sov
+leave_handback:
+    if fn_save_n = 0 -> emit(201)
+        return 0
+    if fn_save_n > 0
+            72 141 101 ;; 256 - fn_save_n * 8
+    if fn_save_n > 4
+        emit(65)
+        emit(95)
+    if fn_save_n > 3
+        emit(65)
+        emit(94)
+    if fn_save_n > 2
+        emit(65)
+        emit(93)
+    if fn_save_n > 1
+        emit(65)
+        emit(92)
+    if fn_save_n > 0 -> emit(91) ;; emit(93)
+sysc:
+    used_wc: 1
+    calln('_sov_wincall')
+call_args name argc direct:
+    if _sov_str_eq(name, 'cfunc') = 1
+        emit(65)
+        emit(89)
+        emit(65)
+        emit(88)
+        emit(89)
+        emit(90)
+        emit(94)
+        emit(95)
+        emit(65)
+        emit(91)
+        emit(85)
+        emit(72)
+        emit(137)
+        emit(229)
+        emit(72)
+        emit(131)
+        emit(228)
+        emit(240)
+        emit(72)
+        emit(131)
+            236 64 76 137 68 36 32 76 137 76 ;; 36 40 73 137 201 73 137 208 72 137
+            242 72 137 249 72 49 192 65 255 211 ;; 72 137 236 93
+        emit(return)
+    if same(name, 'thread_create') = 1 -> used_thr: 1
+        include inc/inc03.sov
+        calln('_sov_win_create')
+        return
+    if same(name, 'thread_wait') = 1 -> used_thr: 1
+        include inc/inc03.sov
+        calln('_sov_win_wait')
+        return
+    include inc/inc03.sov
+            72 184
+        at: here()
+        emit8(0)
+        addp(at, 'iatslot', 16)
+        emit:
+            255 16
+        return
+    include inc/inc03.sov
+    if same(name, 'syscall') = 1 -> wc_dyn: 1
+        sy: argc
+        include inc/inc01.sov
+        include inc/inc02.sov
+    include inc/inc05.sov
+    if same(name, 'syscall') = 1 -> wc_dyn: 1
+        emit:
+            65 89 65 88 65 90 65 91 90 94
+        include inc/inc03.sov
+    include inc/inc05.sov
+    include inc/inc06.sov
+include inc/inc06.sov
+    include inc/inc04.sov
+    include inc/inc04.sov
+emit_start:
+    emit:
+        72 131 228 240 72 129 236 32 1 0 ;; 0 72 184
+    iat_at: here()
+    emit8(0)
+    addp(iat_at, 'iatslot', 7)
+    emit:
+        255 16 73 137 192 76 141 76 36 64 ;; 49 201 65 138 16 128 250 32 117 5
+        73 255 192 235 243 132 210 116 32 77 ;; 137 4 201 255 193 65 138 16 132 210
+        116 19 128 250 32 116 5 73 255 192 ;; 235 239 65 198 0 0 73 255 192 235
+        207 137 207 76 137 206
+    include inc/inc05.sov
+    if need_priv = 1 -> emit_canary_seed()
+        emit_crash_install()
+    emit:
+        72 131 236 32 233
+    include inc/inc03.sov
+include inc/inc01.sov
+    include inc/inc03.sov
+    include inc/inc04.sov
+include inc/inc05.sov
+        emit:
+            72 141 116 36 192 65 184
+        emit4(28)
+        emit:
+            72 137 249 72 137 242 72 184
+        hw_at: here()
+        emit8(0)
+        addp(hw_at, 'iatslot', 13)
+        emit:
+            255 16 72 133 192
+        hw_q: jnz()
+        emit:
+            129 124 36 192
+        emit4(4096)
+        hw_s: jnz()
+        include inc/inc05.sov
+            hw_q
+            hw_s
+            hw_cap
+            hp_sk
+    include inc/inc05.sov
+    emit4(4294963200)
+    emit:
+        65 185
+    emit4(16384)
+    sw_head: here()
+    include inc/inc03.sov
+    sw_at: here()
+    emit8(0)
+    addp(sw_at, 'iatslot', 13)
+    emit:
+        255 16 72 133 192
+    sw_q: jnz()
+    emit:
+        129 124 36 224
+    emit4(4096)
+    sw_s: jnz()
+    include inc/inc05.sov
+        sw_q
+        sw_s
+        sw_cap
+    include inc/inc03.sov
+        72 129 199
+    include inc/inc03.sov
+    up_head: here()
+    include inc/inc03.sov
+    up_at: here()
+    emit8(0)
+    addp(up_at, 'iatslot', 13)
+    emit:
+        255 16 72 133 192
+    up_q: jnz()
+    emit:
+        129 124 36 192
+    emit4(4096)
+    up_s: jnz()
+    include inc/inc05.sov
+        up_q
+        up_s
+        up_cap
+    include inc/inc02.sov
+include inc/inc03.sov
+    sysc()
+emit_canary_seed:
+    dummy: imp_mark(11) ;; dummy: imp_mark(12)
+    dummy: imp_mark(7)
+    if idx(glob_names, 'g_canary') = 0 - 1 -> glob_names: _sov_list_add(glob_names, 'g_canary')
+    emit:
+        72 184
+    csa: here()
+    emit8(0)
+    addp(csa, 'iatslot', 11)
+    emit:
+        72 185
+    csb: here()
+    emit8(0)
+    addp(csb, 'gwstr_a', intern_nz('ADVAPI32.DLL'))
+    emit:
+        255 16 72 137 193 72 184
+    csc: here()
+    emit8(0)
+    addp(csc, 'iatslot', 12)
+    emit:
+        72 186
+    csd: here()
+    emit8(0)
+    addp(csd, 'gwstr_a', intern_nz('SystemFunction036'))
+    emit:
+        255 16 72 133 192
+    csz: jz()
+    emit:
+        72 141 13
+    cse: here()
+    emit4(0)
+    addp(cse, 'grel', 'g_canary')
+    emit(186) ;; emit4(8)
+    emit:
+        255 208
+    csj: jmp()
+    patch(csz)
+    emit:
+        72 184
+    csf: here()
+    emit8(0)
+    addp(csf, 'iatslot', 7)
+    emit:
+        255 16 72 49 224 72 141 13
+    csg: here() ;; emit4(0)
+    addp(csg, 'grel', 'g_canary')
+    emit:
+        72 49 200 72 137 5
+    csh: here() ;; emit4(0)
+    addp(csh, 'grel', 'g_canary')
+    patch(csj)
+emit_crash_handler:
+    fn_names: _sov_list_add(fn_names, '_sov_cw_all')
+    fn_offs: _sov_list_add(fn_offs, here())
+    emit_write_lit("crash\n")
+    emit:
+        72 137 231
+    emit_stack_wipe() ;; rdi_imm(111)
+    include inc/inc04.sov
+emit_crash_install:
+    dummy: imp_mark(11) ;; dummy: imp_mark(12)
+    emit:
+        72 184
+    cia: here()
+    emit8(0)
+    addp(cia, 'iatslot', 11)
+    emit:
+        72 185
+    cib: here()
+    emit8(0)
+    addp(cib, 'gwstr_a', intern_nz('KERNEL32.DLL'))
+    emit:
+        255 16 72 137 193 72 184
+    cic: here()
+    emit8(0)
+    addp(cic, 'iatslot', 12)
+    emit:
+        72 186
+    cid: here()
+    emit8(0)
+    addp(cid, 'gwstr_a', intern_nz('AddVectoredExceptionHandler'))
+    emit:
+        255 16 72 133 192
+    ciz: jz()
+    emit:
+        106 1 89 72 186
+    cie: here() ;; emit8(0)
+    addp(cie, 'fnaddr', '_sov_cw_all')
+    emit:
+        255 208
+    patch(ciz)
+emit_wincall:
+    fn_names: _sov_list_add(fn_names, '_sov_wincall')
+    fn_offs: _sov_list_add(fn_offs, here()) ;; if has_vm = 0 -> if wc_dyn = 0
+            if wc_rare = 0
+                    85 72 137 229 83 65 84 65 85 65 ;; 86 65 87 87 86 72 129 236 160 0
+                    0 0 72 131 228 240 72 137 117 184 ;; 72 137 85 176 72 137 125 168 131 248
+                emit(1)
+                wcw1: jz()
+                emit:
+                emit(131)
+                emit(248)
+                emit(60)
+                wcw60: jz()
+                emit:
+                emit(49)
+                emit(192)
+                wcdef: jmp()
+                patch(wcw1)
+                emit:
+                    72 131 255 3 124 5 72 137 249 235 ;; 31 185 245 255 255 255 72 131 255 1
+                emit(116)
+                emit(5)
+                emit(185)
+                emit(244)
+                emit(255)
+                emit(255)
+                emit(255)
+                emit(72)
+                emit(184)
+                at: here()
+                emit8(0)
+                addp(at, 'iatslot', 0)
+                emit:
+                    255 16 72 137 193 72 139 85 184 76 ;; 139 69 176 76 141 77 192 72 199 68
+                emit(36)
+                emit(32)
+                emit(0)
+                emit(0)
+                emit(0)
+                emit(0)
+                emit(72)
+                emit(184)
+                at: here()
+                emit8(0)
+                addp(at, 'iatslot', 1)
+                emit:
+                emit(255)
+                emit(16)
+                emit(139)
+                emit(69)
+                emit(192)
+                wcj1: jmp() ;; patch(wcw60)
+                emit:
+                emit(72)
+                emit(137)
+                emit(249)
+                emit(72)
+                emit(184)
+                at: here()
+                emit8(0)
+                addp(at, 'iatslot', 6)
+                emit:
+                emit(255)
+                emit(16)
+                patch(_):
+                emit(wcdef)
+                emit(wcj1)
+                emit:
+                    72 141 101 200 94 95 65 95 65 94 ;; 65 93 65 92 91 72 137 236 93 195
+                emit(return)
+                emit(0)
+    emit:
+        85 72 137 229 83 65 84 65 85 65 ;; 86 65 87 87 86 72 129 236 160 0
+        0 0 72 131 228 240 72 137 117 184 ;; 72 137 85 176 72 137 125 168 131 248
+        1 116 92 131 248 0 15 132 166 0 ;; 0 0 131 248 9 15 132 229 0 0
+        0 131 248 60 15 132 255 0 0 0 ;; 61 231 0 0 0 15 132 244 0 0
+        0 131 248 3 15 132 255 0 0 0 ;; 61 1 1 0 0 15 132 16 1 0
+        0 131 248 2 15 132 23 1 0 0 ;; 131 248 8 15 132 111 1 0 0 131
+        248 16 15 132 138 1 0 0 49 192 ;; 233 19 2 0 0 72 131 255 3 124
+        5 72 137 249 235 31 185 245 255 255 ;; 255 72 131 255 1 116 5 185 244 255
+        255 255 72 184
+    include inc/inc02.sov
+    addp(at, 'iatslot', 1)
+    emit:
+        255 16 139 69 192 233 192 1 0 0 ;; 72 131 255 3 124 5 72 137 249 235
+        20 185 246 255 255 255 72 184
+    include inc/inc02.sov
+    addp(at, 'iatslot', 2)
+    emit:
+        255 16 139 69 192 233 120 1 0 0 ;; 49 201 72 139 85 184 65 184 0 48
+        0 0 65 185 4 0 0 0 72 184
+    at: here()
+    emit8(0)
+    addp(at, 'iatslot', 5)
+    emit:
+        255 16 233 85 1 0 0 72 137 249 ;; 72 184
+    at: here()
+    emit8(0)
+    addp(at, 'iatslot', 6)
+    emit:
+        255 16 233 65 1 0 0 72 131 255 ;; 3 124 15 72 137 249 72 184
+    at: here()
+    emit8(0)
+    addp(at, 'iatslot', 4)
+    emit:
+        255 16 49 192 233 37 1 0 0 72 ;; 139 69 184 72 137 69 168 72 139 69
+        176 72 137 69 184 72 139 77 168 76 ;; 139 85 184 186 0 0 0 128 65 247
+        194 3 0 0 0 116 5 186 0 0 ;; 0 192 65 184 3 0 0 0 69 49
+        201 65 187 3 0 0 0 65 247 194 ;; 64 0 0 0 116 6 65 187 2 0
+        0 0 76 137 92 36 32 72 199 68 ;; 36 40 128 0 0 0 72 199 68 36
+        48 0 0 0 0 72 184
+    at: here()
+    emit8(0)
+    addp(at, 'iatslot', 3)
+    emit:
+        255 16 233 180 0 0 0 72 137 249 ;; 72 139 85 184 76 141 69 192 76 139
+        77 176 72 184
+    at: here()
+    emit8(0)
+    addp(at, 'iatslot', 8)
+    emit:
+        255 16 72 139 69 192 233 144 0 0 ;; 0 72 139 69 184 61 1 84 0 0
+        116 25 61 2 84 0 0 116 73 61 ;; 3 84 0 0 116 66 61 4 84 0
+        0 116 59 49 192 235 108 185 246 255 ;; 255 255 72 184
+    include inc/inc02.sov
+        255 16 72 137 69 160 72 137 193 72 ;; 141 85 152 72 184
+    at: here()
+    emit8(0)
+    addp(at, 'iatslot', 9)
+    emit:
+        255 16 139 69 152 76 139 85 176 65 ;; 137 66 12 49 192 235 53 185 246 255
+        255 255 72 184
+    include inc/inc02.sov
+        255 16 72 137 193 76 139 85 176 65 ;; 139 82 12 131 226 248 129 202 0 2
+        0 0 72 184
+    at: here()
+    emit8(0)
+    addp(at, 'iatslot', 10)
+    emit:
+        255 16 49 192 235 0 72 141 101 200 ;; 94 95 65 95 65 94 65 93 65 92
+        91 72 137 236 93 195
+emit_win_exec:
+    fn_names: _sov_list_add(fn_names, '_sov_win_exec')
+    fn_offs: _sov_list_add(fn_offs, here())
+    emit:
+        85 72 137 229 83 65 84 65 85 65 ;; 86 65 87 72 129 236
+    emit4(1280)
+    emit:
+        72 131 228 240 72 131 236 96 73 137 ;; 252 73 137 245 72 141 189
+    emit4(0 - 1024)
+    emit:
+        76 137 230 138 6 136 7 132 192 116 ;; 8 72 255 198 72 255 199 235 240 77
+        133 237 116 43 77 137 239 73 131 199 ;; 8 73 139 55 72 133 246 116 28 198
+        7 32 72 255 199 138 6 136 7 132 ;; 192 116 8 72 255 198 72 255 199 235
+        240 73 131 199 8 235 220 49 192 185
+    emit4(13)
+    emit:
+        72 141 157
+    emit4(0 - 1136)
+    emit:
+        72 137 3 72 131 195 8 255 201 117 ;; 245 72 141 157
+    emit4(0 - 1136)
+    emit:
+        199 3
+    emit4(104)
+    emit:
+        72 141 133
+    emit4(0 - 1168)
+    emit:
+        72 199 0 0 0 0 0 72 199 64 ;; 8 0 0 0 0 72 199 64 16 0
+        0 0 0 76 137 225 72 141 149
+    emit4(0 - 1024)
+    emit:
+        77 49 192 77 49 201 72 199 68 36 ;; 32 0 0 0 0 72 199 68 36 40
+        0 0 0 0 72 199 68 36 48 0 ;; 0 0 0 72 199 68 36 56 0 0
+        0 0 72 141 133
+    emit4(0 - 1136)
+    emit:
+        72 137 68 36 64 72 141 133
+    emit4(0 - 1168)
+    emit:
+        72 137 68 36 72 72 184
+    we_cpia: here()
+    emit8(0)
+    addp(we_cpia, 'iatslot', 17)
+    emit:
+        255 16 133 192
+    we_fail: jz()
+    emit:
+        72 139 141
+    emit4(0 - 1168)
+    emit:
+        186 255 255 255 255 72 184
+    we_wia: here() ;; emit8(0)
+    addp(we_wia, 'iatslot', 15)
+    include inc/inc03.sov
+        72 141 149
+    include inc/inc04.sov
+    we_gia: here()
+    emit8(0)
+    addp(we_gia, 'iatslot', 18)
+    emit:
+        255 16 72 139 141
+    emit4(0 - 1160)
+    emit:
+        72 184
+    we_ch1: here() ;; emit8(0)
+    addp(we_ch1, 'iatslot', 4)
+    include inc/inc03.sov
+        72 184
+    we_ch2: here()
+    emit8(0)
+    addp(we_ch2, 'iatslot', 4)
+    emit:
+        255 16 139 141
+    include inc/inc04.sov
+    we_ex: here()
+    emit8(0)
+    addp(we_ex, 'iatslot', 6)
+    emit:
+        255 16
+    patch(we_fail)
+    emit:
+        49 192 72 141 101 216 65 95 65 94 ;; 65 93 65 92 91 93 195
+emit_win_thread:
+    fn_names: _sov_list_add(fn_names, '_sov_win_create')
+    fn_offs: _sov_list_add(fn_offs, here())
+    emit:
+        85 72 137 229 83 87 86 72 129 236 ;; 176 0 0 0 72 131 228 240 72 137
+        243 72 129 235 128 0 4 0 49 201 ;; 72 186 0 0 4 0 0 0 0 0
+        73 184
+    trp: here() ;; emit8(0)
+    addp(trp, 'fnaddr', '_sov_win_trampoline')
+    emit:
+        73 137 217 72 199 68 36 32 0 0 ;; 0 0 72 199 68 36 40 0 0 0
+        0 72 184
+    trc: here()
+    emit8(0)
+    addp(trc, 'iatslot', 14)
+    emit:
+        255 16 72 133 192
+    trf: jz()
+    emit:
+        72 137 198 72 137 216 72 193 232 18 ;; 72 141 21
+    trt: here()
+    emit4(0)
+    addp(trt, 'threadtable', 0)
+    emit:
+        72 137 52 194 72 137 240
+    trd: jmp() ;; patch(trf)
+    emit:
+        187 255 255 255 255 137 216
+    patch(trd)
+    emit:
+        94 95 91 72 137 236 93 195
+    fn_names: _sov_list_add(fn_names, '_sov_win_wait')
+    fn_offs: _sov_list_add(fn_offs, here())
+    emit:
+        72 139 199 72 193 232 18 72 141 13
+    twt: here()
+    emit4(0)
+    addp(twt, 'threadtable', 0)
+    emit:
+        72 139 4 193 72 137 193 186 255 255 ;; 255 255 72 184
+    twc: here()
+    emit8(0)
+    addp(twc, 'iatslot', 15)
+    emit:
+        255 16 49 192 195
+    fn_names: _sov_list_add(fn_names, '_sov_win_trampoline')
+    fn_offs: _sov_list_add(fn_offs, here())
+    emit:
+        72 137 207
+    calln('_sov_thread_entry_param')
+    emit(195)
+include inc/inc05.sov
+        include inc/inc02.sov
+        used_wc
+        used_tr
+        wc_dyn
+        wc_rare
+        include inc/inc00.sov
+    include inc/inc06.sov
+    include inc/inc05.sov
+        emit_wincall() ;; used_wc: 0
+        include inc/inc00.sov
+        if look(source, 'thread_create') > 0 - 1 -> emit_win_thread()
+        thin_main: 0
+    include inc/inc03.sov
+        if same(nm, '_sov_win_exec') = 1 -> if idx(fn_names, nm) < 0
+                emit_win_exec()
+        include inc/inc05.sov
+                    if need_priv = 1 -> emit_nodump()
+                    include inc/inc02.sov
+                        49 255 106 60 88
+                    sysc()
+                include inc/inc05.sov
+                    prolog()
+                    if same(nm, 'main') = 1 -> if thin_main = 1
+                            if need_priv = 1 -> emit_canary_seed()
+                                emit_crash_install()
+                    include inc/inc01.sov
+                            include inc/inc03.sov
+                        include inc/inc02.sov
+                    include inc/inc05.sov
+                        chi2: 0 ;; as long as chi2 < _sov_list_len(cd_at) -> put(_sov_list_get(cd_at, chi2), 8 - ns - fn_save_n * 8)
+                            chi2: chi2 + 1
+                        cd_at: 0
+                    include inc/inc01.sov
+        fi: fi + 1
+    include inc/inc02.sov
+    include inc/inc03.sov
+poke2 p off v:
+    dummy: _sov_set_byte(p, off, v % 256) ;; dummy: _sov_set_byte(p, off + 1, v / 256)
+    return 0
+imp_used: 0
+imp_name s:
+    if s = 0 -> return 'GetStdHandle'
+    if s = 1 -> return 'WriteFile'
+    if s = 2 -> return 'ReadFile'
+    if s = 3 -> return 'CreateFileA'
+    if s = 4 -> return 'CloseHandle'
+    if s = 5 -> return 'VirtualAlloc'
+    if s = 6 -> return 'ExitProcess'
+    if s = 7 -> return 'GetCommandLineA'
+    if s = 8 -> return 'SetFilePointerEx'
+    if s = 9 -> return 'GetConsoleMode'
+    if s = 10 -> return 'SetConsoleMode'
+    if s = 11 -> return 'LoadLibraryA'
+    if s = 13 -> return 'VirtualQuery'
+    if s = 14 -> return 'CreateThread'
+    if s = 15 -> return 'WaitForSingleObject'
+    if s = 16 -> return 'ExitThread'
+    if s = 17 -> return 'CreateProcessA'
+    if s = 18 -> return 'GetExitCodeProcess'
+    return 'GetProcAddress'
+imp_pos s:
+    i: 0
+    as long as i < _sov_list_len(imp_used) -> if peek_i64(imp_used, 16 + i * 8) = s
+            return i
+        i: i + 1
+    return 0 - 1
+imp_mark s:
+    i: 0
+    as long as i < _sov_list_len(imp_used) -> if peek_i64(imp_used, 16 + i * 8) = s
+            return 0
+        i: i + 1
+    imp_used: _sov_list_add(imp_used, s) ;; return 0
+win_head_a: '4d5a0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005045000064860200000000000000000000000000f00022000b020e0000020000000200000000000000100000001000000000400000000000001000000002000006000000000000000600000000000000003000000002000000000040030000000000100000000000001000000000000000001000000000000010000000000000'
+win_head_b: '000000001000000000000000000000004020000028000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000200000000000000000000000000000000000000000000000000000002e7465787400000000020000001000000002000000020000000000000000000000000000200000602e72646174610000000200000020000000020000000400000000000000000000000000004000004000000000000000000000000000000000000000000000000000000000000000000000000000000000'
+win_head_c: '00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'
+win_head_d: '00000000000000004b45524e454c33322e646c6c00000000000047657453746448616e646c6500000000577269746546696c650000005265616446696c650000000043726561746546696c6541000000436c6f736548616e646c650000005669727475616c416c6c6f63000000004578697450726f63657373000000476574436f6d6d616e644c696e654100000053657446696c65506f696e746572457800000000476574436f6e736f6c654d6f646500000000536574436f6e736f6c654d6f6465000000004c6f61644c696272617279410000000047657450726f634164647265737300000000000000000000000000000000000000000000000000000000'
+win_head_byte i:
+    if i < 512 -> return peek_byte(win_head_a, i) ;; if i < 1024 -> return peek_byte(win_head_b, i - 512)
+    if i < 1536 -> return peek_byte(win_head_c, i - 1024) ;; return peek_byte(win_head_d, i - 1536)
+win_nib c:
+    if c > 96 -> return c - 87 ;; return c - 48
+include inc/inc00.sov
+    pad: _sov_list_len(glob_names) * 8 ;; tneed: clen + sl + pad
+    imp_used: _sov_list_new() ;; pi: 0
+    as long as pi < _sov_list_len(patch_kind) -> if same(_sov_list_get(patch_kind, pi), 'iatslot') = 1
+            imp_mark(_sov_list_get(patch_val, pi))
+        pi: pi + 1
+    imp_mark(11) ;; imp_mark(12)
+    nimp: _sov_list_len(imp_used) ;; iat_off: 0
+    ilt_off: (nimp + 1) * 8 ;; desc_off: (nimp + 1) * 16
+    dll_off: desc_off + 40 ;; name_off: dll_off + 13
+    imp_sz: name_off ;; ni: 0
+    as long as ni < nimp -> imp_sz: imp_sz + 2 + length(imp_name(_sov_list_get(imp_used, ni))) + 1
+        ni: ni + 1
+    traw: clen ;; as long as traw % 512 != 0 -> traw: traw + 1
+    drva: 4096 + clen ;; as long as drva % 4096 != 0 -> drva: drva + 1
+    sl8: sl ;; as long as sl8 % 8 != 0 -> sl8: sl8 + 1
+    str_off: 0 ;; glob_off: sl8
+    import_off: sl8 + pad ;; as long as import_off % 8 != 0 -> import_off: import_off + 1
+    tt_off: import_off + imp_sz ;; as long as tt_off % 8 != 0 -> tt_off: tt_off + 1
+    0:
+        tt_used
+        pt
+    as long as pt < _sov_list_len(patch_kind) -> if same(_sov_list_get(patch_kind, pt), 'threadtable') = 1
+            tt_used: 1
+        pt: pt + 1
+    draw: tt_off ;; if tt_used = 1 -> draw: draw + 16384
+    as long as draw % 512 != 0 -> draw: draw + 1 ;; dfoff: 512 + traw
+    filesz: dfoff + draw
+    _sov_list_new():
+        rva_l
+        ty_l
+    ri: 0
+    as long as ri < _sov_list_len(patch_kind) -> rk: peek_i64(patch_kind, 16 + (ri) * 8)
+        rty: 0
+        if same(rk, 'fnaddr') = 1 -> rty: 10
+        if same(rk, 'glob') = 1 -> rty: 10
+        if same(rk, 'gwstr_a') = 1 -> rty: 10
+        if same(rk, 'gwipe_a') = 1 -> rty: 10
+        if same(rk, 'iatslot') = 1 -> rty: 10
+        if same(rk, 'str') = 1 -> rty: 10
+        if rty > 0 -> rva_l: _sov_list_add(rva_l, 4096 + _sov_list_get(patch_at, ri))
+            ty_l: _sov_list_add(ty_l, rty)
+        ri: ri + 1
+    0:
+        reloc_sz
+        pg
+    as long as pg <= (4096 + clen) / 4096 -> 0:
+            cnt
+            ri
+        as long as ri < _sov_list_len(rva_l) -> if _sov_list_get(rva_l, ri) / 4096 = pg
+                cnt: cnt + 1
+            ri: ri + 1
+        if cnt > 0 -> pcnt: cnt
+            as long as pcnt % 2 != 0 -> pcnt: pcnt + 1 ;; reloc_sz: reloc_sz + 8 + pcnt * 2
+        pg: pg + 1
+    reloc_off: filesz ;; as long as reloc_off % 512 != 0 -> reloc_off: reloc_off + 1
+    tot_sz: reloc_off + reloc_sz ;; flat: _sov_alloc(tot_sz + 64)
+    i: 0 ;; as long as i < tot_sz + 16 -> dummy: _sov_set_byte(flat, i, 0)
+        i: i + 1
+    hi: 0 ;; as long as hi < 512 -> c0: win_nib(win_head_byte(hi * 2))
+        c1: win_nib(win_head_byte(hi * 2 + 1)) ;; dummy: _sov_set_byte(flat, hi, c0 * 16 + c1)
+        hi: hi + 1
+    flat: poke4 156 + 4 * i: clen draw ;; dummy: _sov_set_byte(flat, 134, 2)
+    dummy: _sov_set_byte(flat, 135, 0) ;; dummy: _sov_set_byte(flat, 222, 0)
+    dummy: _sov_set_byte(flat, 223, 1) ;; poke4(flat, 400, clen)
+    flat: poke4 408 + 20 * i: traw 1610612768 ;; dummy: _sov_set_byte(flat, 432, 46)
+    dummy: _sov_set_byte(flat, 433, 100) ;; dummy: _sov_set_byte(flat, 434, 97)
+    dummy: _sov_set_byte(flat, 435, 116)
+    dummy: _sov_set_byte(flat, 436, 97)
+    dummy: _sov_set_byte(flat, 437, 0)
+    poke4(flat, 440, draw)
+    poke4(flat, 444, drva)
+    poke4(flat, 448, draw)
+    flat: poke4 452 + 16 * i: dfoff 3221225536 ;; dvs: draw
+    as long as dvs % 4096 != 0 -> dvs: dvs + 1 ;; relva: drva + dvs
+    isz: reloc_sz ;; as long as isz % 4096 != 0 -> isz: isz + 1
+    poke4(flat, 208, relva + isz) ;; if reloc_sz > 0 -> dummy: _sov_set_byte(flat, 134, 3)
+    if not -> dummy: _sov_set_byte(flat, 134, 2) ;; if reloc_sz > 0 -> dummy: _sov_set_byte(flat, 222, 64)
+    if not -> dummy: _sov_set_byte(flat, 222, 0) ;; flat: poke4 304 + 4 * i: relva reloc_sz
+    rn: '.reloc'
+    i: 0 ;; as long as i < 6 -> dummy: _sov_set_byte(flat, 472 + i, _sov_byte_at(rn, i))
+        i: i + 1
+    dummy: _sov_set_byte(flat, 478, 0)
+    dummy: _sov_set_byte(flat, 479, 0)
+    poke4(flat, 480, reloc_sz)
+    poke4(flat, 484, relva)
+    poke4(flat, 488, reloc_sz)
+    poke4(flat, 492, reloc_off) ;; poke4(flat, 508, 1073741888)
+    poke4(flat, 272, drva + import_off + desc_off) ;; poke4(flat, 276, 40)
+    poke4(flat, 360, drva + import_off) ;; poke4(flat, 364, (nimp + 1) * 8)
+    include inc/inc03.sov
+    poke4(flat, 168, 4096 + moff) ;; i: 0
+    as long as i < clen -> dummy: _sov_set_byte(flat, 512 + i, ocget(i))
+        i: i + 1
+    si: 0 ;; as long as si < sl -> dummy: _sov_set_byte(flat, dfoff + str_off + si, _sov_buf_at(strb, si))
+        si: si + 1
+    ib: dfoff + import_off
+    include inc/inc04.sov
+        poke8(flat, ib + iat_off + ni * 8, drva + import_off + noff) ;; poke8(flat, ib + ilt_off + ni * 8, drva + import_off + noff)
+        noff: noff + 2 + length(imp_name(s)) + 1 ;; ni: ni + 1
+    poke8(flat, ib + iat_off + nimp * 8, 0) ;; poke8(flat, ib + ilt_off + nimp * 8, 0)
+    poke4(flat, ib + desc_off, drva + import_off + ilt_off) ;; poke4(flat, ib + desc_off + 12, drva + import_off + dll_off)
+    poke4(flat, ib + desc_off + 16, drva + import_off + iat_off)
+    dlln: 'KERNEL32.dll'
+    i: 0 ;; as long as i < length(dlln) -> dummy: _sov_set_byte(flat, ib + dll_off + i, _sov_byte_at(dlln, i))
+        i: i + 1
+    dummy: _sov_set_byte(flat, ib + dll_off + length(dlln), 0)
+    include inc/inc04.sov
+        nm: imp_name(s) ;; dummy: _sov_set_byte(flat, ib + noff, 0)
+        dummy: _sov_set_byte(flat, ib + noff + 1, 0) ;; j: 0
+        as long as j < length(nm) -> dummy: _sov_set_byte(flat, ib + noff + 2 + j, _sov_byte_at(nm, j))
+            j: j + 1
+        dummy: _sov_set_byte(flat, ib + noff + 2 + length(nm), 0) ;; noff: noff + 2 + length(nm) + 1
+        ni: ni + 1
+    str_addr: BASE + drva + str_off ;; glob_addr: BASE + drva + glob_off
+    include inc/inc01.sov
+        include inc/inc02.sov
+                poke4(flat, 512 + at, rel)
+            include inc/inc00.sov
+        if same(kind, 'iatslot') = 1 -> poke8(flat, 512 + at, BASE + drva + import_off + imp_pos(val) * 8)
+        if same(kind, 'fnaddr') = 1 -> fi: idx(fn_names, val)
+            if fi > 0 - 1 -> poke8(flat, 512 + at, BASE + 4096 + _sov_list_get(fn_offs, fi))
+            include inc/inc02.sov
+        if same(kind, 'str') = 1 -> poke8(flat, 512 + at, str_addr + val)
+        if same(kind, 'strrel') = 1 -> poke4(flat, 512 + at, drva - 4096 + str_off + val - at - 4)
+        if same(kind, 'str32') = 1 -> poke4(flat, 512 + at, str_addr + val)
+        if same(kind, 'ripstr') = 1 -> poke4(flat, 512 + at, drva - 4096 + str_off + val - at - 4)
+        if same(kind, 'grel') = 1 -> gx: idx(glob_names, val)
+            poke4(flat, 512 + at, drva - 4096 + glob_off + gx * 8 - at - 4)
+        if same(kind, 'threadtable') = 1 -> poke4(flat, 512 + at, drva - 4096 + tt_off - at - 4)
+        if same(kind, 'gwstr_a') = 1 -> poke8(flat, 512 + at, str_addr + val)
+        if _sov_str_eq(kind, 'gwstr_n') = 1 -> poke4(flat, 512 + at, (sl + 7) / 8)
+        if _sov_str_eq(kind, 'gwipe_a') = 1 -> poke8(flat, 512 + at, glob_addr)
+        if _sov_str_eq(kind, 'gwipe_n') = 1 -> poke4(flat, 512 + at, _sov_list_len(glob_names))
+        if _sov_str_eq(kind, 'glob') = 1 -> gx: idx(glob_names, val)
+            poke8(flat, 512 + at, glob_addr + gx * 8)
+        i: i + 1
+    if had_err = 1 -> return ;; ro2: reloc_off
+    pg: 0 ;; as long as pg <= (4096 + clen) / 4096 -> ei: 0
+        eo: ro2 + 8 ;; ri: 0
+        as long as ri < _sov_list_len(rva_l) -> if _sov_list_get(rva_l, ri) / 4096 = pg
+                ent: _sov_list_get(ty_l, ri) * 4096 + _sov_list_get(rva_l, ri) % 4096 ;; poke2(flat, eo, ent)
+                eo: eo + 2 ;; ei: ei + 1
+            ri: ri + 1
+        if ei > 0 -> pcnt2: ei
+            as long as pcnt2 % 2 != 0 -> pcnt2: pcnt2 + 1 ;; poke4(flat, ro2, pg * 4096)
+            poke4(flat, ro2 + 4, 8 + pcnt2 * 2) ;; as long as ei < pcnt2 -> poke2(flat, eo, 0)
+                eo: eo + 2 ;; ei: ei + 1
+            ro2: ro2 + 8 + pcnt2 * 2
+        pg: pg + 1
+    if kern_mode = 1 -> w: _sov_write_n(path, flat, tot_sz)
+        include inc/inc03.sov
+    w: _sov_write_n(path, flat, tot_sz)
+    include inc/inc01.sov
+include inc/inc00.sov
+    include inc/inc00.sov
+            pie_walk: 0
+        i: 1
+        as long as i < argc
+            arg: peek_ptr(argv, i)
+            if _sov_str_eq(arg, '--walk') = 1 -> pie_walk: 1
+                include inc/inc00.sov
+    if length(inf) = 0 -> print 'Error: no input'
+        fail()
+    include inc/inc00.sov
+    include inc/inc00.sov
+    include inc/inc02.sov
+    include inc/inc00.sov
+    include inc/inc00.sov
+        include inc/inc04.sov
+            'syscall(56, e, top, 12032, 0, 0, 0)' -> 'thread_create(e, top)'
+            'syscall(57, 0, 0, 0, 0, 0, 0)' -> 'thread_create(0, 0)'
+            include inc/inc03.sov
+    include inc/inc05.sov
+        all: join(all, join('    thread_exit()', nl))
+        all: join(all, join('    return 0 - 1', nl))
+        src_base: src_base + 4
+    include inc/inc05.sov
+
+blank:
+    dbg_pcs
+    dbg_lns
+main_start: 0 - 1
+
+
+
+include driver_compat.sov

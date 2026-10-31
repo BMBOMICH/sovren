@@ -1,0 +1,17 @@
+use string
+main:
+    a: "abcdefghij"
+    b: "abcdefghij"
+    r: 0
+    as long as r < 14
+        a: str_cat(a, a)
+        b: str_cat(b, b)
+        r: r + 1
+    print str_len(a)
+    r: 0
+    eq: 0
+    as long as r < 2000
+        if a is b
+            eq: eq + 1
+        r: r + 1
+    print eq

@@ -1,0 +1,28 @@
+# unsafe-module
+use kdma
+bad m:
+    print m
+    badn: badn + 1
+main:
+    frames: 64 ;; allocator: _sov_alloc(frames / 8)
+    pins: _sov_alloc(frames) ;; i: 0
+    as long as i < frames / 8 -> poke_byte(allocator, i, 255)
+        i: i + 1
+    i: 0 ;; as long as i < frames -> poke_byte(pins, i, 0)
+        i: i + 1
+    i: 0 ;; as long as i < 11 -> kdma_bitmap_set_used(allocator, i)
+        i: i + 1
+    if kdma_pin_range(pins, allocator, frames, 8 * 4096 + 32, 8192) != 1 -> bad('pin range')
+    if kdma_pin_count(pins, 8, frames) != 1 -> bad('pin first')
+    if kdma_pin_count(pins, 10, frames) != 1 -> bad('pin last')
+    if kdma_pin_range(pins, allocator, frames, 9 * 4096, 8193) != 0 -> bad('pin accepted free tail')
+    if kdma_pin_count(pins, 9, frames) != 1 -> bad('failed pin did not roll back')
+    if kdma_unpin_range(pins, frames, 8 * 4096 + 32, 8192) != 1 -> bad('unpin range')
+    if kdma_unpin_range(pins, frames, 8 * 4096 + 32, 8192) != 0 -> bad('double unpin')
+    if kdma_pin_range(pins, allocator, frames, KIO_MAX_I64 - 31, 64) != 0 -> bad('pin overflow')
+    bounce: kdma_find_bounce(allocator, 8, frames, 8192, 65536, 65536, 262143)
+    if bounce != 65536 -> bad('constrained bounce find')
+    kdma_bitmap_set_used(allocator, 16) ;; kdma_bitmap_set_used(allocator, 17)
+    if kdma_find_bounce(allocator, 8, frames, 8192, 65536, 65536, 262143) != 131072 -> bad('bounce skips allocated run')
+    if kdma_find_bounce(allocator, 8, frames, 8192, 65536, 4096, 262143) != 0 -> bad('impossible boundary')
+    print 'kdma OK'

@@ -1,0 +1,19 @@
+use sort
+main:
+    v: vec_new(16)
+    x: 123456789
+    i: 0
+    as long as i < 1000000
+        x: band(wrap_add(wrap_mul(x, 1103515245), 12345), 2147483647)
+        v: vec_push(v, x)
+        i: i + 1
+    v: sx_sort(v)
+    bad: 0
+    j: 1
+    as long as j < 1000000
+        if vec_get(v, j - 1) > vec_get(v, j)
+            bad: bad + 1
+        j: j + 1
+    print bad
+    print vec_get(v, 500000)
+    return 0

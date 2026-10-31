@@ -1,0 +1,18 @@
+use string
+main:
+    big: _sov_heap_alloc(100001)
+    big2: _sov_heap_alloc(100001)
+    i: 0
+    as long as i < 100000
+        c: 97 + (i % 26)
+        poke_byte(big, i, c)
+        poke_byte(big2, i, c)
+        i: i + 1
+    poke_byte(big, 100000, 0)
+    poke_byte(big2, 100000, 0)
+    r: 0
+    eq: 0
+    as long as r < 2000
+        eq: eq + _sov_str_eq(big, big2)
+        r: r + 1
+    print eq

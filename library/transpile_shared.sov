@@ -1,0 +1,586 @@
+# Shared, fail-closed structured integer/text-literal transpilation frontend.
+# C / JavaScript / TypeScript adapters consume one typed module representation.
+# This is a declared subset, not a substitute for the complete native frontend.
+use arg
+use file
+use string
+use sys
+use hash
+use num
+
+tp_unsafe: 0
+tp_outp: ""
+tp_tmp: ""
+tp_line: 0
+tp_rows: 0
+tp_funcs: 0
+tp_names: 0
+tp_symbols: 0
+tp_vars: 0
+tp_tokens: 0
+tp_pos: 0
+tp_output: 0
+tp_blocks: 0
+tp_fidx: 0
+tp_repeat: 0
+tp_baseindent: 0
+
+tp_eq a b:
+    return str_eq(a, b)
+
+tp_tok ts i:
+    if i >= _sov_list_len(ts)
+        return as text ""
+    return as text _sov_list_get(ts, i)
+
+tp_name s:
+    n: str_len(s)
+    if n = 0
+        return 0
+    i: 0
+    as long as i < n
+        c: peek_byte(s, i)
+        ok: 0
+        if c >= 97
+            if c <= 122
+                ok: 1
+        if c >= 65
+            if c <= 90
+                ok: 1
+        if c = 95
+            ok: 1
+        if i > 0
+            if c >= 48
+                if c <= 57
+                    ok: 1
+        if ok = 0
+            return 0
+        i: i + 1
+    return 1
+
+# Bucketed symbol maps, resized by expected declaration count; collision chains
+# always terminate and exact names are compared. Stored values are index + 1.
+tp_map size:
+    m: _sov_list_new()
+    i: 0
+    as long as i < size
+        m: _sov_list_add(m, 0)
+        i: i + 1
+    return m
+
+tp_get m name:
+    k: hash_text(name) % _sov_list_len(m)
+    chain: _sov_list_get(m, k)
+    if chain = 0
+        return 0
+    i: 0
+    as long as i < _sov_list_len(chain)
+        if tp_eq(as text _sov_list_get(chain, i), name) = 1
+            return _sov_list_get(chain, i + 1)
+        i: i + 2
+    return 0
+
+tp_set m name value:
+    k: hash_text(name) % _sov_list_len(m)
+    chain: _sov_list_get(m, k)
+    if chain = 0
+        chain: _sov_list_new()
+    i: 0
+    as long as i < _sov_list_len(chain)
+        if tp_eq(as text _sov_list_get(chain, i), name) = 1
+            tp_fail("duplicate declaration")
+        i: i + 2
+    chain: _sov_list_add(chain, name)
+    chain: _sov_list_add(chain, value)
+    _sov_list_set(m, k, chain)
+    return 0
+
+tp_lex s:
+    ts: _sov_list_new()
+    n: str_len(s)
+    i: 0
+    as long as i < n
+        c: peek_byte(s, i)
+        if c = 35
+            return ts
+        if c = 32 or c = 9 or c = 13
+            i: i + 1
+        if not
+            start: i
+            if c = 34 or c = 39
+                quote: c
+                i: i + 1
+                as long as i < n
+                    d: peek_byte(s, i)
+                    if d = quote
+                        leave
+                    if d = 92
+                        i: i + 1
+                        if i >= n
+                            tp_fail("unterminated escape")
+                        esc: peek_byte(s, i)
+                        if esc != 110 and esc != 114 and esc != 116 and esc != 92 and esc != 34 and esc != 39
+                            tp_fail("unsupported string escape")
+                    i: i + 1
+                if i >= n
+                    tp_fail("unterminated string")
+                i: i + 1
+            if not
+                if tp_name(str_chr(c)) = 1 or c >= 48 and c <= 57
+                    i: i + 1
+                    as long as i < n
+                        d: peek_byte(s, i)
+                        if tp_name(str_chr(d)) = 0
+                            if d < 48 or d > 57
+                                leave
+                        i: i + 1
+                if not
+                    i: i + 1
+                    if i < n
+                        d: peek_byte(s, i)
+                        if c = 60 or c = 62 or c = 61 or c = 33
+                            if d = 61
+                                i: i + 1
+            ts: _sov_list_add(ts, str_cut(s, start, i))
+    return ts
+
+tp_record s ind:
+    ts: tp_lex(s)
+    if _sov_list_len(ts) = 0
+        return 0
+    row: _sov_list_new()
+    row: _sov_list_add(row, ind)
+    row: _sov_list_add(row, tp_line)
+    row: _sov_list_add(row, ts)
+    tp_rows: _sov_list_add(tp_rows, row)
+    return 0
+
+tp_normalize s ind:
+    n: str_len(s)
+    i: 0
+    start: 0
+    quote: 0
+    as long as i < n
+        c: peek_byte(s, i)
+        if quote != 0
+            if c = 92
+                i: i + 1
+            if c = quote
+                quote: 0
+        if not
+            if c = 34 or c = 39
+                quote: c
+            if c = 35
+                tp_record(str_cut(s, start, i), ind)
+                return 0
+            if i + 1 < n
+                d: peek_byte(s, i + 1)
+                if c = 59 and d = 59
+                    tp_record(str_cut(s, start, i), ind)
+                    i: i + 1
+                    start: i + 1
+                if c = 45 and d = 62
+                    tp_record(str_cut(s, start, i), ind)
+                    ind: ind + 4
+                    i: i + 1
+                    start: i + 1
+        i: i + 1
+    return tp_record(str_cut(s, start, n), ind)
+
+tp_emit s:
+    tp_output: _sov_list_add(tp_output, s)
+    return 0
+
+tp_flush:
+    total: 0
+    i: 0
+    as long as i < _sov_list_len(tp_output)
+        total: total + str_len(as text _sov_list_get(tp_output, i))
+        i: i + 1
+    buf: _sov_alloc(total + 1)
+    p: 0
+    i: 0
+    as long as i < _sov_list_len(tp_output)
+        s: as text _sov_list_get(tp_output, i)
+        n: str_len(s)
+        mem_copy(buf + p, s, n)
+        p: p + n
+        i: i + 1
+    poke_byte(buf, total, 0)
+    return as text buf
+
+tp_validate_number s:
+    n: str_len(s)
+    if n = 0
+        tp_fail("empty integer")
+    i: 0
+    as long as i < n
+        c: peek_byte(s, i)
+        if c < 48 or c > 57
+            tp_fail("only decimal integer literals are supported")
+        i: i + 1
+    as long as n > 1
+        if peek_byte(s, 0) != 48
+            leave
+        s: str_cut(s, 1, n)
+        n: n - 1
+    if n > 20
+        tp_fail("integer literal exceeds 64 bits")
+    if n = 20
+        if str_less("18446744073709551615", s) = 1
+            tp_fail("integer literal exceeds 64 bits")
+    return s
+
+tp_prec op:
+    if tp_eq(op, "or") = 1
+        return 1
+    if tp_eq(op, "and") = 1
+        return 2
+    if tp_eq(op, "=") = 1 or tp_eq(op, "==") = 1 or tp_eq(op, "is") = 1 or tp_eq(op, "!=") = 1
+        return 3
+    if tp_eq(op, "<") = 1 or tp_eq(op, ">") = 1 or tp_eq(op, "<=") = 1 or tp_eq(op, ">=") = 1
+        return 4
+    if tp_eq(op, "+") = 1 or tp_eq(op, "-") = 1
+        return 5
+    if tp_eq(op, "*") = 1 or tp_eq(op, "/") = 1 or tp_eq(op, "%") = 1
+        return 6
+    return 0
+
+tp_primary:
+    tok: tp_tok(tp_tokens, tp_pos)
+    tp_pos: tp_pos + 1
+    if tp_eq(tok, "(") = 1
+        ex: tp_expression(1)
+        if tp_eq(tp_tok(tp_tokens, tp_pos), ")") = 0
+            tp_fail("missing closing parenthesis")
+        tp_pos: tp_pos + 1
+        return ex
+    if tp_eq(tok, "-") = 1
+        next: tp_tok(tp_tokens, tp_pos)
+        cnext: peek_byte(next, 0)
+        if cnext >= 48 and cnext <= 57
+            tp_pos: tp_pos + 1
+            valid: tp_validate_number(next)
+            return sir_make("negative-integer", next, -1, -1, 0, -1)
+        zero: sir_make("integer", "0", -1, -1, 0, -1)
+        return sir_make("binary", "-", zero, tp_primary(), 0, -1)
+    if tp_eq(tok, "+") = 1
+        return tp_primary()
+    if tp_eq(tok, "not") = 1
+        tp_fail("unary not expression is not in this contract")
+    c: peek_byte(tok, 0)
+    if c >= 48 and c <= 57
+        valid: tp_validate_number(tok)
+        return sir_make("integer", tok, -1, -1, 0, -1)
+    if tp_name(tok) = 0
+        tp_fail("expected integer expression")
+    if tp_eq(tp_tok(tp_tokens, tp_pos), "(") = 1
+        tp_pos: tp_pos + 1
+        idx: tp_get(tp_symbols, tok)
+        if idx = 0
+            tp_fail("unknown task")
+        fn: _sov_list_get(tp_funcs, idx - 1)
+        params: _sov_list_get(fn, 1)
+        children: _sov_list_new()
+        count: 0
+        if tp_eq(tp_tok(tp_tokens, tp_pos), ")") = 0
+            as long as 1 = 1
+                child: tp_expression(1)
+                children: _sov_list_add(children, child)
+                count: count + 1
+                if tp_eq(tp_tok(tp_tokens, tp_pos), ",") = 0
+                    leave
+                tp_pos: tp_pos + 1
+        if tp_eq(tp_tok(tp_tokens, tp_pos), ")") = 0
+            tp_fail("missing call parenthesis")
+        tp_pos: tp_pos + 1
+        if count != _sov_list_len(params)
+            tp_fail("task argument count mismatch")
+        return sir_make("call", tok, -1, -1, children, idx - 1)
+    if tp_get(tp_vars, tok) = 0
+        tp_fail("unresolved local name")
+    fn: _sov_list_get(tp_funcs, tp_fidx)
+    if tp_eq(as text _sov_list_get(fn, 0), "main") = 1
+        params: _sov_list_get(fn, 1)
+        if _sov_list_len(params) = 2
+            if tp_eq(tok, as text _sov_list_get(params, 1)) = 1
+                tp_fail("argv pointer operations are not implemented")
+    return sir_make("local", tok, -1, -1, 0, tp_get(tp_vars, tok) - 1)
+
+tp_expression floor:
+    left: tp_primary()
+    as long as tp_pos < _sov_list_len(tp_tokens)
+        op: tp_tok(tp_tokens, tp_pos)
+        prec: tp_prec(op)
+        if prec < floor
+            leave
+        tp_pos: tp_pos + 1
+        if tp_eq(op, "is") = 1
+            if tp_eq(tp_tok(tp_tokens, tp_pos), "not") = 1
+                op: "!=" ;; tp_pos: tp_pos + 1
+        right: tp_expression(prec + 1)
+        if tp_eq(op, "is") = 1 or tp_eq(op, "=") = 1
+            op: "=="
+        left: sir_make("binary", op, left, right, 0, -1)
+    return left
+
+tp_expr ts start:
+    tp_tokens: ts
+    tp_pos: start
+    ex: tp_expression(1)
+    if tp_pos != _sov_list_len(ts)
+        tp_fail("unconsumed expression tokens")
+    sir_site(ex)
+    return ex
+
+tp_close:
+    sir_statement("end", -1, "", -1)
+    tp_blocks: list_del(tp_blocks, _sov_list_len(tp_blocks) - 1)
+    return 0
+
+tp_body ts ind:
+    kw: tp_tok(ts, 0)
+    iselse: 0
+    if tp_eq(kw, "if") = 1
+        if tp_eq(tp_tok(ts, 1), "not") = 1
+            if _sov_list_len(ts) = 2
+                iselse: 1
+    as long as _sov_list_len(tp_blocks) > 0
+        top: _sov_list_get(tp_blocks, _sov_list_len(tp_blocks) - 1)
+        ti: _sov_list_get(top, 0)
+        if ti < ind
+            leave
+        if ti = ind and iselse = 1
+            leave
+        tp_close()
+    if iselse = 1
+        if _sov_list_len(tp_blocks) = 0
+            tp_fail("else without if")
+        top: _sov_list_get(tp_blocks, _sov_list_len(tp_blocks) - 1)
+        if _sov_list_get(top, 0) != ind
+            tp_fail("misindented else")
+        if tp_eq(as text _sov_list_get(top, 1), "if") = 0
+            tp_fail("else without matching if")
+        tp_close()
+        sir_statement("else", -1, "", -1)
+    kind: ""
+    if iselse = 1
+        kind: "else"
+    if iselse = 0 and tp_eq(kw, "if") = 1
+        condition: tp_expr(ts, 1)
+        sir_statement("if", condition, "", -1)
+        kind: "if"
+    if tp_eq(kw, "as") = 1
+        if tp_eq(tp_tok(ts, 1), "long") = 0 or tp_eq(tp_tok(ts, 2), "as") = 0
+            tp_fail("unsupported as statement")
+        condition: tp_expr(ts, 3)
+        sir_statement("while", condition, "", -1)
+        kind: "while"
+    if str_len(kind) > 0
+        block: _sov_list_new()
+        block: _sov_list_add(block, ind)
+        block: _sov_list_add(block, kind)
+        block: _sov_list_add(block, 0)
+        tp_blocks: _sov_list_add(tp_blocks, block)
+        return 0
+    if tp_eq(kw, "print") = 1
+        first: tp_tok(ts, 1)
+        c: peek_byte(first, 0)
+        if c = 34 or c = 39
+            if _sov_list_len(ts) != 2 and _sov_list_len(ts) != 4
+                tp_fail("unsupported literal print arguments")
+            count: -1
+            if _sov_list_len(ts) = 4
+                if tp_eq(tp_tok(ts, 3), "times") = 0
+                    tp_fail("expected times")
+                value: tp_validate_number(tp_tok(ts, 2))
+                count: sir_make("integer", value, -1, -1, 0, -1)
+            sir_statement("print-text", -1, first, count)
+        if not
+            ex: tp_expr(ts, 1)
+            sir_statement("print-i64", ex, "", -1)
+        return 0
+    if tp_eq(kw, "return") = 1
+        ex: sir_make("integer", "0", -1, -1, 0, -1)
+        if _sov_list_len(ts) > 1
+            ex: tp_expr(ts, 1)
+        sir_statement("return", ex, "", -1)
+        return 0
+    if tp_eq(kw, "leave") = 1
+        if _sov_list_len(ts) != 1
+            tp_fail("unexpected leave operands")
+        found: 0
+        i: 0
+        as long as i < _sov_list_len(tp_blocks)
+            block: _sov_list_get(tp_blocks, i)
+            if tp_eq(as text _sov_list_get(block, 1), "while") = 1
+                found: 1
+            i: i + 1
+        if found = 0
+            tp_fail("leave outside loop")
+        sir_statement("break", -1, "", -1)
+        return 0
+    if tp_eq(tp_tok(ts, 1), ":") = 1
+        if tp_name(kw) = 0
+            tp_fail("invalid assignment name")
+        ex: tp_expr(ts, 2)
+        sir_statement("assign", ex, kw, tp_get(tp_vars, kw) - 1)
+        return 0
+    if tp_name(kw) = 1 and tp_eq(tp_tok(ts, 1), "(") = 1
+        ex: tp_expr(ts, 0)
+        sir_statement("expression", ex, "", -1)
+        return 0
+    tp_fail("statement not implemented; refusing incomplete output")
+    return 0
+
+tp_compile src:
+    sir_nodes: _sov_list_new()
+    sir_sites: _sov_list_new()
+    sir_statements: _sov_list_new()
+    tp_rows: _sov_list_new()
+    tp_funcs: _sov_list_new()
+    tp_output: _sov_list_new()
+    tp_line: 1
+    n: str_len(src)
+    i: 0
+    as long as i < n
+        e: i
+        as long as e < n
+            if peek_byte(src, e) = 10
+                leave
+            e: e + 1
+        p: i
+        ind: 0
+        as long as p < e
+            c: peek_byte(src, p)
+            if c != 32 and c != 9
+                leave
+            if c = 9
+                tp_fail("indentation must use spaces, not tabs")
+            if not
+                ind: ind + 1
+            p: p + 1
+        tp_normalize(str_cut(src, p, e), ind)
+        tp_line: tp_line + 1
+        i: e + 1
+    tp_symbols: tp_map(_sov_list_len(tp_rows) + 17)
+    current: 0
+    i: 0
+    as long as i < _sov_list_len(tp_rows)
+        row: _sov_list_get(tp_rows, i)
+        ind: _sov_list_get(row, 0)
+        tp_line: _sov_list_get(row, 1)
+        ts: _sov_list_get(row, 2)
+        if ind = 0
+            count: _sov_list_len(ts)
+            if tp_eq(tp_tok(ts, count - 1), ":") = 0
+                tp_fail("top-level declaration not supported")
+            nm: tp_tok(ts, 0)
+            if tp_name(nm) = 0
+                tp_fail("invalid task name")
+            params: _sov_list_new()
+            j: 1
+            as long as j + 1 < count
+                pn: tp_tok(ts, j)
+                if tp_name(pn) = 0
+                    tp_fail("invalid task parameter")
+                params: _sov_list_add(params, pn)
+                j: j + 1
+            current: _sov_list_new()
+            current: _sov_list_add(current, nm)
+            current: _sov_list_add(current, params)
+            current: _sov_list_add(current, i)
+            tp_set(tp_symbols, nm, _sov_list_len(tp_funcs) + 1)
+            tp_funcs: _sov_list_add(tp_funcs, current)
+        if not
+            if current = 0
+                tp_fail("statement outside task")
+        i: i + 1
+    mainid: tp_get(tp_symbols, "main")
+    if mainid = 0
+        tp_fail("main task required")
+    mainfn: _sov_list_get(tp_funcs, mainid - 1)
+    mainargs: _sov_list_len(_sov_list_get(mainfn, 1))
+    if mainargs > 2
+        tp_fail("main takes at most argc and argv")
+    tp_fidx: 0
+    as long as tp_fidx < _sov_list_len(tp_funcs)
+        fn: _sov_list_get(tp_funcs, tp_fidx)
+        start: _sov_list_get(fn, 2) + 1
+        end: _sov_list_len(tp_rows)
+        if tp_fidx + 1 < _sov_list_len(tp_funcs)
+            nextfn: _sov_list_get(tp_funcs, tp_fidx + 1)
+            end: _sov_list_get(nextfn, 2)
+        if start = end
+            tp_fail("empty task body")
+        tp_vars: tp_map(end - start + 17)
+        params: _sov_list_get(fn, 1)
+        j: 0
+        as long as j < _sov_list_len(params)
+            tp_set(tp_vars, as text _sov_list_get(params, j), j + 1)
+            j: j + 1
+        locals: _sov_list_new()
+        fn: _sov_list_add(fn, locals)
+        _sov_list_set(tp_funcs, tp_fidx, fn)
+        # Function-scoped locals are declared once, even when first assigned in
+        # a conditional. Names are resolved once into a collision-checked map.
+        j: start
+        as long as j < end
+            row: _sov_list_get(tp_rows, j)
+            ts: _sov_list_get(row, 2)
+            if tp_eq(tp_tok(ts, 1), ":") = 1
+                nm: tp_tok(ts, 0)
+                if tp_name(nm) = 0
+                    tp_fail("invalid local name")
+                if tp_get(tp_vars, nm) = 0
+                    tp_set(tp_vars, nm, _sov_list_len(params) + _sov_list_len(locals) + 1)
+                    locals: _sov_list_add(locals, nm)
+                    _sov_list_set(fn, 3, locals)
+            j: j + 1
+        tp_blocks: _sov_list_new()
+        j: start
+        previous: -1
+        firstrow: _sov_list_get(tp_rows, start)
+        tp_baseindent: _sov_list_get(firstrow, 0)
+        as long as j < end
+            row: _sov_list_get(tp_rows, j)
+            ts: _sov_list_get(row, 2)
+            tp_line: _sov_list_get(row, 1)
+            ind: _sov_list_get(row, 0)
+            # A deeper indentation must belong to an open control block.
+            if previous >= 0 and ind > previous
+                if _sov_list_len(tp_blocks) = 0
+                    tp_fail("unexpected indentation")
+                block: _sov_list_get(tp_blocks, _sov_list_len(tp_blocks) - 1)
+                if _sov_list_get(block, 0) != previous
+                    tp_fail("unexpected indentation")
+            depth: _sov_list_len(tp_blocks) - 1
+            expected: tp_baseindent
+            as long as depth >= 0
+                scope: _sov_list_get(tp_blocks, depth)
+                if _sov_list_get(scope, 0) < ind
+                    expected: _sov_list_get(scope, 2)
+                    if expected = 0
+                        expected: ind
+                        _sov_list_set(scope, 2, ind)
+                    leave
+                depth: depth - 1
+            if ind != expected
+                tp_fail("inconsistent indentation")
+            tp_body(ts, ind)
+            kw: tp_tok(ts, 0)
+            if tp_eq(kw, "if") = 1 or tp_eq(kw, "as") = 1
+                if j + 1 >= end
+                    tp_fail("empty control block")
+                child: _sov_list_get(tp_rows, j + 1)
+                if _sov_list_get(child, 0) <= ind
+                    tp_fail("empty control block")
+            previous: ind
+            j: j + 1
+        as long as _sov_list_len(tp_blocks) > 0
+            tp_close()
+        sir_statement("return-default", -1, "", -1)
+        tp_fidx: tp_fidx + 1
+    if sir_dump_mode = 1
+        return sir_export()
+    return tp_lower_module()

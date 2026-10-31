@@ -1,0 +1,22 @@
+# wrapping 64-bit arithmetic: wrap_add/wrap_sub/wrap_mul are compiler
+# builtins (checked + - * stay the default; these never trap, they wrap
+# mod 2^64). usable anywhere, no import needed.
+M32B: 4294967296
+bit_and a b:
+    return band(a, b) % M32B
+bit_or a b:
+    return bor(a, b) % M32B
+bit_xor a b:
+    return bxor(a, b) % M32B
+bit_not8 a:
+    return 255 - (a % 256)
+bit_shl a n:
+    if n >= 64 -> return 0
+    if n < 0 -> return a
+    return bshl(a, n)
+bit_shr a n:
+    if n >= 64 -> return 0
+    if n < 0 -> return a
+    return bsar(a, n)
+bit_xor8 a b:
+    return bxor(a % 256, b % 256) % 256

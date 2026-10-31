@@ -1,0 +1,166 @@
+f0 a b:
+    x: a * b + 0
+    y: xorbits(x, a * 8)
+    if y > 0
+        y: y - b
+    if not
+        y: y + a
+    return y + x / 4
+f1 a b:
+    x: a * b + 1
+    y: xorbits(x, a * 8)
+    if y > 7
+        y: y - b
+    if not
+        y: y + a
+    return y + x / 4
+f2 a b:
+    x: a * b + 2
+    y: xorbits(x, a * 8)
+    if y > 14
+        y: y - b
+    if not
+        y: y + a
+    return y + x / 4
+f3 a b:
+    x: a * b + 3
+    y: xorbits(x, a * 8)
+    if y > 21
+        y: y - b
+    if not
+        y: y + a
+    return y + x / 4
+f4 a b:
+    x: a * b + 4
+    y: xorbits(x, a * 8)
+    if y > 28
+        y: y - b
+    if not
+        y: y + a
+    return y + x / 4
+f5 a b:
+    x: a * b + 5
+    y: xorbits(x, a * 8)
+    if y > 35
+        y: y - b
+    if not
+        y: y + a
+    return y + x / 4
+f6 a b:
+    x: a * b + 6
+    y: xorbits(x, a * 8)
+    if y > 42
+        y: y - b
+    if not
+        y: y + a
+    return y + x / 4
+f7 a b:
+    x: a * b + 7
+    y: xorbits(x, a * 8)
+    if y > 49
+        y: y - b
+    if not
+        y: y + a
+    return y + x / 4
+f8 a b:
+    x: a * b + 8
+    y: xorbits(x, a * 8)
+    if y > 56
+        y: y - b
+    if not
+        y: y + a
+    return y + x / 4
+f9 a b:
+    x: a * b + 9
+    y: xorbits(x, a * 8)
+    if y > 63
+        y: y - b
+    if not
+        y: y + a
+    return y + x / 4
+f10 a b:
+    x: a * b + 10
+    y: xorbits(x, a * 8)
+    if y > 70
+        y: y - b
+    if not
+        y: y + a
+    return y + x / 4
+f11 a b:
+    x: a * b + 11
+    y: xorbits(x, a * 8)
+    if y > 77
+        y: y - b
+    if not
+        y: y + a
+    return y + x / 4
+f12 a b:
+    x: a * b + 12
+    y: xorbits(x, a * 8)
+    if y > 84
+        y: y - b
+    if not
+        y: y + a
+    return y + x / 4
+f13 a b:
+    x: a * b + 13
+    y: xorbits(x, a * 8)
+    if y > 91
+        y: y - b
+    if not
+        y: y + a
+    return y + x / 4
+f14 a b:
+    x: a * b + 14
+    y: xorbits(x, a * 8)
+    if y > 98
+        y: y - b
+    if not
+        y: y + a
+    return y + x / 4
+f15 a b:
+    x: a * b + 15
+    y: xorbits(x, a * 8)
+    if y > 105
+        y: y - b
+    if not
+        y: y + a
+    return y + x / 4
+f16 a b:
+    x: a * b + 16
+    y: xorbits(x, a * 8)
+    if y > 112
+        y: y - b
+    if not
+        y: y + a
+    return y + x / 4
+f17 a b:
+    x: a * b + 17
+    y: xorbits(x, a * 8)
+    if y > 119
+        y: y - b
+    if not
+        y: y + a
+    return y + x / 4
+f18 a b:
+    x: a * b + 18
+    y: xorbits(x, a * 8)
+    if y > 126
+        y: y - b
+    if not
+        y: y + a
+    return y + x / 4
+f19 a b:
+    x: a * b + 19
+    y: xorbits(x, a * 8)
+    if y > 133
+        y: y - b
+    if not
+        y: y + a
+    return y + x / 4
+main:
+    s: 0
+    s: s + f0(s, 3)
+    s: s + f13(s, 16)
+    print s
+    return 0

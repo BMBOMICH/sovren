@@ -1,0 +1,27 @@
+# unsafe-module
+use kdriver
+bad m:
+    print m
+    badn: badn + 1
+main:
+    device: _sov_alloc(KD_STRIDE)
+    if kd_init(device) != 1 -> bad('init')
+    generation: kd_generation(device)
+    if generation = 0 -> bad('generation')
+    if kd_state(device) != KD_DISCOVERED -> bad('discovered')
+    if kd_start(device, 7) != 0 -> bad('start without bind')
+    if kd_bind(device, 7) != 1 -> bad('bind')
+    if kd_bind(device, 8) != 0 -> bad('double bind')
+    if kd_start(device, 8) != 0 -> bad('wrong-owner start')
+    if kd_start(device, 7) != 1 -> bad('start')
+    if kd_request_begin(device, 7) != 1 -> bad('request begin')
+    if kd_stop(device, 7) != 0 -> bad('busy stop')
+    if kd_request_end(device, 8) != 0 -> bad('wrong completion')
+    if kd_request_end(device, 7) != 1 -> bad('request end')
+    if kd_request_end(device, 7) != 0 -> bad('completion underflow')
+    if kd_stop(device, 7) != 1 -> bad('stop')
+    if kd_unbind(device, 7) != 1 -> bad('unbind')
+    if kd_generation(device) != generation + 1 -> bad('reuse generation')
+    if kd_remove(device) != 1 -> bad('remove')
+    if kd_bind(device, 7) != 0 -> bad('bind removed')
+    print 'kdriver OK'

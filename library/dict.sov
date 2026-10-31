@@ -1,0 +1,109 @@
+use list
+use string
+# dict layout: [keys, vals, idx] -- idx is 0 or a heap block
+# [cap, mask, slot...] with slot = key position + 1 (0 = empty), an
+# open-addressing index over the keys list so find is ~O(1).  Hand-built
+# 2-element dicts still work: find falls back to a linear scan and set
+# grows the index slot lazily.
+dictx_hash k:
+    h: 1469598103934665603
+    i: 0
+    b: peek_byte(k, 0)
+    as long as b is not 0
+        h: wrap_mul(bxor(h, b), 1099511628211)
+        i: i + 1
+        b: peek_byte(k, i)
+    return band(h, 9223372036854775807)
+dict_new:
+    l: list_new()
+    l: list_add(l, list_new())
+    l: list_add(l, list_new())
+    l: list_add(l, 0)
+    return l
+dict_keys d:
+    return list_get(d, 0)
+dict_vals d:
+    return list_get(d, 1)
+dictx_idx d:
+    if list_len(d) < 3
+        return 0
+    return list_get(d, 2)
+dictx_probe idx ks k:
+    cap: peek_i64(idx, 0)
+    msk: peek_i64(idx, 8)
+    h: band(dictx_hash(k), msk)
+    v: peek_i64(idx, 16 + h * 8)
+    as long as v is not 0
+        if str_eq(list_get(ks, v - 1), k) is 1 -> return v - 1
+        h: band(h + 1, msk)
+        v: peek_i64(idx, 16 + h * 8)
+    return 0 - 1
+dictx_slot idx ks k:
+    msk: peek_i64(idx, 8)
+    h: band(dictx_hash(k), msk)
+    v: peek_i64(idx, 16 + h * 8)
+    as long as v is not 0
+        if str_eq(list_get(ks, v - 1), k) is 1 -> return h
+        h: band(h + 1, msk)
+        v: peek_i64(idx, 16 + h * 8)
+    return h
+dictx_rebuild d ncap:
+    ks: dict_keys(d)
+    p: _sov_heap_alloc(16 + ncap * 8)
+    dummy: _sov_bzero(p, 16 + ncap * 8)
+    dummy: poke_i64(p, 0, ncap)
+    dummy: poke_i64(p, 8, ncap - 1)
+    n: list_len(ks)
+    i: 0
+    as long as i < n
+        h: dictx_slot(p, ks, list_get(ks, i))
+        dummy: poke_i64(p, 16 + h * 8, i + 1)
+        i: i + 1
+    if list_len(d) < 3
+        d: list_add(d, p)
+        return d
+    d: list_set(d, 2, p)
+    return d
+dict_find d k:
+    ks: dict_keys(d)
+    idx: dictx_idx(d)
+    if idx is not 0
+        return dictx_probe(idx, ks, k)
+    i: 0
+    as long as i < list_len(ks)
+        if str_eq(list_get(ks, i), k) is 1 -> return i
+        i: i + 1
+    return 0 - 1
+dict_set d k v:
+    i: dict_find(d, k)
+    if i > 0 - 1
+        vs: dict_vals(d)
+        vs: list_set(vs, i, v)
+        return d
+    ks: dict_keys(d)
+    vs: dict_vals(d)
+    ks: list_add(ks, k)
+    vs: list_add(vs, v)
+    d: list_set(d, 0, ks)
+    d: list_set(d, 1, vs)
+    cnt: list_len(ks)
+    idx: dictx_idx(d)
+    if idx is 0
+        if cnt > 15
+            d: dictx_rebuild(d, 64)
+        return d
+    cap: peek_i64(idx, 0)
+    if cnt * 4 > cap * 3
+        d: dictx_rebuild(d, cap * 2)
+        return d
+    h: dictx_slot(idx, ks, k)
+    dummy: poke_i64(idx, 16 + h * 8, cnt)
+    return d
+dict_get d k:
+    i: dict_find(d, k)
+    if i < 0 -> return 0
+    return list_get(dict_vals(d), i)
+dict_has d k:
+    if dict_find(d, k) > 0 - 1 -> return 1
+dict_len d:
+    return list_len(dict_keys(d))

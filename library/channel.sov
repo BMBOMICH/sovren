@@ -1,0 +1,51 @@
+use store
+use string
+use file
+use lock
+channel_path name:
+    return str_cat("channel-", name)
+channel_post name from text:
+    line: str_join3(from, ": ", text)
+    return store_put(channel_path(name), line)
+channel_read name:
+    return store_load(channel_path(name))
+channel_clear name:
+    return store_clear(channel_path(name))
+chan_new cap:
+    if cap < 1 -> cap: 1
+    n: 40 + cap * 8
+    p: _sov_alloc(n)
+    poke_i64(p, 0, 0)
+    poke_i64(p, 8, 0)
+    poke_i64(p, 16, cap)
+    poke_i64(p, 24, 0)
+    poke_i64(p, 32, 0)
+    return p
+chan_send ch v:
+    mutex_lock(ch)
+    cap: peek_i64(ch, 16)
+    count: peek_i64(ch, 8)
+    as long as count is cap
+        mutex_unlock(ch)
+        mutex_lock(ch)
+        cap: peek_i64(ch, 16)
+        count: peek_i64(ch, 8)
+    tail: peek_i64(ch, 32)
+    poke_i64(ch, 40 + tail * 8, v)
+    poke_i64(ch, 32, (tail + 1) % cap)
+    poke_i64(ch, 8, count + 1)
+    mutex_unlock(ch)
+chan_recv ch:
+    mutex_lock(ch)
+    count: peek_i64(ch, 8)
+    as long as count is 0
+        mutex_unlock(ch)
+        mutex_lock(ch)
+        count: peek_i64(ch, 8)
+    head: peek_i64(ch, 24)
+    v: peek_i64(ch, 40 + head * 8)
+    cap: peek_i64(ch, 16)
+    poke_i64(ch, 24, (head + 1) % cap)
+    poke_i64(ch, 8, count - 1)
+    mutex_unlock(ch)
+    return v

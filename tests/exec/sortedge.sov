@@ -1,0 +1,36 @@
+use list
+use sort
+main:
+    e: list_new()
+    e: sort_ints(e)
+    print list_len(e)
+    o: list_new()
+    o: list_add(o, 42)
+    o: sort_ints(o)
+    print list_get(o, 0)
+    s: list_new()
+    i: 0
+    as long as i < 5000
+        s: list_add(s, i)
+        i: i + 1
+    s: sort_ints(s)
+    print list_get(s, 4999)
+    r: list_new()
+    i: 5000
+    as long as i > 0
+        r: list_add(r, i)
+        i: i - 1
+    r: sort_ints(r)
+    print list_get(r, 0)
+    print list_get(r, 4999)
+    q: list_new()
+    i: 0
+    as long as i < 5000
+        q: list_add(q, 7)
+        i: i + 1
+    q: sort_ints(q)
+    print list_get(q, 2500)
+    d: sort_ints_desc(r)
+    print list_get(d, 0)
+    print list_get(d, 4999)
+    return 0

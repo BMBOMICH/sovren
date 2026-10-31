@@ -1,0 +1,12 @@
+fill p n:
+    i: 0
+    as long as i < n -> poke_byte(p + i, 0, 65 + i)
+        i: i + 1
+    return p
+main:
+    buf: _sov_alloc(8)
+    q: fill(buf, 5)
+    print peek_byte(q + 4, 0)
+    poke_i64(buf, 0, 1234567890123)
+    print peek_i64(buf, 0)
+    print q = buf

@@ -1,0 +1,8 @@
+log: 0
+w v:
+    log: log * 10 + v
+    return v
+main:
+    x: w(1) + w(2) + w(3)
+    print x
+    print log

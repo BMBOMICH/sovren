@@ -1,0 +1,1394 @@
+[
+ {
+  "path": "compilers/6502",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 3,
+   "expect": "LDA #n (A9), BRK (00)"
+  }
+ },
+ {
+  "path": "compilers/8051",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 4,
+   "expect": "MOV A,#n (74); SJMP . (80 FE)"
+  }
+ },
+ {
+  "path": "compilers/aix",
+  "container": "XCOFF64",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "magic": "0x1f7",
+   "nscns": 2,
+   "opthdr": 120,
+   "sections": [
+    ".text",
+    ".data"
+   ]
+  }
+ },
+ {
+  "path": "compilers/apple/arm64_32",
+  "container": "Mach-O",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "magic": "0xfeedfacf",
+   "cputype": "0x200000c",
+   "filetype": 2,
+   "ncmds": 5,
+   "sizeofcmds": 208,
+   "cmds": [
+    "0x19",
+    "0x19",
+    "0x32",
+    "0x80000028",
+    "0x1d"
+   ],
+   "cmdnames": [
+    "FUNCTION_STARTS",
+    "FUNCTION_STARTS",
+    "LC_FILESET_ENTRY",
+    "MAIN",
+    "CODE_SIGNATURE"
+   ]
+  }
+ },
+ {
+  "path": "compilers/apple/arm64e",
+  "container": "Mach-O",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "magic": "0xfeedfacf",
+   "cputype": "0x100000c",
+   "filetype": 2,
+   "ncmds": 5,
+   "sizeofcmds": 208,
+   "cmds": [
+    "0x19",
+    "0x19",
+    "0x32",
+    "0x80000028",
+    "0x1d"
+   ],
+   "cmdnames": [
+    "FUNCTION_STARTS",
+    "FUNCTION_STARTS",
+    "LC_FILESET_ENTRY",
+    "MAIN",
+    "CODE_SIGNATURE"
+   ]
+  }
+ },
+ {
+  "path": "compilers/apple/ios",
+  "container": "Mach-O",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "magic": "0xfeedfacf",
+   "cputype": "0x100000c",
+   "filetype": 2,
+   "ncmds": 5,
+   "sizeofcmds": 208,
+   "cmds": [
+    "0x19",
+    "0x19",
+    "0x32",
+    "0x80000028",
+    "0x1d"
+   ],
+   "cmdnames": [
+    "FUNCTION_STARTS",
+    "FUNCTION_STARTS",
+    "LC_FILESET_ENTRY",
+    "MAIN",
+    "CODE_SIGNATURE"
+   ]
+  }
+ },
+ {
+  "path": "compilers/apple/ios-framework",
+  "container": "Mach-O",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "magic": "0xfeedfacf",
+   "cputype": "0x100000c",
+   "filetype": 6,
+   "ncmds": 5,
+   "sizeofcmds": 328,
+   "cmds": [
+    "0x19",
+    "0x32",
+    "0xd",
+    "0x2",
+    "0xb"
+   ],
+   "cmdnames": [
+    "FUNCTION_STARTS",
+    "LC_FILESET_ENTRY",
+    "0xd",
+    "SYMTAB",
+    "DYLIB"
+   ]
+  }
+ },
+ {
+  "path": "compilers/apple/ios-simulator",
+  "container": "Mach-O",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "magic": "0xfeedfacf",
+   "cputype": "0x100000c",
+   "filetype": 2,
+   "ncmds": 5,
+   "sizeofcmds": 208,
+   "cmds": [
+    "0x19",
+    "0x19",
+    "0x32",
+    "0x80000028",
+    "0x1d"
+   ],
+   "cmdnames": [
+    "FUNCTION_STARTS",
+    "FUNCTION_STARTS",
+    "LC_FILESET_ENTRY",
+    "MAIN",
+    "CODE_SIGNATURE"
+   ]
+  }
+ },
+ {
+  "path": "compilers/apple/macos",
+  "container": "Mach-O",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "magic": "0xfeedfacf",
+   "cputype": "0x1000007",
+   "filetype": 2,
+   "ncmds": 3,
+   "sizeofcmds": 168,
+   "cmds": [
+    "0x19",
+    "0x19",
+    "0x80000028"
+   ],
+   "cmdnames": [
+    "FUNCTION_STARTS",
+    "FUNCTION_STARTS",
+    "MAIN"
+   ]
+  }
+ },
+ {
+  "path": "compilers/apple/macos-arm64",
+  "container": "Mach-O",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "magic": "0xfeedfacf",
+   "cputype": "0x100000c",
+   "filetype": 2,
+   "ncmds": 5,
+   "sizeofcmds": 208,
+   "cmds": [
+    "0x19",
+    "0x19",
+    "0x32",
+    "0x80000028",
+    "0x1d"
+   ],
+   "cmdnames": [
+    "FUNCTION_STARTS",
+    "FUNCTION_STARTS",
+    "LC_FILESET_ENTRY",
+    "MAIN",
+    "CODE_SIGNATURE"
+   ]
+  }
+ },
+ {
+  "path": "compilers/apple/macos-dynamic-library",
+  "container": "Mach-O",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "magic": "0xfeedfacf",
+   "cputype": "0x1000007",
+   "filetype": 6,
+   "ncmds": 4,
+   "sizeofcmds": 296,
+   "cmds": [
+    "0x19",
+    "0xd",
+    "0x2",
+    "0xb"
+   ],
+   "cmdnames": [
+    "FUNCTION_STARTS",
+    "0xd",
+    "SYMTAB",
+    "DYLIB"
+   ]
+  }
+ },
+ {
+  "path": "compilers/apple/tvos",
+  "container": "Mach-O",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "magic": "0xfeedfacf",
+   "cputype": "0x100000c",
+   "filetype": 2,
+   "ncmds": 5,
+   "sizeofcmds": 208,
+   "cmds": [
+    "0x19",
+    "0x19",
+    "0x32",
+    "0x80000028",
+    "0x1d"
+   ],
+   "cmdnames": [
+    "FUNCTION_STARTS",
+    "FUNCTION_STARTS",
+    "LC_FILESET_ENTRY",
+    "MAIN",
+    "CODE_SIGNATURE"
+   ]
+  }
+ },
+ {
+  "path": "compilers/apple/tvos-simulator",
+  "container": "Mach-O",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "magic": "0xfeedfacf",
+   "cputype": "0x100000c",
+   "filetype": 2,
+   "ncmds": 5,
+   "sizeofcmds": 208,
+   "cmds": [
+    "0x19",
+    "0x19",
+    "0x32",
+    "0x80000028",
+    "0x1d"
+   ],
+   "cmdnames": [
+    "FUNCTION_STARTS",
+    "FUNCTION_STARTS",
+    "LC_FILESET_ENTRY",
+    "MAIN",
+    "CODE_SIGNATURE"
+   ]
+  }
+ },
+ {
+  "path": "compilers/apple/visionos",
+  "container": "Mach-O",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "magic": "0xfeedfacf",
+   "cputype": "0x100000c",
+   "filetype": 2,
+   "ncmds": 5,
+   "sizeofcmds": 208,
+   "cmds": [
+    "0x19",
+    "0x19",
+    "0x32",
+    "0x80000028",
+    "0x1d"
+   ],
+   "cmdnames": [
+    "FUNCTION_STARTS",
+    "FUNCTION_STARTS",
+    "LC_FILESET_ENTRY",
+    "MAIN",
+    "CODE_SIGNATURE"
+   ]
+  }
+ },
+ {
+  "path": "compilers/apple/visionos-simulator",
+  "container": "Mach-O",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "magic": "0xfeedfacf",
+   "cputype": "0x100000c",
+   "filetype": 2,
+   "ncmds": 5,
+   "sizeofcmds": 208,
+   "cmds": [
+    "0x19",
+    "0x19",
+    "0x32",
+    "0x80000028",
+    "0x1d"
+   ],
+   "cmdnames": [
+    "FUNCTION_STARTS",
+    "FUNCTION_STARTS",
+    "LC_FILESET_ENTRY",
+    "MAIN",
+    "CODE_SIGNATURE"
+   ]
+  }
+ },
+ {
+  "path": "compilers/apple/watchos",
+  "container": "Mach-O",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "magic": "0xfeedfacf",
+   "cputype": "0x100000c",
+   "filetype": 2,
+   "ncmds": 5,
+   "sizeofcmds": 208,
+   "cmds": [
+    "0x19",
+    "0x19",
+    "0x32",
+    "0x80000028",
+    "0x1d"
+   ],
+   "cmdnames": [
+    "FUNCTION_STARTS",
+    "FUNCTION_STARTS",
+    "LC_FILESET_ENTRY",
+    "MAIN",
+    "CODE_SIGNATURE"
+   ]
+  }
+ },
+ {
+  "path": "compilers/apple/watchos-simulator",
+  "container": "Mach-O",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "magic": "0xfeedfacf",
+   "cputype": "0x100000c",
+   "filetype": 2,
+   "ncmds": 5,
+   "sizeofcmds": 208,
+   "cmds": [
+    "0x19",
+    "0x19",
+    "0x32",
+    "0x80000028",
+    "0x1d"
+   ],
+   "cmdnames": [
+    "FUNCTION_STARTS",
+    "FUNCTION_STARTS",
+    "LC_FILESET_ENTRY",
+    "MAIN",
+    "CODE_SIGNATURE"
+   ]
+  }
+ },
+ {
+  "path": "compilers/boot/multiboot",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "magic": "0x1badb002",
+   "flags": "0x10000",
+   "checksum": "0xe4514ffe",
+   "header_addr": "0x100000",
+   "load_addr": "0x100000",
+   "load_end_addr": "0x100220",
+   "bss_end_addr": "0x100220",
+   "entry": "0x100020"
+  }
+ },
+ {
+  "path": "compilers/c-language",
+  "container": "C-source",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 117,
+   "lines": 9
+  }
+ },
+ {
+  "path": "compilers/c166",
+  "container": "OMF166",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "records": [
+    "0x80",
+    "0xe7",
+    "0xb9",
+    "0xe0",
+    "0x8a"
+   ],
+   "end": 42
+  }
+ },
+ {
+  "path": "compilers/common-intermediate-language",
+  "container": "IL-source",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 561,
+   "lines": 27
+  }
+ },
+ {
+  "path": "compilers/common-intermediate-language/portable-executable",
+  "container": "PE/COFF",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "machine": "0x14c",
+   "nsec": 1,
+   "opthsz": 224,
+   "chars": "0x102",
+   "opt_magic": "0x10b",
+   "pe32plus": false,
+   "entry": "0x0",
+   "imagebase": "0x400000",
+   "numrva": 16,
+   "clr_dir": 8192,
+   "sections": [
+    ".text"
+   ]
+  }
+ },
+ {
+  "path": "compilers/csharp",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 228,
+   "lines": 15
+  }
+ },
+ {
+  "path": "compilers/dex",
+  "container": "Dalvik-DEX",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "file_size": 248,
+   "header_size": 112,
+   "endian_tag": "0x12345678",
+   "adler32": "match",
+   "sha1": "match"
+  }
+ },
+ {
+  "path": "compilers/dos/com-image",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 32
+  }
+ },
+ {
+  "path": "compilers/dos/mz-executable",
+  "container": "PE/COFF",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "cblp": 80,
+   "cp": 1,
+   "cparhdr": 2,
+   "ss": "0x0",
+   "sp": "0x100",
+   "ip": "0x0",
+   "cs": "0x0",
+   "entry_file_off": 32
+  }
+ },
+ {
+  "path": "compilers/evm",
+  "container": "EVM-bytecode",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 3,
+   "expect": "PUSH1 n (60); STOP (00)"
+  }
+ },
+ {
+  "path": "compilers/extended-berkeley-packet-filter",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 209,
+   "lines": 8
+  }
+ },
+ {
+  "path": "compilers/ez80",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 3,
+   "expect": "LD A,n (3E); HALT (76)"
+  }
+ },
+ {
+  "path": "compilers/firmware/cortex-m",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 512,
+   "initial_sp": "0x20001000",
+   "reset_vector": "0x21"
+  }
+ },
+ {
+  "path": "compilers/firmware/device-firmware-upgrade",
+  "container": "DfuSe",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "prefix": "DfuSe",
+   "size": 821,
+   "bcdDevice": "0x1",
+   "idProduct": "0x1",
+   "idVendor": "0x1209",
+   "bcdDFU": "0x11a",
+   "suffix_len": 16,
+   "stored_crc": "0x2915d86b",
+   "crc": "match"
+  }
+ },
+ {
+  "path": "compilers/firmware/intel-hex",
+  "container": "Intel-HEX",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "records": 33
+  }
+ },
+ {
+  "path": "compilers/firmware/mcuboot-image",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 548
+  }
+ },
+ {
+  "path": "compilers/firmware/riscv32-bare",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 512
+  }
+ },
+ {
+  "path": "compilers/firmware/riscv32e",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 512
+  }
+ },
+ {
+  "path": "compilers/firmware/riscv64-bare",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 512
+  }
+ },
+ {
+  "path": "compilers/firmware/s-record",
+  "container": "S-record",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "records": 33
+  }
+ },
+ {
+  "path": "compilers/firmware/thumbv6m",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 512,
+   "initial_sp": "0x20001000",
+   "reset_vector": "0x21"
+  }
+ },
+ {
+  "path": "compilers/firmware/thumbv7em",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 512,
+   "initial_sp": "0x20001000",
+   "reset_vector": "0x21"
+  }
+ },
+ {
+  "path": "compilers/firmware/thumbv7m",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 512,
+   "initial_sp": "0x20001000",
+   "reset_vector": "0x21"
+  }
+ },
+ {
+  "path": "compilers/firmware/thumbv8m",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 512,
+   "initial_sp": "0x20001000",
+   "reset_vector": "0x21"
+  }
+ },
+ {
+  "path": "compilers/firmware/usb-flashing-format",
+  "container": "UF2",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "blocks": 2,
+   "numBlocks_field": 2
+  }
+ },
+ {
+  "path": "compilers/firmware/x86-64-bare",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 512
+  }
+ },
+ {
+  "path": "compilers/fuchsia",
+  "container": "Fuchsia-FAR",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "entries": 2,
+   "entries_len": 48
+  }
+ },
+ {
+  "path": "compilers/graphics-processing-units/amd-graphics-core-next",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 458,
+   "lines": 18
+  }
+ },
+ {
+  "path": "compilers/graphics-processing-units/high-level-shading-language",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 285,
+   "lines": 15
+  }
+ },
+ {
+  "path": "compilers/graphics-processing-units/intel-xe",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 329,
+   "lines": 12
+  }
+ },
+ {
+  "path": "compilers/graphics-processing-units/metal-apple-intermediate-representation",
+  "container": "Apple/Metal-package",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "magic": "AIR2",
+   "version": 2,
+   "declared_size": 334,
+   "size": 398
+  }
+ },
+ {
+  "path": "compilers/graphics-processing-units/metal-library",
+  "container": "Apple/Metal-package",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "magic": "MTLB",
+   "version": 2,
+   "declared_size": 334,
+   "size": 398
+  }
+ },
+ {
+  "path": "compilers/graphics-processing-units/msl",
+  "container": "C-source",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 334,
+   "lines": 16
+  }
+ },
+ {
+  "path": "compilers/graphics-processing-units/opengl-shading-language",
+  "container": "GLSL",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 339,
+   "lines": 16
+  }
+ },
+ {
+  "path": "compilers/graphics-processing-units/parallel-thread-execution",
+  "container": "PTX",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 241,
+   "lines": 16
+  }
+ },
+ {
+  "path": "compilers/graphics-processing-units/standard-portable-intermediate-representation-v",
+  "container": "SPIR-V",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "magic": "0x7230203",
+   "version": 65536,
+   "generator": 0,
+   "bound": 13,
+   "schema": 0
+  }
+ },
+ {
+  "path": "compilers/graphics-processing-units/webgpu-shading-language",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 344,
+   "lines": 15
+  }
+ },
+ {
+  "path": "compilers/harmonyos",
+  "container": "ZIP/HAP",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "entries": 1,
+   "cd_entries": 1,
+   "cd_size": 57,
+   "cd_off": 190
+  }
+ },
+ {
+  "path": "compilers/hpux",
+  "container": "HP-UX-SOM",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "system_id": "0x210",
+   "a_magic": "0x108",
+   "version_id": 87102412,
+   "som_length": 282,
+   "space_total": 1,
+   "subspace_total": 1
+  }
+ },
+ {
+  "path": "compilers/java-virtual-machine",
+  "container": "Mach-O-fat/JVM-class",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "major": 55,
+   "minor": 0,
+   "cp_count": 30,
+   "this_class": 2304,
+   "super_class": 5381
+  }
+ },
+ {
+  "path": "compilers/javascript",
+  "container": "JS/TS-source",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 189,
+   "lines": 13
+  }
+ },
+ {
+  "path": "compilers/linux/static-archive",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "members": [
+    "/",
+    "sovren.o/"
+   ]
+  }
+ },
+ {
+  "path": "compilers/llvm-intermediate-representation",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 434,
+   "lines": 18
+  }
+ },
+ {
+  "path": "compilers/operating-systems/menuetos",
+  "container": "MENUET64",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "version": 1,
+   "start": "0x140",
+   "size": 4128
+  }
+ },
+ {
+  "path": "compilers/pic16",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 4,
+   "expect": "MOVLW n (n 30); ..."
+  }
+ },
+ {
+  "path": "compilers/pic18",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 4,
+   "expect": "MOVLW n (0E 00 00)"
+  }
+ },
+ {
+  "path": "compilers/plan9",
+  "container": "Plan9-a.out",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "magic": "0x8a97",
+   "text": 7,
+   "data": 0,
+   "bss": 0,
+   "syms": 0,
+   "entry": 1048576,
+   "spsz": 0,
+   "txtsz": 0
+  }
+ },
+ {
+  "path": "compilers/qbe-intermediate-representation",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 111,
+   "lines": 6
+  }
+ },
+ {
+  "path": "compilers/real-time-operating-systems/chromium-ec",
+  "container": "C-source",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 474,
+   "lines": 19
+  }
+ },
+ {
+  "path": "compilers/real-time-operating-systems/embos",
+  "container": "C-source",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 724,
+   "lines": 26
+  }
+ },
+ {
+  "path": "compilers/real-time-operating-systems/freertos",
+  "container": "C-source",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 702,
+   "lines": 27
+  }
+ },
+ {
+  "path": "compilers/real-time-operating-systems/mbed",
+  "container": "C-source",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 433,
+   "lines": 18
+  }
+ },
+ {
+  "path": "compilers/real-time-operating-systems/nuttx",
+  "container": "C-source",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 444,
+   "lines": 20
+  }
+ },
+ {
+  "path": "compilers/real-time-operating-systems/riot",
+  "container": "C-source",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 640,
+   "lines": 23
+  }
+ },
+ {
+  "path": "compilers/real-time-operating-systems/rt-thread",
+  "container": "C-source",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 795,
+   "lines": 28
+  }
+ },
+ {
+  "path": "compilers/real-time-operating-systems/threadx",
+  "container": "C-source",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 871,
+   "lines": 28
+  }
+ },
+ {
+  "path": "compilers/real-time-operating-systems/ti-rtos",
+  "container": "C-source",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 685,
+   "lines": 25
+  }
+ },
+ {
+  "path": "compilers/real-time-operating-systems/zephyr",
+  "container": "C-source",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 666,
+   "lines": 24
+  }
+ },
+ {
+  "path": "compilers/typescript",
+  "container": "JS/TS-source",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 115,
+   "lines": 10
+  }
+ },
+ {
+  "path": "compilers/unified-extensible-firmware-interface",
+  "container": "PE/COFF",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "machine": "0x8664",
+   "nsec": 1,
+   "opthsz": 240,
+   "chars": "0x2022",
+   "opt_magic": "0x20b",
+   "pe32plus": true,
+   "entry": "0x1000",
+   "imagebase": "0x400000",
+   "numrva": 16,
+   "clr_dir": 0,
+   "sections": [
+    ".text"
+   ]
+  }
+ },
+ {
+  "path": "compilers/unified-extensible-firmware-interface/arm64",
+  "container": "PE/COFF",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "machine": "0xaa64",
+   "nsec": 1,
+   "opthsz": 240,
+   "chars": "0x2022",
+   "opt_magic": "0x20b",
+   "pe32plus": true,
+   "entry": "0x1000",
+   "imagebase": "0x400000",
+   "numrva": 16,
+   "clr_dir": 0,
+   "sections": [
+    ".text"
+   ]
+  }
+ },
+ {
+  "path": "compilers/webassembly/browser",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 545,
+   "lines": 14
+  }
+ },
+ {
+  "path": "compilers/webassembly/component-model",
+  "container": "WebAssembly",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "kind": "component",
+   "sections": []
+  }
+ },
+ {
+  "path": "compilers/webassembly/edge",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 638,
+   "lines": 19
+  }
+ },
+ {
+  "path": "compilers/webassembly/emscripten",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 10186,
+   "lines": 146
+  }
+ },
+ {
+  "path": "compilers/webassembly/wasm32-single-instruction-multiple-data",
+  "container": "WebAssembly",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "version": 1,
+   "kind": "core",
+   "sections": [
+    "type",
+    "function",
+    "export",
+    "code"
+   ]
+  }
+ },
+ {
+  "path": "compilers/webassembly/wasm32-threads-atomics",
+  "container": "WebAssembly",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "version": 1,
+   "kind": "core",
+   "sections": [
+    "type",
+    "function",
+    "memory",
+    "export",
+    "code"
+   ]
+  }
+ },
+ {
+  "path": "compilers/webassembly/wasm32-unknown-unknown",
+  "container": "WebAssembly",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "version": 1,
+   "kind": "core",
+   "sections": [
+    "type",
+    "function",
+    "export",
+    "code"
+   ]
+  }
+ },
+ {
+  "path": "compilers/webassembly/wasm64-memory64",
+  "container": "WebAssembly",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "version": 1,
+   "kind": "core",
+   "sections": [
+    "type",
+    "function",
+    "memory",
+    "export",
+    "code"
+   ]
+  }
+ },
+ {
+  "path": "compilers/webassembly/webassembly-system-interface",
+  "container": "WebAssembly",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "version": 1,
+   "kind": "core",
+   "sections": [
+    "type",
+    "import",
+    "function",
+    "memory",
+    "export",
+    "code",
+    "data"
+   ]
+  }
+ },
+ {
+  "path": "compilers/webassembly/webassembly-text",
+  "container": "WAT",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 220,
+   "lines": 15
+  }
+ },
+ {
+  "path": "compilers/windows",
+  "container": "PE/COFF",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "machine": "0x8664",
+   "nsec": 3,
+   "opthsz": 240,
+   "chars": "0x22",
+   "opt_magic": "0x20b",
+   "pe32plus": true,
+   "entry": "0x1000",
+   "imagebase": "0x400000",
+   "numrva": 16,
+   "clr_dir": 0,
+   "sections": [
+    ".text",
+    ".data",
+    ".reloc"
+   ]
+  }
+ },
+ {
+  "path": "compilers/windows/arm64",
+  "container": "PE/COFF",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "machine": "0xaa64",
+   "nsec": 2,
+   "opthsz": 240,
+   "chars": "0x22",
+   "opt_magic": "0x20b",
+   "pe32plus": true,
+   "entry": "0x1000",
+   "imagebase": "0x140000000",
+   "numrva": 16,
+   "clr_dir": 0,
+   "sections": [
+    ".text",
+    ".pdata"
+   ]
+  }
+ },
+ {
+  "path": "compilers/windows/arm64ec",
+  "container": "PE/COFF",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "machine": "0xaa64",
+   "nsec": 2,
+   "opthsz": 240,
+   "chars": "0x22",
+   "opt_magic": "0x20b",
+   "pe32plus": true,
+   "entry": "0x1000",
+   "imagebase": "0x140000000",
+   "numrva": 16,
+   "clr_dir": 0,
+   "sections": [
+    ".text",
+    ".pdata"
+   ]
+  }
+ },
+ {
+  "path": "compilers/windows/coff-object",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "machine": "0x8664",
+   "nsec": 1,
+   "optsz": 0,
+   "sections": [
+    ".text"
+   ]
+  }
+ },
+ {
+  "path": "compilers/windows/dynamic-link-library",
+  "container": "PE/COFF",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "machine": "0x8664",
+   "nsec": 1,
+   "opthsz": 240,
+   "chars": "0x2022",
+   "opt_magic": "0x20b",
+   "pe32plus": true,
+   "entry": "0x1000",
+   "imagebase": "0x140000000",
+   "numrva": 16,
+   "clr_dir": 0,
+   "sections": [
+    ".text"
+   ]
+  }
+ },
+ {
+  "path": "compilers/windows/pdata",
+  "container": "PE/COFF",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "machine": "0xaa64",
+   "nsec": 2,
+   "opthsz": 240,
+   "chars": "0x22",
+   "opt_magic": "0x20b",
+   "pe32plus": true,
+   "entry": "0x1000",
+   "imagebase": "0x140000000",
+   "numrva": 16,
+   "clr_dir": 0,
+   "sections": [
+    ".text",
+    ".pdata"
+   ]
+  }
+ },
+ {
+  "path": "compilers/windows/store",
+  "container": "PE/COFF",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "machine": "0x8664",
+   "nsec": 3,
+   "opthsz": 240,
+   "chars": "0x22",
+   "opt_magic": "0x20b",
+   "pe32plus": true,
+   "entry": "0x1000",
+   "imagebase": "0x400000",
+   "numrva": 16,
+   "clr_dir": 0,
+   "sections": [
+    ".text",
+    ".data",
+    ".reloc"
+   ]
+  }
+ },
+ {
+  "path": "compilers/z80",
+  "container": "binary/other",
+  "verdict": "COMPLETE",
+  "problems": [],
+  "info": {
+   "size": 3,
+   "expect": "LD A,n (3E); HALT (76)"
+  }
+ }
+]

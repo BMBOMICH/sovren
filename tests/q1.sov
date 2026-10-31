@@ -1,0 +1,9 @@
+add x y:
+    return x + y
+
+main:
+    s: 0
+    i: 0
+    as long as i < 2000 -> s: add(s, i)
+        i: i + 1
+    print s

@@ -1,0 +1,26 @@
+# abi_probe - one small program that pulls in the runtime paths the BSD ABI
+# layer has to translate: write (print), the allocator (mmap), openat/read/
+# write/fsync/close (the file library), pipe/dup2, unlink and exit.
+# tools/bsd_abi.py --verify TARGET builds it with the linux kit and the target
+# kit and compares the syscall numbers in the two images; every call here is on
+# that comparison, so a mapping that only this program reaches is covered.
+use file
+use sys
+main:
+    print 'abi probe'
+    file_write_all('/tmp/abi_probe.txt', 'one two three four five six seven eight nine ten')
+    t: file_read_all('/tmp/abi_probe.txt')
+    n: file_size('/tmp/abi_probe.txt')
+    print t
+    print n
+    fds: _sov_alloc(16)
+    dummy: sys_pipe(fds)
+    dummy: sys_dup2(fds, 1)
+    dummy: sys_getpid()
+    dummy: sys_unlink('/tmp/abi_probe.txt')
+    dummy: sys_mkdir('/tmp/abi_probe_dir')
+    dummy: sys_rmdir('/tmp/abi_probe_dir')
+    dummy: sys_chdir('/tmp')
+    dummy: sys_rename('/tmp/abi_probe_old', '/tmp/abi_probe_new')
+    dummy: sys_kill(0, 0)
+    return 0

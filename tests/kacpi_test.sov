@@ -1,0 +1,131 @@
+# unsafe-module
+use kacpi
+bad message:
+    print message ;; stop
+checksum_fix pointer length offset:
+    poke_raw8(pointer + offset, 0, 0) ;; sum: kacpi_sum(pointer, length)
+    poke_raw8(pointer + offset, 0, band(256 - sum, 255)) ;; return 1
+main:
+    _sov_alloc(64):
+        rsdp ;; xsdt
+        table
+    dmar: _sov_alloc(128)
+    0:
+        mem_zero ;; i
+    as long as i < 64 -> poke_raw8(rsdp + i, 0, 0)
+        poke_raw8(xsdt + i, 0, 0) ;; poke_raw8(table + i, 0, 0)
+        poke_raw8(dmar + i, 0, 0) ;; i: i + 1
+    as long as i < 128 -> poke_raw8(dmar + i, 0, 0)
+        i: i + 1
+    poke_raw8(table, 0, 72) ;; table + 1: poke_raw8 i, 0: 80 69 84
+    poke_raw32(table + 4, 0, 40) ;; checksum_fix(table, 40, 9)
+    poke_raw8(xsdt, 0, 88) ;; xsdt + 1: poke_raw8 i, 0: 83 68 84
+    poke_raw32(xsdt + 4, 0, 44) ;; poke_raw64(xsdt + 36, 0, table)
+    checksum_fix(xsdt, 44, 9)
+    text: 'RSD PTR '
+    i: 0 ;; as long as i < 8 -> poke_raw8(rsdp + i, 0, peek_byte(text, i))
+        i: i + 1
+    poke_raw8(rsdp + 15, 0, 2) ;; poke_raw32(rsdp + 20, 0, 36)
+    poke_raw64(rsdp + 24, 0, xsdt) ;; rsdp: checksum_fix 20 + 16 * i: 8 32
+    if kacpi_rsdp_valid(rsdp) != 1 -> bad('valid rsdp')
+    if kacpi_sdt_valid(xsdt, 64) != 1 -> bad('valid xsdt')
+    if kacpi_find_table(rsdp, 72, 80, 69, 84, 64) != table -> bad('find xsdt table')
+    if kacpi_find_table(rsdp, 65, 80, 73, 67, 64) != 0 -> bad('unknown table')
+    poke_raw8(table + 20, 0, 1)
+    if kacpi_find_table(rsdp, 72, 80, 69, 84, 64) != 0 -> bad('bad table checksum')
+    poke_raw8(table + 20, 0, 0) ;; checksum_fix(table, 40, 9)
+    poke_raw8(rsdp + 35, 0, 1)
+    if kacpi_rsdp_valid(rsdp) != 0 -> bad('bad extended checksum')
+    poke_raw8(rsdp + 35, 0, 0) ;; checksum_fix(rsdp, 36, 32)
+    poke_raw32(xsdt + 4, 0, 45) ;; checksum_fix(xsdt, 45, 9)
+    if kacpi_find_table(rsdp, 72, 80, 69, 84, 64) != 0 -> bad('misaligned xsdt entries')
+    poke_raw32(xsdt + 4, 0, 44) ;; checksum_fix(xsdt, 44, 9)
+    if kacpi_sdt_valid(table, 39) != 0 -> bad('table maximum')
+    if kacpi_find_rsdp(rsdp + 1, rsdp + 64) != 0 -> bad('unaligned scan false positive')
+    if kacpi_find_rsdp(rsdp, rsdp + 20) != 0 -> bad('truncated extended rsdp scan')
+    poke_raw8(dmar, 0, 68) ;; dmar + 1: poke_raw8 i, 0: 77 65 82
+    poke_raw32(dmar + 4, 0, 64) ;; poke_raw8(dmar + 36, 0, 47)
+    poke_raw16(dmar + 48, 0, 0) ;; dmar + 50: poke_raw16 i * 4, 0: 16 0
+    poke_raw64(dmar + 56, 0, 4275634176) ;; checksum_fix(dmar, 64, 9)
+    if kacpi_dmar_first_drhd(dmar, 80) != 4275634176 -> bad('valid dmar drhd')
+    drhd: _sov_alloc(KACPI_DRHD_STRIDE)
+    if kacpi_dmar_drhd_count(dmar, 80) != 1 -> bad('drhd count')
+    if kacpi_dmar_drhd_at(dmar, 80, 0, drhd) != 1 -> bad('drhd at')
+    if peek_raw64(drhd, 0) != 4275634176 -> bad('drhd record base')
+    if kacpi_dmar_drhd_at(dmar, 80, 1, drhd) != 0 -> bad('drhd index overflow')
+    poke_raw32(dmar + 4, 0, 68) ;; poke_raw16(dmar + 50, 0, 16)
+    dmar + 64: poke_raw16 i * 2, 0: 1 3
+    include inc/px01.sov 856 4 (68 trailing malformed dmar structure 72 24)
+    poke_raw8(dmar + 64, 0, 1) ;; poke_raw8(dmar + 65, 0, 8)
+    dmar + 70: poke_raw8 i, 0: 31 7 ;; checksum_fix(dmar, 72, 9)
+    if kacpi_dmar_first_drhd(dmar, 80) != 4275634176 -> bad('valid dmar device scope')
+    drhd_scope: _sov_alloc(KACPI_SCOPE_STRIDE)
+    if kacpi_dmar_drhd_scope_count(dmar, 80, 0) != 1 -> bad('drhd scope count')
+    if kacpi_dmar_drhd_scope_at(dmar, 80, 0, 0, drhd_scope) != 1 -> bad('drhd scope copy')
+    if peek_raw8(drhd_scope + 32, 0) != 255 -> bad('drhd scope path')
+    ioapic_route: _sov_alloc(KACPI_IOAPIC_ROUTE_STRIDE) ;; poke_raw8(dmar + 64, 0, 3)
+    dmar + 68: poke_raw8 i, 0: 4 240 0 0 ;; checksum_fix(dmar, 72, 9)
+    if kacpi_dmar_ioapic_route(dmar, 80, 4, drhd_scope, drhd, ioapic_route) != 1 -> bad('ioapic scope route')
+    if peek_raw64(ioapic_route, 0) != 0 -> bad('ioapic scope unit')
+    if peek_raw64(ioapic_route + 8, 0) != 61440 -> bad('ioapic scope source')
+    if kacpi_dmar_ioapic_route(dmar, 80, 5, drhd_scope, drhd, ioapic_route) != 0 -> bad('unscoped ioapic accepted')
+    poke_raw8(dmar + 64, 0, 1) ;; dmar + 68: poke_raw8 i, 0: 0 0 31 7
+    checksum_fix(dmar, 72, 9) ;; poke_raw8(dmar + 65, 0, 7)
+    checksum_fix(dmar, 72, 9)
+    if kacpi_dmar_first_drhd(dmar, 80) != 0 -> bad('odd dmar device scope')
+    dmar + 65: poke_raw8 i * 5, 0: 8 32
+    include inc/px01.sov 856 4 (72 invalid dmar pci path 64 3)
+    checksum_fix(dmar, 64, 9)
+    if kacpi_dmar_first_drhd(dmar, 80) != 0 -> bad('short dmar structure')
+    poke_raw16(dmar + 50, 0, 20) ;; checksum_fix(dmar, 64, 9)
+    if kacpi_dmar_first_drhd(dmar, 80) != 0 -> bad('overrunning dmar structure')
+    i: 0 ;; as long as i < 128 -> poke_raw8(dmar + i, 0, 0)
+        i: i + 1
+    poke_raw8(dmar, 0, 68) ;; dmar + 1: poke_raw8 i, 0: 77 65 82
+    include inc/px01.sov 861 4 (80 48 50 56 1048576 1114111)
+    include inc/inc04.sov 57 4
+    rmrr: _sov_alloc(KACPI_RMRR_STRIDE)
+    if kacpi_dmar_first_rmrr(dmar, 128, rmrr) != 1 -> bad('valid rmrr')
+    if peek_raw64(rmrr, 0) != 1048576 -> bad('rmrr base')
+    if peek_raw64(rmrr + 8, 0) != 1114111 -> bad('rmrr end')
+    if kacpi_dmar_rmrr_match_direct(dmar, 128, 0, 16) != 1 -> bad('direct rmrr requester')
+    if kacpi_dmar_rmrr_match_direct(dmar, 128, 0, 17) != 0 -> bad('unscoped rmrr requester')
+    scope: _sov_alloc(KACPI_SCOPE_STRIDE)
+    if kacpi_dmar_rmrr_scope_count(dmar, 128, 0) != 1 -> bad('rmrr scope count')
+    if kacpi_dmar_rmrr_scope_at(dmar, 128, 0, 0, scope) != 1 -> bad('rmrr scope copy')
+    if peek_raw64(scope, 0) != 1 -> bad('rmrr scope type')
+    if peek_raw64(scope + 24, 0) != 1 -> bad('rmrr scope path count')
+    if peek_raw8(scope + 32, 0) != 16 -> bad('rmrr scope path')
+    include inc/px01.sov 861 4 (112 80 82 88 2097152 2162687)
+    poke_raw8(dmar + 104, 0, 1) ;; poke_raw8(dmar + 105, 0, 8)
+    dmar + 110: poke_raw8 i, 0: 3 0 ;; checksum_fix(dmar, 112, 9)
+    if kacpi_dmar_rmrr_count(dmar, 128) != 2 -> bad('rmrr count')
+    if kacpi_dmar_rmrr_at(dmar, 128, 1, rmrr) != 1 -> bad('second rmrr')
+    if peek_raw64(rmrr, 0) != 2097152 -> bad('second rmrr base')
+    if kacpi_dmar_rmrr_at(dmar, 128, 2, rmrr) != 0 -> bad('rmrr index overflow')
+    poke_raw32(dmar + 4, 0, 80) ;; poke_raw64(dmar + 64, 0, 1048575)
+    checksum_fix(dmar, 80, 9)
+    if kacpi_dmar_first_rmrr(dmar, 128, rmrr) != 0 -> bad('reversed rmrr range')
+    poke_raw32(dmar + 4, 0, 80) ;; poke_raw16(dmar + 50, 0, 32)
+    poke_raw64(dmar + 64, 0, 1114111)
+    include inc/inc04.sov 57 4
+    if kacpi_dmar_first_rmrr(dmar, 128, rmrr) != 1 -> bad('valid rmrr scope')
+    poke_raw8(dmar + 72, 0, 2) ;; checksum_fix(dmar, 80, 9)
+    if kacpi_dmar_rmrr_match_direct(dmar, 128, 0, 16) != 0 - 2 -> bad('unresolved rmrr hierarchy')
+    dmar + 72: poke_raw8 i, 0: 1 7 ;; checksum_fix(dmar, 80, 9)
+    if kacpi_dmar_first_rmrr(dmar, 128, rmrr) != 0 -> bad('malformed rmrr scope')
+    include inc/px00.sov 1050 4 (mcfg 96 96 poke_raw8 mcfg 0)
+    poke_raw8(mcfg, 0, 77) ;; mcfg + 1: poke_raw8 i, 0: 67 70 71
+    poke_raw32(mcfg + 4, 0, 60) ;; poke_raw64(mcfg + 44, 0, 2952790016)
+    poke_raw16(mcfg + 52, 0, 0) ;; mcfg + 54: poke_raw8 i, 0: 0 255
+    checksum_fix(mcfg, 60, 9) ;; ecam: _sov_alloc(KACPI_MCFG_STRIDE)
+    if kacpi_mcfg_count(mcfg, 96) != 1 -> bad('mcfg count')
+    if kacpi_mcfg_at(mcfg, 96, 0, ecam) != 1 -> bad('mcfg allocation')
+    if peek_raw64(ecam, 0) != 2952790016 -> bad('mcfg base')
+    if peek_raw64(ecam + 24, 0) != 255 -> bad('mcfg bus range')
+    poke_raw64(mcfg + 44, 0, 2952790017) ;; checksum_fix(mcfg, 60, 9)
+    if kacpi_mcfg_valid(mcfg, 96) != 0 -> bad('misaligned mcfg base')
+    poke_raw64(mcfg + 44, 0, 2952790016) ;; mcfg + 54: poke_raw8 i, 0: 2 1
+    checksum_fix(mcfg, 60, 9)
+    if kacpi_mcfg_valid(mcfg, 96) != 0 -> bad('reversed mcfg buses')
+    print 'kacpi OK'

@@ -1,0 +1,1568 @@
+# unsafe-module
+use file
+use string
+use lz2
+
+X_MEM: 100663296
+X_OUT: 65536
+X_LINUX: 1
+X_MAC: 2
+X_WIN: 3
+X_STUB: 2147418112
+x_gb_pool: 0
+
+x_and a b:
+    return band(a, b)
+x_or a b:
+    return bor(a, b)
+x_xor a b:
+    return bxor(a, b)
+x_lo v:
+    return band(v, 4294967295)
+x_hiu v:
+    return band(bshr(v, 32), 4294967295)
+x_and32 a b:
+    return band(band(a, b), 4294967295)
+
+x_ult a b:
+    if a >= 0
+        if b < 0 -> return 1
+        if a < b -> return 1
+        return 0
+    if b >= 0 -> return 0
+    if a < b -> return 1
+    return 0
+
+x_mask v sz:
+    if sz is 1 -> return band(v, 255)
+    if sz is 2 -> return band(v, 65535)
+    if sz is 4 -> return band(v, 4294967295)
+    return v
+
+x_sval v sz:
+    if sz is 1
+        u: band(v, 255)
+        if u >= 128 -> return u - 256
+        return u
+    if sz is 2
+        u: band(v, 65535)
+        if u >= 32768 -> return u - 65536
+        return u
+    if sz is 4
+        u: band(v, 4294967295)
+        if u >= 2147483648 -> return u - 4294967296
+        return u
+    return v
+
+x86_new:
+    m: _sov_alloc(1024)
+    if x_gb_pool is 0 -> x_gb_pool: _sov_alloc(X_MEM)
+    if not
+        _sov_mem_set(x_gb_pool, 0, 262144)
+        _sov_mem_set(x_gb_pool + X_MEM - 131072, 0, 131072)
+    gb: x_gb_pool
+    pt: _sov_alloc(X_MEM / 4096)
+    out: _sov_alloc(X_OUT)
+    err: _sov_alloc(X_OUT)
+    xv: _sov_alloc(512)
+    yv: _sov_alloc(128)
+    poke_i64(m, 176, gb)
+    poke_i64(m, 184, X_MEM)
+    poke_i64(m, 192, out)
+    poke_i64(m, 296, err)
+    poke_i64(m, 488, xv)
+    poke_i64(m, 624, yv)
+    poke_i64(m, 664, pt)
+    poke_i64(m, 320, 5583457307299373056)
+    return m
+
+x_base m:
+    return peek_i64(m, 176)
+x_low m:
+    return peek_i64(m, 216)
+x_rip m:
+    return peek_i64(m, 128)
+x_set_rip m v:
+    poke_i64(m, 128, v)
+x_sp m:
+    return peek_i64(m, 32)
+x_set_sp m v:
+    poke_i64(m, 32, v)
+x_reg m r:
+    return peek_i64(m, r * 8)
+x_setr m r v:
+    poke_i64(m, r * 8, v)
+x_rebase m:
+    poke_i64(m, 704, peek_i64(m, 176) - peek_i64(m, 216))
+x_here m a:
+    return peek_i64(m, 704) + a
+
+x86_state_q m at:
+    return peek_i64(m, at)
+x86_state_w m at v:
+    poke_i64(m, at, v)
+x86_why m:
+    return peek_i64(m, 168)
+x86_code m:
+    return peek_i64(m, 208)
+x86_bad m:
+    return peek_i64(m, 232)
+x86_out m:
+    return as text peek_i64(m, 192)
+x86_err m:
+    return as text peek_i64(m, 296)
+x86_reason m:
+    why: peek_i64(m, 168)
+    if why = 1 -> return 'the program exited'
+    if why = 2 -> return 'it used an instruction this cpu does not know'
+    if why = 3 -> return 'it ran too long and was stopped'
+    if why = 5 -> return 'it divided by nothing'
+    if why = 6 -> return 'it reached outside its own memory'
+    if why = 8 -> return 'it executed memory it may not run'
+    return 'stopped'
+
+x_zf m:
+    return peek_i64(m, 136)
+
+x_sf m:
+    return peek_i64(m, 144)
+
+x_cf m:
+    return peek_i64(m, 152)
+
+x_of m:
+    return peek_i64(m, 160)
+
+x_set_cmdline m s:
+    at: peek_i64(m, 216) + 512
+    n: str_len(s)
+    i: 0
+    as long as i < n
+        x_w8(m, at + i, peek_byte(s, i, 0))
+        i: i + 1
+    x_w8(m, at + n, 0)
+    return 0
+x86_feature_1_used m:
+    return peek_i64(m, 328)
+
+x86_perm_at m a:
+    off: a - peek_i64(m, 216)
+    if off < 0 -> return 0
+    if off >= peek_i64(m, 184) -> return 0
+    return peek_byte(peek_i64(m, 664), off / 4096)
+
+x_perm_set m a len perm:
+    if len <= 0 -> return 0
+    lo: peek_i64(m, 216)
+    pt: peek_i64(m, 664)
+    npages: peek_i64(m, 184) / 4096
+    p0: (a - lo) / 4096
+    p1: (a + len - 1 - lo) / 4096
+    if p0 < 0 -> p0: 0
+    if p1 >= npages -> p1: npages - 1
+    p: p0
+    as long as p <= p1
+        poke_byte(pt, p, perm)
+        p: p + 1
+    return 0
+
+x86_peek_q m a:
+    off: a - peek_i64(m, 216)
+    if off < 0 -> return 0
+    if off > peek_i64(m, 184) - 8 -> return 0
+    return peek_i64(peek_i64(m, 176), off)
+
+x_r8 m a:
+    off: a - peek_i64(m, 216)
+    if off < 0
+        poke_i64(m, 168, 6)
+        poke_i64(m, 232, a)
+        return 0
+    if off >= peek_i64(m, 184)
+        poke_i64(m, 168, 6)
+        poke_i64(m, 232, a)
+        return 0
+    return peek_byte(peek_i64(m, 176), off)
+
+x_r16 m a:
+    off: a - peek_i64(m, 216)
+    if off < 0
+        poke_i64(m, 168, 6)
+        poke_i64(m, 232, a)
+        return 0
+    if off > peek_i64(m, 184) - 2
+        poke_i64(m, 168, 6)
+        poke_i64(m, 232, a)
+        return 0
+    return peek_raw16(peek_i64(m, 176) + off, 0)
+
+x_r32 m a:
+    off: a - peek_i64(m, 216)
+    if off < 0
+        poke_i64(m, 168, 6)
+        poke_i64(m, 232, a)
+        return 0
+    if off > peek_i64(m, 184) - 4
+        poke_i64(m, 168, 6)
+        poke_i64(m, 232, a)
+        return 0
+    return peek_raw32(peek_i64(m, 176) + off, 0)
+
+x_r64 m a:
+    off: a - peek_i64(m, 216)
+    if off < 0
+        poke_i64(m, 168, 6)
+        poke_i64(m, 232, a)
+        return 0
+    if off > peek_i64(m, 184) - 8
+        poke_i64(m, 168, 6)
+        poke_i64(m, 232, a)
+        return 0
+    return peek_i64(peek_i64(m, 176), off)
+
+x_s8 m a:
+    return x_sval(x_r8(m, a), 1)
+x_s32 m a:
+    return x_sval(x_r32(m, a), 4)
+
+x_chk_w m a sz:
+    off: a - peek_i64(m, 216)
+    if off < 0
+        poke_i64(m, 168, 6)
+        poke_i64(m, 232, a)
+        return 0 - 1
+    if off > peek_i64(m, 184) - sz
+        poke_i64(m, 168, 6)
+        poke_i64(m, 232, a)
+        return 0 - 1
+    pv: peek_byte(peek_i64(m, 664), off / 4096)
+    if band(pv, 2) is 0
+        poke_i64(m, 168, 7)
+        poke_i64(m, 232, a)
+        return 0 - 1
+    return off
+
+x_w8 m a v:
+    off: x_chk_w(m, a, 1)
+    if off < 0 -> return 0
+    poke_byte(peek_i64(m, 176), off, band(v, 255))
+    return 0
+
+x_w16 m a v:
+    off: x_chk_w(m, a, 2)
+    if off < 0 -> return 0
+    poke_raw16(peek_i64(m, 176) + off, 0, band(v, 65535))
+    return 0
+
+x_w32 m a v:
+    off: x_chk_w(m, a, 4)
+    if off < 0 -> return 0
+    poke_raw32(peek_i64(m, 176) + off, 0, band(v, 4294967295))
+    return 0
+
+x_w64 m a v:
+    off: x_chk_w(m, a, 8)
+    if off < 0 -> return 0
+    poke_i64(peek_i64(m, 176), off, v)
+    return 0
+
+x_rget m r sz:
+    v: peek_i64(m, r * 8)
+    return x_mask(v, sz)
+
+x_rset m r sz v:
+    if sz is 8
+        poke_i64(m, r * 8, v)
+        return 0
+    if sz is 4
+        poke_i64(m, r * 8, band(v, 4294967295))
+        return 0
+    old: peek_i64(m, r * 8)
+    if sz is 2
+        poke_i64(m, r * 8, bor(band(old, 0 - 65536), band(v, 65535)))
+        return 0
+    poke_i64(m, r * 8, bor(band(old, 0 - 256), band(v, 255)))
+    return 0
+
+x_push m v:
+    sp: x_sp(m) - 8
+    x_set_sp(m, sp)
+    x_w64(m, sp, v)
+
+x_pop m:
+    sp: x_sp(m)
+    v: x_r64(m, sp)
+    x_set_sp(m, sp + 8)
+    return v
+
+x_md_reg m:
+    return peek_i64(m, 384)
+
+x_modrm m p rex imm_sz:
+    md: x_r8(m, p)
+    p: p + 1
+    mod: md / 64
+    reg: (md / 8) % 8 + band(bshr(rex, 2), 1) * 8
+    rm_low: md % 8
+    rm: rm_low + band(rex, 1) * 8
+    poke_i64(m, 384, reg)
+    if mod is 3
+        poke_i64(m, 368, 1)
+        poke_i64(m, 376, rm)
+        return p
+    poke_i64(m, 368, 0)
+    addr: 0
+    if rm_low is 4
+        sib: x_r8(m, p)
+        p: p + 1
+        sc: bshl(1, sib / 64)
+        ix: (sib / 8) % 8 + band(bshr(rex, 1), 1) * 8
+        br_low: sib % 8
+        br: br_low + band(rex, 1) * 8
+        if mod is 0
+            if br_low is 5
+                addr: x_s32(m, p)
+                p: p + 4
+            if not -> addr: x_reg(m, br)
+        if not -> addr: x_reg(m, br)
+        if ix is not 4 -> addr: addr + x_reg(m, ix) * sc
+    if not
+        if mod is 0
+            if rm_low is 5
+                d32: x_s32(m, p)
+                p: p + 4
+                poke_i64(m, 376, p + imm_sz + d32)
+                return p
+            addr: x_reg(m, rm)
+        if not -> addr: x_reg(m, rm)
+    if mod is 1
+        addr: addr + x_s8(m, p)
+        p: p + 1
+    if mod is 2
+        addr: addr + x_s32(m, p)
+        p: p + 4
+    poke_i64(m, 376, addr)
+    return p
+
+x_rm_get m sz:
+    if peek_i64(m, 368) is 1 -> return x_rget(m, peek_i64(m, 376), sz)
+    a: peek_i64(m, 376)
+    if sz is 1 -> return x_r8(m, a)
+    if sz is 2 -> return x_r16(m, a)
+    if sz is 4 -> return x_r32(m, a)
+    return x_r64(m, a)
+
+x_rm_set m sz v:
+    if peek_i64(m, 368) is 1 -> return x_rset(m, peek_i64(m, 376), sz, v)
+    a: peek_i64(m, 376)
+    if sz is 1 -> return x_w8(m, a, v)
+    if sz is 2 -> return x_w16(m, a, v)
+    if sz is 4 -> return x_w32(m, a, v)
+    return x_w64(m, a, v)
+
+x_set_zs m r sz:
+    mval: x_mask(r, sz)
+    if mval is 0 -> poke_i64(m, 136, 1)
+    if not -> poke_i64(m, 136, 0)
+    sval: x_sval(r, sz)
+    if sval < 0 -> poke_i64(m, 144, 1)
+    if not -> poke_i64(m, 144, 0)
+
+x_alu m op a b sz:
+    ua: x_mask(a, sz)
+    ub: x_mask(b, sz)
+    sa: x_sval(a, sz)
+    sb: x_sval(b, sz)
+    if op is 0
+        r: ua + ub
+        x_set_zs(m, r, sz)
+        cf: 0
+        if sz is 8 -> cf: x_ult(r, ua)
+        if not
+            if x_mask(r, 8) >= bshl(1, sz * 8) -> cf: 1
+        poke_i64(m, 152, cf)
+        sr: x_sval(r, sz)
+        ov: 0
+        if (sa < 0) is (sb < 0)
+            if (sr < 0) is not (sa < 0) -> ov: 1
+        poke_i64(m, 160, ov)
+        return x_mask(r, sz)
+    if op is 5
+        r: ua - ub
+        x_set_zs(m, r, sz)
+        cf: x_ult(ua, ub)
+        poke_i64(m, 152, cf)
+        sr: x_sval(r, sz)
+        ov: 0
+        if (sa < 0) is not (sb < 0)
+            if (sr < 0) is not (sa < 0) -> ov: 1
+        poke_i64(m, 160, ov)
+        return x_mask(r, sz)
+    if op is 7
+        x_alu(m, 5, a, b, sz)
+        return ua
+    r: 0
+    if op is 1 -> r: bor(ua, ub)
+    if op is 4 -> r: band(ua, ub)
+    if op is 6 -> r: bxor(ua, ub)
+    x_set_zs(m, r, sz)
+    poke_i64(m, 152, 0)
+    poke_i64(m, 160, 0)
+    return x_mask(r, sz)
+
+x_cond m cc:
+    if cc is 0 -> return peek_i64(m, 160)
+    if cc is 1 -> return 1 - peek_i64(m, 160)
+    if cc is 2 -> return peek_i64(m, 152)
+    if cc is 3 -> return 1 - peek_i64(m, 152)
+    if cc is 4 -> return peek_i64(m, 136)
+    if cc is 5 -> return 1 - peek_i64(m, 136)
+    if cc is 6
+        if peek_i64(m, 152) is 1 -> return 1
+        return peek_i64(m, 136)
+    if cc is 7
+        if peek_i64(m, 152) is 0
+            if peek_i64(m, 136) is 0 -> return 1
+        return 0
+    if cc is 8 -> return peek_i64(m, 144)
+    if cc is 9 -> return 1 - peek_i64(m, 144)
+    if cc is 12
+        if peek_i64(m, 144) is not peek_i64(m, 160) -> return 1
+        return 0
+    if cc is 13
+        if peek_i64(m, 144) is peek_i64(m, 160) -> return 1
+        return 0
+    if cc is 14
+        if peek_i64(m, 136) is 1 -> return 1
+        if peek_i64(m, 144) is not peek_i64(m, 160) -> return 1
+        return 0
+    if cc is 15
+        if peek_i64(m, 136) is 0
+            if peek_i64(m, 144) is peek_i64(m, 160) -> return 1
+        return 0
+    return 0
+
+x_say m p n:
+    o: peek_i64(m, 192)
+    used: peek_i64(m, 200)
+    i: 0
+    as long as i < n
+        if used < X_OUT - 2
+            poke_byte(o, used, x_r8(m, p + i))
+            used: used + 1
+        i: i + 1
+    poke_byte(o, used, 0)
+    poke_i64(m, 200, used)
+
+x_give m sz:
+    top: peek_i64(m, 248)
+    if top is 0 -> top: peek_i64(m, 216) + 16777216
+    nsz: sz
+    if nsz < 4096 -> nsz: 4096
+    if nsz % 4096 is not 0 -> nsz: nsz + 4096 - (nsz % 4096)
+    if top + nsz > peek_i64(m, 216) + X_MEM - 1048576 -> return 0
+    _sov_mem_set(peek_i64(m, 176) + (top - peek_i64(m, 216)), 0, nsz)
+    x_perm_set(m, top, nsz, 6)
+    poke_i64(m, 248, top + nsz)
+    return top
+
+x_cstr m a:
+    b: _sov_alloc(512)
+    i: 0
+    go: 1
+    as long as go is 1
+        if i >= 510 -> go: 0
+        if go is 1
+            c: x_r8(m, a + i)
+            if c is 0 -> go: 0
+            if go is 1
+                poke_byte(b, i, c)
+                i: i + 1
+    poke_byte(b, i, 0)
+    return as text b
+
+x_syscall m nx:
+    os: peek_i64(m, 240)
+    if os is X_WIN
+        poke_i64(m, 168, 4)
+        return 0
+    nr: x_reg(m, 0)
+    a0: x_reg(m, 7)
+    a1: x_reg(m, 6)
+    a2: x_reg(m, 2)
+    if os is X_MAC
+        if nr < 33554432
+            poke_i64(m, 168, 4)
+            return 0
+        mnr: nr - 33554432
+        if mnr is 4 -> nr: 1
+        if mnr is 1 -> nr: 60
+        if mnr is 3 -> nr: 0
+        if mnr is 5 -> nr: 2
+        if mnr is 6 -> nr: 3
+        if mnr is 197 -> nr: 9
+        if mnr is 74 -> nr: 10
+        if mnr is 73 -> nr: 11
+        if mnr is 46 -> nr: 13
+        if mnr is 78 -> nr: 27
+        if mnr is 186 -> nr: 28
+        if mnr is 195 -> nr: 160
+        if mnr is 500 -> nr: 318
+        if mnr is 283 -> nr: 318
+    if nr is 1
+        if a0 <= 2
+            x_say(m, a1, a2)
+            x_setr(m, 0, a2)
+            x_set_rip(m, nx)
+            return 1
+        r: syscall(1, a0, x_here(m, a1), a2)
+        x_setr(m, 0, r)
+        x_set_rip(m, nx)
+        return 1
+    if nr is 0
+        if a0 >= 3
+            r: syscall(0, a0, x_here(m, a1), a2)
+            x_setr(m, 0, r)
+            x_set_rip(m, nx)
+            return 1
+        x_setr(m, 0, 0)
+        x_set_rip(m, nx)
+        return 1
+    if nr is 2
+        pstr: x_cstr(m, a0)
+        r: syscall(2, pstr, a1, a2)
+        x_setr(m, 0, r)
+        x_set_rip(m, nx)
+        return 1
+    if nr is 3
+        if a0 >= 3 -> syscall(3, a0)
+        x_setr(m, 0, 0)
+        x_set_rip(m, nx)
+        return 1
+    if nr is 60
+        poke_i64(m, 208, a0)
+        poke_i64(m, 168, 1)
+        return 0
+    if nr is 231
+        poke_i64(m, 208, a0)
+        poke_i64(m, 168, 1)
+        return 0
+    if nr is 9
+        x_setr(m, 0, x_give(m, a1))
+        x_set_rip(m, nx)
+        return 1
+    if nr is 10
+        pv: x86_perm_at(m, a0)
+        if pv is 0
+            x_setr(m, 0, 0 - 12)
+            x_set_rip(m, nx)
+            return 1
+        x_perm_set(m, a0, a1, a2)
+        x_setr(m, 0, 0)
+        x_set_rip(m, nx)
+        return 1
+    if nr is 27
+        pv: x86_perm_at(m, a0)
+        if band(pv, 2) is 0
+            x_setr(m, 0, 0 - 12)
+            x_set_rip(m, nx)
+            return 1
+        x_setr(m, 0, 0)
+        x_set_rip(m, nx)
+        return 1
+    if nr is 318
+        x_w64(m, a0, 88172645463325252)
+        if os is X_MAC -> x_setr(m, 0, 0)
+        if not -> x_setr(m, 0, a1)
+        x_set_rip(m, nx)
+        return 1
+    if nr is 13
+        if a1 is not 0 -> poke_i64(m, 400, x_r64(m, a1))
+        x_setr(m, 0, 0)
+        x_set_rip(m, nx)
+        return 1
+    x_setr(m, 0, 0)
+    x_set_rip(m, nx)
+    return 1
+
+x_win_id nm:
+    if _sov_str_eq(nm, "GetStdHandle") is 1 -> return 0
+    if _sov_str_eq(nm, "WriteFile") is 1 -> return 1
+    if _sov_str_eq(nm, "ReadFile") is 1 -> return 2
+    if _sov_str_eq(nm, "CreateFileA") is 1 -> return 3
+    if _sov_str_eq(nm, "CloseHandle") is 1 -> return 4
+    if _sov_str_eq(nm, "VirtualAlloc") is 1 -> return 5
+    if _sov_str_eq(nm, "ExitProcess") is 1 -> return 6
+    if _sov_str_eq(nm, "GetCommandLineA") is 1 -> return 7
+    if _sov_str_eq(nm, "SetFilePointerEx") is 1 -> return 8
+    if _sov_str_eq(nm, "GetConsoleMode") is 1 -> return 9
+    if _sov_str_eq(nm, "SetConsoleMode") is 1 -> return 10
+    if _sov_str_eq(nm, "LoadLibraryA") is 1 -> return 11
+    if _sov_str_eq(nm, "GetProcAddress") is 1 -> return 12
+    if _sov_str_eq(nm, "VirtualQuery") is 1 -> return 13
+    if _sov_str_eq(nm, "CreateThread") is 1 -> return 14
+    if _sov_str_eq(nm, "WaitForSingleObject") is 1 -> return 15
+    if _sov_str_eq(nm, "ExitThread") is 1 -> return 16
+    if _sov_str_eq(nm, "CreateProcessA") is 1 -> return 17
+    if _sov_str_eq(nm, "GetExitCodeProcess") is 1 -> return 18
+    if _sov_starts_with(nm, "SystemFunction036") is 1 -> return 19
+    if _sov_starts_with(nm, "AddVectoredExceptionHandler") is 1 -> return 20
+    return 21
+
+x_win_api m id:
+    rcx: x_reg(m, 1)
+    rdx: x_reg(m, 2)
+    r8: x_reg(m, 8)
+    r9: x_reg(m, 9)
+    sp: x_sp(m)
+    if id is 0
+        h: 1
+        if band(rcx, 4294967295) is 4294967286 -> h: 0
+        if band(rcx, 4294967295) is 4294967285 -> h: 1
+        if band(rcx, 4294967295) is 4294967284 -> h: 2
+        x_setr(m, 0, h)
+        x_set_rip(m, x_pop(m))
+        return 1
+    if id is 1
+        if rcx <= 2
+            x_say(m, rdx, r8)
+            if r9 is not 0 -> x_w32(m, r9, r8)
+            x_setr(m, 0, 1)
+            x_set_rip(m, x_pop(m))
+            return 1
+        nw: syscall(1, rcx, x_here(m, rdx), r8)
+        if r9 is not 0 -> x_w32(m, r9, nw)
+        x_setr(m, 0, 1)
+        x_set_rip(m, x_pop(m))
+        return 1
+    if id is 2
+        nr: 0
+        if rcx >= 3 -> nr: syscall(0, rcx, x_here(m, rdx), r8)
+        if r9 is not 0 -> x_w32(m, r9, nr)
+        x_setr(m, 0, 1)
+        x_set_rip(m, x_pop(m))
+        return 1
+    if id is 3
+        pstr: x_cstr(m, rcx)
+        disp: x_r32(m, sp + 40)
+        fl: 0
+        if disp is 2 -> fl: 578
+        fd: syscall(2, pstr, fl, 420)
+        x_setr(m, 0, fd)
+        x_set_rip(m, x_pop(m))
+        return 1
+    if id is 4
+        if rcx >= 3
+            if rcx < 1000 -> syscall(3, rcx)
+        x_setr(m, 0, 1)
+        x_set_rip(m, x_pop(m))
+        return 1
+    if id is 5
+        x_setr(m, 0, x_give(m, rdx))
+        x_set_rip(m, x_pop(m))
+        return 1
+    if id is 6
+        poke_i64(m, 208, rcx)
+        poke_i64(m, 168, 1)
+        return 0
+    if id is 7
+        x_setr(m, 0, peek_i64(m, 216) + 512)
+        x_set_rip(m, x_pop(m))
+        return 1
+    if id is 8
+        np: syscall(8, rcx, rdx, r9)
+        if r8 is not 0 -> x_w64(m, r8, np)
+        x_setr(m, 0, 1)
+        x_set_rip(m, x_pop(m))
+        return 1
+    if id is 9
+        if rdx is not 0 -> x_w32(m, rdx, 7)
+        x_setr(m, 0, 1)
+        x_set_rip(m, x_pop(m))
+        return 1
+    if id is 10
+        x_setr(m, 0, 1)
+        x_set_rip(m, x_pop(m))
+        return 1
+    if id is 11
+        x_setr(m, 0, 1)
+        x_set_rip(m, x_pop(m))
+        return 1
+    if id is 12
+        nm: x_cstr(m, rdx)
+        wid: x_win_id(nm)
+        x_setr(m, 0, X_STUB + wid * 8)
+        x_set_rip(m, x_pop(m))
+        return 1
+    if id is 13
+        pv: x86_perm_at(m, rcx)
+        if band(pv, 2) is 0
+            x_w64(m, rdx, 0)
+            x_w32(m, rdx + 32, 0)
+            x_setr(m, 0, 0 - 1)
+            x_set_rip(m, x_pop(m))
+            return 1
+        x_w64(m, rdx, 4096)
+        x_w64(m, rdx + 24, 4096)
+        x_w32(m, rdx + 32, 4096)
+        x_setr(m, 0, 0)
+        x_set_rip(m, x_pop(m))
+        return 1
+    if id is 14
+        ret_rip: x_pop(m)
+        save: _sov_alloc(160)
+        ri: 0
+        as long as ri < 16
+            poke_i64(save, ri * 8, x_reg(m, ri))
+            ri: ri + 1
+        tsp: r9 - 64
+        x_set_sp(m, tsp)
+        x_push(m, X_STUB + 16 * 8)
+        x_setr(m, 1, r9)
+        x_set_rip(m, r8)
+        poke_i64(m, 416, 1)
+        x86_run_for(m, 200000)
+        poke_i64(m, 416, 0)
+        poke_i64(m, 168, 0)
+        ri: 0
+        as long as ri < 16
+            x_setr(m, ri, peek_i64(save, ri * 8))
+            ri: ri + 1
+        x_setr(m, 0, 1)
+        x_set_rip(m, ret_rip)
+        return 1
+    if id is 15
+        x_setr(m, 0, 0)
+        x_set_rip(m, x_pop(m))
+        return 1
+    if id is 16
+        if peek_i64(m, 416) is 1
+            poke_i64(m, 168, 1)
+            return 0
+        poke_i64(m, 208, rcx)
+        poke_i64(m, 168, 1)
+        return 0
+    if id is 19
+        rb: _sov_alloc(8)
+        syscall(318, rb, 8, 0)
+        rv: peek_i64(rb, 0)
+        if rv is 0 -> rv: 123456789
+        x_w64(m, rcx, rv)
+        x_setr(m, 0, 1)
+        x_set_rip(m, x_pop(m))
+        return 1
+    if id is 20
+        poke_i64(m, 400, rdx)
+        x_setr(m, 0, 1)
+        x_set_rip(m, x_pop(m))
+        return 1
+    x_setr(m, 0, 1)
+    x_set_rip(m, x_pop(m))
+    return 1
+
+x_u32d d at:
+    return peek_raw32(d + at, 0)
+
+x86_load_pe m d fszn:
+    if fszn < 512 -> return 0
+    pe: peek_byte(d, 60) + peek_byte(d, 61) * 256
+    if pe + 264 > fszn -> return 0
+    ch_flags: peek_byte(d, pe + 22)
+    dll_ch: peek_byte(d, pe + 24 + 70)
+    if band(ch_flags, 1) is not 0
+        if band(dll_ch, 64) is not 0 -> return 0
+    nsec: peek_byte(d, pe + 6) + peek_byte(d, pe + 7) * 256
+    imgsz: x_u32d(d, pe + 24 + 56)
+    i: 0
+    as long as i < nsec
+        so: pe + 24 + 240 + i * 40
+        vsz: x_u32d(d, so + 8)
+        va: x_u32d(d, so + 12)
+        rsz: x_u32d(d, so + 16)
+        rptr: x_u32d(d, so + 20)
+        if rptr + rsz > fszn -> return 0
+        if va + vsz > imgsz -> return 0
+        if va + rsz > imgsz -> return 0
+        i: i + 1
+    lo: peek_i64(d, pe + 24 + 24)
+    slide: 0
+    rel_rva: x_u32d(d, pe + 24 + 152)
+    rel_sz: x_u32d(d, pe + 24 + 156)
+    if band(dll_ch, 64) is not 0
+        if rel_sz > 0
+            rb: _sov_alloc(8)
+            syscall(318, rb, 8, 0)
+            rv: peek_i64(rb, 0)
+            if rv < 0 -> rv: 0 - rv
+            slide: ((rv % 511) + 1) * 4096
+            lo: lo + slide
+    poke_i64(m, 216, lo)
+    poke_i64(m, 240, X_WIN)
+    x_rebase(m)
+    gb: peek_i64(m, 176)
+    _sov_mem_copy(gb, d, 512)
+    x_perm_set(m, lo, 4096, 4)
+    poke_byte(gb, 512, 112)
+    poke_byte(gb, 513, 0)
+    i: 0
+    as long as i < nsec
+        so: pe + 24 + 240 + i * 40
+        vsz: x_u32d(d, so + 8)
+        va: x_u32d(d, so + 12)
+        rsz: x_u32d(d, so + 16)
+        rptr: x_u32d(d, so + 20)
+        sch: x_u32d(d, so + 36)
+        _sov_mem_copy(gb + va, d + rptr, rsz)
+        msz: vsz
+        if rsz > msz -> msz: rsz
+        perm: 4
+        if band(sch, 536870912) is not 0 -> perm: bor(perm, 1)
+        if band(sch, 2147483648) is not 0 -> perm: bor(perm, 2)
+        x_perm_set(m, lo + va, msz, perm)
+        i: i + 1
+    if slide is not 0
+        pos: 0
+        go_rel: 1
+        as long as go_rel is 1
+            if pos + 8 > rel_sz -> go_rel: 0
+            if go_rel is 1
+                pg_rva: x_u32d(gb, rel_rva + pos)
+                bsz: x_u32d(gb, rel_rva + pos + 4)
+                if bsz < 8 -> go_rel: 0
+                if go_rel is 1
+                    ej: 0
+                    ecnt: (bsz - 8) / 2
+                    as long as ej < ecnt
+                        ew: peek_raw16(gb + rel_rva + pos + 8 + ej * 2, 0)
+                        if ew / 4096 is 10
+                            roff: pg_rva + (ew % 4096)
+                            poke_i64(gb, roff, peek_i64(gb, roff) + slide)
+                        ej: ej + 1
+                    pos: pos + bsz
+    imp_rva: x_u32d(d, pe + 24 + 120)
+    if imp_rva > 0
+        ilt_rva: x_u32d(gb, imp_rva)
+        iat_rva: x_u32d(gb, imp_rva + 16)
+        k: 0
+        go_imp: 1
+        as long as go_imp is 1
+            if k >= 64 -> go_imp: 0
+            if go_imp is 1
+                hn_rva: peek_i64(gb, ilt_rva + k * 8)
+                if hn_rva is 0 -> go_imp: 0
+                if go_imp is 1
+                    nm: x_cstr(m, lo + hn_rva + 2)
+                    wid: x_win_id(nm)
+                    poke_i64(gb, iat_rva + k * 8, X_STUB + wid * 8)
+                    k: k + 1
+    x_perm_set(m, lo, 4096, 6)
+    sp: lo + X_MEM - 65536
+    x_perm_set(m, sp - 61440, 65536, 6)
+    poke_i64(gb, X_MEM - 65536, peek_i64(m, 320))
+    x_set_sp(m, sp)
+    poke_i64(m, 248, lo + 16777216)
+    ep: x_u32d(d, pe + 24 + 16)
+    x_set_rip(m, lo + ep)
+    return 1
+
+x86_load_macho m d fszn:
+    if fszn < 32 -> return 0
+    ncmds: x_u32d(d, 16)
+    szcmds: x_u32d(d, 20)
+    if 32 + szcmds > fszn -> return 0
+    if ncmds < 2 -> return 0
+    if ncmds > 64 -> return 0
+    has_sig: 0
+    base: 0
+    entry: 0
+    o: 32
+    ci: 0
+    as long as ci < ncmds
+        if o + 8 > fszn -> return 0
+        cmd: x_u32d(d, o)
+        csz: x_u32d(d, o + 4)
+        if csz < 8 -> return 0
+        if o + csz > 32 + szcmds -> return 0
+        if cmd is 29 -> has_sig: 1
+        if cmd is 25
+            vm: peek_i64(d, o + 24)
+            vms: peek_i64(d, o + 32)
+            fo: peek_i64(d, o + 40)
+            fsz: peek_i64(d, o + 48)
+            ip: x_u32d(d, o + 60)
+            if fo + fsz > fszn -> return 0
+            if vms < fsz -> return 0
+            if ip is not 0
+                if base is 0
+                    base: vm
+                    poke_i64(m, 216, base)
+                    x_rebase(m)
+                _sov_mem_copy(peek_i64(m, 176) + (vm - base), d + fo, fsz)
+                x_perm_set(m, vm, vms, ip)
+        if cmd is 2147483688 -> entry: peek_i64(d, o + 8)
+        o: o + csz
+        ci: ci + 1
+    if o is not 32 + szcmds -> return 0
+    if band(peek_byte(d, 26), 32) is not 0
+        if has_sig is 0 -> return 0
+    if base is 0 -> return 0
+    poke_i64(m, 240, X_MAC)
+    sp: base + X_MEM - 65536
+    x_perm_set(m, sp - 61440, 65536, 6)
+    x_w64(m, sp, 1)
+    x_set_sp(m, sp)
+    poke_i64(m, 248, base + 16777216)
+    x_set_rip(m, base + entry)
+    return 1
+
+x86_load m path:
+    d: file_read_all(path)
+    if d is 0 -> return 0
+    fszn: file_size(path)
+    if fszn < 4 -> return 0
+    if peek_byte(d, 0) is 77
+        if peek_byte(d, 1) is 90 -> return x86_load_pe(m, d, fszn)
+    if peek_byte(d, 0) is 207
+        if peek_byte(d, 1) is 250
+            if peek_byte(d, 2) is 237
+                if peek_byte(d, 3) is 254 -> return x86_load_macho(m, d, fszn)
+    if peek_byte(d, 0) is not 127 -> return 0
+    if fszn < 64 -> return 0
+    phoff: peek_i64(d, 32)
+    phent: peek_raw16(d + 54, 0)
+    phnum: peek_raw16(d + 56, 0)
+    if phoff + phnum * phent > fszn -> return 0
+    entry: peek_i64(d, 24)
+    lo: 0
+    i: 0
+    as long as i < phnum
+        o: phoff + i * phent
+        pt: x_u32d(d, o)
+        pf: x_u32d(d, o + 4)
+        poff: peek_i64(d, o + 8)
+        pva: peek_i64(d, o + 16)
+        pfsz: peek_i64(d, o + 32)
+        pmsz: peek_i64(d, o + 40)
+        if pt is 1
+            if poff + pfsz > fszn -> return 0
+            if lo is 0
+                lo: pva
+                poke_i64(m, 216, lo)
+                x_rebase(m)
+            _sov_mem_copy(peek_i64(m, 176) + (pva - lo), d + poff, pfsz)
+            x_perm_set(m, pva, pmsz, band(pf, 7))
+        i: i + 1
+    if lo is 0 -> return 0
+    poke_i64(m, 240, X_LINUX)
+    sp: lo + X_MEM - 65536
+    x_perm_set(m, sp - 61440, 65536, 6)
+    x_w64(m, sp, 1)
+    x_set_sp(m, sp)
+    poke_i64(m, 248, lo + 16777216)
+    x_set_rip(m, entry)
+    return 1
+
+x_check_fault m:
+    if peek_i64(m, 168) is 0 -> return 0
+    ch: peek_i64(m, 400)
+    if ch > 0
+        poke_i64(m, 400, 0)
+        poke_i64(m, 168, 0)
+        x_set_rip(m, ch)
+        return 1
+    return 2
+
+x_step m:
+    p: x_rip(m)
+    if peek_i64(m, 240) is X_WIN
+        if p >= X_STUB
+            if p < X_STUB + 256 -> return x_win_api(m, (p - X_STUB) / 8)
+    off: p - peek_i64(m, 216)
+    if off < 0
+        poke_i64(m, 168, 6)
+        poke_i64(m, 232, p)
+        if x_check_fault(m) is 1 -> return 1
+        return 0
+    if off >= X_MEM - 16
+        poke_i64(m, 168, 6)
+        poke_i64(m, 232, p)
+        if x_check_fault(m) is 1 -> return 1
+        return 0
+    pv: peek_byte(peek_i64(m, 664), off / 4096)
+    if band(pv, 1) is 0
+        poke_i64(m, 168, 8)
+        poke_i64(m, 232, p)
+        return 0
+    rex: 0
+    sz: 4
+    rep: 0
+    more_pre: 1
+    as long as more_pre is 1
+        b0: x_r8(m, p)
+        handled_pre: 0
+        if b0 is 240
+            p: p + 1
+            handled_pre: 1
+        if b0 is 242
+            rep: 2
+            p: p + 1
+            handled_pre: 1
+        if b0 is 243
+            if x_r8(m, p + 1) is 15
+                if x_r8(m, p + 2) is 30
+                    if x_r8(m, p + 3) is 250
+                        x_set_rip(m, p + 4)
+                        return 1
+            if x_r8(m, p + 1) is 144
+                x_set_rip(m, p + 2)
+                return 1
+            rep: 1
+            p: p + 1
+            handled_pre: 1
+        if b0 is 102
+            sz: 2
+            p: p + 1
+            handled_pre: 1
+        if b0 >= 64
+            if b0 <= 79
+                rex: b0
+                if band(rex, 8) is not 0 -> sz: 8
+                p: p + 1
+                handled_pre: 1
+        if handled_pre is 0 -> more_pre: 0
+    b: x_r8(m, p)
+    p: p + 1
+    if rep is 1
+        rcx: x_reg(m, 1)
+        rdi: x_reg(m, 7)
+        rsi: x_reg(m, 6)
+        if b is 164
+            if rcx > 0
+                if x_chk_w(m, rdi, rcx) < 0 -> return 0
+                _sov_mem_copy(x_here(m, rdi), x_here(m, rsi), rcx)
+                x_setr(m, 7, rdi + rcx)
+                x_setr(m, 6, rsi + rcx)
+                x_setr(m, 1, 0)
+            x_set_rip(m, p)
+            return 1
+        if b is 170
+            if rcx > 0
+                if x_chk_w(m, rdi, rcx) < 0 -> return 0
+                _sov_mem_set(x_here(m, rdi), band(x_reg(m, 0), 255), rcx)
+                x_setr(m, 7, rdi + rcx)
+                x_setr(m, 1, 0)
+            x_set_rip(m, p)
+            return 1
+        if b is 171
+            if rcx > 0
+                if x_chk_w(m, rdi, rcx * sz) < 0 -> return 0
+                av: x_reg(m, 0)
+                if av is 0 -> _sov_mem_set(x_here(m, rdi), 0, rcx * sz)
+                if not
+                    k: 0
+                    as long as k < rcx
+                        x_w64(m, rdi + k * sz, av)
+                        k: k + 1
+                x_setr(m, 7, rdi + rcx * sz)
+                x_setr(m, 1, 0)
+            x_set_rip(m, p)
+            return 1
+    if b is 144
+        x_set_rip(m, p)
+        return 1
+    if b is 252
+        x_set_rip(m, p)
+        return 1
+    if b >= 80
+        if b <= 87
+            r: (b - 80) + band(rex, 1) * 8
+            x_push(m, x_reg(m, r))
+            x_set_rip(m, p)
+            return 1
+    if b >= 88
+        if b <= 95
+            r: (b - 88) + band(rex, 1) * 8
+            x_setr(m, r, x_pop(m))
+            x_set_rip(m, p)
+            return 1
+    if b is 104
+        x_push(m, x_s32(m, p))
+        x_set_rip(m, p + 4)
+        return 1
+    if b is 106
+        x_push(m, x_s8(m, p))
+        x_set_rip(m, p + 1)
+        return 1
+    if b is 201
+        x_set_sp(m, x_reg(m, 5))
+        x_setr(m, 5, x_pop(m))
+        x_set_rip(m, p)
+        return 1
+    if b is 195
+        v: x_pop(m)
+        if v is peek_i64(m, 320)
+            poke_i64(m, 168, 1)
+            return 0
+        x_set_rip(m, v)
+        return 1
+    if b is 153
+        if x_sval(x_reg(m, 0), sz) < 0 -> x_rset(m, 2, sz, 0 - 1)
+        if not -> x_rset(m, 2, sz, 0)
+        x_set_rip(m, p)
+        return 1
+    if b >= 145
+        if b <= 151
+            r: (b - 144) + band(rex, 1) * 8
+            tv: x_rget(m, 0, sz)
+            x_rset(m, 0, sz, x_rget(m, r, sz))
+            x_rset(m, r, sz, tv)
+            x_set_rip(m, p)
+            return 1
+    if b >= 176
+        if b <= 183
+            r: (b - 176) + band(rex, 1) * 8
+            x_rset(m, r, 1, x_r8(m, p))
+            x_set_rip(m, p + 1)
+            return 1
+    if b >= 184
+        if b <= 191
+            r: (b - 184) + band(rex, 1) * 8
+            if sz is 8
+                x_setr(m, r, x_r64(m, p))
+                x_set_rip(m, p + 8)
+                return 1
+            x_rset(m, r, sz, x_r32(m, p))
+            x_set_rip(m, p + 4)
+            return 1
+    if b is 136
+        q: x_modrm(m, p, rex, 0)
+        x_rm_set(m, 1, x_rget(m, x_md_reg(m), 1))
+        fc: x_check_fault(m)
+        if fc is not 0 -> return 2 - fc
+        x_set_rip(m, q)
+        return 1
+    if b is 137
+        q: x_modrm(m, p, rex, 0)
+        x_rm_set(m, sz, x_rget(m, x_md_reg(m), sz))
+        fc: x_check_fault(m)
+        if fc is not 0 -> return 2 - fc
+        x_set_rip(m, q)
+        return 1
+    if b is 138
+        q: x_modrm(m, p, rex, 0)
+        v: x_rm_get(m, 1)
+        fc: x_check_fault(m)
+        if fc is 1 -> return 1
+        if fc is 2 -> return 0
+        x_rset(m, x_md_reg(m), 1, v)
+        x_set_rip(m, q)
+        return 1
+    if b is 139
+        q: x_modrm(m, p, rex, 0)
+        v: x_rm_get(m, sz)
+        fc: x_check_fault(m)
+        if fc is 1 -> return 1
+        if fc is 2 -> return 0
+        x_rset(m, x_md_reg(m), sz, v)
+        x_set_rip(m, q)
+        return 1
+    if b is 141
+        q: x_modrm(m, p, rex, 0)
+        x_rset(m, x_md_reg(m), sz, peek_i64(m, 376))
+        x_set_rip(m, q)
+        return 1
+    if b is 198
+        q: x_modrm(m, p, rex, 1)
+        x_rm_set(m, 1, x_r8(m, q))
+        x_set_rip(m, q + 1)
+        return 1
+    if b is 199
+        q: x_modrm(m, p, rex, 4)
+        x_rm_set(m, sz, x_s32(m, q))
+        x_set_rip(m, q + 4)
+        return 1
+    if b is 134
+        q: x_modrm(m, p, rex, 0)
+        a: x_rm_get(m, 1)
+        rv: x_rget(m, x_md_reg(m), 1)
+        x_rm_set(m, 1, rv)
+        x_rset(m, x_md_reg(m), 1, a)
+        x_set_rip(m, q)
+        return 1
+    if b is 135
+        q: x_modrm(m, p, rex, 0)
+        a: x_rm_get(m, sz)
+        rv: x_rget(m, x_md_reg(m), sz)
+        x_rm_set(m, sz, rv)
+        x_rset(m, x_md_reg(m), sz, a)
+        x_set_rip(m, q)
+        return 1
+    if b is 99
+        q: x_modrm(m, p, rex, 0)
+        x_rset(m, x_md_reg(m), sz, x_sval(x_rm_get(m, 4), 4))
+        x_set_rip(m, q)
+        return 1
+    if b < 64
+        if (b % 8) < 6
+            alu_op: b / 8
+            rem: b % 8
+            if rem < 4
+                wsz: sz
+                if rem % 2 is 0 -> wsz: 1
+                q: x_modrm(m, p, rex, 0)
+                if rem < 2
+                    a: x_rm_get(m, wsz)
+                    bb: x_rget(m, x_md_reg(m), wsz)
+                    r: x_alu(m, alu_op, a, bb, wsz)
+                    if alu_op is not 7 -> x_rm_set(m, wsz, r)
+                if not
+                    a: x_rget(m, x_md_reg(m), wsz)
+                    bb: x_rm_get(m, wsz)
+                    r: x_alu(m, alu_op, a, bb, wsz)
+                    if alu_op is not 7 -> x_rset(m, x_md_reg(m), wsz, r)
+                x_set_rip(m, q)
+                return 1
+            if rem is 4
+                a: x_rget(m, 0, 1)
+                imm: x_r8(m, p)
+                r: x_alu(m, alu_op, a, imm, 1)
+                if alu_op is not 7 -> x_rset(m, 0, 1, r)
+                x_set_rip(m, p + 1)
+                return 1
+            a: x_rget(m, 0, sz)
+            imm: x_s32(m, p)
+            r: x_alu(m, alu_op, a, imm, sz)
+            if alu_op is not 7 -> x_rset(m, 0, sz, r)
+            x_set_rip(m, p + 4)
+            return 1
+    if b is 128
+        q: x_modrm(m, p, rex, 1)
+        alu_op: x_md_reg(m) % 8
+        r: x_alu(m, alu_op, x_rm_get(m, 1), x_r8(m, q), 1)
+        if alu_op is not 7 -> x_rm_set(m, 1, r)
+        x_set_rip(m, q + 1)
+        return 1
+    if b is 129
+        q: x_modrm(m, p, rex, 4)
+        alu_op: x_md_reg(m) % 8
+        r: x_alu(m, alu_op, x_rm_get(m, sz), x_s32(m, q), sz)
+        if alu_op is not 7 -> x_rm_set(m, sz, r)
+        x_set_rip(m, q + 4)
+        return 1
+    if b is 131
+        q: x_modrm(m, p, rex, 1)
+        alu_op: x_md_reg(m) % 8
+        r: x_alu(m, alu_op, x_rm_get(m, sz), x_s8(m, q), sz)
+        if alu_op is not 7 -> x_rm_set(m, sz, r)
+        x_set_rip(m, q + 1)
+        return 1
+    if b is 132
+        q: x_modrm(m, p, rex, 0)
+        x_alu(m, 4, x_rm_get(m, 1), x_rget(m, x_md_reg(m), 1), 1)
+        x_set_rip(m, q)
+        return 1
+    if b is 133
+        q: x_modrm(m, p, rex, 0)
+        x_alu(m, 4, x_rm_get(m, sz), x_rget(m, x_md_reg(m), sz), sz)
+        x_set_rip(m, q)
+        return 1
+    if b is 168
+        x_alu(m, 4, x_rget(m, 0, 1), x_r8(m, p), 1)
+        x_set_rip(m, p + 1)
+        return 1
+    if b is 169
+        x_alu(m, 4, x_rget(m, 0, sz), x_s32(m, p), sz)
+        x_set_rip(m, p + 4)
+        return 1
+    if b is 105
+        q: x_modrm(m, p, rex, 4)
+        a: x_sval(x_rm_get(m, sz), sz)
+        imm: x_s32(m, q)
+        x_rset(m, x_md_reg(m), sz, a * imm)
+        poke_i64(m, 160, 0)
+        poke_i64(m, 152, 0)
+        x_set_rip(m, q + 4)
+        return 1
+    if b is 107
+        q: x_modrm(m, p, rex, 1)
+        a: x_sval(x_rm_get(m, sz), sz)
+        imm: x_s8(m, q)
+        x_rset(m, x_md_reg(m), sz, a * imm)
+        poke_i64(m, 160, 0)
+        poke_i64(m, 152, 0)
+        x_set_rip(m, q + 1)
+        return 1
+    if b is 192 -> return x_shift_ins(m, p, rex, 1, 0)
+    if b is 193 -> return x_shift_ins(m, p, rex, sz, 0)
+    if b is 208 -> return x_shift_ins(m, p, rex, 1, 1)
+    if b is 209 -> return x_shift_ins(m, p, rex, sz, 1)
+    if b is 210 -> return x_shift_ins(m, p, rex, 1, 2)
+    if b is 211 -> return x_shift_ins(m, p, rex, sz, 2)
+    if b is 246 -> return x_grp3(m, p, rex, 1)
+    if b is 247 -> return x_grp3(m, p, rex, sz)
+    if b is 254 -> return x_grp5(m, p, rex, 1)
+    if b is 255 -> return x_grp5(m, p, rex, sz)
+    if b >= 112
+        if b <= 127
+            d: x_s8(m, p)
+            if x_cond(m, b - 112) is 1
+                x_set_rip(m, p + 1 + d)
+                return 1
+            x_set_rip(m, p + 1)
+            return 1
+    if b is 227
+        d: x_s8(m, p)
+        if x_reg(m, 1) is 0
+            x_set_rip(m, p + 1 + d)
+            return 1
+        x_set_rip(m, p + 1)
+        return 1
+    if b is 232
+        d: x_s32(m, p)
+        x_push(m, p + 4)
+        x_set_rip(m, p + 4 + d)
+        return 1
+    if b is 233
+        d: x_s32(m, p)
+        x_set_rip(m, p + 4 + d)
+        return 1
+    if b is 235
+        d: x_s8(m, p)
+        x_set_rip(m, p + 1 + d)
+        return 1
+    if b is 15 -> return x_step_0f(m, p, rex, sz)
+    poke_i64(m, 168, 2)
+    poke_i64(m, 232, p - 1)
+    return 0
+
+x_shift_ins m p rex wsz mode:
+    q: 0
+    cnt: 1
+    nq: 0
+    if mode is 0
+        q: x_modrm(m, p, rex, 1)
+        cnt: band(x_r8(m, q), 63)
+        nq: q + 1
+    if mode is 1
+        q: x_modrm(m, p, rex, 0)
+        cnt: 1
+        nq: q
+    if mode is 2
+        q: x_modrm(m, p, rex, 0)
+        cnt: band(x_reg(m, 1), 63)
+        nq: q
+    if cnt is 0
+        x_set_rip(m, nq)
+        return 1
+    sop: x_md_reg(m) % 8
+    v: x_rm_get(m, wsz)
+    r: v
+    if sop is 4 -> r: bshl(v, cnt)
+    if sop is 5 -> r: bshr(x_mask(v, wsz), cnt)
+    if sop is 7 -> r: bsar(x_sval(v, wsz), cnt)
+    if sop is 0
+        bits: wsz * 8
+        c: cnt % bits
+        uv: x_mask(v, wsz)
+        r: bor(bshl(uv, c), bshr(uv, bits - c))
+    if sop is 1
+        bits: wsz * 8
+        c: cnt % bits
+        uv: x_mask(v, wsz)
+        r: bor(bshr(uv, c), bshl(uv, bits - c))
+    x_rm_set(m, wsz, r)
+    x_set_zs(m, r, wsz)
+    x_set_rip(m, nq)
+    return 1
+
+x_grp3 m p rex wsz:
+    subop: (x_r8(m, p) / 8) % 8
+    if subop < 2
+        if wsz is 1
+            q: x_modrm(m, p, rex, 1)
+            x_alu(m, 4, x_rm_get(m, 1), x_r8(m, q), 1)
+            x_set_rip(m, q + 1)
+            return 1
+        q: x_modrm(m, p, rex, 4)
+        x_alu(m, 4, x_rm_get(m, wsz), x_s32(m, q), wsz)
+        x_set_rip(m, q + 4)
+        return 1
+    q: x_modrm(m, p, rex, 0)
+    v: x_rm_get(m, wsz)
+    if subop is 2
+        x_rm_set(m, wsz, bxor(v, 0 - 1))
+        x_set_rip(m, q)
+        return 1
+    if subop is 3
+        r: x_alu(m, 5, 0, v, wsz)
+        x_rm_set(m, wsz, r)
+        x_set_rip(m, q)
+        return 1
+    if subop is 4
+        a: x_rget(m, 0, wsz)
+        x_rset(m, 0, wsz, a * v)
+        x_rset(m, 2, wsz, 0)
+        poke_i64(m, 160, 0)
+        poke_i64(m, 152, 0)
+        x_set_rip(m, q)
+        return 1
+    if subop is 5
+        a: x_sval(x_rget(m, 0, wsz), wsz)
+        dv: x_sval(v, wsz)
+        x_rset(m, 0, wsz, a * dv)
+        x_rset(m, 2, wsz, 0)
+        poke_i64(m, 160, 0)
+        poke_i64(m, 152, 0)
+        x_set_rip(m, q)
+        return 1
+    dv: x_sval(v, wsz)
+    if dv is 0
+        poke_i64(m, 168, 5)
+        return 0
+    a: x_sval(x_rget(m, 0, wsz), wsz)
+    quo: a / dv
+    rem: a - quo * dv
+    x_rset(m, 0, wsz, quo)
+    x_rset(m, 2, wsz, rem)
+    x_set_rip(m, q)
+    return 1
+
+x_grp5 m p rex wsz:
+    q: x_modrm(m, p, rex, 0)
+    subop: x_md_reg(m) % 8
+    if subop is 0
+        ocf: peek_i64(m, 152)
+        r: x_alu(m, 0, x_rm_get(m, wsz), 1, wsz)
+        poke_i64(m, 152, ocf)
+        x_rm_set(m, wsz, r)
+        x_set_rip(m, q)
+        return 1
+    if subop is 1
+        ocf: peek_i64(m, 152)
+        r: x_alu(m, 5, x_rm_get(m, wsz), 1, wsz)
+        poke_i64(m, 152, ocf)
+        x_rm_set(m, wsz, r)
+        x_set_rip(m, q)
+        return 1
+    if subop is 2
+        tgt: x_rm_get(m, 8)
+        x_push(m, q)
+        x_set_rip(m, tgt)
+        return 1
+    if subop is 4
+        tgt: x_rm_get(m, 8)
+        x_set_rip(m, tgt)
+        return 1
+    if subop is 6
+        v: x_rm_get(m, 8)
+        x_push(m, v)
+        x_set_rip(m, q)
+        return 1
+    poke_i64(m, 168, 2)
+    return 0
+
+x_step_0f m p rex sz:
+    b2: x_r8(m, p)
+    p: p + 1
+    if b2 is 5 -> return x_syscall(m, p)
+    if b2 >= 128
+        if b2 <= 143
+            d: x_s32(m, p)
+            if x_cond(m, b2 - 128) is 1
+                x_set_rip(m, p + 4 + d)
+                return 1
+            x_set_rip(m, p + 4)
+            return 1
+    if b2 >= 144
+        if b2 <= 159
+            q: x_modrm(m, p, rex, 0)
+            x_rm_set(m, 1, x_cond(m, b2 - 144))
+            x_set_rip(m, q)
+            return 1
+    if b2 >= 64
+        if b2 <= 79
+            q: x_modrm(m, p, rex, 0)
+            v: x_rm_get(m, sz)
+            if x_cond(m, b2 - 64) is 1 -> x_rset(m, x_md_reg(m), sz, v)
+            x_set_rip(m, q)
+            return 1
+    if b2 is 175
+        q: x_modrm(m, p, rex, 0)
+        a: x_sval(x_rget(m, x_md_reg(m), sz), sz)
+        bb: x_sval(x_rm_get(m, sz), sz)
+        r: a * bb
+        x_rset(m, x_md_reg(m), sz, r)
+        poke_i64(m, 160, 0)
+        poke_i64(m, 152, 0)
+        x_set_rip(m, q)
+        return 1
+    if b2 is 182
+        q: x_modrm(m, p, rex, 0)
+        x_rset(m, x_md_reg(m), sz, x_rm_get(m, 1))
+        x_set_rip(m, q)
+        return 1
+    if b2 is 183
+        q: x_modrm(m, p, rex, 0)
+        x_rset(m, x_md_reg(m), sz, x_rm_get(m, 2))
+        x_set_rip(m, q)
+        return 1
+    if b2 is 190
+        q: x_modrm(m, p, rex, 0)
+        x_rset(m, x_md_reg(m), sz, x_sval(x_rm_get(m, 1), 1))
+        x_set_rip(m, q)
+        return 1
+    if b2 is 177
+        q: x_modrm(m, p, rex, 0)
+        cur: x_rm_get(m, sz)
+        acc: x_rget(m, 0, sz)
+        if cur is acc
+            poke_i64(m, 136, 1)
+            x_rm_set(m, sz, x_rget(m, x_md_reg(m), sz))
+        if not
+            poke_i64(m, 136, 0)
+            x_rset(m, 0, sz, cur)
+        x_set_rip(m, q)
+        return 1
+    if b2 is 193
+        q: x_modrm(m, p, rex, 0)
+        a: x_rm_get(m, sz)
+        bb: x_rget(m, x_md_reg(m), sz)
+        x_rset(m, x_md_reg(m), sz, a)
+        x_rm_set(m, sz, x_alu(m, 0, a, bb, sz))
+        x_set_rip(m, q)
+        return 1
+    if b2 >= 200
+        if b2 <= 207
+            r: (b2 - 200) + band(rex, 1) * 8
+            v: x_reg(m, r)
+            b0: band(v, 255)
+            b1: band(bshr(v, 8), 255)
+            b2v: band(bshr(v, 16), 255)
+            b3: band(bshr(v, 24), 255)
+            b4: band(bshr(v, 32), 255)
+            b5: band(bshr(v, 40), 255)
+            b6: band(bshr(v, 48), 255)
+            b7: band(bshr(v, 56), 255)
+            sv: bor(bor(bshl(b0, 56), bshl(b1, 48)), bor(bshl(b2v, 40), bshl(b3, 32)))
+            sv: bor(sv, bor(bor(bshl(b4, 24), bshl(b5, 16)), bor(bshl(b6, 8), b7)))
+            x_setr(m, r, sv)
+            x_set_rip(m, p)
+            return 1
+    poke_i64(m, 168, 2)
+    poke_i64(m, 232, p - 2)
+    return 0
+
+x86_run_for m limit:
+    n: 0
+    going: 1
+    as long as going is 1
+        if n >= limit
+            poke_i64(m, 168, 3)
+            going: 0
+        if not
+            going: x_step(m)
+            n: n + 1
+    return peek_i64(m, 168)
+
+x86_run m:
+    return x86_run_for(m, 20000000)

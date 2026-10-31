@@ -1,0 +1,226 @@
+# unsafe-module
+KIRQ_HEADER_SIZE: 32
+KIRQ_STRIDE: 56
+KIRQ_VERSION: 1
+KIRQ_FREE: 0
+KIRQ_RESERVED: 1
+KIRQ_ACTIVE: 2
+KIRQ_MASKED: 3
+KIRQ_REMOVING: 4
+KIRQ_MAX_VECTORS: 256
+_kirq_entry table capacity vector:
+    if table is 0 -> return 0
+    if capacity < 1 -> return 0
+    if capacity > KIRQ_MAX_VECTORS -> return 0
+    if vector < 0 -> return 0
+    if vector >= capacity -> return 0
+    return table + KIRQ_HEADER_SIZE + vector * KIRQ_STRIDE
+kirq_init table capacity first_vector last_vector:
+    if table is 0 -> return 0
+    if capacity < 1 -> return 0
+    if capacity > KIRQ_MAX_VECTORS -> return 0
+    if first_vector < 32 -> return 0
+    if last_vector < first_vector -> return 0
+    if last_vector >= capacity -> return 0
+    cleared: _sov_mem_set(table, 0, KIRQ_HEADER_SIZE + capacity * KIRQ_STRIDE)
+    poke_raw64(table, 0, KIRQ_VERSION)
+    poke_raw64(table + 8, 0, capacity)
+    poke_raw64(table + 16, 0, first_vector)
+    poke_raw64(table + 24, 0, last_vector)
+    return 1
+kirq_valid table capacity:
+    if table is 0 -> return 0
+    if peek_raw64(table, 0) is not KIRQ_VERSION -> return 0
+    if peek_raw64(table + 8, 0) is not capacity -> return 0
+    if capacity < 1 -> return 0
+    if capacity > KIRQ_MAX_VECTORS -> return 0
+    return 1
+kirq_state table capacity vector:
+    entry: _kirq_entry(table, capacity, vector)
+    if entry is 0 -> return 0 - 1
+    return atomic_load(entry)
+kirq_generation table capacity vector:
+    entry: _kirq_entry(table, capacity, vector)
+    if entry is 0 -> return 0
+    return atomic_load(entry + 8)
+kirq_owner table capacity vector:
+    entry: _kirq_entry(table, capacity, vector)
+    if entry is 0 -> return 0
+    return atomic_load(entry + 16)
+kirq_source table capacity vector:
+    entry: _kirq_entry(table, capacity, vector)
+    if entry is 0 -> return 0
+    return atomic_load(entry + 24)
+kirq_inflight table capacity vector:
+    entry: _kirq_entry(table, capacity, vector)
+    if entry is 0 -> return 0
+    return atomic_load(entry + 32)
+kirq_count table capacity vector:
+    entry: _kirq_entry(table, capacity, vector)
+    if entry is 0 -> return 0
+    return atomic_load(entry + 40)
+kirq_pending table capacity vector:
+    entry: _kirq_entry(table, capacity, vector)
+    if entry is 0 -> return 0
+    return atomic_load(entry + 48)
+kirq_take_pending table capacity vector generation owner:
+    entry: _kirq_entry(table, capacity, vector)
+    if entry is 0 -> return 0
+    state: atomic_load(entry)
+    if state is not KIRQ_ACTIVE
+        if state is not KIRQ_MASKED -> return 0
+    if atomic_load(entry + 8) is not generation -> return 0
+    if atomic_load(entry + 16) is not owner -> return 0
+    pending: atomic_load(entry + 48)
+    if pending < 1 -> return 0
+    atomic_add(entry + 48, 0 - 1)
+    return 1
+kirq_drain_pending table capacity vector generation owner limit:
+    if limit < 1 -> return 0 - 1
+    drained: 0
+    as long as drained < limit
+        if kirq_take_pending(table, capacity, vector, generation, owner) is not 1 -> return drained
+        drained: drained + 1
+    return drained
+kirq_reserve table capacity vector owner:
+    if kirq_valid(table, capacity) is not 1 -> return 0
+    if owner < 1 -> return 0
+    first: peek_raw64(table + 16, 0)
+    last: peek_raw64(table + 24, 0)
+    if vector < first -> return 0
+    if vector > last -> return 0
+    entry: _kirq_entry(table, capacity, vector)
+    if atomic_load(entry) is not KIRQ_FREE -> return 0
+    generation: atomic_load(entry + 8) + 1
+    if generation is 0 -> generation: 1
+    atomic_store(entry + 8, generation)
+    atomic_store(entry + 16, owner)
+    atomic_store(entry + 24, vector)
+    atomic_store(entry + 32, 0)
+    atomic_store(entry + 40, 0)
+    atomic_store(entry + 48, 0)
+    atomic_store(entry, KIRQ_RESERVED)
+    return 1
+kirq_claim table capacity vector owner source:
+    if kirq_valid(table, capacity) is not 1 -> return 0
+    if owner < 1 -> return 0
+    if source < 0 -> return 0
+    first: peek_raw64(table + 16, 0)
+    last: peek_raw64(table + 24, 0)
+    if vector < first -> return 0
+    if vector > last -> return 0
+    entry: _kirq_entry(table, capacity, vector)
+    if atomic_load(entry) is not KIRQ_FREE -> return 0
+    generation: atomic_load(entry + 8) + 1
+    if generation is 0 -> generation: 1
+    atomic_store(entry + 8, generation)
+    atomic_store(entry + 16, owner)
+    atomic_store(entry + 24, source)
+    atomic_store(entry + 32, 0)
+    atomic_store(entry + 40, 0)
+    atomic_store(entry + 48, 0)
+    atomic_store(entry, KIRQ_ACTIVE)
+    return vector
+kirq_allocate table capacity owner source:
+    if kirq_valid(table, capacity) is not 1 -> return 0
+    if owner < 1 -> return 0
+    if source < 0 -> return 0
+    vector: peek_raw64(table + 16, 0)
+    last: peek_raw64(table + 24, 0)
+    as long as vector <= last
+        entry: _kirq_entry(table, capacity, vector)
+        if atomic_load(entry) is KIRQ_FREE
+            generation: atomic_load(entry + 8) + 1
+            if generation is 0 -> generation: 1
+            atomic_store(entry + 8, generation)
+            atomic_store(entry + 16, owner)
+            atomic_store(entry + 24, source)
+            atomic_store(entry + 32, 0)
+            atomic_store(entry + 40, 0)
+            atomic_store(entry + 48, 0)
+            atomic_store(entry, KIRQ_ACTIVE)
+            return vector
+        vector: vector + 1
+kirq_enter table capacity vector generation owner:
+    entry: _kirq_entry(table, capacity, vector)
+    if entry is 0 -> return 0
+    if atomic_load(entry) is not KIRQ_ACTIVE -> return 0
+    if atomic_load(entry + 8) is not generation -> return 0
+    if atomic_load(entry + 16) is not owner -> return 0
+    atomic_add(entry + 32, 1)
+    atomic_add(entry + 40, 1)
+    atomic_add(entry + 48, 1)
+    return 1
+kirq_leave table capacity vector generation owner:
+    entry: _kirq_entry(table, capacity, vector)
+    if entry is 0 -> return 0
+    if atomic_load(entry + 8) is not generation -> return 0
+    if atomic_load(entry + 16) is not owner -> return 0
+    inflight: atomic_load(entry + 32)
+    if inflight < 1 -> return 0
+    atomic_add(entry + 32, 0 - 1)
+    return 1
+kirq_mask table capacity vector generation owner:
+    entry: _kirq_entry(table, capacity, vector)
+    if entry is 0 -> return 0
+    if atomic_load(entry) is not KIRQ_ACTIVE -> return 0
+    if atomic_load(entry + 8) is not generation -> return 0
+    if atomic_load(entry + 16) is not owner -> return 0
+    atomic_store(entry, KIRQ_MASKED)
+    return 1
+kirq_unmask table capacity vector generation owner:
+    entry: _kirq_entry(table, capacity, vector)
+    if entry is 0 -> return 0
+    if atomic_load(entry) is not KIRQ_MASKED -> return 0
+    if atomic_load(entry + 8) is not generation -> return 0
+    if atomic_load(entry + 16) is not owner -> return 0
+    atomic_store(entry, KIRQ_ACTIVE)
+    return 1
+kirq_release table capacity vector generation owner:
+    entry: _kirq_entry(table, capacity, vector)
+    if entry is 0 -> return 0
+    state: atomic_load(entry)
+    if state is not KIRQ_ACTIVE
+        if state is not KIRQ_MASKED -> return 0
+    if atomic_load(entry + 8) is not generation -> return 0
+    if atomic_load(entry + 16) is not owner -> return 0
+    if atomic_load(entry + 32) is not 0 -> return 0
+    if atomic_load(entry + 48) is not 0 -> return 0
+    atomic_store(entry, KIRQ_REMOVING)
+    atomic_store(entry + 16, 0)
+    atomic_store(entry + 24, 0)
+    atomic_store(entry + 40, 0)
+    atomic_store(entry + 48, 0)
+    next_generation: generation + 1
+    if next_generation is 0 -> next_generation: 1
+    atomic_store(entry + 8, next_generation)
+    atomic_store(entry, KIRQ_FREE)
+    return 1
+kirq_quiesce_release table capacity vector generation owner drain_limit spin_limit:
+    if drain_limit < 1 -> return 0
+    if spin_limit < 1 -> return 0
+    state: kirq_state(table, capacity, vector)
+    if state is KIRQ_ACTIVE
+        if kirq_mask(table, capacity, vector, generation, owner) is not 1 -> return 0
+    if state is not KIRQ_ACTIVE
+        if state is not KIRQ_MASKED -> return 0
+    spins: 0
+    as long as spins < spin_limit
+        if kirq_inflight(table, capacity, vector) is 0 -> leave
+        spins: spins + 1
+    if kirq_inflight(table, capacity, vector) is not 0 -> return 0
+    if kirq_drain_pending(table, capacity, vector, generation, owner, drain_limit) < 0 -> return 0
+    if kirq_pending(table, capacity, vector) is not 0 -> return 0
+    return kirq_release(table, capacity, vector, generation, owner)
+kirq_active_count table capacity:
+    if kirq_valid(table, capacity) is not 1 -> return 0 - 1
+    active: 0
+    vector: peek_raw64(table + 16, 0)
+    last: peek_raw64(table + 24, 0)
+    as long as vector <= last
+        state: kirq_state(table, capacity, vector)
+        if state is KIRQ_ACTIVE -> active: active + 1
+        if state is KIRQ_MASKED -> active: active + 1
+        if state is KIRQ_REMOVING -> active: active + 1
+        vector: vector + 1
+    return active

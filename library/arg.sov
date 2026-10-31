@@ -1,0 +1,30 @@
+use string
+arg_count:
+    return _sov_argc()
+arg_at k:
+    if k < 0 -> return blank
+    if k >= _sov_argc() -> return blank
+    p: _sov_argv_get(k)
+    if p is 0 -> return blank
+    return as text p
+arg_line:
+    out: ""
+    i: 1
+    as long as i < _sov_argc()
+        if i > 1 -> out: str_cat(out, " ")
+        out: str_cat(out, as text arg_at(i))
+        i: i + 1
+    return as text out
+arg_has name:
+    i: 1
+    as long as i < _sov_argc()
+        if str_eq(as text arg_at(i), name) is 1 -> return 1
+        i: i + 1
+arg_after name:
+    i: 1
+    as long as i < _sov_argc()
+        if str_eq(as text arg_at(i), name) is 1
+            if i + 1 < _sov_argc() -> return as text arg_at(i + 1)
+            return blank
+        i: i + 1
+    return blank

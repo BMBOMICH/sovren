@@ -1,0 +1,7 @@
+main:
+    print wrap_add(9223372036854775807, 1)
+    print wrap_sub(0 - 9223372036854775807, 2)
+    print wrap_mul(3037000500, 3037000500)
+    print wrap_mul(0 - 1, 0 - 1)
+    print wrap_add(wrap_mul(6, 7), wrap_sub(10, 3))
+    return 0

@@ -1,0 +1,124 @@
+# unsafe-module
+use kdisplay
+KSURF_STRIDE: 64
+ksurf_init surface pixels width height bytes:
+    if surface is 0 -> return 0
+    if pixels is 0 -> return 0
+    if kdsp_mode_valid(width, height, width * 4, bytes) is not 1 -> return 0
+    generation: peek_raw64(surface, 0) + 1
+    if generation is 0 -> generation: 1
+    poke_raw64(surface, 0, generation)
+    poke_raw64(surface + 8, 0, pixels)
+    poke_raw64(surface + 16, 0, width)
+    poke_raw64(surface + 24, 0, height)
+    poke_raw64(surface + 32, 0, bytes)
+    poke_raw64(surface + 40, 0, 0)
+    poke_raw64(surface + 48, 0, 0)
+    poke_raw64(surface + 56, 0, 0)
+    return 1
+ksurf_width surface:
+    if surface is 0 -> return 0
+    return peek_raw64(surface + 16, 0)
+ksurf_height surface:
+    if surface is 0 -> return 0
+    return peek_raw64(surface + 24, 0)
+ksurf_pixels surface:
+    if surface is 0 -> return 0
+    return peek_raw64(surface + 8, 0)
+ksurf_damage_valid surface:
+    if surface is 0 -> return 0
+    return peek_raw64(surface + 56, 0)
+ksurf_damage_origin surface:
+    if surface is 0 -> return 0
+    return peek_raw64(surface + 40, 0)
+ksurf_damage_extent surface:
+    if surface is 0 -> return 0
+    return peek_raw64(surface + 48, 0)
+ksurf_damage_clear surface:
+    if surface is 0 -> return 0
+    poke_raw64(surface + 40, 0, 0)
+    poke_raw64(surface + 48, 0, 0)
+    poke_raw64(surface + 56, 0, 0)
+    return 1
+ksurf_damage_add surface origin extent:
+    if surface is 0 -> return 0
+    width: ksurf_width(surface)
+    height: ksurf_height(surface)
+    if width < 1 -> return 0
+    if height < 1 -> return 0
+    x: band(origin, 65535)
+    y: band(bshr(origin, 16), 65535)
+    rect_width: band(extent, 65535)
+    rect_height: band(bshr(extent, 16), 65535)
+    if rect_width < 1 -> return 0
+    if rect_height < 1 -> return 0
+    if rect_width > width -> return 0
+    if rect_height > height -> return 0
+    if x > width - rect_width -> return 0
+    if y > height - rect_height -> return 0
+    if ksurf_damage_valid(surface) is 0
+        poke_raw64(surface + 40, 0, origin)
+        poke_raw64(surface + 48, 0, extent)
+        poke_raw64(surface + 56, 0, 1)
+        return 1
+    old_origin: ksurf_damage_origin(surface)
+    old_extent: ksurf_damage_extent(surface)
+    old_x: band(old_origin, 65535)
+    old_y: band(bshr(old_origin, 16), 65535)
+    old_width: band(old_extent, 65535)
+    old_height: band(bshr(old_extent, 16), 65535)
+    left: old_x
+    if x < left -> left: x
+    top: old_y
+    if y < top -> top: y
+    right: old_x + old_width
+    if x + rect_width > right -> right: x + rect_width
+    bottom: old_y + old_height
+    if y + rect_height > bottom -> bottom: y + rect_height
+    merged_origin: left + bshl(top, 16)
+    merged_extent: right - left + bshl(bottom - top, 16)
+    poke_raw64(surface + 40, 0, merged_origin)
+    poke_raw64(surface + 48, 0, merged_extent)
+    return 1
+ksurf_fill32 surface origin extent color:
+    if surface is 0 -> return 0
+    count: kdsp_fill32(ksurf_pixels(surface), ksurf_width(surface), ksurf_height(surface), origin, extent, color)
+    if count < 1 -> return 0
+    if ksurf_damage_add(surface, origin, extent) is not 1 -> return 0
+    return count
+ksurf_span32 surface x y source pixels:
+    if surface is 0 -> return 0
+    copied: kdsp_span32(ksurf_pixels(surface), ksurf_width(surface), ksurf_height(surface), x, y, source, pixels)
+    if copied < 1 -> return 0
+    origin: x + bshl(y, 16)
+    extent: pixels + bshl(1, 16)
+    if ksurf_damage_add(surface, origin, extent) is not 1 -> return 0
+    return copied
+ksurf_present32 surface framebuffer target_width target_height dest_origin:
+    if surface is 0 -> return 0
+    if framebuffer is 0 -> return 0
+    if target_width < 1 -> return 0
+    if target_height < 1 -> return 0
+    if ksurf_damage_valid(surface) is not 1 -> return 0
+    dx: band(dest_origin, 65535)
+    dy: band(bshr(dest_origin, 16), 65535)
+    origin: ksurf_damage_origin(surface)
+    extent: ksurf_damage_extent(surface)
+    sx: band(origin, 65535)
+    sy: band(bshr(origin, 16), 65535)
+    copy_width: band(extent, 65535)
+    copy_height: band(bshr(extent, 16), 65535)
+    if sx > target_width - copy_width -> return 0
+    if sy > target_height - copy_height -> return 0
+    if dx > target_width - sx - copy_width -> return 0
+    if dy > target_height - sy - copy_height -> return 0
+    source_width: ksurf_width(surface)
+    source: ksurf_pixels(surface)
+    row: 0
+    as long as row < copy_height
+        source_row: source + ((sy + row) * source_width + sx) * 4
+        copied: kdsp_span32(framebuffer, target_width, target_height, dx + sx, dy + sy + row, source_row, copy_width)
+        if copied is not copy_width -> return 0
+        row: row + 1
+    ksurf_damage_clear(surface)
+    return copy_width * copy_height

@@ -1,0 +1,109 @@
+SOVSYS_ABI_VERSION: 1
+SOVSYS_MAX_ARGUMENTS: 6
+SOVSYS_AUDIT_RECORD_VERSION: 1
+SOVSYS_AUDIT_RECORD_SIZE: 32
+SOVSYS_ADD: 1
+SOVSYS_PATH_READ: 2
+SOVSYS_PATH_WRITE: 3
+SOVSYS_FORK: 4
+SOVSYS_PROCESS_SPAWN: 5
+SOVSYS_OPEN: 10
+SOVSYS_READ: 11
+SOVSYS_WRITE: 12
+SOVSYS_CLOSE: 13
+SOVSYS_SECCOMP_DENY: 14
+SOVSYS_DROP_CAPABILITY: 15
+SOVSYS_SIGNAL_INSTALL: 16
+SOVSYS_SIGNAL_RETURN: 17
+SOVSYS_MMAP_ANON: 18
+SOVSYS_MUNMAP: 19
+SOVSYS_PIPE: 21
+SOVSYS_DNS_QUERY: 22
+SOVSYS_POLL_ONE: 23
+SOVSYS_WAIT: 25
+SOVSYS_EXEC: 26
+SOVSYS_DUP: 27
+SOVSYS_ABI_QUERY: 28
+SOVSYS_DISPLAY_INFO: 29
+SOVSYS_DISPLAY_BLIT64: 30
+SOVSYS_DISPLAY_FILL: 31
+SOVSYS_READV: 32
+SOVSYS_WRITEV: 33
+SOVSYS_MPROTECT: 34
+SOVSYS_MADVISE: 35
+SOVSYS_VM_QUERY: 36
+SOVSYS_MLOCK: 37
+SOVSYS_MUNLOCK: 38
+SOVSYS_MREMAP: 39
+SOVSYS_EXIT: 60 
+SOVSYS_PROCESS_VMA_INFO: 61
+sov_ADD a0 a1:
+    return sovcall(SOVSYS_ADD, a0, a1)
+sov_PATH_READ a0 a1:
+    return sovcall(SOVSYS_PATH_READ, a0, a1)
+sov_PATH_WRITE a0 a1:
+    return sovcall(SOVSYS_PATH_WRITE, a0, a1)
+sov_FORK:
+    return sovcall(SOVSYS_FORK)
+sov_PROCESS_SPAWN a0:
+    return sovcall(SOVSYS_PROCESS_SPAWN, a0)
+sov_OPEN a0:
+    return sovcall(SOVSYS_OPEN, a0)
+sov_READ a0 a1 a2:
+    return sovcall(SOVSYS_READ, a0, a1, a2)
+sov_WRITE a0 a1 a2:
+    return sovcall(SOVSYS_WRITE, a0, a1, a2)
+sov_CLOSE a0:
+    return sovcall(SOVSYS_CLOSE, a0)
+sov_SECCOMP_DENY a0:
+    return sovcall(SOVSYS_SECCOMP_DENY, a0)
+sov_DROP_CAPABILITY a0:
+    return sovcall(SOVSYS_DROP_CAPABILITY, a0)
+sov_SIGNAL_INSTALL a0 a1:
+    return sovcall(SOVSYS_SIGNAL_INSTALL, a0, a1)
+sov_SIGNAL_RETURN:
+    return sovcall(SOVSYS_SIGNAL_RETURN)
+sov_MMAP_ANON a0:
+    return sovcall(SOVSYS_MMAP_ANON, a0)
+sov_MUNMAP a0 a1:
+    return sovcall(SOVSYS_MUNMAP, a0, a1)
+sov_PIPE a0:
+    return sovcall(SOVSYS_PIPE, a0)
+sov_DNS_QUERY a0:
+    return sovcall(SOVSYS_DNS_QUERY, a0)
+sov_POLL_ONE a0:
+    return sovcall(SOVSYS_POLL_ONE, a0)
+sov_WAIT a0:
+    return sovcall(SOVSYS_WAIT, a0)
+sov_EXEC a0:
+    return sovcall(SOVSYS_EXEC, a0)
+sov_DUP a0:
+    return sovcall(SOVSYS_DUP, a0)
+sov_ABI_QUERY a0:
+    return sovcall(SOVSYS_ABI_QUERY, a0)
+sov_DISPLAY_INFO a0:
+    return sovcall(SOVSYS_DISPLAY_INFO, a0)
+sov_DISPLAY_BLIT64 a0 a1 a2:
+    return sovcall(SOVSYS_DISPLAY_BLIT64, a0, a1, a2)
+sov_DISPLAY_FILL a0 a1 a2 a3 a4:
+    return sovcall(SOVSYS_DISPLAY_FILL, a0, a1, a2, a3, a4)
+sov_READV a0 a1 a2:
+    return sovcall(SOVSYS_READV, a0, a1, a2)
+sov_WRITEV a0 a1 a2:
+    return sovcall(SOVSYS_WRITEV, a0, a1, a2)
+sov_MPROTECT a0 a1 a2:
+    return sovcall(SOVSYS_MPROTECT, a0, a1, a2)
+sov_MADVISE a0 a1 a2:
+    return sovcall(SOVSYS_MADVISE, a0, a1, a2)
+sov_VM_QUERY a0 a1:
+    return sovcall(SOVSYS_VM_QUERY, a0, a1)
+sov_MLOCK a0 a1:
+    return sovcall(SOVSYS_MLOCK, a0, a1)
+sov_MUNLOCK a0 a1:
+    return sovcall(SOVSYS_MUNLOCK, a0, a1)
+sov_MREMAP a0 a1 a2 a3:
+    return sovcall(SOVSYS_MREMAP, a0, a1, a2, a3)
+sov_EXIT a0:
+    return sovcall(SOVSYS_EXIT, a0)
+sov_PROCESS_VMA_INFO a0 a1:
+    return sovcall(SOVSYS_PROCESS_VMA_INFO, a0, a1)

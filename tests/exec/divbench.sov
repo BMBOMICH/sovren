@@ -1,0 +1,8 @@
+main:
+    s: 0
+    i: 1
+    as long as i < 30000001
+        s: s + 1000000007 / i + 1000000007 % (i + 7)
+        i: i + 1
+    print s
+    return 0

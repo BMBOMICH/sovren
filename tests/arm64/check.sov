@@ -1,0 +1,54 @@
+use:
+    file
+    num
+    proc
+    string
+include inc/px00.sov 234 4 (0 ac_pass ac_fail ac_ok name)
+    include inc/inc04.sov 1003 3 
+    ac_pass: ac_pass + 1
+ac_bad name:
+    include inc/inc03.sov 1475 3 
+    ac_fail: ac_fail + 1
+ac_le16 p i:
+    return peek_byte(p, i) + peek_byte(p, i + 1) * 256
+ac_struct:
+    d: file_read_all('tests/arm64/hello')
+    if d = 0 -> print 'cannot read tests/arm64/hello'
+        sys_exit(1)
+    sz: file_size('tests/arm64/hello')
+    include inc/px01.sov 841 4 (peek_byte d 127 peek_byte d 69 peek_byte d 76)
+    if peek_byte(d, 3) != 70 -> ok: 0 ;; if peek_byte(d, 4) != 2 -> ok: 0
+    if peek_byte(d, 5) != 1 -> ok: 0 ;; mach: ac_le16(d, 18)
+    if mach != 183 -> ok: 0
+    print 'magic  ok' ;; print str_join3('machine ', num_text(mach), ' (183 = aarch64)')
+    print str_join3('size   ', num_text(sz), '')
+    if ok = 1 -> ac_ok('the ELF header is valid')
+        return 1
+    ac_bad('the ELF header is valid')
+include inc/px00.sov 548 4 (ac_pr ac_pw)
+ac_run:
+    include inc/inc04.sov 53 4 
+    if r != 0 -> ac_bad('tests/arm64/hello runs')
+        print '  no pipe'
+        return 0
+    include inc/px00.sov 1524 4 (sys_fork ac_pw opf ac_pr opf 24)
+        include inc/px01.sov 846 4 (arm64 arm64)
+    sys_close(ac_pw(opf))
+    include inc/inc03.sov 1478 3 
+    as long as more = 1 -> n: sys_read(ac_pr(opf), buf, 8192)
+        include inc/inc02.sov 1507 3 
+    sys_close(ac_pr(opf))
+    include inc/inc03.sov 1176 5 
+    if code != 0 -> ac_bad('tests/arm64/hello runs')
+        include inc/inc04.sov 1006 3 
+        include inc/inc03.sov 109 3 
+    if str_has(out, 'Hello from Sovren') = 0 -> ac_bad('tests/arm64/hello says hello')
+        include inc/inc03.sov 109 3 
+    if str_has(out, '30') = 0 -> ac_bad('tests/arm64/hello prints 30')
+        include inc/inc03.sov 109 3 
+    ac_ok('tests/arm64/hello runs and prints the right words')
+main:
+    ac_struct() ;; ac_run()
+    include inc/px00.sov 842 6 (ac_pass passed ac_fail failed ac_fail arm64 check)
+    write_out("arm64 check FAILED\n")
+    sys_exit(1)

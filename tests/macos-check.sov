@@ -1,0 +1,96 @@
+include inc/inc05.sov 1119 3
+include inc/px00.sov 433 5 (0 mc_pass mc_fail mc_skipn mc_ok name)
+    include inc/inc04.sov 1003 3
+    mc_pass: mc_pass + 1
+mc_bad name:
+    include inc/inc03.sov 1475 3
+    mc_fail: mc_fail + 1
+mc_skip name:
+    include inc/inc04.sov 1387 3
+    mc_skipn: mc_skipn + 1
+mc_le32 p i:
+    return peek_byte(p, i) + peek_byte(p, i + 1) * 256 + peek_byte(p, i + 2) * 65536 + peek_byte(p, i + 3) * 16777216
+mc_le64 p i:
+    lo: mc_le32(p, i) ;; hi: mc_le32(p, i + 4)
+    return lo + hi * 4294967296
+mc_hx v:
+    include inc/inc03.sov 1181 5
+    hx: mc_hex_from(b, 4)
+    include inc/inc01.sov 1586 10
+    return str_cat('0x', str_cut(hx, pos, n))
+mc_hex_from p n:
+    include inc/inc04.sov 694 3
+        poke_byte(out, i * 2, mc_hexd(b / 16)) ;; poke_byte(out, i * 2 + 1, mc_hexd(b % 16))
+        i: i + 1
+    poke_byte(out, n * 2, 0) ;; return as text out
+mc_hexd v:
+    if v < 10 -> return v + 48 ;; return v + 87
+mc_segname p i:
+    b: _sov_alloc(17) ;; k: 0
+    as long as k < 16 -> c: peek_byte(p, i + k)
+        if c = 0 -> k: 16 ;; if not -> poke_byte(b, k, c)
+            k: k + 1
+    poke_byte(b, k, 0) ;; return as text b
+mc_struct:
+    write_out("tests/macos-check: reading tests/macos/hello\n")
+    d: file_read_all('tests/macos/hello')
+    if d = 0 -> print 'cannot read tests/macos/hello'
+        sys_exit(1)
+    write_out("tests/macos-check: read it\n")
+    sz: file_size('tests/macos/hello')
+    magic: mc_le32(d, 0)
+    include inc/px01.sov 851 4 (cpu mc_le32 d 4 ncmds mc_le32 d 16 4277009103)
+    if cpu != 16777223 -> ok: 0
+    print 'magic  ok' ;; print str_join3('cputype ', num_text(cpu), '')
+    print str_join3('ncmds  ', num_text(ncmds), '')
+    include inc/px01.sov 836 4 (off 32 i segs entry)
+    as long as i < ncmds -> cmd: mc_le32(d, off)
+        size: mc_le32(d, off + 4) ;; if cmd = 25 -> nm: mc_segname(d, off + 8)
+            va: mc_le64(d, off + 24) ;; vs: mc_le64(d, off + 32)
+            fo: mc_le64(d, off + 40) ;; fs: mc_le64(d, off + 48)
+            if fo + fs > sz -> ok: 0
+            segs: str_cat:
+                nm
+                ' '
+        if cmd = 5 -> entry: mc_le64(d, off + 144) ;; off: off + size
+        i: i + 1
+    print str_join3('segments ', str_trim(segs), '')
+    if entry = 0 -> ok: 0
+    print str_join3('entry   ', mc_hx(entry), '')
+    if ok = 1 -> mc_ok('the Mach-O header is valid')
+        return 1
+    mc_bad('the Mach-O header is valid')
+include inc/px00.sov 548 4 (mc_pr mc_pw)
+mc_run:
+    write_out("tests/macos-check: running tests/macos/hello\n")
+    include inc/inc04.sov 53 4
+    if r != 0 -> mc_skip('tests/macos/hello runs (cannot spawn here)')
+        return 0
+    if peek_i64(opf, 0) < 0 -> mc_skip('tests/macos/hello runs (cannot spawn here)')
+        return 0
+    include inc/px00.sov 1524 4 (sys_fork mc_pw opf mc_pr opf 24)
+        include inc/px01.sov 846 4 (macos macos)
+    sys_close(mc_pw(opf))
+    include inc/inc03.sov 1478 3
+    as long as more = 1 -> n: sys_read(mc_pr(opf), buf, 8192)
+        include inc/inc02.sov 1507 3
+    sys_close(mc_pr(opf))
+    include inc/inc03.sov 1176 5
+    if code = 127 -> mc_skip('tests/macos/hello runs (no Rosetta on this Mac?)')
+        return 0
+    if code != 0 -> mc_bad('tests/macos/hello runs')
+        include inc/inc04.sov 1006 3
+        include inc/inc03.sov 109 3
+    if str_has(out, 'Hello from Sovren') = 1 -> mc_ok('tests/macos/hello runs and says hello')
+        return 0
+    mc_bad('tests/macos/hello runs and says hello')
+    write_out(out) ;; write_out("\n")
+main:
+    write_out("tests/macos-check: starting\n")
+    only: ''
+    if arg_count() > 1 -> only: arg_at(1) ;; mc_struct()
+    if str_eq(only, 'struct') = 0 -> mc_run()
+    write_out(num_text(mc_pass)) ;; write_out(' passed, ')
+    include inc/px00.sov 842 6 (mc_fail failed mc_skipn skipped mc_fail mac check)
+    write_out("mac check FAILED\n")
+    sys_exit(1)

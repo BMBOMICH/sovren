@@ -1,0 +1,237 @@
+# pad line so main is not first
+# Exact checked-i64 constant expressions used by the native compiler family.
+# Unknown syntax and overflow return failure; they never become a fabricated 0.
+cnum s:
+    e: strip(s)
+    n: length(e)
+    if n is 0
+        return 0
+    i: 0
+    if peek_byte(e, 0) is 45
+        i: 1
+    if i >= n
+        return 0
+    as long as i < n
+        if digitb(peek_byte(e, i)) is 0
+            return 0
+        i: i + 1
+    cval: num_of(e)
+    return 1
+
+cwrap s:
+    n: length(s)
+    if n < 2
+        return 0
+    if peek_byte(s, 0) is not 40
+        return 0
+    depth: 0
+    i: 0
+    as long as i < n
+        ch: peek_byte(s, i)
+        if ch is 40
+            depth: depth + 1
+        if ch is 41
+            depth: depth - 1
+        if depth < 0
+            return 0
+        if depth is 0 and i + 1 < n
+            return 0
+        i: i + 1
+    if depth is 0
+        return 1
+    return 0
+
+# Rightmost top-level binary operator at one precedence level. Unary signs do
+# not split operands; choosing the rightmost split preserves left associativity.
+ce_split e level:
+    depth: 0
+    split: -1
+    previous: 0
+    i: 0
+    n: length(e)
+    as long as i < n
+        ch: peek_byte(e, i)
+        if ch is 40
+            depth: depth + 1
+        if ch is 41
+            depth: depth - 1
+        if depth < 0
+            return -2
+        if depth is 0
+            rank: 0
+            width: 1
+            if ch is 105 and i > 0
+                if peek_byte(e, i - 1) is 32
+                    if _sov_starts_with(e + i, "is not ") is 1
+                        rank: 1
+                        width: 7
+                    if not
+                        if _sov_starts_with(e + i, "is ") is 1
+                            rank: 1
+                            width: 3
+            if ch is 61 or ch is 33
+                rank: 1
+                if i + 1 < n
+                    if peek_byte(e, i + 1) is 61
+                        width: 2
+                if ch is 33 and width is 1
+                    return -2
+            if ch is 60 or ch is 62
+                rank: 2
+                if i + 1 < n
+                    if peek_byte(e, i + 1) is ch
+                        return -2
+                    if peek_byte(e, i + 1) is 61
+                        width: 2
+            if ch is 43 or ch is 45
+                if digitb(previous) is 1 or previous is 41
+                    rank: 3
+            if ch is 42 or ch is 47 or ch is 37
+                rank: 4
+            if rank is level
+                split: i
+            if width > 1
+                i: i + width - 1
+        if ch is not 32 and ch is not 9 and ch is not 13
+            previous: ch
+        i: i + 1
+    if depth is not 0
+        return -2
+    return split
+
+ceval2 left right operation:
+    if ceval(left) is 0
+        return 0
+    lv: cval
+    if ceval(right) is 0
+        return 0
+    rv: cval
+    cval: 0
+    if operation is 10
+        if lv is rv
+            cval: 1
+        return 1
+    if operation is 11
+        if lv is not rv
+            cval: 1
+        return 1
+    if operation is 12
+        if lv <= rv
+            cval: 1
+        return 1
+    if operation is 13
+        if lv >= rv
+            cval: 1
+        return 1
+    if operation is 14
+        if lv < rv
+            cval: 1
+        return 1
+    if operation is 15
+        if lv > rv
+            cval: 1
+        return 1
+    maximum: 9223372036854775807
+    minimum: -9223372036854775808
+    if operation is 20
+        if rv > 0 and lv > maximum - rv
+            return 0
+        if rv < 0 and lv < minimum - rv
+            return 0
+        cval: lv + rv
+        return 1
+    if operation is 21
+        if rv > 0 and lv < minimum + rv
+            return 0
+        if rv < 0 and lv > maximum + rv
+            return 0
+        cval: lv - rv
+        return 1
+    if operation is 30
+        if lv > 0
+            if rv > 0 and lv > maximum / rv
+                return 0
+            if rv < 0 and rv < minimum / lv
+                return 0
+        if lv < 0
+            if rv > 0 and lv < minimum / rv
+                return 0
+            if rv < 0 and lv < maximum / rv
+                return 0
+        cval: lv * rv
+        return 1
+    if operation is 31 or operation is 32
+        if rv is 0
+            return 0
+        if lv is minimum and rv is -1
+            return 0
+        if operation is 31
+            cval: lv / rv
+        if operation is 32
+            cval: lv % rv
+        return 1
+    return 0
+
+ceval s:
+    e: strip(s)
+    n: length(e)
+    if n is 0
+        return 0
+    if _sov_starts_with(e, "const(") is 1
+        if peek_byte(e, n - 1) is 41
+            return ceval(cut(e, 6, n - 1))
+    if cnum(e) is 1
+        return 1
+    if cwrap(e) is 1
+        return ceval(cut(e, 1, n - 1))
+    level: 1
+    as long as level <= 4
+        split: ce_split(e, level)
+        if split is -2
+            return 0
+        if split >= 0
+            ch: peek_byte(e, split)
+            width: 1
+            operation: 0
+            if ch is 105
+                if _sov_starts_with(e + split, "is not ") is 1
+                    operation: 11
+                    width: 7
+                if not
+                    operation: 10
+                    width: 3
+            if ch is 61
+                operation: 10
+            if ch is 33
+                operation: 11
+            if ch is 60
+                operation: 14
+            if ch is 62
+                operation: 15
+            if level <= 2 and split + 1 < n
+                if peek_byte(e, split + 1) is 61
+                    width: 2
+                    if ch is 60
+                        operation: 12
+                    if ch is 62
+                        operation: 13
+            if ch is 43
+                operation: 20
+            if ch is 45
+                operation: 21
+            if ch is 42
+                operation: 30
+            if ch is 47
+                operation: 31
+            if ch is 37
+                operation: 32
+            return ceval2(cut(e, 0, split), cut(e, split + width, n), operation)
+        level: level + 1
+    if peek_byte(e, 0) is 45
+        if ceval(cut(e, 1, n)) is 0
+            return 0
+        if cval is -9223372036854775808
+            return 0
+        cval: 0 - cval
+        return 1
+    return 0

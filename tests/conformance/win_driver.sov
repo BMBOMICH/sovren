@@ -1,0 +1,26 @@
+# Runs a Sovren-built Windows PE under the sovren x86 emulator (library/x86.sov).
+# Guest stdout passes through; exit code = guest exit code.
+use:
+    x86
+    arg
+    string
+    sys
+main:
+    m: x86_new()
+    r: x86_load(m, arg_at(1))
+    if r != 1 -> sys_exit(9)
+    if peek_i64(m, 240) != 3 -> sys_exit(8)
+    cl: str_cat("prog.exe", cl_args())
+    x_set_cmdline(m, cl)
+    x86_run_for(m, 50000000)
+    write_out(x86_out(m))
+    sys_exit(x86_code(m))
+cl_args:
+    n: arg_count()
+    i: 2
+    out: ""
+    as long as i < n
+        out: str_cat(out, " ")
+        out: str_cat(out, arg_at(i))
+        i: i + 1
+    return out

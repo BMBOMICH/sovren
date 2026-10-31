@@ -1,0 +1,20 @@
+# unsafe-module
+use kdisplay
+bad m:
+    print m
+main:
+    framebuffer: _sov_alloc(256) ;; source: _sov_alloc(32)
+    if kdsp_mode_valid(8, 8, 32, 256) != 1 -> bad('mode')
+    if kdsp_mode_valid(8, 8, 31, 256) != 0 -> bad('unaligned pitch')
+    if kdsp_mode_valid(8, 8, 32, 255) != 0 -> bad('short framebuffer')
+    i: 0 ;; as long as i < 8 -> poke_raw32(source + i * 4, 0, 100 + i)
+        i: i + 1
+    if kdsp_span32(framebuffer, 8, 8, 0, 2, source, 8) != 8 -> bad('span')
+    if peek_raw32(framebuffer + 64, 0) != 100 -> bad('span first')
+    if peek_raw32(framebuffer + 92, 0) != 107 -> bad('span last')
+    if kdsp_span32(framebuffer, 8, 8, 1, 2, source, 8) != 0 -> bad('span overflow')
+    if kdsp_fill32(framebuffer, 8, 8, 2 + 3 * 65536, 3 + 2 * 65536, 305419896) != 6 -> bad('fill')
+    if peek_raw32(framebuffer + 3 * 32 + 2 * 4, 0) != 305419896 -> bad('fill first')
+    if peek_raw32(framebuffer + 4 * 32 + 4 * 4, 0) != 305419896 -> bad('fill last')
+    if kdsp_fill32(framebuffer, 8, 8, 7 + 7 * 65536, 2 + 2 * 65536, 1) != 0 -> bad('fill overflow')
+    print 'kdisplay OK'

@@ -1,0 +1,34 @@
+name: Measured Linux translation parity
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'compilers/**'
+      - 'library/**'
+      - 'work/speed/v58.bin'
+      - 'work/session20261014/**'
+      - 'work/probes2/acx_mix/**'
+      - 'work/reference/**'
+  pull_request:
+    paths:
+      - 'compilers/**'
+      - 'library/**'
+      - 'work/session20261014/**'
+permissions:
+  contents: read
+jobs:
+  measured-linux-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Correctness, fleet reproducibility, and strict SA thresholds
+        run: sh work/session20261014/run_checks.sh --parity
+      - name: Keep raw evidence even when parity fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-speed-evidence
+          path: work/releases/v58/ci-regression/*.json
+# Historical v55/v56 runs failed the SA thresholds. v57 has not been timed.
+# A workflow file is not evidence that hosted CI, Windows, or macOS was run.

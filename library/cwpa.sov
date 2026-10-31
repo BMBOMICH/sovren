@@ -1,0 +1,66 @@
+use bit32
+use string
+use mem
+use sha1
+use sha256
+cwpa_hex raw n:
+    out: _sov_heap_alloc(n * 2 + 1)
+    i: 0
+    as long as i < n
+        b: peek_byte(raw, i)
+        poke_byte(out, i * 2, sha_hexd(b / 16))
+        poke_byte(out, i * 2 + 1, sha_hexd(b % 16))
+        i: i + 1
+    poke_byte(out, n * 2, 0)
+    return as text out
+cwpa_f pass plen salt slen c idx out20:
+    msg: _sov_alloc(slen + 4)
+    mem_copy(msg, salt, slen)
+    poke_byte(msg, slen, (idx / 16777216) % 256)
+    poke_byte(msg, slen + 1, (idx / 65536) % 256)
+    poke_byte(msg, slen + 2, (idx / 256) % 256)
+    poke_byte(msg, slen + 3, idx % 256)
+    u: _sov_alloc(20)
+    acc: _sov_alloc(20)
+    hmac_sha1(pass, plen, msg, slen + 4, u)
+    j: 0
+    as long as j < 20
+        poke_byte(acc, j, peek_byte(u, j))
+        j: j + 1
+    n: 1
+    as long as n < c
+        hmac_sha1(pass, plen, u, 20, u)
+        j: 0
+        as long as j < 20
+            poke_byte(acc, j, wxor(peek_byte(acc, j), peek_byte(u, j)))
+            j: j + 1
+        n: n + 1
+    mem_copy(out20, acc, 20)
+cwpa_pmk pass plen salt slen out32:
+    b1: _sov_alloc(20)
+    b2: _sov_alloc(20)
+    cwpa_f(pass, plen, salt, slen, 4096, 1, b1)
+    cwpa_f(pass, plen, salt, slen, 4096, 2, b2)
+    mem_copy(out32, b1, 20)
+    mem_copy(out32 + 20, b2, 12)
+cwpa_prf512 key klen label data dlen out64:
+    ll: str_len(label)
+    m: _sov_alloc(ll + 1 + dlen + 1)
+    mem_copy(m, label, ll)
+    poke_byte(m, ll, 0)
+    mem_copy(m + ll + 1, data, dlen)
+    h: _sov_alloc(20)
+    made: 0
+    i: 0
+    as long as made < 64
+        poke_byte(m, ll + 1 + dlen, i % 256)
+        hmac_sha1(key, klen, m, ll + 1 + dlen + 1, h)
+        take: 20
+        if made + take > 64 -> take: 64 - made
+        mem_copy(out64 + made, h, take)
+        made: made + take
+        i: i + 1
+cwpa_mic kck body blen out16:
+    h: _sov_alloc(20)
+    hmac_sha1(kck, 16, body, blen, h)
+    mem_copy(out16, h, 16)

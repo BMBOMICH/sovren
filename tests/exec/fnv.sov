@@ -1,0 +1,16 @@
+use string
+main:
+    s: "a"
+    r: 0
+    as long as r < 24
+        s: str_cat(s, s)
+        r: r + 1
+    n: str_len(s)
+    h: 0 - 3750763034362895579
+    i: 0
+    as long as i < n
+        h: wrap_mul(bxor(h, peek_byte(s, i)), 1099511628211)
+        i: i + 1
+    print h
+    print n
+    return 0

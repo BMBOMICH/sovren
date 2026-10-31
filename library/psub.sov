@@ -1,0 +1,24 @@
+# pad line so main is not first
+# A line taken from a shared block may carry %1 %2 ... ; each is swapped for the value
+# the include line handed over, so one copy of a block can serve many call sites.
+sg_psub l pars:
+    if _sov_list_len(pars) is 0
+        return l
+    out: ""
+    i: 0
+    n: _sov_strlen(l)
+    as long as i < n
+        c: _sov_char_at(l, i)
+        hit: 0
+        if c is "%"
+            if i + 1 < n
+                k: _sov_atoi(_sov_char_at(l, i + 1))
+                if k > 0
+                    if k <= _sov_list_len(pars)
+                        out: _sov_strcat(out, _sov_list_get(pars, k - 1))
+                        i: i + 2
+                        hit: 1
+        if hit is 0
+            out: _sov_strcat(out, c)
+            i: i + 1
+    return out

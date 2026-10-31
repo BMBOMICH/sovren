@@ -1,0 +1,69 @@
+include inc/inc03.sov 103 3 
+    include inc/px00.sov 6 4 (hex num sha256 string)
+    sys
+cs_le32 p i:
+    return peek_byte(p, i) + peek_byte(p, i + 1) * 256 + peek_byte(p, i + 2) * 65536 + peek_byte(p, i + 3) * 16777216
+cs_be32 p i:
+    return peek_byte(p, i) * 16777216 + peek_byte(p, i + 1) * 65536 + peek_byte(p, i + 2) * 256 + peek_byte(p, i + 3)
+cs_hx v:
+    include inc/inc03.sov 1181 5 
+    hx: hex_from_bytes(b, 4)
+    include inc/inc01.sov 1586 10 
+    return str_cat('0x', str_cut(hx, pos, n))
+cs_ident cd ioff:
+    n: 0 ;; as long as peek_byte(cd, ioff + n) != 0 -> n: n + 1
+    b: _sov_alloc(n + 1) ;; k: 0
+    as long as k < n -> poke_byte(b, k, peek_byte(cd, ioff + k))
+        k: k + 1
+    poke_byte(b, n, 0) ;; return as text b
+cs_hb hs k:
+    w: k / 4 ;; j: k % 4
+    v: peek_i64(hs, w * 8) ;; return wand(shr(v, (3 - j) * 8), 255)
+main:
+    p: arg_at(1)
+    if str_len(p) = 0 -> print 'Usage: check_sig <file>'
+        sys_exit(2)
+    d: file_read_all(p)
+    if d = 0 -> print 'cannot read file'
+        sys_exit(2)
+    ncmds: cs_le32(d, 16) ;; off: 32
+    i: 0 ;; sigoff: 0 - 1
+    as long as i < ncmds -> cmd: cs_le32(d, off)
+        sz: cs_le32(d, off + 4) ;; if cmd = 29 -> sigoff: cs_le32(d, off + 8)
+        off: off + sz ;; i: i + 1
+    if sigoff < 0 -> print 'no LC_CODE_SIGNATURE'
+        sys_exit(1)
+    blob: d + sigoff ;; magic: cs_be32(blob, 0)
+    cd_off: cs_be32(blob, 16) ;; cd: blob + cd_off
+    cmagic: cs_be32(cd, 0) ;; ver: cs_be32(cd, 8)
+    flags: cs_be32(cd, 12) ;; hoff: cs_be32(cd, 16)
+    ioff: cs_be32(cd, 20) ;; ncs: cs_be32(cd, 28)
+    climit: cs_be32(cd, 32)
+    include inc/px01.sov 851 4 (hsize peek_byte cd 36 htype peek_byte cd 37 4208856256)
+    if cmagic != 4208856066 -> ok: 0 ;; if wand(flags, 2) = 0 -> ok: 0
+    if htype != 2 -> ok: 0 ;; if hsize != 32 -> ok: 0
+    ident: cs_ident(cd, ioff) ;; pg: 0
+    as long as pg < ncs -> plen: 4096
+        left: climit - pg * 4096 ;; if left < 4096 -> plen: left
+        hs: _sov_alloc(64) ;; sha256_bytes(d + pg * 4096, plen, hs)
+        k: 0 ;; as long as k < 32 -> want: peek_byte(cd, hoff + pg * 32 + k)
+            if cs_hb(hs, k) != want -> ok: 0 ;; k: k + 1
+        pg: pg + 1
+    print str_join3('SuperBlob     ', cs_hx(magic), '')
+    l: cs_hx(flags)
+    l: str_join3(' flags ', l, '')
+    l: str_join3(cs_hx(ver), l, '')
+    l: str_join3(' version ', l, '')
+    l: str_join3(cs_hx(cmagic), l, '')
+    l: str_join3('CodeDirectory ', l, '')
+    print l
+    l: '  SHA-256'
+    l: str_join3('  codeLimit ', num_text(climit), l)
+    l: str_join3("'  pages ", num_text(ncs), l)
+    l: str_join3(ident, l, '')
+    l: str_join3("identifier '", l, '')
+    print l
+    if ok = 1 -> print 'VALID AD-HOC SIGNATURE'
+        sys_exit(0)
+    print 'INVALID'
+    sys_exit(1)

@@ -1,0 +1,10 @@
+use string
+many a b c d e f g:
+    return a * 1000000 + b * 100000 + c * 10000 + d * 1000 + e * 100 + f * 10 + g
+mix a s n p:
+    return a + str_len(s) * 100 + n * 10 + peek_byte(p, 0)
+main:
+    print many(1, 2, 3, 4, 5, 6, 7)
+    p: _sov_alloc(4)
+    poke_byte(p, 0, 7)
+    print mix(100, 'abc', 10, p)

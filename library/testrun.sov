@@ -1,0 +1,294 @@
+use file
+use tool
+use sys
+use string
+use num
+use x86
+use time
+tr_pass: 0
+tr_fail: 0
+tr_quiet: 0
+tr_skip: 0
+tr_time: 0
+tr_t0: 0
+tr_tn: 0
+tr_slow_n: 0
+tr_slow_ms: 0
+tr_mark:
+    tr_t0: time_ms()
+    return 1
+tr_stop name:
+    if tr_time is 0 -> return 1
+    if tr_tn is 0 -> return 1
+    d: time_ms() - tr_t0
+    tr_tn: 0
+    if d <= 0 -> return 1
+    i: 0
+    as long as i < 20
+        if peek_i64(tr_slow_ms, i * 8) < d
+            j: 19
+            as long as j > i
+                poke_i64(tr_slow_ms, j * 8, peek_i64(tr_slow_ms, (j - 1) * 8))
+                poke_i64(tr_slow_n, j * 8, peek_i64(tr_slow_n, (j - 1) * 8))
+                j: j - 1
+            poke_i64(tr_slow_ms, i * 8, d)
+            poke_i64(tr_slow_n, i * 8, name)
+            i: 20
+        i: i + 1
+    return 1
+tr_slowest:
+    print ""
+    print "the slowest checks"
+    i: 0
+    as long as i < 20
+        if peek_i64(tr_slow_ms, i * 8) > 0
+            write_out("  ")
+            write_out(num_text(peek_i64(tr_slow_ms, i * 8)))
+            write_out("ms  ")
+            print as text peek_i64(tr_slow_n, i * 8)
+        i: i + 1
+    return 1
+tr_skips: 0
+tr_skipped name:
+    if tr_skips is 0 -> return 0
+    i: 0
+    n: list_len(tr_skips)
+    as long as i < n
+        if str_eq(as text list_get(tr_skips, i), as text name) is 1 -> return 1
+        i: i + 1
+    return 0
+tr_sov: 0
+tr_use compiler:
+    tr_sov: compiler
+    return 1
+tr_scr:
+    return str_join3("/tmp/sov-tr-", num_text(sys_getpid()), ".sov")
+tr_bin:
+    return str_join3("/tmp/sov-tr-", num_text(sys_getpid()), ".bin")
+tr_out:
+    return str_join3("/tmp/sov-tr-", num_text(sys_getpid()), ".out")
+tr_shell line:
+    body: "#!/bin/sh\nset +m\n"
+    body: str_cat(body, line)
+    body: str_cat(body, "\n")
+    sh: str_join3("/tmp/sov-tr-", num_text(sys_getpid()), ".sh")
+    file_write_all(sh, body)
+    return as text tool_out("/bin/sh", sh)
+# the same block file is included from many files; read each one once and keep it.
+tr_flat_names: list_new() 
+tr_flat_bodies: list_new()
+tr_flat_get name:
+    i: 0
+    as long as i < _sov_list_len(tr_flat_names)
+        if str_eq(_sov_list_get(tr_flat_names, i), name) is 1 -> return _sov_list_get(tr_flat_bodies, i)
+        i: i + 1
+    t2: file_read_all(name)
+    if t2 is 0 -> t2: file_read_all(str_cat("library/", name))
+    if t2 is 0 -> t2: ""
+    r: str_lines(t2)
+    tr_flat_names: _sov_list_add(tr_flat_names, name)
+    tr_flat_bodies: _sov_list_add(tr_flat_bodies, r)
+    return r
+
+tr_psub l pars:
+    out: ""
+    i: 0
+    n: str_len(l)
+    as long as i < n
+        c: str_cut(l, i, i + 1)
+        hit: 0
+        if str_eq(c, "%") is 1
+            if i + 1 < n
+                k: str_num(str_cut(l, i + 1, i + 2))
+                if k > 0
+                    v: tr_ptok(pars, k)
+                    if str_len(v) > 0
+                        out: str_cat(out, v)
+                        i: i + 2
+                        hit: 1
+        if hit is 0
+            out: str_cat(out, c)
+            i: i + 1
+    return out
+tr_ptok pars k:
+    toks: str_split(pars, " ")
+    if k > list_len(toks) -> return ""
+    return str_trim(as text list_get(toks, k - 1))
+tr_emit_inc ind spec out depth:
+    # a full file when no window is given, otherwise just the window lines.
+    nm: spec
+    start2: 0
+    count: 0
+    pars: ""
+    op: str_find(spec, "(")
+    if op > 0 - 1
+        pars: str_trim(str_cut(spec, op + 1, str_len(spec) - 1))
+        spec: str_trim(str_cut(spec, 0, op))
+    sp: str_find(spec, " ")
+    if sp > 0 - 1
+        nm: str_cut(spec, 0, sp)
+        rest: str_trim(str_cut(spec, sp + 1, str_len(spec)))
+        sp2: str_find(rest, " ")
+        if sp2 > 0 - 1
+            start2: str_num(str_cut(rest, 0, sp2))
+            count: str_num(str_trim(str_cut(rest, sp2 + 1, str_len(rest))))
+        if not -> count: str_num(rest)
+    fl: tr_flat_get(nm)
+    if _sov_list_len(fl) is 0 -> fl: tr_flat_get(str_cat("library/", nm))
+    if _sov_list_len(fl) is 0 -> return 0
+    if count is 0
+        dummy5: tr_emit_file(nm, out, depth + 1)
+    if count > 0
+        j: start2 - 1
+        if j < 0 -> j: 0
+        m: j + count
+        if m > _sov_list_len(fl) -> m: _sov_list_len(fl)
+        as long as j < m
+            fj: _sov_list_get(fl, j)
+            if str_empty(str_trim(fj)) is 0
+                if str_len(pars) > 0 -> fj: tr_psub(fj, pars)
+                fj2: str_cat(ind, fj)
+                dummy6: tr_emit_line(fj2, out, depth + 1)
+            j: j + 1
+    return 1
+tr_emit_line l out depth:
+    # emit one source line; a real include line expands, everything else
+    # (use lines, comments, demo text that merely mentions includes) passes.
+    p: str_find(l, "include ")
+    if p > 0 - 1
+        if depth < 8
+            lead: str_trim(str_cut(l, 0, p))
+            if str_len(lead) is 0
+                spec: str_trim(str_cut(l, p + 8, str_len(l)))
+                hp: str_find(spec, " #")
+                if hp > 0 - 1 -> spec: str_trim(str_cut(spec, 0, hp))
+                dummy7: tr_emit_inc("", spec, out, depth)
+                return 1
+    file_append(out, str_cat(l, "\n"))
+    return 1
+tr_emit_file path out depth:
+    t: file_read_all(path)
+    if t is 0 -> t: file_read_all(str_cat("library/", path))
+    if t is 0 -> return 0
+    ls: str_lines(t)
+    i: 0
+    n: _sov_list_len(ls)
+    as long as i < n
+        dummy8: tr_emit_line(peek_i64(ls, 16 + i * 8), out, depth)
+        i: i + 1
+    return 1
+tr_flat path:
+    # expand include lines only (use lines stay put), streamed to a scratch
+    # file so the big core flats never sit in memory as lists.
+    tmp: str_join3("/tmp/sov-flat-", num_text(sys_getpid()), ".txt")
+    file_write_all(tmp, "")
+    dummy: tr_emit_file(path, tmp, 0)
+    return file_read_all(tmp)
+tr_build src out:
+    line: as text tr_sov
+    line: str_cat(line, " ")
+    line: str_cat(line, src)
+    line: str_cat(line, " -o ")
+    line: str_cat(line, out)
+    line: str_cat(line, " 2>&1")
+    return as text tr_shell(line)
+tr_build_for src out flag:
+    line: as text tr_sov
+    line: str_cat(line, " ")
+    line: str_cat(line, src)
+    line: str_cat(line, " ")
+    line: str_cat(line, flag)
+    line: str_cat(line, " -o ")
+    line: str_cat(line, out)
+    line: str_cat(line, " 2>&1")
+    return as text tr_shell(line)
+tr_compile_bad name src flag why:
+    file_write_all(tr_scr(), src)
+    msg: tr_build_for(tr_scr(), tr_bin(), flag)
+    if str_has(msg, why) is 1 -> return tr_ok(name)
+    return tr_bad(name, msg, why)
+tr_run path:
+    return as text tr_shell(str_cat(path, " 2>&1"))
+tr_ok name:
+    if tr_skipped(name) is 1
+        tr_skip: tr_skip + 1
+        return 1
+    dummy: tr_stop(name)
+    write_out("ok ")
+    print as text name
+    tr_pass: tr_pass + 1
+    dummy: tr_mark()
+    return 1
+tr_bad name got want:
+    if tr_quiet is 1 -> tr_fail: tr_fail + 1 ;; return 1
+    if tr_skipped(name) is 1
+        tr_skip: tr_skip + 1
+        return 1
+    dummy: tr_stop(name)
+    write_out("FAIL ")
+    print as text name
+    write_out("  got  ")
+    print as text got
+    write_out("  want ")
+    print as text want
+    tr_fail: tr_fail + 1
+    dummy: tr_mark()
+tr_expect name src want:
+    file_write_all(tr_scr(), src)
+    msg: tr_build(tr_scr(), tr_bin())
+    if str_has(msg, "Error") is 1
+        tr_bad(name, msg, want)
+        return 0
+    got: str_trim(tr_run(tr_bin()))
+    if str_eq(got, want) is 1 -> return tr_ok(name)
+    return tr_bad(name, got, want)
+tr_reject name src:
+    file_write_all(tr_scr(), src)
+    msg: tr_build(tr_scr(), tr_bin())
+    if str_has(msg, "Error") is 1 -> return tr_ok(name)
+    return tr_bad(name, "it compiled", "an error")
+tr_builds name src:
+    file_write_all(tr_scr(), src)
+    msg: tr_build(tr_scr(), tr_bin())
+    if str_has(msg, "Error") is 1 -> return tr_bad(name, msg, "a clean build")
+    if str_has(msg, "Warning") is 1 -> return tr_bad(name, msg, "no warnings")
+    return tr_ok(name)
+tr_builds_for name src flag:
+    file_write_all(tr_scr(), src)
+    msg: tr_build_for(tr_scr(), tr_bin(), flag)
+    if str_has(msg, "Error") is 1 -> return tr_bad(name, msg, "a clean build")
+    return tr_ok(name)
+tr_report:
+    print ""
+    write_out(num_text(tr_pass))
+    write_out(" passed, ")
+    write_out(num_text(tr_fail))
+    print " failed"
+    if tr_time is 1 -> dummy: tr_slowest()
+    if tr_skip > 0
+        write_out(num_text(tr_skip))
+        print " not run"
+    if tr_fail is 0
+        print "all checks passed"
+        return 0
+    print "some checks failed"
+    return 1
+tr_emu name src want flag:
+    file_write_all(tr_scr(), src)
+    msg: tr_build_for(tr_scr(), tr_out(), flag)
+    if str_has(msg, "Error") is 1 -> return tr_bad(name, msg, "a clean build")
+    m: x86_new()
+    if x86_load(m, tr_out()) is 0 -> return tr_bad(name, "could not load it", want)
+    x86_run(m)
+    if x86_why(m) is not 1 -> return tr_bad(name, x86_reason(m), want)
+    got: str_trim(x86_out(m))
+    if str_eq(got, want) is 1 -> return tr_ok(name)
+    return tr_bad(name, got, want)
+tr_emu_reject name src flag why:
+    file_write_all(tr_scr(), src)
+    tr_build_for(tr_scr(), tr_out(), flag)
+    m: x86_new()
+    x86_load(m, tr_out())
+    x86_run(m)
+    if x86_why(m) is why -> return tr_ok(name)
+    return tr_bad(name, x86_reason(m), "a refusal")

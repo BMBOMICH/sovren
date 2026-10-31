@@ -1,0 +1,268 @@
+use testrun
+bo_fail: 0
+include inc/inc01.sov 186 10 #-314320874600849607
+    return 1
+bo_wipe src:
+    dummy: tr_shell(str_cat('rm -f ', str_cat(str_cat(src, '.plk '), str_cat(str_cat(src, '.ac '), str_cat(str_cat(src, '.ac.bin '), str_cat(str_cat(src, '.lsug '), str_cat('$(dirname ', str_cat(src, ')/.state'))))))))
+    return 0
+bo_step name src flag committed:
+    out: str_cat('/tmp/sov-boot-', name)
+    if bo_det = 1
+        mk: tr_shell(str_cat('cat $(dirname ', str_cat(src, ')/.build-failed 2>/dev/null')))
+        if str_empty(mk) = 0 -> print str_cat('skip ', name)
+            return 0
+        dummy: bo_wipe(src)
+    if str_empty(flag) = 1 -> msg: tr_build(src, out) ;; if not -> msg: tr_build_for(src, out, flag)
+    if str_has(msg, 'Error') = 1 -> print str_cat('FAIL ', name)
+        print msg ;; bo_fail: bo_fail + 1
+        return 0
+    if bo_det = 1
+        dummy: bo_wipe(src)
+        out2: str_cat(out, '-det')
+    if str_has(msg, 'Error') = 1 -> print str_cat('FAIL ', name)
+        print msg ;; bo_fail: bo_fail + 1
+        return 0
+    if bo_det = 1
+        out2: str_cat(out, '-det')
+        if str_empty(flag) = 1 -> msg: tr_build(src, out2) ;; if not -> msg: tr_build_for(src, out2, flag)
+        if str_has(msg, 'Error') = 1 -> print str_cat('FAIL ', name)
+            print msg ;; bo_fail: bo_fail + 1
+            return 0
+        if bytes_same(out, out2) = 1 -> print str_cat('ok ', name)
+            return 0
+        print str_cat('FAIL ', name) ;; print '  rebuild not deterministic'
+        bo_fail: bo_fail + 1
+        return 0
+    if bytes_same(committed, out) = 1 -> print str_cat('ok ', name)
+        return 0
+    print str_cat('FAIL ', name) ;; print '  rebuilt bytes differ from the committed binary'
+    bo_fail: bo_fail + 1
+bo_p0:
+    bo_step('linux', 'compilers/linux/compiler.sov', blank, 'compilers/linux/compiler')
+    bo_step('macos', 'compilers/apple/macos/compiler.sov', blank, 'compilers/apple/macos/compiler')
+    bo_step('macos-dylib', 'compilers/apple/macos-dynamic-library/compiler.sov', blank, 'compilers/apple/macos-dynamic-library/compiler')
+    bo_step('macos-arm64', 'compilers/apple/macos-arm64/compiler.sov', blank, 'compilers/apple/macos-arm64/compiler')
+    bo_step('windows', 'compilers/windows/compiler.sov', blank, 'compilers/windows/compiler')
+    bo_step('windows-arm64', 'compilers/windows/arm64/compiler.sov', blank, 'compilers/windows/arm64/compiler')
+    bo_step('windows-dll', 'compilers/windows/dynamic-link-library/compiler.sov', blank, 'compilers/windows/dynamic-link-library/compiler')
+    bo_step('linux-arm64', 'compilers/linux/arm64/compiler.sov', blank, 'compilers/linux/arm64/compiler')
+    bo_step('linux-armv7', 'compilers/linux/armv7/compiler.sov', blank, 'compilers/linux/armv7/compiler')
+    bo_step('linux-armv5', 'compilers/linux/armv5/compiler.sov', blank, 'compilers/linux/armv5/compiler')
+    bo_step('linux-armv7a-armel', 'compilers/linux/armv7a_armel/compiler.sov', blank, 'compilers/linux/armv7a_armel/compiler')
+    bo_step('linux-static-archive', 'compilers/linux/static-archive/compiler.sov', blank, 'compilers/linux/static-archive/compiler')
+    bo_step('linux-hypervisor', 'compilers/linux/hypervisor/compiler.sov', blank, 'compilers/linux/hypervisor/compiler')
+    bo_step('linux-eh-frame', 'compilers/linux/eh-frame/compiler.sov', blank, 'compilers/linux/eh-frame/compiler')
+    bo_step('windows-pdata', 'compilers/windows/pdata/compiler.sov', blank, 'compilers/windows/pdata/compiler')
+    bo_step('windows-store', 'compilers/windows/store/compiler.sov', blank, 'compilers/windows/store/compiler')
+    bo_step('windows-arm64ec', 'compilers/windows/arm64ec/compiler.sov', blank, 'compilers/windows/arm64ec/compiler')
+    bo_step('harmonyos-hap', 'compilers/harmonyos/compiler.sov', blank, 'compilers/harmonyos/compiler')
+    bo_step('avr', 'compilers/linux/avr/compiler.sov', blank, 'compilers/linux/avr/compiler')
+    bo_step('msp', 'compilers/linux/msp430/compiler.sov', blank, 'compilers/linux/msp430/compiler')
+    bo_step('arcx', 'compilers/linux/arc/compiler.sov', blank, 'compilers/linux/arc/compiler')
+    bo_step('xtn', 'compilers/linux/xtensa/compiler.sov', blank, 'compilers/linux/xtensa/compiler')
+    bo_step('dex', 'compilers/dex/compiler.sov', blank, 'compilers/dex/compiler')
+    bo_step('aix', 'compilers/aix/compiler.sov', blank, 'compilers/aix/compiler')
+    bo_step('p9', 'compilers/plan9/compiler.sov', blank, 'compilers/plan9/compiler')
+    bo_step('fux', 'compilers/fuchsia/compiler.sov', blank, 'compilers/fuchsia/compiler')
+    return 0
+
+bo_p1:
+    bo_step('hx', 'compilers/hexagon/compiler.sov', blank, 'compilers/hexagon/compiler')
+    bo_step('rvbe', 'compilers/riscv64-be/compiler.sov', blank, 'compilers/riscv64-be/compiler')
+    bo_step('sve', 'compilers/arm64-sve/compiler.sov', blank, 'compilers/arm64-sve/compiler')
+    bo_step('sve2', 'compilers/arm64-sve2/compiler.sov', blank, 'compilers/arm64-sve2/compiler')
+    bo_step('mte', 'compilers/arm64-mte/compiler.sov', blank, 'compilers/arm64-mte/compiler')
+    bo_step('evm', 'compilers/evm/compiler.sov', blank, 'compilers/evm/compiler')
+    bo_step('hpux', 'compilers/hpux/compiler.sov', blank, 'compilers/hpux/compiler')
+    bo_step('c166', 'compilers/c166/compiler.sov', blank, 'compilers/c166/compiler')
+    bo_step('51', 'compilers/8051/compiler.sov', blank, 'compilers/8051/compiler')
+    bo_step('z80', 'compilers/z80/compiler.sov', blank, 'compilers/z80/compiler')
+    bo_step('ez80', 'compilers/ez80/compiler.sov', blank, 'compilers/ez80/compiler')
+    bo_step('65', 'compilers/6502/compiler.sov', blank, 'compilers/6502/compiler')
+    bo_step('p16', 'compilers/pic16/compiler.sov', blank, 'compilers/pic16/compiler')
+    bo_step('p18', 'compilers/pic18/compiler.sov', blank, 'compilers/pic18/compiler')
+    bo_step('linux-riscv64', 'compilers/linux/riscv64/compiler.sov', blank, 'compilers/linux/riscv64/compiler')
+    bo_step('linux-riscv64v', 'compilers/linux/riscv64_v/compiler.sov', blank, 'compilers/linux/riscv64_v/compiler')
+    bo_step('linux-riscv64h', 'compilers/linux/riscv64_h/compiler.sov', blank, 'compilers/linux/riscv64_h/compiler')
+    bo_step('linux-riscv32zfinx', 'compilers/linux/riscv32_zfinx/compiler.sov', blank, 'compilers/linux/riscv32_zfinx/compiler')
+    bo_step('linux-riscv32zdinx', 'compilers/linux/riscv32_zdinx/compiler.sov', blank, 'compilers/linux/riscv32_zdinx/compiler')
+    bo_step('linux-ppc64le', 'compilers/linux/ppc64le/compiler.sov', blank, 'compilers/linux/ppc64le/compiler')
+    bo_step('linux-s390x', 'compilers/linux/s390x/compiler.sov', blank, 'compilers/linux/s390x/compiler')
+    bo_step('linux-mips64', 'compilers/linux/mips64/compiler.sov', blank, 'compilers/linux/mips64/compiler')
+    bo_step('linux-mips64el', 'compilers/linux/mips64el/compiler.sov', blank, 'compilers/linux/mips64el/compiler')
+    bo_step('linux-loongarch64', 'compilers/linux/loongarch64/compiler.sov', blank, 'compilers/linux/loongarch64/compiler')
+    bo_step('linux-so', 'compilers/linux/x86-64-shared-object/compiler.sov', blank, 'compilers/linux/x86-64-shared-object/compiler')
+    bo_step('linux-arm64-so', 'compilers/linux/arm64-shared-object/compiler.sov', blank, 'compilers/linux/arm64-shared-object/compiler')
+    bo_step('android', 'compilers/android/compiler.sov', blank, 'compilers/android/compiler')
+    bo_step('ios', 'compilers/apple/ios/compiler.sov', blank, 'compilers/apple/ios/compiler')
+    return 0
+
+bo_p2:
+    bo_step('ios-framework', 'compilers/apple/ios-framework/compiler.sov', blank, 'compilers/apple/ios-framework/compiler')
+    bo_step('tvos', 'compilers/apple/tvos/compiler.sov', blank, 'compilers/apple/tvos/compiler')
+    bo_step('watchos', 'compilers/apple/watchos/compiler.sov', blank, 'compilers/apple/watchos/compiler')
+    bo_step('visionos', 'compilers/apple/visionos/compiler.sov', blank, 'compilers/apple/visionos/compiler')
+    bo_step('ios-simulator', 'compilers/apple/ios-simulator/compiler.sov', blank, 'compilers/apple/ios-simulator/compiler')
+    bo_step('tvos-simulator', 'compilers/apple/tvos-simulator/compiler.sov', blank, 'compilers/apple/tvos-simulator/compiler')
+    bo_step('watchos-simulator', 'compilers/apple/watchos-simulator/compiler.sov', blank, 'compilers/apple/watchos-simulator/compiler')
+    bo_step('visionos-simulator', 'compilers/apple/visionos-simulator/compiler.sov', blank, 'compilers/apple/visionos-simulator/compiler')
+    bo_step('android-so', 'compilers/android/shared-object/compiler.sov', blank, 'compilers/android/shared-object/compiler')
+    bo_step('wasi', 'compilers/webassembly/webassembly-system-interface/compiler.sov', blank, 'compilers/webassembly/webassembly-system-interface/compiler')
+    bo_step('wasm32', 'compilers/webassembly/wasm32-unknown-unknown/compiler.sov', blank, 'compilers/webassembly/wasm32-unknown-unknown/compiler')
+    bo_step('wasm32-simd', 'compilers/webassembly/wasm32-single-instruction-multiple-data/compiler.sov', blank, 'compilers/webassembly/wasm32-single-instruction-multiple-data/compiler')
+    bo_step('wasm64', 'compilers/webassembly/wasm64-memory64/compiler.sov', blank, 'compilers/webassembly/wasm64-memory64/compiler')
+    bo_step('wasm32-threads', 'compilers/webassembly/wasm32-threads-atomics/compiler.sov', blank, 'compilers/webassembly/wasm32-threads-atomics/compiler')
+    bo_step('wasm32-browser', 'compilers/webassembly/browser/compiler.sov', blank, 'compilers/webassembly/browser/compiler')
+    bo_step('wasm32-emscripten', 'compilers/webassembly/emscripten/compiler.sov', blank, 'compilers/webassembly/emscripten/compiler')
+    bo_step('wasm32-edge', 'compilers/webassembly/edge/compiler.sov', blank, 'compilers/webassembly/edge/compiler')
+    bo_step('wasm-component', 'compilers/webassembly/component-model/compiler.sov', blank, 'compilers/webassembly/component-model/compiler')
+    bo_step('wat', 'compilers/webassembly/webassembly-text/compiler.sov', blank, 'compilers/webassembly/webassembly-text/compiler')
+    bo_step('javascript', 'compilers/javascript/compiler.sov', blank, 'compilers/javascript/compiler')
+    bo_step('typescript', 'compilers/typescript/compiler.sov', blank, 'compilers/typescript/compiler')
+    bo_step('jvm', 'compilers/java-virtual-machine/compiler.sov', blank, 'compilers/java-virtual-machine/compiler')
+    bo_step('csharp', 'compilers/csharp/compiler.sov', blank, 'compilers/csharp/compiler')
+    bo_step('cil', 'compilers/common-intermediate-language/compiler.sov', blank, 'compilers/common-intermediate-language/compiler')
+    bo_step('cil-pe', 'compilers/common-intermediate-language/portable-executable/compiler.sov', blank, 'compilers/common-intermediate-language/portable-executable/compiler')
+    bo_step('msl', 'compilers/graphics-processing-units/msl/compiler.sov', blank, 'compilers/graphics-processing-units/msl/compiler')
+    return 0
+
+bo_p3:
+    bo_step('wgsl', 'compilers/graphics-processing-units/webgpu-shading-language/compiler.sov', blank, 'compilers/graphics-processing-units/webgpu-shading-language/compiler')
+    bo_step('glsl', 'compilers/graphics-processing-units/opengl-shading-language/compiler.sov', blank, 'compilers/graphics-processing-units/opengl-shading-language/compiler')
+    bo_step('hlsl', 'compilers/graphics-processing-units/high-level-shading-language/compiler.sov', blank, 'compilers/graphics-processing-units/high-level-shading-language/compiler')
+    bo_step('metal-air', 'compilers/graphics-processing-units/metal-apple-intermediate-representation/compiler.sov', blank, 'compilers/graphics-processing-units/metal-apple-intermediate-representation/compiler')
+    bo_step('metallib', 'compilers/graphics-processing-units/metal-library/compiler.sov', blank, 'compilers/graphics-processing-units/metal-library/compiler')
+    bo_step('ptx', 'compilers/graphics-processing-units/parallel-thread-execution/compiler.sov', blank, 'compilers/graphics-processing-units/parallel-thread-execution/compiler')
+    bo_step('amdgcn', 'compilers/graphics-processing-units/amd-graphics-core-next/compiler.sov', blank, 'compilers/graphics-processing-units/amd-graphics-core-next/compiler')
+    bo_step('intel-xe', 'compilers/graphics-processing-units/intel-xe/compiler.sov', blank, 'compilers/graphics-processing-units/intel-xe/compiler')
+    bo_step('spirv', 'compilers/graphics-processing-units/standard-portable-intermediate-representation-v/compiler.sov', blank, 'compilers/graphics-processing-units/standard-portable-intermediate-representation-v/compiler')
+    bo_step('freebsd', 'compilers/operating-systems/freebsd/compiler.sov', blank, 'compilers/operating-systems/freebsd/compiler')
+    bo_step('netbsd', 'compilers/operating-systems/netbsd/compiler.sov', blank, 'compilers/operating-systems/netbsd/compiler')
+    bo_step('openbsd', 'compilers/operating-systems/openbsd/compiler.sov', blank, 'compilers/operating-systems/openbsd/compiler')
+    bo_step('dragonfly', 'compilers/operating-systems/dragonfly/compiler.sov', blank, 'compilers/operating-systems/dragonfly/compiler')
+    bo_step('illumos', 'compilers/operating-systems/illumos/compiler.sov', blank, 'compilers/operating-systems/illumos/compiler')
+    bo_step('haiku', 'compilers/operating-systems/haiku/compiler.sov', blank, 'compilers/operating-systems/haiku/compiler')
+    bo_step('redox', 'compilers/operating-systems/redox/compiler.sov', blank, 'compilers/operating-systems/redox/compiler')
+    bo_step('qnx', 'compilers/operating-systems/qnx/compiler.sov', blank, 'compilers/operating-systems/qnx/compiler')
+    bo_step('serenityos', 'compilers/operating-systems/serenityos/compiler.sov', blank, 'compilers/operating-systems/serenityos/compiler')
+    bo_step('menuetos', 'compilers/operating-systems/menuetos/compiler.sov', blank, 'compilers/operating-systems/menuetos/compiler')
+    bo_step('sovrenos', 'compilers/operating-systems/sovrenos/compiler.sov', blank, 'compilers/operating-systems/sovrenos/compiler')
+    bo_step('c', 'compilers/c-language/compiler.sov', blank, 'compilers/c-language/compiler')
+    bo_step('llvm-ir', 'compilers/llvm-intermediate-representation/compiler.sov', blank, 'compilers/llvm-intermediate-representation/compiler')
+    bo_step('ebpf', 'compilers/extended-berkeley-packet-filter/compiler.sov', blank, 'compilers/extended-berkeley-packet-filter/compiler')
+    bo_step('qbe', 'compilers/qbe-intermediate-representation/compiler.sov', blank, 'compilers/qbe-intermediate-representation/compiler')
+    bo_step('multiboot', 'compilers/boot/multiboot/compiler.sov', blank, 'compilers/boot/multiboot/compiler')
+    bo_step('dos-com', 'compilers/dos/com-image/compiler.sov', blank, 'compilers/dos/com-image/compiler')
+    return 0
+
+bo_p4:
+    bo_step('dos-mz', 'compilers/dos/mz-executable/compiler.sov', blank, 'compilers/dos/mz-executable/compiler')
+    bo_step('coff-obj', 'compilers/windows/coff-object/compiler.sov', blank, 'compilers/windows/coff-object/compiler')
+    bo_step('arm64e', 'compilers/apple/arm64e/compiler.sov', blank, 'compilers/apple/arm64e/compiler')
+    bo_step('arm64_32', 'compilers/apple/arm64_32/compiler.sov', blank, 'compilers/apple/arm64_32/compiler')
+    bo_step('linux-i386', 'compilers/linux/i386/compiler.sov', blank, 'compilers/linux/i386/compiler')
+    bo_step('linux-x32', 'compilers/linux/x32/compiler.sov', blank, 'compilers/linux/x32/compiler')
+    bo_step('linux-riscv32', 'compilers/linux/riscv32/compiler.sov', blank, 'compilers/linux/riscv32/compiler')
+    bo_step('linux-mipsel', 'compilers/linux/mipsel/compiler.sov', blank, 'compilers/linux/mipsel/compiler')
+    bo_step('linux-ppc64', 'compilers/linux/ppc64/compiler.sov', blank, 'compilers/linux/ppc64/compiler')
+    bo_step('linux-armhf', 'compilers/linux/armhf/compiler.sov', blank, 'compilers/linux/armhf/compiler')
+    bo_step('linux-ppc32', 'compilers/linux/ppc32/compiler.sov', blank, 'compilers/linux/ppc32/compiler')
+    bo_step('linux-mips', 'compilers/linux/mips/compiler.sov', blank, 'compilers/linux/mips/compiler')
+    bo_step('linux-thumbv7a', 'compilers/linux/thumbv7a/compiler.sov', blank, 'compilers/linux/thumbv7a/compiler')
+    bo_step('linux-sparc64', 'compilers/linux/sparc64/compiler.sov', blank, 'compilers/linux/sparc64/compiler')
+    bo_step('linux-sparc-v8', 'compilers/linux/sparc_v8/compiler.sov', blank, 'compilers/linux/sparc_v8/compiler')
+    bo_step('linux-m68k', 'compilers/linux/m68k/compiler.sov', blank, 'compilers/linux/m68k/compiler')
+    bo_step('linux-microblaze', 'compilers/linux/microblaze/compiler.sov', blank, 'compilers/linux/microblaze/compiler')
+    bo_step('linux-openrisc', 'compilers/linux/openrisc/compiler.sov', blank, 'compilers/linux/openrisc/compiler')
+    bo_step('linux-nios2', 'compilers/linux/nios2/compiler.sov', blank, 'compilers/linux/nios2/compiler')
+    bo_step('linux-sh4', 'compilers/linux/sh4/compiler.sov', blank, 'compilers/linux/sh4/compiler')
+    bo_step('linux-x86-64-v2', 'compilers/linux/x86_64_v2/compiler.sov', blank, 'compilers/linux/x86_64_v2/compiler')
+    bo_step('linux-x86-64-v3', 'compilers/linux/x86_64_v3/compiler.sov', blank, 'compilers/linux/x86_64_v3/compiler')
+    bo_step('linux-x86-64-v4', 'compilers/linux/x86_64_v4/compiler.sov', blank, 'compilers/linux/x86_64_v4/compiler')
+    bo_step('uefi', 'compilers/unified-extensible-firmware-interface/compiler.sov', blank, 'compilers/unified-extensible-firmware-interface/compiler')
+    bo_step('uefi-arm64', 'compilers/unified-extensible-firmware-interface/arm64/compiler.sov', blank, 'compilers/unified-extensible-firmware-interface/arm64/compiler')
+    bo_step('bare', 'compilers/firmware/x86-64-bare/compiler.sov', blank, 'compilers/firmware/x86-64-bare/compiler')
+    return 0
+
+bo_p5:
+    bo_step('cortex-m', 'compilers/firmware/cortex-m/compiler.sov', blank, 'compilers/firmware/cortex-m/compiler')
+    bo_step('riscv64-bare', 'compilers/firmware/riscv64-bare/compiler.sov', blank, 'compilers/firmware/riscv64-bare/compiler')
+    bo_step('riscv32-bare', 'compilers/firmware/riscv32-bare/compiler.sov', blank, 'compilers/firmware/riscv32-bare/compiler')
+    bo_step('riscv32e', 'compilers/firmware/riscv32e/compiler.sov', blank, 'compilers/firmware/riscv32e/compiler')
+    bo_step('thumbv7m', 'compilers/firmware/thumbv7m/compiler.sov', blank, 'compilers/firmware/thumbv7m/compiler')
+    bo_step('thumbv7em', 'compilers/firmware/thumbv7em/compiler.sov', blank, 'compilers/firmware/thumbv7em/compiler')
+    bo_step('thumbv6m', 'compilers/firmware/thumbv6m/compiler.sov', blank, 'compilers/firmware/thumbv6m/compiler')
+    bo_step('thumbv8m', 'compilers/firmware/thumbv8m/compiler.sov', blank, 'compilers/firmware/thumbv8m/compiler')
+    bo_step('intel-hex', 'compilers/firmware/intel-hex/compiler.sov', blank, 'compilers/firmware/intel-hex/compiler')
+    bo_step('srec', 'compilers/firmware/s-record/compiler.sov', blank, 'compilers/firmware/s-record/compiler')
+    bo_step('uf2', 'compilers/firmware/usb-flashing-format/compiler.sov', blank, 'compilers/firmware/usb-flashing-format/compiler')
+    bo_step('dfu', 'compilers/firmware/device-firmware-upgrade/compiler.sov', blank, 'compilers/firmware/device-firmware-upgrade/compiler')
+    bo_step('mcuboot-img', 'compilers/firmware/mcuboot-image/compiler.sov', blank, 'compilers/firmware/mcuboot-image/compiler')
+    bo_step('freertos', 'compilers/real-time-operating-systems/freertos/compiler.sov', blank, 'compilers/real-time-operating-systems/freertos/compiler')
+    bo_step('zephyr', 'compilers/real-time-operating-systems/zephyr/compiler.sov', blank, 'compilers/real-time-operating-systems/zephyr/compiler')
+    bo_step('nuttx', 'compilers/real-time-operating-systems/nuttx/compiler.sov', blank, 'compilers/real-time-operating-systems/nuttx/compiler')
+    bo_step('riot', 'compilers/real-time-operating-systems/riot/compiler.sov', blank, 'compilers/real-time-operating-systems/riot/compiler')
+    bo_step('rt-thread', 'compilers/real-time-operating-systems/rt-thread/compiler.sov', blank, 'compilers/real-time-operating-systems/rt-thread/compiler')
+    bo_step('mbed', 'compilers/real-time-operating-systems/mbed/compiler.sov', blank, 'compilers/real-time-operating-systems/mbed/compiler')
+    bo_step('threadx', 'compilers/real-time-operating-systems/threadx/compiler.sov', blank, 'compilers/real-time-operating-systems/threadx/compiler')
+    bo_step('ti-rtos', 'compilers/real-time-operating-systems/ti-rtos/compiler.sov', blank, 'compilers/real-time-operating-systems/ti-rtos/compiler')
+    bo_step('embos', 'compilers/real-time-operating-systems/embos/compiler.sov', blank, 'compilers/real-time-operating-systems/embos/compiler')
+    bo_step('chromium-ec', 'compilers/real-time-operating-systems/chromium-ec/compiler.sov', blank, 'compilers/real-time-operating-systems/chromium-ec/compiler')
+    bo_step('launcher', 'launcher.sov', blank, 'sovren')
+    bo_step('launcher-win', 'launcher.sov', '--windows', 'sovren.exe')
+    bo_step('debugger', 'tools/debug.sov', blank, 'sovren-dbg')
+    return 0
+
+bo_det: 1
+main:
+    tr_use('./sovren')
+    if bo_det = 1
+        dummy: bo_wipe('compilers/linux/compiler.sov')
+        msg: tr_build('compilers/linux/compiler.sov', '/tmp/sov-boot-d1')
+        if str_has(msg, 'Error') = 1 -> print 'FAIL seed determinism'
+            print msg ;; bo_fail: bo_fail + 1
+        dummy: bo_wipe('compilers/linux/compiler.sov')
+        msg: tr_build('compilers/linux/compiler.sov', '/tmp/sov-boot-d2')
+        if str_has(msg, 'Error') = 1 -> print 'FAIL seed determinism (second build)'
+            print msg ;; bo_fail: bo_fail + 1
+        if bytes_same('/tmp/sov-boot-d1', '/tmp/sov-boot-d2') = 1 -> print 'ok seed determinism (driver lineage)'
+            if not -> print 'FAIL seed determinism (rebuild differs)'
+                bo_fail: bo_fail + 1
+        sz: tr_shell('t=$(du -scb compilers/shared compilers/linux library/inc runtime.sov bootstrap.sov launcher.sov 2>/dev/null | tail -1 | cut -f1); echo core-bytes=$t; test "$t" -le 8000000 && echo ok-budget || echo OVER-BUDGET')
+        print sz
+        if str_has(sz, 'OVER-BUDGET') = 1 -> print 'FAIL size budget (active core grew past 8 MB - bloat tripwire)'
+            bo_fail: bo_fail + 1
+        bo_p0()
+        bo_p1()
+        bo_p2()
+        bo_p3()
+        bo_p4()
+        bo_p5()
+        print ''
+        if bo_fail = 0 -> print 'bootstrap clean (driver lineage)'
+            return 0
+        print num_text(bo_fail) + ' bootstrap step(s) failed'
+        return 1
+    msg: tr_build('compilers/linux/compiler.sov', '/tmp/sov-boot-g3')
+    if str_has(msg, 'Error') = 1 -> print 'FAIL seed fixed point'
+        print msg ;; bo_fail: bo_fail + 1
+    include inc/px00.sov 3737 4 (m2 g3 g4 m2 g4 m2)
+        include inc/px00.sov 3737 4 (m3 g4 g5 m3 g5 m3)
+            if not -> if bytes_same('/tmp/sov-boot-g3', '/tmp/sov-boot-g4') = 1
+                    if bytes_same('/tmp/sov-boot-g4', '/tmp/sov-boot-g5') = 1 -> print 'ok seed fixed point (g3 == g4 == g5)'
+                    if not -> print 'FAIL seed fixed point (g4 differs)'
+                        bo_fail: bo_fail + 1
+                if not -> print 'FAIL seed fixed point (g3 differs)'
+                    bo_fail: bo_fail + 1
+    bo_p0()
+    bo_p1()
+    bo_p2()
+    bo_p3()
+    bo_p4()
+    bo_p5()
+    print ''
+    if bo_fail = 0 -> print 'bootstrap clean'
+        return 0
+    print num_text(bo_fail) + ' bootstrap step(s) failed'
+    return 1
+

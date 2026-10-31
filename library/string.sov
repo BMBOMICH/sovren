@@ -1,0 +1,118 @@
+# pad line so main is not first
+use mem
+use list
+str_len s:
+    return _sov_strlen(s)
+str_eq a b:
+    return _sov_str_eq(a, b)
+str_cat a b:
+    return _sov_strcat(a, b)
+str_cut s a b:
+    return _sov_substring(s, a, b)
+str_find s n:
+    return _sov_find_text(s, n)
+str_starts s p:
+    return _sov_starts_with(s, p)
+str_trim s:
+    return _sov_trim(s)
+str_num s:
+    return _sov_atoi(s)
+str_at s i:
+    return peek_byte(s, i)
+str_empty s:
+    if s is 0
+        return 1
+    if peek_byte(s, 0) is 0
+        return 1
+str_join3 a b c:
+    return str_cat(str_cat(a, b), c)
+str_has s n:
+    if str_find(s, n) > 0 - 1
+        return 1
+str_ends s p:
+    ls: str_len(s)
+    lp: str_len(p)
+    if lp > ls
+        return 0
+    return str_eq(str_cut(s, ls - lp, ls), p)
+str_copy s:
+    n: str_len(s)
+    o: _sov_alloc(n + 1)
+    mem_copy(o, s, n)
+    poke_byte(o, n, 0)
+    return as text o
+str_chr n:
+    o: _sov_alloc(2)
+    poke_byte(o, 0, n % 256)
+    poke_byte(o, 1, 0)
+    return as text o
+str_less a b:
+    la: str_len(a)
+    lb: str_len(b)
+    i: 0
+    as long as i < la
+        if i >= lb
+            return 0
+        ca: peek_byte(a, i)
+        cb: peek_byte(b, i)
+        if ca < cb
+            return 1
+        if ca > cb
+            return 0
+        i: i + 1
+    if la < lb
+        return 1
+str_split s sep:
+    out: list_new()
+    n: str_len(s)
+    m: str_len(sep)
+    cur: blank
+    i: 0
+    if m is 0
+        out: list_add(out, s)
+        return out
+    as long as i < n
+        if str_at(s, i) is str_at(sep, 0)
+            if i + m <= n
+                j: 1
+                hit: 1
+                as long as j < m
+                    if str_at(s, i + j) is not str_at(sep, j)
+                        hit: 0
+                        j: m
+                    j: j + 1
+                if hit is 1
+                    out: list_add(out, cur)
+                    cur: blank
+                    i: i + m
+                if not
+                    cur: str_cat(cur, str_chr(str_at(s, i)))
+                    i: i + 1
+            if not
+                cur: str_cat(cur, str_chr(str_at(s, i)))
+                i: i + 1
+        if not
+            cur: str_cat(cur, str_chr(str_at(s, i)))
+            i: i + 1
+    out: list_add(out, cur)
+    return out
+str_lines s:
+    return str_split(s, "\n")
+str_sub s i j:
+    n: str_len(s)
+    if i < 0
+        i: 0
+    if i > n
+        i: n
+    e: j
+    if e < i
+        e: i
+    if e > n
+        e: n
+    out: blank
+    as long as i < e
+        out: str_cat(out, str_chr(str_at(s, i)))
+        i: i + 1
+    return out
+str_push s c:
+    return str_cat(s, str_chr(c))

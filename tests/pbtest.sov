@@ -1,0 +1,12 @@
+main:
+    buf: _sov_alloc(24)
+    poke_byte(buf, 0, 65)
+    poke_byte(buf, 1, 66)
+    poke_byte(buf, 2, 67)
+    b0: peek_byte(buf, 0)
+    b1: peek_byte(buf, 1)
+    b2: peek_byte(buf, 2)
+    print b0
+    print b1
+    print b2
+    return 0

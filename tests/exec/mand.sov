@@ -1,0 +1,27 @@
+use f64
+use num
+main:
+    total: 0
+    yi: 0
+    as long as yi < 200
+        xi: 0
+        as long as xi < 300
+            cr: f64_sub(f64_from_frac(xi, 100), f64_from_i64(2))
+            ci: f64_sub(f64_from_frac(yi, 100), f64_from_i64(1))
+            zr: 0
+            zi: 0
+            k: 0
+            as long as k < 60
+                zr2: f64_mul(zr, zr)
+                zi2: f64_mul(zi, zi)
+                if f64_cmp(f64_add(zr2, zi2), f64_from_i64(4)) > 0
+                    k: 99
+                if k < 60
+                    zi: f64_add(f64_mul(f64_from_i64(2), f64_mul(zr, zi)), ci)
+                    zr: f64_add(f64_sub(zr2, zi2), cr)
+                    k: k + 1
+            if k is 60
+                total: total + 1
+            xi: xi + 1
+        yi: yi + 1
+    print num_text(total)

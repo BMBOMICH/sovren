@@ -1,0 +1,88 @@
+use kio
+KDMA_PAGE_SIZE: 4096 
+KDMA_PIN_MAX: 255
+kdma_bitmap_bit bitmap frame:
+    if bitmap is 0 -> return 0
+    return band(peek_byte(bitmap, frame / 8), bshl(1, frame % 8))
+kdma_bitmap_set_free bitmap frame:
+    if bitmap is 0 -> return 0
+    offset: frame / 8
+    mask: bshl(1, frame % 8)
+    poke_byte(bitmap, offset, bor(peek_byte(bitmap, offset), mask))
+    return 1
+kdma_bitmap_set_used bitmap frame:
+    if bitmap is 0 -> return 0
+    offset: frame / 8
+    mask: bshl(1, frame % 8)
+    poke_byte(bitmap, offset, band(peek_byte(bitmap, offset), bxor(255, mask)))
+    return 1
+kdma_pin_count pins frame max_frames:
+    if pins is 0 -> return 0
+    if frame < 0 -> return 0
+    if frame >= max_frames -> return 0
+    return peek_byte(pins, frame)
+kdma_pin_range pins allocator max_frames address length:
+    if pins is 0 -> return 0
+    if allocator is 0 -> return 0
+    if max_frames < 1 -> return 0
+    if address < 0 -> return 0
+    if length < 1 -> return 0
+    if address > KIO_MAX_I64 - length + 1 -> return 0
+    first: address / KDMA_PAGE_SIZE
+    last: (address + length - 1) / KDMA_PAGE_SIZE
+    if last >= max_frames -> return 0
+    frame: first
+    as long as frame <= last
+        if kdma_bitmap_bit(allocator, frame) is not 0
+            rollback: first
+            as long as rollback < frame
+                poke_byte(pins, rollback, peek_byte(pins, rollback) - 1)
+                rollback: rollback + 1
+            return 0
+        count: peek_byte(pins, frame)
+        if count >= KDMA_PIN_MAX
+            rollback: first
+            as long as rollback < frame
+                poke_byte(pins, rollback, peek_byte(pins, rollback) - 1)
+                rollback: rollback + 1
+            return 0
+        poke_byte(pins, frame, count + 1)
+        frame: frame + 1
+    return 1
+kdma_unpin_range pins max_frames address length:
+    if pins is 0 -> return 0
+    if max_frames < 1 -> return 0
+    if address < 0 -> return 0
+    if length < 1 -> return 0
+    if address > KIO_MAX_I64 - length + 1 -> return 0
+    first: address / KDMA_PAGE_SIZE
+    last: (address + length - 1) / KDMA_PAGE_SIZE
+    if last >= max_frames -> return 0
+    frame: first
+    as long as frame <= last
+        if peek_byte(pins, frame) < 1 -> return 0
+        frame: frame + 1
+    frame: first
+    as long as frame <= last
+        poke_byte(pins, frame, peek_byte(pins, frame) - 1)
+        frame: frame + 1
+    return 1
+kdma_find_bounce allocator reserve_frames max_frames length alignment boundary maximum:
+    if allocator is 0 -> return 0
+    if reserve_frames < 0 -> return 0
+    if max_frames <= reserve_frames -> return 0
+    if length < 1 -> return 0
+    pages: (length + KDMA_PAGE_SIZE - 1) / KDMA_PAGE_SIZE
+    frame: reserve_frames
+    as long as frame + pages <= max_frames
+        address: frame * KDMA_PAGE_SIZE
+        if kio_dma_valid(address, length, alignment, boundary, maximum) is 1
+            good: 1
+            index: 0
+            as long as index < pages
+                if kdma_bitmap_bit(allocator, frame + index) is 0
+                    good: 0
+                    leave
+                index: index + 1
+            if good is 1 -> return address
+        frame: frame + 1

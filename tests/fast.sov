@@ -1,0 +1,21 @@
+include inc/px00.sov 252 4 (use suite list slow_list)
+    l: list_new()
+    l: list_add(l, 'mac sha256')
+    l: list_add(l, 'mac recognized fib with alloc')
+    l: list_add(l, 'mac wipe runs clean')
+    l: list_add(l, 'heap wiped at exit')
+    l: list_add(l, 'heap canary control: the scanner sees unwiped heaps')
+    l: list_add:
+        'windows sha256'
+        'canary trips when smashed on mac'
+        'windows guest thread write reaches the joiner'
+        'launcher binaries are byte-fresh'
+        'windows a file'
+        'wipe builds on windows'
+        'seed compiler is byte-fresh'
+        'windows wipe runs clean'
+        'windows recognized fib with alloc'
+    return l
+main:
+    tr_use('./sovren')
+    tr_skips: slow_list() ;; sys_exit(suite())

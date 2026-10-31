@@ -1,0 +1,157 @@
+use string
+use list
+race_is_head l:
+    if str_len(l) is 0 -> return 0
+    if peek_byte(l, 0) is 32 -> return 0
+    if str_ends(l, ":") is 0 -> return 0
+    if str_find(l, ": ") > 0 - 1 -> return 0
+    if str_starts(l, "#") is 1 -> return 0
+    if str_starts(l, "use ") is 1 -> return 0
+    if str_starts(l, "immutable ") is 1 -> return 0
+    return 1
+race_head_name l:
+    t: str_trim(str_cut(l, 0, str_len(l) - 1))
+    c: str_find(t, " ")
+    if c > 0 -> return str_cut(t, 0, c)
+    return t
+race_lhs l:
+    t: str_trim(l)
+    if str_len(t) is 0 -> return ""
+    if str_starts(t, "#") is 1 -> return ""
+    c: str_find(t, ": ")
+    if c < 1 -> return ""
+    return str_trim(str_cut(t, 0, c))
+race_in lst v:
+    i: 0
+    as long as i < list_len(lst)
+        if str_eq(list_get(lst, i), v) is 1 -> return 1
+        i: i + 1
+race_body ls st en:
+    out: ""
+    i: st
+    as long as i < en
+        out: str_cat(out, list_get(ls, i))
+        out: str_cat(out, "\n")
+        i: i + 1
+    return out
+race_writes ls st en:
+    w: list_new()
+    i: st
+    as long as i < en
+        nm: race_lhs(list_get(ls, i))
+        if str_len(nm) > 0
+            if race_in(w, nm) is 0 -> w: list_add(w, nm)
+        i: i + 1
+    return w
+race_guarded body:
+    if str_find(body, "lock(") > 0 - 1 -> return 1
+    if str_find(body, "mutex") > 0 - 1 -> return 1
+    if str_find(body, "atomic") > 0 - 1 -> return 1
+race_calls body tn:
+    c: list_new()
+    i: 0
+    as long as i < list_len(tn)
+        nm: list_get(tn, i)
+        if str_find(body, str_cat(nm, "(")) > 0 - 1 -> c: list_add(c, nm)
+        i: i + 1
+    return c
+race_merge a b:
+    i: 0
+    as long as i < list_len(b)
+        v: list_get(b, i)
+        if race_in(a, v) is 0 -> a: list_add(a, v)
+        i: i + 1
+    return a
+race_both a b:
+    s: list_new()
+    i: 0
+    as long as i < list_len(a)
+        v: list_get(a, i)
+        if race_in(b, v) is 1 -> s: list_add(s, v)
+        i: i + 1
+    return s
+race_scan src:
+    ls: str_lines(src)
+    n: list_len(ls)
+    tn: list_new()
+    st: list_new()
+    en: list_new()
+    i: 0
+    as long as i < n
+        if race_is_head(list_get(ls, i)) is 1
+            if list_len(en) > 0 -> en: list_set(en, list_len(en) - 1, i)
+            tn: list_add(tn, race_head_name(list_get(ls, i)))
+            st: list_add(st, i + 1)
+            en: list_add(en, n)
+        i: i + 1
+    nt: list_len(tn)
+    if nt is 0 -> return ""
+    dw: list_new()
+    cl: list_new()
+    gd: list_new()
+    sp: list_new()
+    k: 0
+    as long as k < nt
+        bd: race_body(ls, list_get(st, k), list_get(en, k))
+        dw: list_add(dw, race_writes(ls, list_get(st, k), list_get(en, k)))
+        cl: list_add(cl, race_calls(bd, tn))
+        gd: list_add(gd, race_guarded(bd))
+        s: 0
+        if 1 is 1
+            pj: str_cat("spawn ", list_get(tn, k))
+            j: 0
+            as long as j < nt
+                bj: race_body(ls, list_get(st, j), list_get(en, j))
+                if str_find(bj, pj) > 0 - 1 -> s: 1
+                j: j + 1
+        sp: list_add(sp, s)
+        k: k + 1
+    tw: list_new()
+    k: 0
+    as long as k < nt
+        tw: list_add(tw, list_get(dw, k))
+        k: k + 1
+    p: 0
+    as long as p < 5
+        k: 0
+        as long as k < nt
+            c: list_get(cl, k)
+            j: 0
+            as long as j < list_len(c)
+                ix: 0
+                m: 0
+                as long as ix < nt
+                    if str_eq(list_get(tn, ix), list_get(c, j)) is 1 -> m: ix
+                    ix: ix + 1
+                acc: list_get(tw, k)
+                acc: race_merge(acc, list_get(tw, m))
+                tw: list_set(tw, k, acc)
+                j: j + 1
+            k: k + 1
+        p: p + 1
+    out: ""
+    a: 0
+    as long as a < nt
+        if list_get(sp, a) is 1
+            if list_get(gd, a) is 0
+                b: 0
+                as long as b < nt
+                    if b > a
+                        if list_get(sp, b) is 1
+                            if list_get(gd, b) is 0
+                                sh: race_both(list_get(tw, a), list_get(tw, b))
+                                q: 0
+                                as long as q < list_len(sh)
+                                    line: str_cat(list_get(tn, a), " and ")
+                                    line: str_cat(line, list_get(tn, b))
+                                    line: str_cat(line, " both write ")
+                                    line: str_cat(line, list_get(sh, q))
+                                    line: str_cat(line, "\n")
+                                    if str_find(out, line) < 0 -> out: str_cat(out, line)
+                                    q: q + 1
+                    b: b + 1
+        a: a + 1
+    return out
+race_dirty src:
+    if str_len(race_scan(src)) is 0 -> return 0
+    return 1

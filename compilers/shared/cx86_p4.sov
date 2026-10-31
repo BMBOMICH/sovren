@@ -1,0 +1,5533 @@
+ez_t: 0
+ez_a: 0
+ez_b: 0
+ez_c: 0
+ez_d: 0
+ez_n: 0
+# pad line so main is not first
+# unsafe-module
+oc_n: 0
+oc_cap: 0
+ocgrow:
+    pc_gr: pc_gr + 1
+    # `oc` itself is already declared by the kits' 0: global list; do not
+    # re-declare it here (that is a duplicate top-level definition).
+    # the code buffer is a raw arena: emit() stores one byte and bumps oc_n.
+    # (Was: a list with one eight-byte slot per emitted byte, two calls per
+    # byte.  Same byte sequence out, ~1/4 the memory traffic, no calls.)
+    n: 4194304
+    if oc_cap > 0
+        n: oc_cap * 2
+    nb: _sov_heap_alloc(n)
+    k: 0
+    as long as k + 8 <= oc_n
+        dummy: poke_i64(nb, k, peek_i64(oc, k))
+        k: k + 8
+    as long as k < oc_n
+        dummy: poke_byte(nb, k, peek_byte(oc, k))
+        k: k + 1
+    oc: nb
+    oc_cap: n
+ocd: 0
+ocput2 a v:
+    # receiver for the source's per-line map form (`ocd: ocput2:` + block)
+    ocput(v)
+    return 0
+ocget i:
+    # the old list_get answered 0 outside the buffer; keep that (a raw peek
+    # would return whatever memory happens to be there)
+    if i < 0
+        return 0
+    if i >= oc_n
+        return 0
+    return peek_byte(oc, i)
+ocset i v:
+    # the old list_set dropped out-of-range stores; the branch patcher really
+    # does hand `put` stale positions, and a raw poke would write outside the
+    # arena (measured: at = 0x158d4000 with 230 bytes of code)
+    if i > 0 - 1
+        if i < oc_n
+            poke_byte(oc, i, band(v, 255))
+oc_here a:
+    # px01:116 builds `here()` as `%2(%3)`; %3 stays `oc` so the template line
+    # still parses, %2 is this one-line shim for the arena length.
+    return oc_n
+ocput v:
+    if oc_n >= oc_cap
+        ocgrow()
+    poke_byte(oc, oc_n, band(v, 255))
+    oc_n: oc_n + 1
+oc_from_list l:
+    # the dce filters rebuild the buffer as a list of kept bytes; this copies
+    # that list back into the arena (same bytes, in order).
+    oc_n: 0
+    oi: 0
+    as long as oi < _sov_list_len(l)
+        ocput(peek_i64(l, 16 + oi * 8))
+        oi: oi + 1
+emit n:
+    x: band(n, 255)
+    if x > 87
+        if x < 96
+            if push_live is 1
+                push_live: 0
+                if x is 88
+                    oc_n: oc_n - 1
+                    return
+                if x is 89
+                    oc_n: oc_n - 1
+                    ocd: ocput2(ocd, 72)
+                    ocd: ocput2(ocd, 137)
+                    ocd: ocput2(ocd, 193)
+                    return
+                if x is 90
+                    oc_n: oc_n - 1
+                    ocd: ocput2(ocd, 72)
+                    ocd: ocput2(ocd, 137)
+                    ocd: ocput2(ocd, 194)
+                    return
+                if x is 94
+                    oc_n: oc_n - 1
+                    ocd: ocput2(ocd, 72)
+                    ocd: ocput2(ocd, 137)
+                    ocd: ocput2(ocd, 198)
+                    return
+                if x is 95
+                    oc_n: oc_n - 1
+                    ocd: ocput2(ocd, 72)
+                    ocd: ocput2(ocd, 137)
+                    ocd: ocput2(ocd, 199)
+                    return
+    push_live: 0
+    if oc_n + 16 > oc_cap
+        ocgrow()
+    poke_byte(oc, oc_n, x)
+    oc_n: oc_n + 1
+emit2 a b:
+    if oc_n + 2 > oc_cap
+        ocgrow()
+    poke_byte(oc, oc_n, band(a, 255))
+    poke_byte(oc, oc_n + 1, band(b, 255))
+    oc_n: oc_n + 2
+emit3 a b c:
+    if oc_n + 3 > oc_cap
+        ocgrow()
+    poke_byte(oc, oc_n, band(a, 255))
+    poke_byte(oc, oc_n + 1, band(b, 255))
+    poke_byte(oc, oc_n + 2, band(c, 255))
+    oc_n: oc_n + 3
+emit4 n:
+    v: n
+    if v < 0
+        v: v + 4294967296
+    if oc_n + 4 > oc_cap
+        ocgrow()
+    poke_byte(oc, oc_n, band(v, 255))
+    poke_byte(oc, oc_n + 1, band(bshr(v, 8), 255))
+    poke_byte(oc, oc_n + 2, band(bshr(v, 16), 255))
+    poke_byte(oc, oc_n + 3, band(bshr(v, 24), 255))
+    oc_n: oc_n + 4
+emit8 n:
+    if oc_n + 8 > oc_cap
+        ocgrow()
+    poke_i64(oc, oc_n, n)
+    oc_n: oc_n + 8
+emit_addsub_slot dd sd is_sub:
+    dn: 3
+    if dd > 0
+        dn: 11 + dd
+    sn: 3
+    if sd > 0
+        sn: 11 + sd
+    rex: 72
+    if sn > 7
+        rex: rex + 4
+    if dn > 7
+        rex: rex + 1
+    emit(rex)
+    if is_sub is 1
+        emit(41)
+    if not
+        emit(1)
+    emit(192 + (sn % 8) * 8 + (dn % 8))
+emit_cmov_x_rdi cc xs:
+    rx: 72
+    if xs > 0
+        rx: rx + 4
+    emit(rx)
+    emit(15)
+    emit(cc)
+    emit(192 + (xs + 3) * 8 + 7)
+emit_cmp_jge cond:
+    return fuse_cmp(cond, 1)
+emit_cmp_rax_scaled bs i2 dp:
+    rx: 72
+    if bs > 0
+        rx: rx + 1
+    if i2 > 0
+        rx: rx + 2
+    emit(rx)
+    emit(59)
+    nd: 0
+    if bs is 2
+        nd: 1
+    if dp is not 0
+        nd: 1
+    m: 4 + nd * 64
+    emit(m)
+    emit(192 + (i2 + 3) * 8 + bs + 3)
+    if nd is 1
+        emit(dp)
+        lb: dp % 256
+        if lb < 0
+            lb: lb + 256
+        if lb > 211
+            if lb < 252
+                if lb % 8 is 0
+                    emit(144)
+emit_cmp_rcx_scaled bs i2 dp:
+    rx: 72
+    if bs > 0
+        rx: rx + 1
+    if i2 > 0
+        rx: rx + 2
+    emit(rx)
+    emit(59)
+    nd: 0
+    if bs is 2
+        nd: 1
+    if dp is not 0
+        nd: 1
+    emit(12 + nd * 64)
+    emit(192 + (i2 + 3) * 8 + bs + 3)
+    if nd is 1
+        emit(dp)
+        lb: dp % 256
+        if lb < 0
+            lb: lb + 256
+        if lb > 211
+            if lb < 252
+                if lb % 8 is 0
+                    emit(144)
+emit_cmp_reg_scaled vs bs i2 dp:
+    rx: 72
+    if bs > 0
+        rx: rx + 1
+    if i2 > 0
+        rx: rx + 2
+    if vs > 0
+        rx: rx + 4
+    emit(rx)
+    emit(59)
+    nd: 0
+    if bs is 2
+        nd: 1
+    if dp is not 0
+        nd: 1
+    m: 4 + (vs + 3) * 8 + nd * 64
+    emit(m)
+    emit(192 + (i2 + 3) * 8 + bs + 3)
+    if nd is 1
+        emit(dp)
+        lb: dp % 256
+        if lb < 0
+            lb: lb + 256
+        if lb > 211
+            if lb < 252
+                if lb % 8 is 0
+                    emit(144)
+emit_lea_arg ai sl disp:
+    dn: 7
+    if ai is 1
+        dn: 6
+    if ai is 2
+        dn: 2
+    if ai is 3
+        dn: 1
+    if ai is 4
+        dn: 8
+    if ai is 5
+        dn: 9
+    sn: 11 + sl
+    if sl is 0
+        sn: 3
+    rex: 72
+    if dn > 7
+        rex: rex + 4
+    if sn > 7
+        rex: rex + 1
+    emit(rex)
+    emit(141)
+    emit(64 + (dn % 8) * 8 + (sn % 8))
+    if sl is 1
+        emit(36)
+    emit(disp % 256)
+emit_lea_rax sl disp:
+    sn: 11 + sl
+    if sl is 0
+        sn: 3
+    rex: 72
+    if sn > 7
+        rex: rex + 1
+    emit(rex)
+    emit(141)
+    emit(64 + (sn % 8))
+    if sl is 1
+        emit(36)
+    emit(disp % 256)
+emit_lea_rdi_xs xs di:
+    if xs is 1
+        emit3(73, 141, 124)
+        emit(36)
+        emit(di)
+        return 0
+    rx: 72
+    if xs > 0
+        rx: rx + 1
+    emit(rx)
+    emit(141)
+    emit(123 + xs)
+    emit(di)
+emit_lea_slot2p1 sd dd:
+    rx: 72
+    if dd > 0
+        rx: rx + 4
+    if sd > 0
+        rx: rx + 3
+    emit(rx)
+    emit(141)
+    emit(68 + (dd + 3) * 8)
+    emit((sd + 3) * 9)
+    emit(1)
+    return
+emit_mov_rcx_h h:
+    rx: 72
+    if h > 7
+        rx: rx + 4
+    emit(rx)
+    emit(137)
+    emit(193 + (h % 8) * 8)
+emit_mov_rcx_scaled bs i2 dp:
+    rx: 72
+    if bs > 0
+        rx: rx + 1
+    if i2 > 0
+        rx: rx + 2
+    emit(rx)
+    emit(139)
+    nd: 0
+    if bs is 2
+        nd: 1
+    if dp is not 0
+        nd: 1
+    emit(12 + nd * 64)
+    emit(192 + (i2 + 3) * 8 + bs + 3)
+    if nd is 1
+        emit(dp)
+        lb: dp % 256
+        if lb < 0
+            lb: lb + 256
+        if lb > 211
+            if lb < 252
+                if lb % 8 is 0
+                    emit(144)
+emit_mov_slot sd dd:
+    rx: 72
+    if dd > 0
+        rx: rx + 1
+    if sd > 0
+        rx: rx + 4
+    emit(rx)
+    emit(137)
+    emit(192 + (sd + 3) * 8 + dd + 3)
+    return
+emit_name_or_imm e:
+    e: strip(e)
+    if length(e) is 0
+        xor_rax()
+        return
+    if digitb(peek_byte(e, 0)) is 1
+        rax_imm(num_of(e))
+        return
+    if peek_byte(e, 0) is 45
+        if length(e) > 1
+            if digitb(peek_byte(e, 1)) is 1
+                rax_imm(0 - num_of(cut(e, 1, length(e))))
+                return
+    loadv(repl(e, " ", "_"))
+emit_op op:
+    return emit_op_k(intern_kid(op))
+
+emit_op_k oid:
+    if oid is kid_opadd
+        add_rax_rcx()
+        chk_ov()
+        return 0
+    if oid is kid_opsub
+        sub_rax_rcx()
+        chk_ov()
+        return 0
+    if oid is kid_opmul
+        imul_rax_rcx()
+        chk_ov()
+        return 0
+    if oid is kid_opdiv
+        chk_zrcx()
+        chk_div_overflow(-1)
+        emit3(72, 153, 72)
+        emit2(247, 249)
+        return 0
+    if oid is kid_opmod
+        chk_zrcx()
+        chk_div_overflow(-1)
+        emit3(72, 153, 72)
+        emit3(247, 249, 72)
+        emit(146)
+        return 0
+    if oid is kid_opband
+        emit3(72, 33, 200)
+        return 0
+    if oid is kid_opbor
+        emit3(72, 9, 200)
+        return 0
+    if oid is kid_opbxor
+        emit3(72, 49, 200)
+        return 0
+    if oid is kid_opbshl
+        emit3(72, 211, 224)
+        return 0
+    if oid is kid_opbshr
+        emit3(72, 211, 232)
+        return 0
+    if oid is kid_opbsar
+        emit3(72, 211, 248)
+        return 0
+    if oid is kid_opwadd
+        add_rax_rcx()
+        return 0
+    if oid is kid_opwsub
+        sub_rax_rcx()
+        return 0
+    if oid is kid_opwmul
+        imul_rax_rcx()
+        return 0
+    cmp_rax_rcx()
+    setcc_k(oid)
+emit_peek_rax:
+    emit3(72, 139, 4)
+    emit(247)
+emit_rax_abs bs imm:
+    rx: 72
+    if bs > 0
+        rx: rx + 1
+    emit(rx)
+    emit(139)
+    nd: 0
+    if bs is 2
+        nd: 1
+    if imm > 0
+        if imm < 128
+            nd: 1
+        if not
+            nd: 2
+    if bs is 1
+        emit(nd * 64 + 4)
+        emit(36)
+    if not
+        emit(nd * 64 + bs + 3)
+    if nd is 1
+        emit(imm)
+    if nd is 2
+        emit4(imm)
+emit_movzx_rax_bi bs i2:
+    rx: 64
+    if bs > 0
+        rx: rx + 1
+    if i2 > 0
+        rx: rx + 2
+    if rx > 64
+        emit(rx)
+    emit(15)
+    emit(182)
+    if bs is 2
+        emit(68)
+        emit((i2 + 3) * 8 + bs + 3)
+        emit(0)
+        return
+    emit(4)
+    emit((i2 + 3) * 8 + bs + 3)
+emit_rax_scaled bs i2 dp:
+    rx: 72
+    if bs > 0
+        rx: rx + 1
+    if i2 > 0
+        rx: rx + 2
+    emit(rx)
+    emit(139)
+    nd: 0
+    if bs is 2
+        nd: 1
+    if dp is not 0
+        nd: 1
+    m: 4 + nd * 64
+    emit(m)
+    emit(192 + (i2 + 3) * 8 + bs + 3)
+    if nd is 1
+        emit(dp)
+        lb: dp % 256
+        if lb < 0
+            lb: lb + 256
+        if lb > 211
+            if lb < 252
+                if lb % 8 is 0
+                    emit(144)
+emit_rep_movs dst src iv lim:
+    if _sov_str_eq(lim, kn) is 1
+        if kv > 511
+            loadv(src)
+            mov_rsi_rax()
+            loadv(dst)
+            mov_rdi_rax()
+            emit(185)
+            emit4(kv)
+            emit3(129, 225, 0)
+            emit3(254, 255, 255)
+            tmc: jz()
+            align32()
+            lmc: here()
+            emit3(98, 241, 253)
+            emit3(72, 111, 6)
+            emit3(98, 241, 253)
+            emit3(72, 111, 78)
+            emit3(1, 98, 241)
+            emit3(253, 72, 111)
+            emit3(86, 2, 98)
+            emit3(241, 253, 72)
+            emit(111)
+            emit(94)
+            emit3(3, 98, 241)
+            emit3(253, 72, 111)
+            emit3(102, 4, 98)
+            emit3(241, 253, 72)
+            emit3(111, 110, 5)
+            emit3(98, 241, 253)
+            emit3(72, 111, 118)
+            emit3(6, 98, 241)
+            emit3(253, 72, 111)
+            emit3(126, 7, 98)
+            emit3(241, 253, 72)
+            emit3(127, 7, 98)
+            emit3(241, 253, 72)
+            emit3(127, 79, 1)
+            emit3(98, 241, 253)
+            emit3(72, 127, 87)
+            emit3(2, 98, 241)
+            emit3(253, 72, 127)
+            emit(95)
+            emit3(3, 98, 241)
+            emit3(253, 72, 127)
+            emit3(103, 4, 98)
+            emit3(241, 253, 72)
+            emit3(127, 111, 5)
+            emit3(98, 241, 253)
+            emit3(72, 127, 119)
+            emit3(6, 98, 241)
+            emit3(253, 72, 127)
+            emit3(127, 7, 72)
+            emit3(129, 198, 0)
+            emit3(2, 0, 0)
+            emit3(72, 129, 199)
+            emit3(0, 2, 0)
+            emit3(0, 129, 233)
+            emit3(0, 2, 0)
+            emit3(0, 15, 133)
+            jmc: here()
+            br_at: _sov_list_add(br_at, jmc)
+            br_pv: _sov_list_add(br_pv, pad_ver)
+            br_id: _sov_list_add(br_id, jmc)
+            br_st: _sov_list_add(br_st, 0)
+            emit4(0)
+            put(jmc, lmc - (jmc + 4))
+            patch(tmc)
+            if jmc < 0
+                print "PN1203"
+            emit_name_or_imm(lim)
+            storev(iv)
+            return
+    emit(252)
+    loadv(src)
+    push_rax()
+    loadv(iv)
+    mov_rcx_rax()
+    pop_rax()
+    add_rax_rcx()
+    mov_rsi_rax()
+    loadv(dst)
+    push_rax()
+    loadv(iv)
+    mov_rcx_rax()
+    pop_rax()
+    add_rax_rcx()
+    mov_rdi_rax()
+    emit_name_or_imm(lim)
+    push_rax()
+    loadv(iv)
+    mov_rcx_rax()
+    pop_rax()
+    sub_rax_rcx()
+    test_rax()
+    sk: jle()
+    mov_rcx_rax()
+    emit3(137, 202, 129)
+    emit3(225, 0, 254)
+    emit2(255, 255)
+    tlm: jz()
+    align32()
+    lpm: here()
+    emit3(98, 241, 253)
+    emit3(72, 111, 6)
+    emit3(98, 241, 253)
+    emit3(72, 111, 78)
+    emit3(1, 98, 241)
+    emit3(253, 72, 111)
+    emit3(86, 2, 98)
+    emit3(241, 253, 72)
+    emit(111)
+    emit(94)
+    emit3(3, 98, 241)
+    emit3(253, 72, 111)
+    emit3(102, 4, 98)
+    emit3(241, 253, 72)
+    emit3(111, 110, 5)
+    emit3(98, 241, 253)
+    emit3(72, 111, 118)
+    emit3(6, 98, 241)
+    emit3(253, 72, 111)
+    emit3(126, 7, 98)
+    emit3(241, 253, 72)
+    emit3(127, 7, 98)
+    emit3(241, 253, 72)
+    emit3(127, 79, 1)
+    emit3(98, 241, 253)
+    emit3(72, 127, 87)
+    emit3(2, 98, 241)
+    emit3(253, 72, 127)
+    emit(95)
+    emit3(3, 98, 241)
+    emit3(253, 72, 127)
+    emit3(103, 4, 98)
+    emit3(241, 253, 72)
+    emit3(127, 111, 5)
+    emit3(98, 241, 253)
+    emit3(72, 127, 119)
+    emit3(6, 98, 241)
+    emit3(253, 72, 127)
+    emit3(127, 7, 72)
+    emit3(129, 198, 0)
+    emit3(2, 0, 0)
+    emit3(72, 129, 199)
+    emit3(0, 2, 0)
+    emit3(0, 129, 233)
+    emit3(0, 2, 0)
+    emit3(0, 15, 133)
+    jbm: here()
+    br_at: _sov_list_add(br_at, jbm)
+    br_pv: _sov_list_add(br_pv, pad_ver)
+    br_id: _sov_list_add(br_id, jbm)
+    br_st: _sov_list_add(br_st, 0)
+    emit4(0)
+    put(jbm, lpm - (jbm + 4))
+    patch(tlm)
+    emit3(137, 209, 129)
+    emit3(225, 255, 1)
+    emit2(0, 0)
+    dnm: jz()
+    emit2(243, 164)
+    patch(dnm)
+    if dnm < 0
+        print "PN1224"
+    emit3(197, 248, 119)
+    emit_name_or_imm(lim)
+    storev(iv)
+    patch(sk)
+    if sk < 0
+        print "PNSK"
+emit_rep_stos ptr iv lim:
+    if _sov_str_eq(lim, kn) is 1
+        if kv > 511
+            did_stos: 1
+            dhds: plog_mark(7)
+            loadv(ptr)
+            mov_rdi_rax()
+            emit(185)
+            emit4(kv)
+            rax_imm(opt_imm)
+            emit3(197, 249, 110)
+            emit3(192, 98, 242)
+            emit3(125, 72, 120)
+            emit3(192, 129, 225)
+            emit3(0, 254, 255)
+            emit(255)
+            tlc: jz()
+            align32()
+            lpc: here()
+            emit3(98, 241, 253)
+            emit3(72, 127, 7)
+            emit3(98, 241, 253)
+            emit3(72, 127, 71)
+            emit3(1, 98, 241)
+            emit3(253, 72, 127)
+            emit3(71, 2, 98)
+            emit3(241, 253, 72)
+            emit3(127, 71, 3)
+            emit3(98, 241, 253)
+            emit3(72, 127, 71)
+            emit3(4, 98, 241)
+            emit3(253, 72, 127)
+            emit3(71, 5, 98)
+            emit3(241, 253, 72)
+            emit3(127, 71, 6)
+            emit3(98, 241, 253)
+            emit3(72, 127, 71)
+            emit3(7, 72, 129)
+            emit3(199, 0, 2)
+            emit3(0, 0, 129)
+            emit3(233, 0, 2)
+            emit3(0, 0, 15)
+            emit(133)
+            jfc: here()
+            br_at: _sov_list_add(br_at, jfc)
+            br_pv: _sov_list_add(br_pv, pad_ver)
+            br_id: _sov_list_add(br_id, jfc)
+            br_st: _sov_list_add(br_st, 0)
+            emit4(0)
+            put(jfc, lpc - (jfc + 4))
+            patch(tlc)
+            if jfc < 0
+                print "PN1241"
+            emit_name_or_imm(lim)
+            storev(iv)
+            return
+    emit(252)
+    loadv(ptr)
+    push_rax()
+    loadv(iv)
+    mov_rcx_rax()
+    pop_rax()
+    add_rax_rcx()
+    mov_rdi_rax()
+    loadv(lim)
+    push_rax()
+    loadv(iv)
+    mov_rcx_rax()
+    pop_rax()
+    sub_rax_rcx()
+    test_rax()
+    sk: jle()
+    mov_rcx_rax()
+    rax_imm(opt_imm)
+    emit3(197, 249, 110)
+    emit3(192, 98, 242)
+    emit3(125, 72, 120)
+    emit3(192, 137, 202)
+    emit3(129, 225, 0)
+    emit3(254, 255, 255)
+    tl: jz()
+    align32()
+    lp: here()
+    emit3(98, 241, 253)
+    emit3(72, 127, 7)
+    emit3(98, 241, 253)
+    emit3(72, 127, 71)
+    emit3(1, 98, 241)
+    emit3(253, 72, 127)
+    emit3(71, 2, 98)
+    emit3(241, 253, 72)
+    emit3(127, 71, 3)
+    emit3(98, 241, 253)
+    emit3(72, 127, 71)
+    emit3(4, 98, 241)
+    emit3(253, 72, 127)
+    emit3(71, 5, 98)
+    emit3(241, 253, 72)
+    emit3(127, 71, 6)
+    emit3(98, 241, 253)
+    emit3(72, 127, 71)
+    emit3(7, 72, 129)
+    emit3(199, 0, 2)
+    emit3(0, 0, 129)
+    emit3(233, 0, 2)
+    emit3(0, 0, 15)
+    emit(133)
+    jbck: here()
+    br_at: _sov_list_add(br_at, jbck)
+    br_pv: _sov_list_add(br_pv, pad_ver)
+    br_id: _sov_list_add(br_id, jbck)
+    br_st: _sov_list_add(br_st, 0)
+    emit4(0)
+    put(jbck, lp - (jbck + 4))
+    patch(tl)
+    emit3(137, 209, 129)
+    emit3(225, 255, 1)
+    emit2(0, 0)
+    dn: jz()
+    rax_imm(opt_imm)
+    emit2(243, 170)
+    patch(dn)
+    emit_name_or_imm(lim)
+    storev(iv)
+    patch(sk)
+    if sk < 0
+        print "PNSK"
+emit_scaled_reg bs i2 v dp:
+    rx: 72
+    if bs > 0
+        rx: rx + 1
+    if i2 > 0
+        rx: rx + 2
+    if v > 0
+        rx: rx + 4
+    emit(rx)
+    emit(137)
+    nd: 0
+    if bs is 2
+        nd: 1
+    if dp is not 0
+        nd: 1
+    m: 4 + (v + 3) * 8 + nd * 64
+    emit(m)
+    emit(192 + (i2 + 3) * 8 + bs + 3)
+    if nd is 1
+        emit(dp)
+        lb: dp % 256
+        if lb < 0
+            lb: lb + 256
+        if lb > 211
+            if lb < 252
+                if lb % 8 is 0
+                    emit(144)
+emit_store_abs bs vr imm:
+    rx: 72
+    if bs > 0
+        rx: rx + 1
+    if vr > 0
+        rx: rx + 4
+    emit(rx)
+    emit(137)
+    nd: 0
+    if bs is 2
+        nd: 1
+    if imm > 0
+        if imm < 128
+            nd: 1
+        if not
+            nd: 2
+    if bs is 1
+        emit(nd * 64 + (vr + 3) * 8 + 4)
+        emit(36)
+    if not
+        emit(nd * 64 + (vr + 3) * 8 + bs + 3)
+    if nd is 1
+        emit(imm)
+    if nd is 2
+        emit4(imm)
+emit_store_abs_rax bs imm:
+    rx: 72
+    if bs > 0
+        rx: rx + 1
+    emit(rx)
+    emit(137)
+    nd: 0
+    if bs is 2
+        nd: 1
+    if imm > 0
+        if imm < 128
+            nd: 1
+        if not
+            nd: 2
+    if bs is 1
+        emit(nd * 64 + 4)
+        emit(36)
+    if not
+        emit(nd * 64 + bs + 3)
+    if nd is 1
+        emit(imm)
+    if nd is 2
+        emit4(imm)
+emit_store_scaled_rax bs i2 dp:
+    rx: 72
+    if bs > 0
+        rx: rx + 1
+    if i2 > 0
+        rx: rx + 2
+    emit(rx)
+    emit(137)
+    nd: 0
+    if bs is 2
+        nd: 1
+    if dp is not 0
+        nd: 1
+    m: 4 + nd * 64
+    emit(m)
+    emit(192 + (i2 + 3) * 8 + bs + 3)
+    if nd is 1
+        emit(dp)
+        lb: dp % 256
+        if lb < 0
+            lb: lb + 256
+        if lb > 211
+            if lb < 252
+                if lb % 8 is 0
+                    emit(144)
+emit_streq:
+    fn_names: _sov_list_add(fn_names, "_sov_str_eq")
+    fn_offs: _sov_list_add(fn_offs, here())
+    dhs0: plog_h0()
+    # str_eq v3: SSE2. fast first-word path (single (a|b) page-room
+    # check), then 32B/16B vector loops inside page segments; any
+    # vector with a difference or a NUL is decided by a bounded byte
+    # walk. identical pointers (incl both null) -> 1; one null -> 0.
+    # clobbers rax rcx rdx r8 r9 r10 r11 + xmm0-3 only.
+    emit3(72, 57, 247)
+    emit3(15, 132, 148)
+    emit3(1, 0, 0)
+    emit3(72, 133, 255)
+    emit3(15, 132, 146)
+    emit3(1, 0, 0)
+    emit3(72, 133, 246)
+    emit3(15, 132, 137)
+    emit3(1, 0, 0)
+    emit3(72, 137, 248)
+    emit3(72, 9, 240)
+    emit3(37, 255, 15)
+    emit3(0, 0, 61)
+    emit3(248, 15, 0)
+    emit3(0, 119, 70)
+    emit3(72, 139, 7)
+    emit3(72, 139, 22)
+    emit3(72, 57, 208)
+    emit3(117, 52, 72)
+    emit3(137, 194, 73)
+    emit3(186, 255, 254)
+    emit3(254, 254, 254)
+    emit3(254, 254, 254)
+    emit3(76, 1, 210)
+    emit3(72, 247, 208)
+    emit3(73, 187, 128)
+    emit3(128, 128, 128)
+    emit3(128, 128, 128)
+    emit3(128, 76, 33)
+    emit3(216, 72, 33)
+    emit3(208, 15, 133)
+    emit3(60, 1, 0)
+    emit3(0, 185, 8)
+    emit3(0, 0, 0)
+    emit3(102, 15, 239)
+    emit3(210, 235, 13)
+    emit3(49, 201, 233)
+    emit3(239, 0, 0)
+    emit3(0, 102, 15)
+    emit3(239, 210, 49)
+    emit3(201, 72, 141)
+    emit3(4, 15, 37)
+    emit3(255, 15, 0)
+    emit3(0, 72, 247)
+    emit3(216, 76, 141)
+    emit3(136, 0, 16)
+    emit3(0, 0, 72)
+    emit3(141, 4, 14)
+    emit3(37, 255, 15)
+    emit3(0, 0, 72)
+    emit3(247, 216, 72)
+    emit3(141, 128, 0)
+    emit3(16, 0, 0)
+    emit3(73, 57, 193)
+    emit3(76, 15, 71)
+    emit3(200, 78, 141)
+    emit3(4, 9, 73)
+    emit3(131, 249, 32)
+    emit3(114, 109, 77)
+    emit3(141, 80, 224)
+    emit3(102, 102, 46)
+    emit3(15, 31, 132)
+    emit3(0, 0, 0)
+    emit3(0, 0, 144)
+    emit3(243, 15, 111)
+    emit3(4, 15, 243)
+    emit3(15, 111, 12)
+    emit3(14, 102, 15)
+    emit3(111, 216, 102)
+    emit3(15, 116, 193)
+    emit3(102, 15, 116)
+    emit3(218, 102, 15)
+    emit3(215, 192, 102)
+    emit3(15, 215, 211)
+    emit3(61, 255, 255)
+    emit3(0, 0, 117)
+    emit3(125, 133, 210)
+    emit3(117, 121, 243)
+    emit3(15, 111, 68)
+    emit3(15, 16, 243)
+    emit3(15, 111, 76)
+    emit3(14, 16, 102)
+    emit3(15, 111, 216)
+    emit3(102, 15, 116)
+    emit3(193, 102, 15)
+    emit3(116, 218, 102)
+    emit3(15, 215, 192)
+    emit3(102, 15, 215)
+    emit3(211, 61, 255)
+    emit3(255, 0, 0)
+    emit3(117, 78, 133)
+    emit3(210, 117, 74)
+    emit3(72, 131, 193)
+    emit3(32, 76, 57)
+    emit3(209, 118, 163)
+    emit3(72, 141, 65)
+    emit3(16, 76, 57)
+    emit3(192, 119, 81)
+    emit3(243, 15, 111)
+    emit3(4, 15, 243)
+    emit3(15, 111, 12)
+    emit3(14, 102, 15)
+    emit3(111, 216, 102)
+    emit3(15, 116, 193)
+    emit3(102, 15, 116)
+    emit3(218, 102, 15)
+    emit3(215, 192, 102)
+    emit3(15, 215, 211)
+    emit3(61, 255, 255)
+    emit3(0, 0, 117)
+    emit3(23, 133, 210)
+    emit3(117, 19, 72)
+    emit3(131, 193, 16)
+    emit3(72, 141, 65)
+    emit3(16, 76, 57)
+    emit3(192, 118, 202)
+    emit3(235, 25, 72)
+    emit3(131, 193, 16)
+    emit3(15, 182, 4)
+    emit3(15, 15, 182)
+    emit3(20, 14, 57)
+    emit3(208, 117, 54)
+    emit3(133, 192, 116)
+    emit3(43, 72, 255)
+    emit3(193, 235, 235)
+    emit3(76, 57, 193)
+    emit3(15, 131, 249)
+    emit3(254, 255, 255)
+    emit3(15, 182, 4)
+    emit3(15, 15, 182)
+    emit3(20, 14, 57)
+    emit3(208, 117, 24)
+    emit3(133, 192, 116)
+    emit3(13, 72, 255)
+    emit3(193, 76, 57)
+    emit3(193, 114, 232)
+    emit3(233, 220, 254)
+    emit3(255, 255, 184)
+    emit3(1, 0, 0)
+    emit3(0, 235, 4)
+    emit3(49, 192, 235)
+    emit2(0, 195)
+    dhs1: plog_h1("_sov_str_eq")
+emit_strlen:
+    fn_names: _sov_list_add(fn_names, "_sov_strlen")
+    fn_offs: _sov_list_add(fn_offs, here())
+    dhl0: plog_h0()
+    # strlen stub: page-safe SWAR. first block is the aligned word
+    # containing ptr with pre-ptr bytes forced to 0xff (aligned 8b loads
+    # never cross a page); constants hoisted out of the loop; the nul
+    # position comes from bsf on the 0x80 mask, no byte tail loop.
+    # ptr <= 0x1000 returns 0 (small ints / null are not strings).
+    # clobbers rax rcx rdx rsi r8 r9, same set as the old stub.
+    emit3(72, 129, 255)
+    emit3(0, 16, 0)
+    emit3(0, 118, 101)
+    emit3(72, 137, 254)
+    emit3(72, 137, 250)
+    emit3(72, 131, 226)
+    emit3(248, 76, 139)
+    emit3(10, 137, 249)
+    emit3(131, 225, 7)
+    emit3(193, 225, 3)
+    emit3(184, 1, 0)
+    emit3(0, 0, 72)
+    emit3(211, 224, 72)
+    emit3(255, 200, 73)
+    emit3(9, 193, 73)
+    emit3(184, 255, 254)
+    emit3(254, 254, 254)
+    emit3(254, 254, 254)
+    emit3(72, 184, 128)
+    emit3(128, 128, 128)
+    emit3(128, 128, 128)
+    emit3(128, 235, 3)
+    emit3(76, 139, 10)
+    emit3(76, 137, 201)
+    emit3(76, 1, 193)
+    emit3(73, 247, 209)
+    emit3(73, 33, 193)
+    emit3(73, 33, 201)
+    emit3(117, 6, 72)
+    emit3(131, 194, 8)
+    emit3(235, 230, 77)
+    emit3(15, 188, 201)
+    emit3(73, 193, 233)
+    emit3(3, 76, 1)
+    emit3(202, 72, 137)
+    emit3(208, 72, 41)
+    emit3(240, 195, 49)
+    emit2(192, 195)
+    dhl1: plog_h1("_sov_strlen")
+ends_times s:
+    if length(s) < 6
+        return 0
+    if sg_match(s, length(s) - 6, " times") is 1
+        return 1
+len_check s:
+    if s < 4096
+        return 1
+    n: length(s)
+    if n > 100000000
+        return 0
+    return 1
+ix_find e en:
+    # offset of the opening [ for the single top-level NAME[...] shape, or -1.
+    ix_b: 0 - 1
+    ix_d: 0
+    ix_ins: 0
+    ix_i: 0
+    as long as ix_i < en
+        ix_c: peek_byte(e, ix_i)
+        if ix_ins is 1
+            if ix_c is 92
+                ix_i: ix_i + 1
+            if not
+                if ix_c is 34
+                    ix_ins: 0
+        if not
+            if ix_c is 34
+                ix_ins: 1
+            if not
+                if ix_c is 91
+                    if ix_d is 0
+                        ix_b: ix_i
+                        ix_d: 1
+                    if not
+                        ix_b: 0 - 1
+                        return 0 - 1
+                if not
+                    if ix_c is 93
+                        ix_d: ix_d - 1
+                        if ix_d is 0
+                            if ix_i is en - 1
+                                return ix_b
+                            return 0 - 1
+                        if ix_d < 0
+                            return 0 - 1
+        ix_i: ix_i + 1
+    return 0 - 1
+
+ix_name_ok nm:
+    nl9: length(nm)
+    if nl9 is 0
+        return 0
+    nk: 0
+    as long as nk < nl9
+        nc: peek_byte(nm, nk)
+        if nc is 95
+            nk: nk + 1
+        if not
+            if nc > 96
+                if nc < 123
+                    nk: nk + 1
+                if not
+                    return 0
+            if not
+                if nc > 64
+                    if nc < 91
+                        nk: nk + 1
+                    if not
+                        return 0
+                if not
+                    if nc > 47
+                        if nc < 58
+                            if nk is 0
+                                return 0
+                            nk: nk + 1
+                        if not
+                            return 0
+                    if not
+                        return 0
+    return 1
+
+# --- fx: XMM-resident evaluation of pure f64 op trees.  A tree is nested
+# f64_add/sub/mul/div/sqrt/from_i64 over call-free leaves (plain names,
+# integer literals, peek_i64 with call-free arguments).  Intermediate
+# results stay in xmm registers -- no GPR round-trip or push/pop between
+# the ops of one expression -- while the library's NaN canonicalization
+# is still applied per node (comisd fast test, integer fixup on NaN).
+# Node at register k evaluates operands into xmm{k+1}/xmm{k+2} so both
+# operand bit patterns survive for the NaN fixup.  fx_ok validates the
+# whole tree first (fx_emit assumes validity); on any non-tree shape the
+# expression compiles through the generic path unchanged.
+fx_pk: 0
+fx_al: 0
+fx_ac: 0
+fx_strict: 0
+fx_rmode: 0
+fx_vars: 0
+fx_wr: 0
+fx_loads: 0
+fx_at: 0
+fx_ar: 0
+fx_scan_out: 0
+fx_scan_sln: 0
+
+fx_lp1 s:
+    c: 0
+    i: 0
+    n: length(s)
+    as long as i < n
+        if peek_byte(s, i) is 40
+            c: c + 1
+        i: i + 1
+    return c
+
+fx_flit s:
+    # a decimal float literal (digits '.' digits), by the same shape
+    # test the generic path uses: fl_expand returns its expansion text.
+    s: strip(s)
+    if cfind1(s, 46) < 0 -> return 0
+    if length(fl_expand(s)) > 0 -> return 1
+    return 0
+
+fx_leaf_ok s:
+    s: strip(s)
+    if is_imm(s) is 1 -> return 1
+    # plain_name accepts '.' (dotted task names), so dotted atoms must
+    # be classified explicitly: float literals are leaves (materialized
+    # via the f64_from_frac expansion), anything else dotted declines.
+    if fx_flit(s) is 1 -> return 1
+    if cfind1(s, 46) > 0 - 1 -> return 0
+    if plain_name(s) is 1 -> return 1
+    if fx_strict is 1 -> return 0
+    if fx_lp1(s) is 1
+        fx_lp: cfind1(s, 40)
+        if intern_kid(strip(cut(s, 0, fx_lp))) is kid_peek_i64
+            return 1
+    return 0
+
+fx_parse s:
+    s: strip(s)
+    n: length(s)
+    if n < 4 -> return 0
+    if peek_byte(s, n - 1) is not 41 -> return 0
+    lp: cfind1(s, 40)
+    if lp < 2 -> return 0
+    nm: strip(cut(s, 0, lp))
+    if plain_name(nm) is 0 -> return 0
+    dep: 0
+    ok: 0
+    i: lp
+    go: 1
+    as long as go is 1
+        if i >= n
+            go: 0
+        if go is 1
+            c: peek_byte(s, i)
+            if c is 40
+                dep: dep + 1
+            if c is 41
+                dep: dep - 1
+                if dep is 0
+                    if i is n - 1
+                        ok: 1
+                    go: 0
+            i: i + 1
+    if ok is 0 -> return 0
+    inside: cutn(s, lp + 1, n - 1, n)
+    fx_al: _sov_list_new()
+    fx_al: split_args(inside, fx_al)
+    fx_ac: _sov_list_len(fx_al)
+    fx_pk: intern_kid(nm)
+    return 1
+
+fx_binop pk:
+    if pk is kid_f64_add -> return 1
+    if pk is kid_f64_sub -> return 1
+    if pk is kid_f64_mul -> return 1
+    if pk is kid_f64_div -> return 1
+    return 0
+
+fx_opc pk:
+    if pk is kid_f64_add -> return 88
+    if pk is kid_f64_sub -> return 92
+    if pk is kid_f64_mul -> return 89
+    return 94
+
+fx_ok e k:
+    e: strip(e)
+    if fx_parse(e) is 1
+        pk: fx_pk
+        if fx_binop(pk) is 1
+            if fx_ac is not 2 -> return 0
+            if k + 2 > 7 -> return 0
+            a0: peek_i64(fx_al, 16)
+            a1: peek_i64(fx_al, 24)
+            if fx_ok(a0, k + 1) is 0 -> return 0
+            return fx_ok(a1, k + 2)
+        if pk is kid_f64_sqrt
+            if fx_ac is not 1 -> return 0
+            if k + 1 > 7 -> return 0
+            a0: peek_i64(fx_al, 16)
+            return fx_ok(a0, k + 1)
+        if pk is kid_f64_from_i64
+            if fx_ac is not 1 -> return 0
+            a0: peek_i64(fx_al, 16)
+            if fx_flit(a0) is 1 -> return 0
+            return fx_leaf_ok(a0)
+        if pk is kid_f64_from_frac
+            # div(from_i64(a), from_i64(b)) -- the library definition
+            if fx_ac is not 2 -> return 0
+            if k + 2 > 7 -> return 0
+            a0: peek_i64(fx_al, 16)
+            a1: peek_i64(fx_al, 24)
+            if fx_flit(a0) is 1 -> return 0
+            if fx_flit(a1) is 1 -> return 0
+            if fx_leaf_ok(a0) is 0 -> return 0
+            return fx_leaf_ok(a1)
+        return 0
+    if fx_flit(e) is 1
+        # emits as an in-tree from_frac: needs k, k+1, k+2
+        if k + 2 > 7 -> return 0
+        return 1
+    return fx_leaf_ok(e)
+
+fx_leaf_rax e:
+    e: strip(e)
+    if is_imm(e) is 1
+        rax_imm(num_of(e))
+        return 1
+    if plain_name(e) is 1
+        loadv(e)
+        return 1
+    dummy: expr(e)
+    return 1
+
+fx_movaps d s2:
+    # movaps xmm{d}, xmm{s2} with REX extension bits for regs 8-15
+    rx: 0
+    if d > 7
+        rx: rx + 4
+    if s2 > 7
+        rx: rx + 1
+    if rx > 0
+        emit(64 + rx)
+    emit(15)
+    emit(40)
+    emit(192 + (d - d / 8 * 8) * 8 + (s2 - s2 / 8 * 8))
+    return 1
+
+fx_movq_xr r:
+    # movq xmm{r}, rax
+    if r < 8
+        emit3(102, 72, 15)
+        emit(110)
+        emit(192 + r * 8)
+        return 1
+    emit3(102, 76, 15)
+    emit(110)
+    emit(192 + (r - 8) * 8)
+    return 1
+
+fx_movq_rx r:
+    # movq rax, xmm{r}
+    if r < 8
+        emit3(102, 72, 15)
+        emit(126)
+        emit(192 + r * 8)
+        return 1
+    emit3(102, 76, 15)
+    emit(126)
+    emit(192 + (r - 8) * 8)
+    return 1
+
+fx_var_idx e:
+    # index of plain name e in fx_vars (region vars), or -1
+    if fx_vars is 0 -> return 0 - 1
+    return list_find(fx_vars, strip(e))
+
+fx_opsd d s2 opc:
+    # opsd xmm{d}, xmm{s2} (addsd/subsd/mulsd/divsd), regs 0-15
+    emit(242)
+    rx: 0
+    if d > 7
+        rx: rx + 4
+    if s2 > 7
+        rx: rx + 1
+    if rx > 0
+        emit(64 + rx)
+    emit(15)
+    emit(opc)
+    emit(192 + (d - d / 8 * 8) * 8 + (s2 - s2 / 8 * 8))
+    return 1
+
+fx_movq_gx g x:
+    # movq r64(g), xmm{x}; g: 7=rdi 6=rsi 0=rax; x: 0-15
+    emit(102)
+    if x > 7
+        emit(76)
+    if not
+        emit(72)
+    emit(15)
+    emit(126)
+    emit(192 + (x - x / 8 * 8) * 8 + g)
+    return 1
+
+fx_canon_xmm2 k xr yr flip:
+    # like fx_canon_xmm but operand bits come from absolute xmm regs
+    # xr/yr (used when an operand was consumed straight from its home).
+    emit3(102, 15, 47)
+    emit(192 + k * 8 + k)
+    okp: jnp()
+    dummy: fx_movq_gx(7, xr)
+    dummy: fx_movq_gx(6, yr)
+    if flip is 1
+        rcx_imm(0 - 9223372036854775807 - 1)
+        emit3(72, 49, 206)
+    emit_f64_canon_slow()
+    dummy: fx_movq_xr(k)
+    patch(okp)
+    return 1
+
+fx_canon1_xmm2 k xr:
+    emit3(102, 15, 47)
+    emit(192 + k * 8 + k)
+    okp: jnp()
+    dummy: fx_movq_gx(7, xr)
+    emit_f64_canon1_slow()
+    dummy: fx_movq_xr(k)
+    patch(okp)
+    return 1
+
+fx_cvt_bits v:
+    # i64 -> double bit pattern at compile time; caller guarantees
+    # |v| <= 2^53 so the conversion is exact (no rounding decision).
+    if v is 0 -> return 0
+    sign: 0
+    m: v
+    if m < 0
+        sign: 1
+        m: 0 - m
+    p: 0
+    t: m
+    as long as t > 1
+        t: t / 2
+        p: p + 1
+    man: m
+    sh: 52 - p
+    as long as sh > 0
+        man: man * 2
+        sh: sh - 1
+    man: man - 4503599627370496
+    bits: (p + 1023) * 4503599627370496 + man
+    if sign is 1
+        bits: bits + 0 - 9223372036854775807 - 1
+    return bits
+
+fx_canon_xmm k yoff flip:
+    # comisd on the result; the NaN fixup pulls operand bits with movq
+    # r64, xmm (0F 7E: modrm reg = xmm source, r/m = GPR destination).
+    emit3(102, 15, 47)
+    emit(192 + k * 8 + k)
+    okp: jnp()
+    emit3(102, 72, 15)
+    emit(126)
+    emit(199 + (k + 1) * 8)
+    emit3(102, 72, 15)
+    emit(126)
+    emit(198 + (k + yoff) * 8)
+    if flip is 1
+        rcx_imm(0 - 9223372036854775807 - 1)
+        emit3(72, 49, 206)
+    emit_f64_canon_slow()
+    emit3(102, 72, 15)
+    emit(110)
+    emit(192 + k * 8)
+    patch(okp)
+    return 1
+
+fx_canon1_xmm k:
+    emit3(102, 15, 47)
+    emit(192 + k * 8 + k)
+    okp: jnp()
+    emit3(102, 72, 15)
+    emit(126)
+    emit(199 + (k + 1) * 8)
+    emit_f64_canon1_slow()
+    emit3(102, 72, 15)
+    emit(110)
+    emit(192 + k * 8)
+    patch(okp)
+    return 1
+
+fx_emit_fromi a0 k:
+    # xmm{k} = (double)a0 -- the f64_from_i64 leaf emission
+    # literal ints in the exact range fold to bit patterns at
+    # compile time (kills cvtsi2sd for constants like 2, 4, 100).
+    if is_imm(strip(a0)) is 1
+        cv: num_of(strip(a0))
+        if cv >= 0 - 9007199254740992
+            if cv <= 9007199254740992
+                rax_imm(fx_cvt_bits(cv))
+                emit3(102, 72, 15)
+                emit(110)
+                emit(192 + k * 8)
+                return 1
+    if fx_rmode is 1
+        # int source currently resident as bits in a region xmm
+        vi: fx_var_idx(a0)
+        if vi > 0 - 1
+            dummy: fx_movq_rx(8 + vi)
+            emit3(242, 72, 15)
+            emit(42)
+            emit(192 + k * 8)
+            return 1
+    dummy: fx_leaf_rax(a0)
+    emit3(242, 72, 15)
+    emit(42)
+    emit(192 + k * 8)
+    return 1
+
+fx_emit e k:
+    e: strip(e)
+    if fx_parse(e) is 1
+        pk: fx_pk
+        if fx_binop(pk) is 1
+            a0: peek_i64(fx_al, 16)
+            a1: peek_i64(fx_al, 24)
+            fl: 0
+            if pk is kid_f64_sub
+                fl: 1
+            # identical leaf operands (squares z*z): evaluate once, use
+            # the same xmm as both sources (canon reads it for x and y).
+            if _sov_str_eq(strip(a0), strip(a1)) is 1
+                if fx_leaf_ok(a0) is 1
+                    dummy: fx_emit(a0, k + 1)
+                    emit(15)
+                    emit(40)
+                    emit(192 + k * 8 + k + 1)
+                    emit(242)
+                    emit(15)
+                    emit(fx_opc(pk))
+                    emit(192 + k * 8 + k + 1)
+                    dummy: fx_canon_xmm(k, 1, fl)
+                    return 1
+            # region fast forms: consume plain-var operands straight from
+            # their xmm homes (the homes survive fx_emit, so the NaN
+            # fixup can still read the original operand bits there).
+            if fx_rmode is 1
+                va0: fx_var_idx(a0)
+                va1: fx_var_idx(a1)
+                if va0 > 0 - 1
+                    if va1 > 0 - 1
+                        dummy: fx_movaps(k, 8 + va0)
+                        dummy: fx_opsd(k, 8 + va1, fx_opc(pk))
+                        dummy: fx_canon_xmm2(k, 8 + va0, 8 + va1, fl)
+                        return 1
+                    dummy: fx_emit(a1, k + 2)
+                    dummy: fx_movaps(k, 8 + va0)
+                    dummy: fx_opsd(k, k + 2, fx_opc(pk))
+                    dummy: fx_canon_xmm2(k, 8 + va0, k + 2, fl)
+                    return 1
+                if va1 > 0 - 1
+                    dummy: fx_emit(a0, k + 1)
+                    dummy: fx_movaps(k, k + 1)
+                    dummy: fx_opsd(k, 8 + va1, fx_opc(pk))
+                    dummy: fx_canon_xmm2(k, k + 1, 8 + va1, fl)
+                    return 1
+            dummy: fx_emit(a0, k + 1)
+            dummy: fx_emit(a1, k + 2)
+            emit(15)
+            emit(40)
+            emit(192 + k * 8 + k + 1)
+            emit(242)
+            emit(15)
+            emit(fx_opc(pk))
+            emit(192 + k * 8 + k + 2)
+            dummy: fx_canon_xmm(k, 2, fl)
+            return 1
+        if pk is kid_f64_sqrt
+            a0: peek_i64(fx_al, 16)
+            if fx_rmode is 1
+                vs0: fx_var_idx(a0)
+                if vs0 > 0 - 1
+                    dummy: fx_movaps(k, 8 + vs0)
+                    emit(242)
+                    emit(15)
+                    emit(81)
+                    emit(192 + k * 8 + k)
+                    dummy: fx_canon1_xmm2(k, 8 + vs0)
+                    return 1
+            dummy: fx_emit(a0, k + 1)
+            emit(15)
+            emit(40)
+            emit(192 + k * 8 + k + 1)
+            emit(242)
+            emit(15)
+            emit(81)
+            emit(192 + k * 8 + k)
+            dummy: fx_canon1_xmm(k)
+            return 1
+        if pk is kid_f64_from_i64
+            a0: peek_i64(fx_al, 16)
+            return fx_emit_fromi(a0, k)
+        if pk is kid_f64_from_frac
+            # f64_div(f64_from_i64(a), f64_from_i64(b)) per the library
+            a0: peek_i64(fx_al, 16)
+            a1: peek_i64(fx_al, 24)
+            dummy: fx_emit_fromi(a0, k + 1)
+            dummy: fx_emit_fromi(a1, k + 2)
+            emit(15)
+            emit(40)
+            emit(192 + k * 8 + k + 1)
+            emit(242)
+            emit(15)
+            emit(94)
+            emit(192 + k * 8 + k + 2)
+            dummy: fx_canon_xmm(k, 2, 0)
+            return 1
+    if fx_rmode is 1
+        vi2: fx_var_idx(e)
+        if vi2 > 0 - 1
+            dummy: fx_movaps(k, 8 + vi2)
+            return 1
+    if fx_flit(e) is 1
+        # expand via fx's own from_frac emission; calling expr() here
+        # would let the planted f64_from_frac clobber xmm slots that
+        # hold already-evaluated siblings.
+        return fx_emit(fl_expand(e), k)
+    dummy: fx_leaf_rax(e)
+    emit3(102, 72, 15)
+    emit(110)
+    emit(192 + k * 8)
+    return 1
+
+# --- fx regions: runs of consecutive `name: <fx tree>` statements at one
+# indent compile as a single synthetic statement whose variables live in
+# xmm8-15 across the whole run (loaded on entry, stored back on exit).
+# fx_scan (in body, before the walk) splices each run into one marker
+# line `fxreg___|tgt=tree...` at the run's indent; stmt() routes
+# the marker to fx_region_stmt, which revalidates and, on any doubt,
+# compiles the original statements one by one.  Region trees are strict
+# (plain-name/immediate leaves only -- no calls, so nothing can observe
+# or clobber the register copies mid-run).
+
+fx_var_add nm:
+    # add nm to fx_vars (if absent); return its index without asserting
+    ix: list_find(fx_vars, nm)
+    if ix > 0 - 1 -> return ix
+    fx_vars: _sov_list_add(fx_vars, nm)
+    return _sov_list_len(fx_vars) - 1
+
+fx_collect e track:
+    # add every plain-name leaf of tree e to fx_vars; when track=1 also
+    # record names read before any region write (fx_loads).
+    e: strip(e)
+    if fx_parse(e) is 1
+        pk: fx_pk
+        if fx_binop(pk) is 1
+            a0: peek_i64(fx_al, 16)
+            a1: peek_i64(fx_al, 24)
+            dummy: fx_collect(a0, track)
+            return fx_collect(a1, track)
+        if pk is kid_f64_sqrt
+            a0: peek_i64(fx_al, 16)
+            return fx_collect(a0, track)
+        if pk is kid_f64_from_i64
+            a0: peek_i64(fx_al, 16)
+            return fx_collect(a0, track)
+        if pk is kid_f64_from_frac
+            a0: peek_i64(fx_al, 16)
+            a1: peek_i64(fx_al, 24)
+            dummy: fx_collect(a0, track)
+            return fx_collect(a1, track)
+        return 1
+    if is_imm(e) is 1 -> return 1
+    if plain_name(e) is 1
+        dummy: fx_var_add(e)
+        if track is 1
+            if list_find(fx_wr, e) < 0
+                if list_find(fx_loads, e) < 0
+                    fx_loads: _sov_list_add(fx_loads, e)
+    return 1
+
+fx_assign_parts s:
+    # s = `name: rhs` with plain name; f64 trees contain no ':' early
+    ci: cfind1(s, 58)
+    if ci < 1 -> return 0
+    nm: strip(cut(s, 0, ci))
+    if plain_name(nm) is 0 -> return 0
+    rhs: strip(cut(s, ci + 1, length(s)))
+    if length(rhs) < 3 -> return 0
+    fx_at: nm
+    fx_ar: rhs
+    return 1
+
+fx_scan lines:
+    # splice fx-region runs into marker lines; returns 1 if changed.
+    # Results in fx_scan_out (and fx_scan_sln when stmt_lns is parallel).
+    # A region needs >= 2 lines whose RHS starts with f64_, so fewer
+    # than two f64_ mentions in the whole body means no region can
+    # exist: reject without rebuilding the line lists.
+    fg_hits: 0
+    fg_i: 0
+    fg_n: _sov_list_len(lines)
+    as long as fg_i < fg_n
+        if fg_hits < 2
+            if look(peek_i64(lines, 16 + fg_i * 8), "f64_") > 0 - 1
+                fg_hits: fg_hits + 1
+        fg_i: fg_i + 1
+    if fg_hits < 2
+        return 0
+    n: _sov_list_len(lines)
+    fx_scan_out: _sov_list_new()
+    fx_scan_sln: 0
+    par: 0
+    if _sov_list_len(stmt_lns) is n
+        par: 1
+        fx_scan_sln: _sov_list_new()
+    changed: 0
+    i: 0
+    fx_strict: 1
+    tgts: _sov_list_new()
+    tres: _sov_list_new()
+    as long as i < n
+        ln0: peek_i64(lines, 16 + i * 8)
+        ind0: nind(ln0)
+        cnt: 0
+        j: i
+        go: 1
+        as long as go is 1
+            if j >= n
+                go: 0
+            if go is 1
+                lnj: peek_i64(lines, 16 + j * 8)
+                if nind(lnj) is not ind0
+                    go: 0
+                if go is 1
+                    # ultra-cheap pre-filter: a region line is
+                    # `name: f64_...` -- find the colon on the raw slice,
+                    # then inspect the first RHS bytes before any parse.
+                    sj: lnj + ind0
+                    cip: cfind1(sj, 58)
+                    if cip < 1
+                        go: 0
+                    if go is 1
+                        rp: cip + 1
+                        as long as peek_byte(sj, rp) is 32
+                            rp: rp + 1
+                        if peek_byte(sj, rp) is not 102
+                            go: 0
+                        if go is 1
+                            if peek_byte(sj, rp + 1) is not 54
+                                go: 0
+                            if go is 1
+                                if peek_byte(sj, rp + 2) is not 52
+                                    go: 0
+                                if go is 1
+                                    if peek_byte(sj, rp + 3) is not 95
+                                        go: 0
+                    if go is 1
+                        if fx_assign_parts(strip(lnj)) is 0
+                            go: 0
+                        if go is 1
+                            if fx_parse(fx_ar) is 0
+                                go: 0
+                            if go is 1
+                                rt: fx_binop(fx_pk)
+                                if fx_pk is kid_f64_sqrt
+                                    rt: 1
+                                if fx_pk is kid_f64_from_i64
+                                    rt: 1
+                                if fx_pk is kid_f64_from_frac
+                                    rt: 1
+                                if rt is 0
+                                    go: 0
+                                if go is 1
+                                    if fx_ok(fx_ar, 0) is 0
+                                        go: 0
+                                    if go is 1
+                                        if cnt is 0
+                                            fx_vars: _sov_list_new()
+                                            tgts: _sov_list_new()
+                                            tres: _sov_list_new()
+                                        dummy: fx_collect(fx_ar, 0)
+                                        dummy: fx_var_add(fx_at)
+                                        if _sov_list_len(fx_vars) > 8
+                                            go: 0
+                                        if go is 1
+                                            tgts: _sov_list_add(tgts, fx_at)
+                                            tres: _sov_list_add(tres, fx_ar)
+                                            cnt: cnt + 1
+                                            j: j + 1
+        if cnt > 1
+            parts: "fxreg___"
+            pk2: 0
+            as long as pk2 < cnt
+                parts: join(parts, join("|", join(peek_i64(tgts, 16 + pk2 * 8), join("=", peek_i64(tres, 16 + pk2 * 8)))))
+                pk2: pk2 + 1
+            fx_scan_out: _sov_list_add(fx_scan_out, join(cut(ln0, 0, ind0), parts))
+            if par is 1
+                fx_scan_sln: _sov_list_add(fx_scan_sln, peek_i64(stmt_lns, 16 + i * 8))
+            changed: 1
+            i: j
+        if not
+            fx_scan_out: _sov_list_add(fx_scan_out, ln0)
+            if par is 1
+                fx_scan_sln: _sov_list_add(fx_scan_sln, peek_i64(stmt_lns, 16 + i * 8))
+            i: i + 1
+    fx_strict: 0
+    return changed
+
+fx_region_stmt s:
+    # compile one marker statement; ALWAYS returns 1 (falls back to
+    # per-statement compilation if anything revalidation dislikes).
+    tgts: _sov_list_new()
+    tres: _sov_list_new()
+    n: length(s)
+    pos: 8
+    bad: 0
+    as long as pos < n
+        if peek_byte(s, pos) is not 124
+            bad: 1
+            pos: n
+        if bad is 0
+            e1: cfind1(s + pos + 1, 61)
+            if e1 < 0
+                bad: 1
+                pos: n
+            if bad is 0
+                e1: e1 + pos + 1
+                e2: cfind1(s + e1 + 1, 124)
+                if e2 < 0
+                    e2: n
+                if not
+                    e2: e2 + e1 + 1
+                tgts: _sov_list_add(tgts, cut(s, pos + 1, e1))
+                tres: _sov_list_add(tres, cut(s, e1 + 1, e2))
+                pos: e2
+    cnt: _sov_list_len(tgts)
+    fx_vars: _sov_list_new()
+    fx_wr: _sov_list_new()
+    fx_loads: _sov_list_new()
+    fx_strict: 1
+    si: 0
+    if cnt < 2
+        bad: 1
+    as long as si < cnt
+        if bad is 0
+            tre: peek_i64(tres, 16 + si * 8)
+            if fx_ok(tre, 0) is 0
+                bad: 1
+            if bad is 0
+                dummy: fx_collect(tre, 1)
+                tgt: peek_i64(tgts, 16 + si * 8)
+                dummy: fx_var_add(tgt)
+                if list_find(fx_wr, tgt) < 0
+                    fx_wr: _sov_list_add(fx_wr, tgt)
+                if _sov_list_len(fx_vars) > 8
+                    bad: 1
+        si: si + 1
+    fx_strict: 0
+    if bad is 1
+        si: 0
+        as long as si < cnt
+            stmt(join(peek_i64(tgts, 16 + si * 8), join(": ", peek_i64(tres, 16 + si * 8))))
+            si: si + 1
+        return 1
+    li: 0
+    nln: _sov_list_len(fx_loads)
+    as long as li < nln
+        lnm: peek_i64(fx_loads, 16 + li * 8)
+        loadv(lnm)
+        dummy: fx_movq_xr(8 + list_find(fx_vars, lnm))
+        li: li + 1
+    fx_rmode: 1
+    si: 0
+    as long as si < cnt
+        dummy: fx_emit(peek_i64(tres, 16 + si * 8), 0)
+        dummy: fx_movaps(8 + list_find(fx_vars, peek_i64(tgts, 16 + si * 8)), 0)
+        si: si + 1
+    fx_rmode: 0
+    cpx_p: 0 - 1
+    li: 0
+    nwr: _sov_list_len(fx_wr)
+    as long as li < nwr
+        wnm: peek_i64(fx_wr, 16 + li * 8)
+        dummy: fx_movq_rx(8 + list_find(fx_vars, wnm))
+        storev(wnm)
+        drop_str(wnm)
+        li: li + 1
+    return 1
+
+fx_tree e:
+    if cfind1(e, 34) > 0 - 1 -> return 0
+    if fx_ok(e, 0) is 0 -> return 0
+    dummy: fx_emit(e, 0)
+    emit3(102, 72, 15)
+    emit(126)
+    emit(192)
+    return 1
+
+fxl_t: 0
+fxl_r: 0
+
+fxl_parse_marker s:
+    # decode `fxreg___|tgt=tree|...` into fxl_t/fxl_r (see fx_scan)
+    fxl_t: _sov_list_new()
+    fxl_r: _sov_list_new()
+    n: length(s)
+    pos: 8
+    as long as pos < n
+        if peek_byte(s, pos) is not 124 -> return 0
+        e1: cfind1(s + pos + 1, 61)
+        if e1 < 0 -> return 0
+        e1: e1 + pos + 1
+        e2: cfind1(s + e1 + 1, 124)
+        if e2 < 0
+            e2: n
+        if not
+            e2: e2 + e1 + 1
+        fxl_t: _sov_list_add(fxl_t, cut(s, pos + 1, e1))
+        fxl_r: _sov_list_add(fxl_r, cut(s, e1 + 1, e2))
+        pos: e2
+    if _sov_list_len(fxl_t) < 2 -> return 0
+    return 1
+
+try_fx_loop cond blines lines li:
+    # loop-scope fx region: `as long as iv < lim` (iv proven 0 just
+    # above) whose body is strict fx assignments + `iv: iv + 1`.
+    # Variables live in xmm8-15 for the WHOLE loop (entry load, exit
+    # store only) and iv rides r11 against r10=lim, like try_fp_dot.
+    # Body may arrive pre-spliced as one fxreg marker line (fx_scan)
+    # or as individual lines.
+    if has_vm is 0 -> return 0
+    if leaf8 is 1 -> return 0
+    nb: _sov_list_len(blines)
+    if nb < 2 -> return 0
+    if nb > 12 -> return 0
+    c0: strip(cops(cond))
+    p: look(c0, " < ")
+    if p < 0 -> return 0
+    iv: repl(strip(cut(c0, 0, p)), " ", "_")
+    lim: repl(strip(cut(c0, p + 3, length(c0))), " ", "_")
+    if plain_name(iv) is 0 -> return 0
+    if lsh_find_s(iv) < 0 -> return 0
+    limn: 0
+    if is_imm(lim) is 0
+        if plain_name(lim) is 0 -> return 0
+        limn: 1
+    llast: strip(_sov_list_get(blines, nb - 1))
+    if _sov_str_eq(llast, join(iv, join(": ", join(iv, " + 1")))) is 0 -> return 0
+    fxl_t: _sov_list_new()
+    fxl_r: _sov_list_new()
+    fx_strict: 1
+    ok: 1
+    ismk: 0
+    first: strip(_sov_list_get(blines, 0))
+    if _sov_starts_with(first, "fxreg___|") is 1
+        ismk: 1
+        if nb is not 2
+            ok: 0
+        if ok is 1
+            if fxl_parse_marker(first) is 0
+                ok: 0
+    if ismk is 0
+        si: 0
+        nfx: nb - 1
+        as long as si < nfx
+            if ok is 1
+                sj: strip(_sov_list_get(blines, si))
+                if fx_assign_parts(sj) is 0
+                    ok: 0
+                if ok is 1
+                    if fx_parse(fx_ar) is 0
+                        ok: 0
+                    if ok is 1
+                        rt: fx_binop(fx_pk)
+                        if fx_pk is kid_f64_sqrt
+                            rt: 1
+                        if fx_pk is kid_f64_from_i64
+                            rt: 1
+                        if fx_pk is kid_f64_from_frac
+                            rt: 1
+                        if rt is 0
+                            ok: 0
+                        if ok is 1
+                            fxl_t: _sov_list_add(fxl_t, fx_at)
+                            fxl_r: _sov_list_add(fxl_r, fx_ar)
+            si: si + 1
+    cnt: _sov_list_len(fxl_t)
+    if cnt < 1
+        ok: 0
+    if cnt > 16
+        ok: 0
+    fx_vars: _sov_list_new()
+    fx_wr: _sov_list_new()
+    fx_loads: _sov_list_new()
+    si: 0
+    as long as si < cnt
+        if ok is 1
+            tre: peek_i64(fxl_r, 16 + si * 8)
+            if fx_ok(tre, 0) is 0
+                ok: 0
+            if ok is 1
+                dummy: fx_collect(tre, 1)
+                tgt: peek_i64(fxl_t, 16 + si * 8)
+                dummy: fx_var_add(tgt)
+                if list_find(fx_wr, tgt) < 0
+                    fx_wr: _sov_list_add(fx_wr, tgt)
+        si: si + 1
+    fx_strict: 0
+    if ok is 0 -> return 0
+    if _sov_list_len(fx_vars) > 8 -> return 0
+    if list_find(fx_vars, iv) > 0 - 1 -> return 0
+    if _sov_str_eq(lim, iv) is 1 -> return 0
+    if limn is 1
+        if list_find(fx_wr, lim) > 0 - 1 -> return 0
+    wind: sg_ind(_sov_list_get(lines, li))
+    jj: li - 1
+    got0: 0
+    seen: 0
+    as long as jj >= 0
+        if got0 is 0
+            rw: _sov_list_get(lines, jj)
+            pl: strip(rw)
+            if length(pl) > 0
+                if peek_byte(pl, 0) is not 35
+                    if sg_ind(rw) is not wind
+                        jj: 0 - 1
+                    if not
+                        seen: seen + 1
+                        if seen > 4
+                            jj: 0 - 1
+                        if not
+                            if _sov_str_eq(pl, join(iv, ": 0")) is 1
+                                got0: 1
+                            if not
+                                if _sov_starts_with(pl, join(iv, ": ")) is 1
+                                    jj: 0 - 1
+        jj: jj - 1
+    if got0 is 0 -> return 0
+    cflush_all()
+    li2: 0
+    nln: _sov_list_len(fx_loads)
+    as long as li2 < nln
+        lnm: peek_i64(fx_loads, 16 + li2 * 8)
+        loadv(lnm)
+        dummy: fx_movq_xr(8 + list_find(fx_vars, lnm))
+        li2: li2 + 1
+    if limn is 1
+        loadv(lim)
+    if not
+        rax_imm(num_of(lim))
+    emit3(73, 137, 194)
+    emit3(77, 133, 210)
+    fxl_dsk: jle()
+    emit3(69, 49, 219)
+    align32()
+    fxl_hd: here()
+    fx_rmode: 1
+    si: 0
+    as long as si < cnt
+        dummy: fx_emit(peek_i64(fxl_r, 16 + si * 8), 0)
+        dummy: fx_movaps(8 + list_find(fx_vars, peek_i64(fxl_t, 16 + si * 8)), 0)
+        si: si + 1
+    fx_rmode: 0
+    emit3(73, 255, 195)
+    emit3(77, 57, 211)
+    emit(15)
+    emit(140)
+    fxl_bk: here()
+    emit4(0)
+    put(fxl_bk, fxl_hd - (fxl_bk + 4))
+    emit3(76, 137, 216)
+    storev(iv)
+    cpx_p: 0 - 1
+    li2: 0
+    nwr: _sov_list_len(fx_wr)
+    as long as li2 < nwr
+        wnm: peek_i64(fx_wr, 16 + li2 * 8)
+        dummy: fx_movq_rx(8 + list_find(fx_vars, wnm))
+        storev(wnm)
+        drop_str(wnm)
+        li2: li2 + 1
+    fxl_ejx: jmp()
+    patch(fxl_dsk)
+    patch(fxl_ejx)
+    return 1
+
+fxb_add_tree tgt tre:
+    # validate one segment statement's tree root and append to fxl_*
+    if fx_parse(tre) is 0 -> return 0
+    rt: fx_binop(fx_pk)
+    if fx_pk is kid_f64_sqrt
+        rt: 1
+    if fx_pk is kid_f64_from_i64
+        rt: 1
+    if fx_pk is kid_f64_from_frac
+        rt: 1
+    if rt is 0 -> return 0
+    fxl_t: _sov_list_add(fxl_t, tgt)
+    fxl_r: _sov_list_add(fxl_r, tre)
+    return 1
+
+fxb_add_line s:
+    # append one segment line (fx assign or fxreg marker) to fxl_*
+    if _sov_starts_with(s, "fxreg___|") is 1
+        n: length(s)
+        pos: 8
+        got: 0
+        as long as pos < n
+            if peek_byte(s, pos) is not 124 -> return 0
+            e1: cfind1(s + pos + 1, 61)
+            if e1 < 0 -> return 0
+            e1: e1 + pos + 1
+            e2: cfind1(s + e1 + 1, 124)
+            if e2 < 0
+                e2: n
+            if not
+                e2: e2 + e1 + 1
+            if fxb_add_tree(cut(s, pos + 1, e1), cut(s, e1 + 1, e2)) is 0 -> return 0
+            got: got + 1
+            pos: e2
+        if got < 2 -> return 0
+        return 1
+    if fx_assign_parts(s) is 0 -> return 0
+    return fxb_add_tree(fx_at, fx_ar)
+
+try_fx_loop_brk cond blines lines li:
+    # loop-scope fx region WITH escape, the Mandelbrot shape:
+    #   as long as iv < LIM        (iv proven 0 just above, LIM imm)
+    #       <prefix fx assigns>
+    #       if f64_cmp(TREE, TREE) > 0     (or >= 0, or is 1)
+    #           iv: ESC                    (ESC imm, ESC >= LIM)
+    #       if iv < LIM
+    #           <update fx assigns>
+    #           iv: iv + 1
+    # Vars live in xmm8-15 for the whole loop exactly like try_fx_loop;
+    # the escape compares canonical tree values with comisd (unordered
+    # = f64_cmp's 2, which is > 0 and >= 0 but not == 1) and jumps to
+    # the shared exit with r11 = ESC.  blines from collect_body are
+    # indent-free, so the body is re-walked from `lines` with nind and
+    # cross-checked line-for-line against blines.
+    if has_vm is 0 -> return 0
+    if leaf8 is 1 -> return 0
+    nb: _sov_list_len(blines)
+    if nb < 5 -> return 0
+    if nb > 16 -> return 0
+    c0: strip(cops(cond))
+    p: look(c0, " < ")
+    if p < 0 -> return 0
+    iv: repl(strip(cut(c0, 0, p)), " ", "_")
+    lim: repl(strip(cut(c0, p + 3, length(c0))), " ", "_")
+    if plain_name(iv) is 0 -> return 0
+    if lsh_find_s(iv) < 0 -> return 0
+    if is_imm(lim) is 0 -> return 0
+    limv: num_of(lim)
+    wind: nind(_sov_list_get(lines, li))
+    fxb_bt: _sov_list_new()
+    fxb_bi: _sov_list_new()
+    nln2: _sov_list_len(lines)
+    jj: li + 1
+    wgo: 1
+    as long as wgo is 1
+        if jj >= nln2
+            wgo: 0
+        if wgo is 1
+            raw: peek_i64(lines, 16 + jj * 8)
+            s: strip(raw)
+            if peek_byte(s, 0) is 0
+                jj: jj + 1
+            if not
+                if peek_byte(s, 0) is 35
+                    jj: jj + 1
+                if not
+                    if nind(raw) > wind
+                        fxb_bt: _sov_list_add(fxb_bt, s)
+                        fxb_bi: _sov_list_add(fxb_bi, nind(raw))
+                        jj: jj + 1
+                    if not
+                        wgo: 0
+    nbb: _sov_list_len(fxb_bt)
+    if nbb is not nb -> return 0
+    vi: 0
+    vok: 1
+    as long as vi < nb
+        if vok is 1
+            if _sov_str_eq(peek_i64(fxb_bt, 16 + vi * 8), peek_i64(blines, 16 + vi * 8)) is 0
+                vok: 0
+        vi: vi + 1
+    if vok is 0 -> return 0
+    w0: peek_i64(fxb_bi, 16)
+    fxl_t: _sov_list_new()
+    fxl_r: _sov_list_new()
+    fx_strict: 1
+    ok: 1
+    ix: 0
+    as long as ix < nbb
+        if ok is 1
+            inw: 0
+            if peek_i64(fxb_bi, 16 + ix * 8) is w0
+                inw: 1
+            if inw is 0
+                ok: 0
+            if inw is 1
+                ln0: peek_i64(fxb_bt, 16 + ix * 8)
+                if _sov_starts_with(ln0, "if ") is 1
+                    ix: nbb - 1
+                if not
+                    if fxb_add_line(ln0) is 0
+                        ok: 0
+        ix: ix + 1
+    if ok is 0
+        fx_strict: 0
+        return 0
+    # ix was forced to nbb on hitting the escape-if; recover its index
+    # by rescanning for the first `if ` at indent w0.
+    eix: 0 - 1
+    vi: 0
+    as long as vi < nbb
+        if eix < 0
+            if peek_i64(fxb_bi, 16 + vi * 8) is w0
+                if _sov_starts_with(peek_i64(fxb_bt, 16 + vi * 8), "if ") is 1
+                    eix: vi
+        vi: vi + 1
+    if eix < 0
+        fx_strict: 0
+        return 0
+    split: _sov_list_len(fxl_t)
+    eline: peek_i64(fxb_bt, 16 + eix * 8)
+    ec: strip(cops(cut(eline, 3, length(eline))))
+    ecl: length(ec)
+    efl: 0
+    ecore: ec
+    if ecl > 5
+        if _sov_str_eq(cut(ec, ecl - 4, ecl), " > 0") is 1
+            efl: 1
+            ecore: strip(cut(ec, 0, ecl - 4))
+    if efl is 0
+        if ecl > 6
+            if _sov_str_eq(cut(ec, ecl - 5, ecl), " >= 0") is 1
+                efl: 2
+                ecore: strip(cut(ec, 0, ecl - 5))
+    if efl is 0
+        if ecl > 6
+            if _sov_str_eq(cut(ec, ecl - 5, ecl), " == 1") is 1
+                efl: 3
+                ecore: strip(cut(ec, 0, ecl - 5))
+    if efl is 0
+        fx_strict: 0
+        return 0
+    if fx_parse(ecore) is 0
+        fx_strict: 0
+        return 0
+    if fx_pk is not kid_f64_cmp
+        fx_strict: 0
+        return 0
+    if fx_ac is not 2
+        fx_strict: 0
+        return 0
+    ea: peek_i64(fx_al, 16)
+    eb: peek_i64(fx_al, 24)
+    if fx_ok(ea, 0) is 0
+        fx_strict: 0
+        return 0
+    if fx_ok(eb, 0) is 0
+        fx_strict: 0
+        return 0
+    ix: eix + 1
+    if ix >= nbb
+        fx_strict: 0
+        return 0
+    if peek_i64(fxb_bi, 16 + ix * 8) <= w0
+        fx_strict: 0
+        return 0
+    xline: peek_i64(fxb_bt, 16 + ix * 8)
+    xpre: join(iv, ": ")
+    if _sov_starts_with(xline, xpre) is 0
+        fx_strict: 0
+        return 0
+    xval: strip(cut(xline, length(xpre), length(xline)))
+    if is_imm(xval) is 0
+        fx_strict: 0
+        return 0
+    escv: num_of(xval)
+    if escv < limv
+        fx_strict: 0
+        return 0
+    ix: ix + 1
+    if ix >= nbb
+        fx_strict: 0
+        return 0
+    if peek_i64(fxb_bi, 16 + ix * 8) is not w0
+        fx_strict: 0
+        return 0
+    gline: peek_i64(fxb_bt, 16 + ix * 8)
+    if _sov_starts_with(gline, "if ") is 0
+        fx_strict: 0
+        return 0
+    g0: strip(cops(cut(gline, 3, length(gline))))
+    gp: look(g0, " < ")
+    if gp < 0
+        fx_strict: 0
+        return 0
+    giv: repl(strip(cut(g0, 0, gp)), " ", "_")
+    glim: repl(strip(cut(g0, gp + 3, length(g0))), " ", "_")
+    if _sov_str_eq(giv, iv) is 0
+        fx_strict: 0
+        return 0
+    if _sov_str_eq(glim, lim) is 0
+        fx_strict: 0
+        return 0
+    ix: ix + 1
+    as long as ix < nbb - 1
+        if ok is 1
+            if peek_i64(fxb_bi, 16 + ix * 8) <= w0
+                ok: 0
+            if ok is 1
+                if fxb_add_line(peek_i64(fxb_bt, 16 + ix * 8)) is 0
+                    ok: 0
+        ix: ix + 1
+    if ok is 0
+        fx_strict: 0
+        return 0
+    if peek_i64(fxb_bi, 16 + (nbb - 1) * 8) <= w0
+        fx_strict: 0
+        return 0
+    llast: peek_i64(fxb_bt, 16 + (nbb - 1) * 8)
+    if _sov_str_eq(llast, join(iv, join(": ", join(iv, " + 1")))) is 0
+        fx_strict: 0
+        return 0
+    cnt: _sov_list_len(fxl_t)
+    if cnt < 1
+        ok: 0
+    if cnt > 16
+        ok: 0
+    fx_vars: _sov_list_new()
+    fx_wr: _sov_list_new()
+    fx_loads: _sov_list_new()
+    si: 0
+    as long as si < cnt
+        if ok is 1
+            if si is split
+                dummy: fx_collect(ea, 1)
+                dummy: fx_collect(eb, 1)
+            tre: peek_i64(fxl_r, 16 + si * 8)
+            if fx_ok(tre, 0) is 0
+                ok: 0
+            if ok is 1
+                dummy: fx_collect(tre, 1)
+                tgt: peek_i64(fxl_t, 16 + si * 8)
+                dummy: fx_var_add(tgt)
+                if list_find(fx_wr, tgt) < 0
+                    fx_wr: _sov_list_add(fx_wr, tgt)
+        si: si + 1
+    if split is cnt
+        if ok is 1
+            dummy: fx_collect(ea, 1)
+            dummy: fx_collect(eb, 1)
+    fx_strict: 0
+    if ok is 0 -> return 0
+    nvars: _sov_list_len(fx_vars)
+    if nvars > 7 -> return 0
+    if list_find(fx_vars, iv) > 0 - 1 -> return 0
+    wind2: sg_ind(_sov_list_get(lines, li))
+    jj: li - 1
+    got0: 0
+    seen: 0
+    as long as jj >= 0
+        if got0 is 0
+            rw: _sov_list_get(lines, jj)
+            pl: strip(rw)
+            if length(pl) > 0
+                if peek_byte(pl, 0) is not 35
+                    if sg_ind(rw) is not wind2
+                        jj: 0 - 1
+                    if not
+                        seen: seen + 1
+                        if seen > 4
+                            jj: 0 - 1
+                        if not
+                            if _sov_str_eq(pl, join(iv, ": 0")) is 1
+                                got0: 1
+                            if not
+                                if _sov_starts_with(pl, join(iv, ": ")) is 1
+                                    jj: 0 - 1
+        jj: jj - 1
+    if got0 is 0 -> return 0
+    cflush_all()
+    li2: 0
+    nln: _sov_list_len(fx_loads)
+    as long as li2 < nln
+        lnm: peek_i64(fx_loads, 16 + li2 * 8)
+        loadv(lnm)
+        dummy: fx_movq_xr(8 + list_find(fx_vars, lnm))
+        li2: li2 + 1
+    rax_imm(limv)
+    emit3(73, 137, 194)
+    emit3(77, 133, 210)
+    fxb_dsk: jle()
+    emit3(69, 49, 219)
+    align32()
+    fxb_hd: here()
+    fx_rmode: 1
+    si: 0
+    as long as si < split
+        dummy: fx_emit(peek_i64(fxl_r, 16 + si * 8), 0)
+        dummy: fx_movaps(8 + list_find(fx_vars, peek_i64(fxl_t, 16 + si * 8)), 0)
+        si: si + 1
+    dummy: fx_emit(eb, 0)
+    dummy: fx_movaps(8 + nvars, 0)
+    dummy: fx_emit(ea, 0)
+    emit3(102, 65, 15)
+    emit(47)
+    emit(192 + nvars)
+    fxb_p1: 0 - 1
+    fxb_p2: 0 - 1
+    if efl is 1
+        fxb_p1: j_par()
+        fxb_p2: j_abv()
+    if efl is 2
+        fxb_p1: j_par()
+        fxb_p2: jae()
+    if efl is 3
+        fxb_p2: j_abv()
+    si: split
+    as long as si < cnt
+        dummy: fx_emit(peek_i64(fxl_r, 16 + si * 8), 0)
+        dummy: fx_movaps(8 + list_find(fx_vars, peek_i64(fxl_t, 16 + si * 8)), 0)
+        si: si + 1
+    fx_rmode: 0
+    emit3(73, 255, 195)
+    emit3(77, 57, 211)
+    emit(15)
+    emit(140)
+    fxb_bk: here()
+    emit4(0)
+    put(fxb_bk, fxb_hd - (fxb_bk + 4))
+    fxb_ej: jmp()
+    if fxb_p1 > 0 - 1
+        patch(fxb_p1)
+    patch(fxb_p2)
+    rax_imm(escv)
+    emit3(73, 137, 195)
+    patch(fxb_ej)
+    emit3(76, 137, 216)
+    storev(iv)
+    cpx_p: 0 - 1
+    li2: 0
+    nwr: _sov_list_len(fx_wr)
+    as long as li2 < nwr
+        wnm: peek_i64(fx_wr, 16 + li2 * 8)
+        dummy: fx_movq_rx(8 + list_find(fx_vars, wnm))
+        storev(wnm)
+        drop_str(wnm)
+        li2: li2 + 1
+    fxb_ejx: jmp()
+    patch(fxb_dsk)
+    patch(fxb_ejx)
+    return 1
+
+expr e0:
+    ex_depth: ex_depth + 1
+    if ex_depth > 150
+        if had_err is 0
+            print "Error: expression too long, split it up"
+            err_where()
+            had_err: 1
+        ex_depth: ex_depth - 1
+        xor_rax()
+        return 0
+    t: expr_body(e0)
+    ex_depth: ex_depth - 1
+    return t
+expr_atom e:
+    # 1 iff every byte is in [A-Za-z0-9_].  Such a string provably misses every
+    # gated prefix probe in expr_body (34/97-as-addr_of/99-const(/108-length-/
+    # 40-parens, all op-byte cascades, and the call parser), so it reaches the
+    # final digit/ignore/loadv tail unchanged.
+    i: 0
+    n: length(e)
+    if n is 0
+        return 0
+    as long as i < n
+        c: peek_byte(e, i)
+        ok: 0
+        if c is 95
+            ok: 1
+        if c > 47
+            if c < 58
+                ok: 1
+        if c > 64
+            if c < 91
+                ok: 1
+        if c > 96
+            if c < 123
+                ok: 1
+        if ok is 0
+            return 0
+        i: i + 1
+    return 1
+
+expr_atom_word e:
+    # atom that must not shadow expr_body's early kid-gates.
+    if expr_atom(e) is 0
+        return 0
+    c: peek_byte(e, 0)
+    if c < 58
+        if c > 47
+            return 0
+    if c is 98
+        if _sov_str_eq(e, "blank") is 1
+            return 0
+    if c is 97
+        if _sov_str_eq(e, "as") is 1
+            return 0
+        if _sov_str_eq(e, "addr_of") is 1
+            return 0
+    if c is 108
+        if _sov_str_eq(e, "length") is 1
+            return 0
+    if c is 115
+        if _sov_str_eq(e, "spawn") is 1
+            return 0
+    return 1
+
+split_args inside argl:
+    # depth/quote-aware argument splitter for call surfaces; identical to the
+    # former inline block in expr_body's call parse.
+    sa_nz: 0
+    sa_i: 0
+    as long as peek_byte(inside, sa_i) is not 0
+        if peek_byte(inside, sa_i) > 32
+            sa_nz: 1
+            sa_i: 1000000000
+        sa_i: sa_i + 1
+    if sa_nz is 1
+        depth: 0
+        ins: 0
+        start: 0
+        i: 0
+        ilen: length(inside)
+        as long as i < ilen
+            nx: next_evt(inside, i, ilen)
+            if nx < 0
+                i: ilen
+            if nx > 0 - 1
+                i: nx
+            c: peek_byte(inside, i)
+            if ins is 1
+                if peek_byte(inside, i) is 92
+                    i: i + 1
+                if not
+                    if peek_byte(inside, i) is 34
+                        ins: 0
+            if not
+                if peek_byte(inside, i) is 34
+                    ins: 1
+                if not
+                    if c is 40 is 1
+                        depth: depth + 1
+                    if not
+                        if c is 41 is 1
+                            depth: depth - 1
+                        if not
+                            if c is 44 is 1
+                                if depth is 0
+                                    argl: _sov_list_add(argl, strip(cut(inside, start, i)))
+                                    start: i + 1
+            i: i + 1
+        argl: _sov_list_add(argl, strip(cut(inside, start, ilen)))
+    return argl
+
+esp_buf: 0
+esp_kind: 0
+esplit e:
+    return esplit_n(e, length(e))
+
+esp_init:
+    r: _sov_heap_alloc(16 + 16 * 8)
+    esp_buf: r
+    esp_kind: _sov_heap_alloc(256)
+    dummy: _sov_bzero(esp_kind, 256)
+    dummy: poke_byte(esp_kind, 124, 1)
+    dummy: poke_byte(esp_kind, 38, 1)
+    dummy: poke_byte(esp_kind, 94, 1)
+    dummy: poke_byte(esp_kind, 61, 1)
+    dummy: poke_byte(esp_kind, 33, 1)
+    dummy: poke_byte(esp_kind, 60, 1)
+    dummy: poke_byte(esp_kind, 62, 1)
+    dummy: poke_byte(esp_kind, 43, 1)
+    dummy: poke_byte(esp_kind, 45, 1)
+    dummy: poke_byte(esp_kind, 42, 1)
+    dummy: poke_byte(esp_kind, 47, 1)
+    dummy: poke_byte(esp_kind, 37, 1)
+    poke_i64(r, 0, 16)
+    poke_i64(r, 8, 16)
+    return r
+
+esplit_n e n:
+    # One quote/paren-aware walk computing every precedence slot the expr
+    # cascade asks for.  Matches fop/fopn/fop2/fop3 exactly: rightmost match at
+    # paren depth 0 outside quotes; parens/quotes handled before op tests;
+    # escapes only skip inside quotes; fopn rejects share-neighbour positions.
+    # slots: 0=|| 1=&& 2=| 3=^ 4=& 5=== 6=!= 7=<= 8=>= 9=<solo 10=>solo
+    #        11=>>> 12=>> 13=<< 14=binary +/- 15=*/%
+    r: esp_buf
+    if r is 0
+        r: esp_init()
+    zi: 0
+    as long as zi < 16
+        poke_i64(r, 16 + zi * 8, 0 - 1)
+        zi: zi + 1
+    ins: 0
+    d: 0
+    i: 0
+    as long as i < n
+        c: peek_byte(e, i)
+        if ins is 1
+            if c is 92
+                i: i + 1
+                if i < n
+                    i: i + 1
+            if not
+                if c is 34
+                    ins: 0
+                i: i + 1
+        if not
+            if c is 34
+                ins: 1
+                i: i + 1
+            if not
+                if c is 40
+                    d: d + 1
+                    i: i + 1
+                if not
+                    if c is 41
+                        d: d - 1
+                        i: i + 1
+                    if not
+                        if d is 0
+                            if peek_byte(esp_kind, c) is 1
+                                nx: 0
+                                if i + 1 < n
+                                    nx: peek_byte(e, i + 1)
+                                pv: 0
+                                if i > 0
+                                    pv: peek_byte(e, i - 1)
+                                if c is 124
+                                    poke_i64(r, 16 + 2 * 8, i)
+                                    if nx is 124
+                                        poke_i64(r, 16 + 0 * 8, i)
+                                if c is 38
+                                    poke_i64(r, 16 + 4 * 8, i)
+                                    if nx is 38
+                                        poke_i64(r, 16 + 1 * 8, i)
+                                if c is 94
+                                    poke_i64(r, 16 + 3 * 8, i)
+                                if c is 61
+                                    if nx is 61
+                                        poke_i64(r, 16 + 5 * 8, i)
+                                if c is 33
+                                    if nx is 61
+                                        poke_i64(r, 16 + 6 * 8, i)
+                                if c is 60
+                                    if nx is 61
+                                        poke_i64(r, 16 + 7 * 8, i)
+                                    if nx is 60
+                                        poke_i64(r, 16 + 13 * 8, i)
+                                    if not
+                                        if pv is 60
+                                            poke_i64(r, 16 + 13 * 8, i - 1)
+                                        if not
+                                            poke_i64(r, 16 + 9 * 8, i)
+                                if c is 62
+                                    if nx is 61
+                                        poke_i64(r, 16 + 8 * 8, i)
+                                    if nx is 62
+                                        poke_i64(r, 16 + 12 * 8, i)
+                                        if i + 2 < n
+                                            if peek_byte(e, i + 2) is 62
+                                                poke_i64(r, 16 + 11 * 8, i)
+                                    if not
+                                        if pv is not 62
+                                            poke_i64(r, 16 + 10 * 8, i)
+                                if c is 43
+                                    if binary_sign(e, i) is 1
+                                        poke_i64(r, 16 + 14 * 8, i)
+                                if c is 45
+                                    if binary_sign(e, i) is 1
+                                        poke_i64(r, 16 + 14 * 8, i)
+                                if c is 42
+                                    poke_i64(r, 16 + 15 * 8, i)
+                                if c is 47
+                                    poke_i64(r, 16 + 15 * 8, i)
+                                if c is 37
+                                    poke_i64(r, 16 + 15 * 8, i)
+                        i: i + 1
+    return r
+
+span_str p n:
+    # materialize span [p, p+n) as a NUL-terminated arena string (a cut
+    # whose end differs from the given total takes cutn's copy path).
+    return cutn(p, 0, n, n + 1)
+
+is_imm_n s n:
+    if n is 0
+        return 0
+    im_i: 0
+    if peek_byte(s, 0) is 45
+        im_i: 1
+    if im_i >= n
+        return 0
+    as long as im_i < n
+        if digitb(peek_byte(s, im_i)) is 0
+            return 0
+        im_i: im_i + 1
+    return 1
+
+non_buf: 0
+non_cap: 0
+
+num_of_n s n:
+    # Span parse via a reusable scratch copy: num_of keeps no pointer
+    # to its input, so interning the span (span_str) only paid a hash
+    # and an arena copy for a throwaway string.
+    if n + 1 > non_cap
+        non_buf: _sov_heap_alloc(n + 257)
+        non_cap: n + 257
+    dummy_non: _sov_mem_copy(non_buf, s, n)
+    poke_byte(non_buf, n, 0)
+    return num_of(non_buf)
+
+plain_name_n s n:
+    # pn_bad's lazy init lives in plain_name's Sovren body, but under
+    # nat_gate plain_name runs as a native twin that never sets it up,
+    # so initialize the table here directly (same byte set).
+    if pn_bad is 0
+        pn_bad: _sov_heap_alloc(256)
+        poke_byte(pn_bad, 32, 1)
+        poke_byte(pn_bad, 33, 1)
+        poke_byte(pn_bad, 34, 1)
+        poke_byte(pn_bad, 37, 1)
+        poke_byte(pn_bad, 38, 1)
+        poke_byte(pn_bad, 40, 1)
+        poke_byte(pn_bad, 41, 1)
+        poke_byte(pn_bad, 42, 1)
+        poke_byte(pn_bad, 43, 1)
+        poke_byte(pn_bad, 45, 1)
+        poke_byte(pn_bad, 47, 1)
+        poke_byte(pn_bad, 60, 1)
+        poke_byte(pn_bad, 61, 1)
+        poke_byte(pn_bad, 62, 1)
+        poke_byte(pn_bad, 91, 1)
+        poke_byte(pn_bad, 93, 1)
+        poke_byte(pn_bad, 124, 1)
+    if s < 4096
+        return 1
+    pn_i: 0
+    as long as pn_i < n
+        if peek_byte(pn_bad, peek_byte(s, pn_i)) is 1
+            return 0
+        pn_i: pn_i + 1
+    return 1
+
+span_eq a an b bn:
+    if an is not bn
+        return 0
+    se_i: 0
+    as long as se_i < an
+        if peek_byte(a, se_i) is not peek_byte(b, se_i)
+            return 0
+        se_i: se_i + 1
+    return 1
+
+span_word e en w wn:
+    if en < wn
+        return 0
+    sw_i: 0
+    as long as sw_i < wn
+        if peek_byte(e, sw_i) is not peek_byte(w, sw_i)
+            return 0
+        sw_i: sw_i + 1
+    if en is wn
+        return 1
+    sw_b: peek_byte(e, wn)
+    if sw_b is 95
+        return 0
+    if sw_b > 47
+        if sw_b < 58
+            return 0
+    if sw_b > 64
+        if sw_b < 91
+            return 0
+    if sw_b > 96
+        if sw_b < 123
+            return 0
+    return 1
+
+span_suffix e en w wn:
+    if en < wn
+        return 0
+    ss_base: en - wn
+    ss_i: 0
+    as long as ss_i < wn
+        if peek_byte(e, ss_base + ss_i) is not peek_byte(w, ss_i)
+            return 0
+        ss_i: ss_i + 1
+    return 1
+
+span_is_peek s n:
+    if n < 10
+        return 0
+    if peek_byte(s, 0) is not 112
+        return 0
+    if peek_byte(s, 1) is not 101
+        return 0
+    if peek_byte(s, 2) is not 101
+        return 0
+    if peek_byte(s, 3) is not 107
+        return 0
+    if peek_byte(s, 4) is not 95
+        return 0
+    if peek_byte(s, 5) is not 105
+        return 0
+    if peek_byte(s, 6) is not 54
+        return 0
+    if peek_byte(s, 7) is not 52
+        return 0
+    if peek_byte(s, 8) is not 40
+        return 0
+    if peek_byte(s, n - 1) is not 41
+        return 0
+    return 1
+
+pkpeek_n s n:
+    if span_is_peek(s, n) is 0
+        return 0
+    return pkpeek(span_str(s, n))
+
+parse_sq_n s n:
+    pq_i: 0
+    as long as pq_i < n
+        if peek_byte(s, pq_i) is 42
+            return parse_sq(span_str(s, n))
+        pq_i: pq_i + 1
+    return 0
+
+casc_ret: 0
+
+expr_cascade e en:
+    # The shared precedence cascade over span [e, e+en): same slot order
+    # and emission as the former inline block in expr_body, but operands
+    # stay spans (bin_n / expr_span) so compound left operands are never
+    # substring-copied level by level.  Returns 1 when ec_a slot fired, with
+    # the expression type in casc_ret.
+    ec_es: esplit_n(e, en)
+    ec_p: peek_i64(ec_es, 16 + 0 * 8)
+    if ec_p > 0 - 1
+        expr_span(e, ec_p)
+        test_rax()
+        ec_a: jnz()
+        expr_span(e + ec_p + 2, en - ec_p - 2)
+        test_rax()
+        ec_b: jnz()
+        xor_rax()
+        ec_d: jmp()
+        patch(ec_a)
+        patch(ec_b)
+        rax_imm(1)
+        patch(ec_d)
+        casc_ret: 0
+        return 1
+    ec_p: peek_i64(ec_es, 16 + 1 * 8)
+    if ec_p > 0 - 1
+        expr_span(e, ec_p)
+        test_rax()
+        ec_a: jz()
+        expr_span(e + ec_p + 2, en - ec_p - 2)
+        test_rax()
+        ec_b: jz()
+        rax_imm(1)
+        ec_d: jmp()
+        patch(ec_a)
+        patch(ec_b)
+        xor_rax()
+        patch(ec_d)
+        casc_ret: 0
+        return 1
+    ec_p: peek_i64(ec_es, 16 + 2 * 8)
+    if ec_p > 0 - 1
+        casc_ret: bitop_n(e, en, ec_p, kid_opbor, 1)
+        return 1
+    ec_p: peek_i64(ec_es, 16 + 3 * 8)
+    if ec_p > 0 - 1
+        casc_ret: bitop_n(e, en, ec_p, kid_opbxor, 1)
+        return 1
+    ec_p: peek_i64(ec_es, 16 + 4 * 8)
+    if ec_p > 0 - 1
+        casc_ret: bitop_n(e, en, ec_p, kid_opband, 1)
+        return 1
+    ec_p: peek_i64(ec_es, 16 + 5 * 8)
+    if ec_p > 0 - 1
+        bin_k(e, ec_p, e + ec_p + 2, en - ec_p - 2, kid_opeq)
+        casc_ret: 0
+        return 1
+    ec_p: peek_i64(ec_es, 16 + 6 * 8)
+    if ec_p > 0 - 1
+        bin_k(e, ec_p, e + ec_p + 2, en - ec_p - 2, kid_opne)
+        casc_ret: 0
+        return 1
+    ec_p: peek_i64(ec_es, 16 + 7 * 8)
+    if ec_p > 0 - 1
+        bin_k(e, ec_p, e + ec_p + 2, en - ec_p - 2, kid_ople)
+        casc_ret: 0
+        return 1
+    ec_p: peek_i64(ec_es, 16 + 8 * 8)
+    if ec_p > 0 - 1
+        bin_k(e, ec_p, e + ec_p + 2, en - ec_p - 2, kid_opge)
+        casc_ret: 0
+        return 1
+    ec_p: peek_i64(ec_es, 16 + 9 * 8)
+    if ec_p > 0 - 1
+        bin_k(e, ec_p, e + ec_p + 1, en - ec_p - 1, kid_oplt)
+        casc_ret: 0
+        return 1
+    ec_p: peek_i64(ec_es, 16 + 10 * 8)
+    if ec_p > 0 - 1
+        bin_k(e, ec_p, e + ec_p + 1, en - ec_p - 1, kid_opgt)
+        casc_ret: 0
+        return 1
+    ec_p: peek_i64(ec_es, 16 + 11 * 8)
+    if ec_p > 0 - 1
+        casc_ret: bitop_n(e, en, ec_p, kid_opbshr, 3)
+        return 1
+    ec_p: peek_i64(ec_es, 16 + 12 * 8)
+    if ec_p > 0 - 1
+        casc_ret: bitop_n(e, en, ec_p, kid_opbsar, 2)
+        return 1
+    ec_p: peek_i64(ec_es, 16 + 13 * 8)
+    if ec_p > 0 - 1
+        casc_ret: bitop_n(e, en, ec_p, kid_opbshl, 2)
+        return 1
+    ec_p: peek_i64(ec_es, 16 + 14 * 8)
+    if ec_p > 0
+        if peek_byte(e, ec_p) is 43 is 1
+            bin_k(e, ec_p, e + ec_p + 1, en - ec_p - 1, kid_opadd)
+            casc_ret: 0
+            return 1
+        bin_k(e, ec_p, e + ec_p + 1, en - ec_p - 1, kid_opsub)
+        casc_ret: 0
+        return 1
+    if ec_p is 0
+        if peek_byte(e, ec_p) is 43 is 1
+            bin_k(e, ec_p, e + ec_p + 1, en - ec_p - 1, kid_opadd)
+            casc_ret: 0
+            return 1
+    ec_p: peek_i64(ec_es, 16 + 15 * 8)
+    if ec_p > 0 - 1
+        ec_ob: peek_byte(e, ec_p)
+        if ec_ob is 42
+            bin_k(e, ec_p, e + ec_p + 1, en - ec_p - 1, kid_opmul)
+            casc_ret: 0
+            return 1
+        if ec_ob is 47
+            bin_k(e, ec_p, e + ec_p + 1, en - ec_p - 1, kid_opdiv)
+            casc_ret: 0
+            return 1
+        bin_k(e, ec_p, e + ec_p + 1, en - ec_p - 1, kid_opmod)
+        casc_ret: 0
+        return 1
+    return 0
+
+expr_span e0 en0:
+    # Span-native expr entry.  Trims [e0, e0+en0) in place, then declines
+    # to the classic string path (one materializing copy) whenever a
+    # pre-cascade recognizer in expr_body could claim the text: bracket
+    # sugar (trailing ]), string literal (leading quote), the as /
+    # addr_of / length keywords, the " as text" / " as ptr" suffixes, and
+    # the leading-digit float error path.  Everything else runs the
+    # shared span cascade; if no operator slot fires it also declines.
+    ex_depth: ex_depth + 1
+    if ex_depth > 150
+        if had_err is 0
+            print "Error: expression too long, split it up"
+            err_where()
+            had_err: 1
+        ex_depth: ex_depth - 1
+        xor_rax()
+        return 0
+    ex_e: e0
+    ex_en: en0
+    as long as ex_en > 0
+        ex_b: peek_byte(ex_e, 0)
+        if ex_b is 32 or ex_b is 9 or ex_b is 10 or ex_b is 13
+            ex_e: ex_e + 1
+            ex_en: ex_en - 1
+        if not
+            leave
+    as long as ex_en > 0
+        ex_b: peek_byte(ex_e, ex_en - 1)
+        if ex_b is 32 or ex_b is 9 or ex_b is 10 or ex_b is 13
+            ex_en: ex_en - 1
+        if not
+            leave
+    ex_fb: 0
+    if ex_en is 0
+        ex_fb: 1
+    if ex_en > 0
+        ex_b0: peek_byte(ex_e, 0)
+        ex_bl: peek_byte(ex_e, ex_en - 1)
+        if ex_b0 is 34
+            ex_fb: 1
+        if ex_bl is 93
+            ex_fb: 1
+        if ex_bl is 116
+            if span_suffix(ex_e, ex_en, " as text", 8) is 1
+                ex_fb: 1
+        if ex_bl is 114
+            if span_suffix(ex_e, ex_en, " as ptr", 7) is 1
+                ex_fb: 1
+        if ex_b0 is 97
+            if span_word(ex_e, ex_en, "as", 2) is 1
+                ex_fb: 1
+            if span_word(ex_e, ex_en, "addr_of", 7) is 1
+                ex_fb: 1
+        if ex_b0 is 108
+            if span_word(ex_e, ex_en, "length", 6) is 1
+                ex_fb: 1
+        if ex_b0 > 47
+            if ex_b0 < 58
+                ex_di: 1
+                as long as ex_di < ex_en
+                    ex_db: peek_byte(ex_e, ex_di)
+                    if ex_db is 46
+                        ex_fb: 1
+                        ex_di: ex_en
+                    if ex_db < 48
+                        ex_di: ex_en
+                    if ex_db > 57
+                        ex_di: ex_en
+                    ex_di: ex_di + 1
+    if ex_fb is 0
+        # Span-native atom leaves, in expr_body's order: its own head
+        # recognizers are all behind the ex_fb gates above, so these
+        # are exactly the shapes its pre-cascade fast paths claim.
+        if ex_b0 > 47
+            if ex_b0 < 58
+                if ex_en is 1
+                    rax_imm(ex_b0 - 48)
+                    ex_depth: ex_depth - 1
+                    return 0
+                ex_hx: 0
+                if ex_en > 2
+                    if ex_b0 is 48
+                        ex_c1: peek_byte(ex_e, 1)
+                        if ex_c1 is 120
+                            ex_hx: 1
+                        if ex_c1 is 98
+                            ex_hx: 1
+                if ex_hx is 1
+                    if cfind1n(ex_e, 0, ex_en, 32) < 0
+                        rax_imm(num_of_n(ex_e, ex_en))
+                        ex_depth: ex_depth - 1
+                        return 0
+                if ex_hx is 0
+                    if is_imm_n(ex_e, ex_en) is 1
+                        rax_imm(num_of_n(ex_e, ex_en))
+                        ex_depth: ex_depth - 1
+                        return 0
+        if plain_name_n(ex_e, ex_en) is 1
+            ex_vn: span_str(ex_e, ex_en)
+            if expr_atom_word(ex_vn) is 1
+                loadv(ex_vn)
+                ex_depth: ex_depth - 1
+                return atom_str_type(ex_vn)
+        if expr_cascade(ex_e, ex_en) is 1
+            ex_depth: ex_depth - 1
+            return casc_ret
+        if ex_en > 1
+            if ex_b0 is 40
+                if ex_bl is 41
+                    ex_tt: expr_span(ex_e + 1, ex_en - 2)
+                    ex_depth: ex_depth - 1
+                    return ex_tt
+    ex_t: expr_body(span_str(ex_e, ex_en))
+    ex_depth: ex_depth - 1
+    return ex_t
+
+fl_expand t:
+    fl_q: 0
+    as long as peek_byte(t, fl_q) is 32
+        fl_q: fl_q + 1
+    fl_b0: peek_byte(t, fl_q)
+    if fl_b0 < 48
+        return blank
+    if fl_b0 > 57
+        return blank
+    if cfind1(t, 46) < 0
+        return blank
+    flt: strip(t)
+    fl_n: length(flt)
+    if fl_n < 3
+        return blank
+    if fl_n > 19
+        return blank
+    fl_dp: 0 - 1
+    fl_ok: 1
+    fli: 0
+    as long as fli < fl_n
+        flb: peek_byte(flt, fli)
+        if flb is 46
+            if fl_dp > 0 - 1
+                fl_ok: 0
+            fl_dp: fli
+        if not
+            if digitb(flb) is 0
+                fl_ok: 0
+        fli: fli + 1
+    if fl_ok is 0
+        return blank
+    if fl_dp < 1
+        return blank
+    if fl_dp > fl_n - 2
+        return blank
+    fl_mn: join(cut(flt, 0, fl_dp), cut(flt, fl_dp + 1, fl_n))
+    fl_dn: "1"
+    fli: fl_dp + 1
+    as long as fli < fl_n
+        fl_dn: join(fl_dn, "0")
+        fli: fli + 1
+    return join("f64_from_frac(", join(fl_mn, join(", ", join(fl_dn, ")"))))
+
+cp_len_of nm:
+    # known length of the tracked literal-holding var, or -1.  Valid only
+    # while stmt compiles a call-free rhs (cp_ok) in the same body, with
+    # no block pop and no depth change since the literal assignment.
+    if cp_ok is 0
+        return 0 - 1
+    if cp_kill is 1
+        return 0 - 1
+    if cp_nm is 0
+        return 0 - 1
+    if _sov_str_eq(nm, cp_nm) is 0
+        return 0 - 1
+    if cp_bid0 is not cp_bid
+        return 0 - 1
+    if cp_gen0 is not cp_gen
+        return 0 - 1
+    if cp_dep0 is not _sov_list_len(bk)
+        return 0 - 1
+    return cp_ln
+
+inl_wordop w:
+    if _sov_str_eq(w, "is") is 1
+        return 1
+    if _sov_str_eq(w, "and") is 1
+        return 1
+    if _sov_str_eq(w, "or") is 1
+        return 1
+    if _sov_str_eq(w, "not") is 1
+        return 1
+    if _sov_str_eq(w, "of") is 1
+        return 1
+    if _sov_str_eq(w, "length") is 1
+        return 1
+    return 0
+
+build_inl_set:
+    # once per compilation: collect tasks eligible for textual
+    # inlining (one-line "return E", E operator-bearing, free of
+    # indexing/quotes, every free name a param or a global).
+    # Sweep 1 admits call-free bodies; sweep 2 additionally admits
+    # bodies calling already-admitted tasks (admission order is a
+    # topological order, so expansion always terminates).
+    inl_set: _sov_list_new()
+    inl_es: _sov_list_new()
+    inl_dpm: _sov_list_new()
+    ml_set: _sov_list_new()
+    mlc_fi: _sov_list_new()
+    mlc_txt: _sov_list_new()
+    mlc_ind: _sov_list_new()
+    mlc_kind: _sov_list_new()
+    mlc_lhs: _sov_list_new()
+    mlc_ls: _sov_list_new()
+    mlc_m: _sov_list_new()
+    iqsweep: 0
+    as long as iqsweep < 2
+        bf: 0
+        bn: _sov_list_len(names)
+        as long as bf < bn
+            dummy: inl_try_add(bf, iqsweep)
+            bf: bf + 1
+        iqsweep: iqsweep + 1
+    bf: 0
+    bn: _sov_list_len(names)
+    as long as bf < bn
+        dummy: inl_try_add_ml(bf)
+        bf: bf + 1
+    if _sov_list_len(ml_set) + _sov_list_len(inl_set) > 0
+        bf: 0
+        as long as bf < bn
+            if bf < _sov_list_len(fn_locs)
+                if peek_i64(fn_locs, 16 + bf * 8) < 6
+                    if inl_site_present(bf) is 1
+                        dummy: poke_i64(fn_locs, 16 + bf * 8, 6)
+            bf: bf + 1
+    return 0
+
+inl_try_add bf bpass:
+    bnm: peek_i64(names, 16 + bf * 8)
+    if _sov_list_len(inl_set) > 0
+        if inl_lookup(bnm) > 0 - 1
+            return 0
+    bbd: peek_i64(bodies, 16 + bf * 8)
+    if peek_byte(bnm, 0) is 0
+        return 0
+    if _sov_starts_with(bnm, "_sov_") is 1
+        return 0
+    if _sov_list_len(bbd) is not 1
+        return 0
+    bl0: strip(peek_i64(bbd, 16))
+    if _sov_starts_with(bl0, "return ") is 0
+        return 0
+    bee: strip(cut(bl0, 7, length(bl0)))
+    bhp: cfind1(bee, 35)
+    if bhp > 0 - 1
+        if cfind1(bee, 34) > 0 - 1
+            return 0
+        bee: strip(cut(bee, 0, bhp))
+    if length(bee) is 0
+        return 0
+    if cfind1(bee, 34) > 0 - 1
+        return 0
+    if cfind1(bee, 91) > 0 - 1
+        return 0
+    if bpass is 0
+        if cfind1(bee, 40) > 0 - 1
+            return 0
+    bps: peek_i64(params, 16 + bf * 8)
+    bipc: _sov_list_len(bps)
+    ben: length(bee)
+    bhop: 0
+    bi: 0
+    as long as bi < ben
+        bc: peek_byte(bee, bi)
+        if bc is 43
+            bhop: 1
+        if bc is 45
+            bhop: 1
+        if bc is 42
+            bhop: 1
+        if bc is 47
+            bhop: 1
+        if bc is 37
+            bhop: 1
+        if bc is 60
+            bhop: 1
+        if bc is 62
+            bhop: 1
+        if bc is 61
+            bhop: 1
+        if bc is 38
+            bhop: 1
+        if bc is 124
+            bhop: 1
+        if bc is 94
+            bhop: 1
+        bi: bi + 1
+    if bhop is 0
+        if look(bee, " is ") > 0 - 1
+            bhop: 1
+        if look(bee, " and ") > 0 - 1
+            bhop: 1
+        if look(bee, " or ") > 0 - 1
+            bhop: 1
+        if _sov_starts_with(bee, "not ") is 1
+            bhop: 1
+        if look(bee, "length of ") > 0 - 1
+            bhop: 1
+    if bhop is 0
+        # a body whose only content is a call (delegation) still counts
+        if cfind1(bee, 40) < 0
+            return 0
+    bsp: 0
+    as long as bsp < bipc
+        bsn: peek_i64(bps, 16 + bsp * 8)
+        if cfind1(bsn, 95) > 0 - 1
+            if look(bee, repl(bsn, "_", " ")) > 0 - 1
+                return 0
+        bsp: bsp + 1
+    bcnt: _sov_list_new()
+    bpj0: 0
+    as long as bpj0 < bipc
+        bcnt: _sov_list_add(bcnt, 0)
+        bpj0: bpj0 + 1
+    bi: 0
+    as long as bi < ben
+        bc: peek_byte(bee, bi)
+        if wordchar(bc) is 1
+            bj: bi
+            bgo: 1
+            as long as bgo is 1
+                if bj >= ben
+                    bgo: 0
+                if bgo is 1
+                    if wordchar(peek_byte(bee, bj)) is 1
+                        bj: bj + 1
+                    if not
+                        bgo: 0
+            btok: cut(bee, bi, bj)
+            bnk: bj
+            bngo: 1
+            as long as bngo is 1
+                if bnk >= ben
+                    bngo: 0
+                if bngo is 1
+                    if peek_byte(bee, bnk) is 32
+                        bnk: bnk + 1
+                    if not
+                        bngo: 0
+            biscall: 0
+            if bnk < ben
+                if peek_byte(bee, bnk) is 40
+                    biscall: 1
+            if biscall is 1
+                if bpass is 0
+                    return 0
+                if inl_lookup(btok) < 0
+                    return 0
+            if not
+                bisp: 0
+                bpj: 0
+                as long as bpj < bipc
+                    if _sov_str_eq(btok, peek_i64(bps, 16 + bpj * 8)) is 1
+                        bisp: 1
+                        dummy: poke_i64(bcnt, 16 + bpj * 8, peek_i64(bcnt, 16 + bpj * 8) + 1)
+                    bpj: bpj + 1
+                if bisp is 0
+                    if digitb(peek_byte(btok, 0)) is 0
+                        if inl_wordop(btok) is 0
+                            if gn_lookup(btok) < 0
+                                return 0
+            bi: bj
+        if not
+            bi: bi + 1
+    inl_set: _sov_list_add(inl_set, bnm)
+    inl_es: _sov_list_add(inl_es, bee)
+    bmask: 0
+    bpw: 1
+    bpj: 0
+    as long as bpj < bipc
+        if peek_i64(bcnt, 16 + bpj * 8) > 1
+            bmask: bmask + bpw
+        bpw: bpw * 2
+        bpj: bpj + 1
+    inl_dpm: _sov_list_add(inl_dpm, bmask)
+    return 1
+
+inl_site_present bf:
+    # does this task hold an assignment line calling an ml/inl callee?
+    bbd: peek_i64(bodies, 16 + bf * 8)
+    li: 0
+    as long as li < _sov_list_len(bbd)
+        txt: peek_i64(bbd, 16 + li * 8)
+        if cfind1(txt, 40) > 0 - 1
+            if look(txt, ": ") > 0
+                tn: length(txt)
+                ti: 0
+                as long as ti < tn
+                    if wordchar(peek_byte(txt, ti)) is 1
+                        tj: ti
+                        tgo: 1
+                        as long as tgo is 1
+                            if tj >= tn
+                                tgo: 0
+                            if tgo is 1
+                                if wordchar(peek_byte(txt, tj)) is 1
+                                    tj: tj + 1
+                                if not
+                                    tgo: 0
+                        tnk: tj
+                        tngo: 1
+                        as long as tngo is 1
+                            if tnk >= tn
+                                tngo: 0
+                            if tngo is 1
+                                if peek_byte(txt, tnk) is 32
+                                    tnk: tnk + 1
+                                if not
+                                    tngo: 0
+                        if tnk < tn
+                            if peek_byte(txt, tnk) is 40
+                                ttok: cut(txt, ti, tj)
+                                if _sov_list_len(ml_set) > 0
+                                    if ml_lookup(ttok) > 0 - 1
+                                        return 1
+                                if _sov_list_len(inl_set) > 0
+                                    tsi: inl_lookup(ttok)
+                                    if tsi > 0 - 1
+                                        if peek_i64(inl_dpm, 16 + tsi * 8) is not 0
+                                            return 1
+                        ti: tj
+                    if not
+                        ti: ti + 1
+        li: li + 1
+    return 0
+
+mq_txt: 0
+mq_ind: 0
+mq_kind: 0
+mq_lhs: 0
+mq_ls: 0
+mq_ps: 0
+
+inl_itos mqn:
+    mqbuf: _sov_heap_alloc(24)
+    mqi: 20
+    dummy: poke_byte(mqbuf, 21, 0)
+    mqv: mqn
+    if mqv is 0
+        dummy: poke_byte(mqbuf, mqi, 48)
+        mqi: mqi - 1
+    as long as mqv > 0
+        mqd: mqv % 10
+        dummy: poke_byte(mqbuf, mqi, 48 + mqd)
+        mqi: mqi - 1
+        mqv: mqv / 10
+    return mqbuf + mqi + 1
+
+mlc_fi: 0
+mlc_txt: 0
+mlc_ind: 0
+mlc_kind: 0
+mlc_lhs: 0
+mlc_ls: 0
+mlc_m: 0
+
+ml_collect_cached bf:
+    if mlc_fi is 0
+        mlc_fi: _sov_list_new()
+        mlc_txt: _sov_list_new()
+        mlc_ind: _sov_list_new()
+        mlc_kind: _sov_list_new()
+        mlc_lhs: _sov_list_new()
+        mlc_ls: _sov_list_new()
+        mlc_m: _sov_list_new()
+    ci: 0
+    as long as ci < _sov_list_len(mlc_fi)
+        if peek_i64(mlc_fi, 16 + ci * 8) is bf
+            mq_txt: peek_i64(mlc_txt, 16 + ci * 8)
+            mq_ind: peek_i64(mlc_ind, 16 + ci * 8)
+            mq_kind: peek_i64(mlc_kind, 16 + ci * 8)
+            mq_lhs: peek_i64(mlc_lhs, 16 + ci * 8)
+            mq_ls: peek_i64(mlc_ls, 16 + ci * 8)
+            return peek_i64(mlc_m, 16 + ci * 8)
+        ci: ci + 1
+    cm: ml_collect(bf)
+    mlc_fi: _sov_list_add(mlc_fi, bf)
+    mlc_txt: _sov_list_add(mlc_txt, mq_txt)
+    mlc_ind: _sov_list_add(mlc_ind, mq_ind)
+    mlc_kind: _sov_list_add(mlc_kind, mq_kind)
+    mlc_lhs: _sov_list_add(mlc_lhs, mq_lhs)
+    mlc_ls: _sov_list_add(mlc_ls, mq_ls)
+    mlc_m: _sov_list_add(mlc_m, cm)
+    return cm
+
+ml_collect bf:
+    # fill mq_txt/mq_ind/mq_kind/mq_lhs/mq_ls from bodies[bf];
+    # returns line count or -1.  kind: 0 assign, 1 if, 2 return E, 3 return.
+    bbd: peek_i64(bodies, 16 + bf * 8)
+    bps: peek_i64(params, 16 + bf * 8)
+    bipc: _sov_list_len(bps)
+    nb: _sov_list_len(bbd)
+    mq_txt: _sov_list_new()
+    mq_ind: _sov_list_new()
+    mq_kind: _sov_list_new()
+    mq_lhs: _sov_list_new()
+    li: 0
+    as long as li < nb
+        raw: peek_i64(bbd, 16 + li * 8)
+        txt: strip(raw)
+        hp: cfind1(txt, 35)
+        if hp is 0
+            txt: blank
+        if hp > 0
+            txt: strip(cut(txt, 0, hp))
+        if length(txt) > 0
+            if cfind1(txt, 34) > 0 - 1
+                return 0 - 1
+            if cfind1(txt, 91) > 0 - 1
+                return 0 - 1
+            if cfind1(txt, 59) > 0 - 1
+                return 0 - 1
+            if look(txt, "->") > 0 - 1
+                return 0 - 1
+            kind: 0 - 1
+            lhsv: 0
+            if _sov_starts_with(txt, "if ") is 1
+                if _sov_str_eq(txt, "if not") is 1
+                    return 0 - 1
+                kind: 1
+            if _sov_str_eq(txt, "return") is 1
+                kind: 3
+            if _sov_starts_with(txt, "return ") is 1
+                kind: 2
+            if kind < 0
+                cp2: look(txt, ":")
+                if cp2 < 1
+                    return 0 - 1
+                lhsv: strip(cut(txt, 0, cp2))
+                ln2: length(lhsv)
+                if ln2 is 0
+                    return 0 - 1
+                k2: 0
+                wok: 1
+                as long as k2 < ln2
+                    if wordchar(peek_byte(lhsv, k2)) is 0
+                        wok: 0
+                    k2: k2 + 1
+                if wok is 0
+                    return 0 - 1
+                kind: 0
+            mq_txt: _sov_list_add(mq_txt, txt)
+            mq_ind: _sov_list_add(mq_ind, nind(raw))
+            mq_kind: _sov_list_add(mq_kind, kind)
+            mq_lhs: _sov_list_add(mq_lhs, lhsv)
+        li: li + 1
+    m: _sov_list_len(mq_txt)
+    mq_ls: _sov_list_new()
+    li: 0
+    as long as li < m
+        if peek_i64(mq_kind, 16 + li * 8) is 0
+            lhsv: peek_i64(mq_lhs, 16 + li * 8)
+            isp: 0
+            pj: 0
+            as long as pj < bipc
+                if _sov_str_eq(lhsv, peek_i64(bps, 16 + pj * 8)) is 1
+                    isp: 1
+                pj: pj + 1
+            if isp is 0
+                if gn_lookup(lhsv) < 0
+                    ladd: 1
+                    if _sov_list_len(mq_ls) > 0
+                        if list_idx(mq_ls, lhsv) > 0 - 1
+                            ladd: 0
+                    if ladd is 1
+                        mq_ls: _sov_list_add(mq_ls, lhsv)
+        li: li + 1
+    return m
+
+ml_validate_expr txt bnm:
+    # every name token: param, callee-local, global, word-operator, or a
+    # call to some other non-string task.  mq_ps/mq_ls must be set.
+    tn: length(txt)
+    ti: 0
+    as long as ti < tn
+        tc: peek_byte(txt, ti)
+        if wordchar(tc) is 1
+            tj: ti
+            tgo: 1
+            as long as tgo is 1
+                if tj >= tn
+                    tgo: 0
+                if tgo is 1
+                    if wordchar(peek_byte(txt, tj)) is 1
+                        tj: tj + 1
+                    if not
+                        tgo: 0
+            ttok: cut(txt, ti, tj)
+            tnk: tj
+            tngo: 1
+            as long as tngo is 1
+                if tnk >= tn
+                    tngo: 0
+                if tngo is 1
+                    if peek_byte(txt, tnk) is 32
+                        tnk: tnk + 1
+                    if not
+                        tngo: 0
+            tcall: 0
+            if tnk < tn
+                if peek_byte(txt, tnk) is 40
+                    tcall: 1
+            tmem: 0
+            if _sov_list_len(mq_ps) > 0
+                if list_idx(mq_ps, ttok) > 0 - 1
+                    tmem: 1
+            if _sov_list_len(mq_ls) > 0
+                if list_idx(mq_ls, ttok) > 0 - 1
+                    tmem: 1
+            if tcall is 1
+                if tmem is 1
+                    return 0
+                if _sov_str_eq(ttok, bnm) is 1
+                    return 0
+                if sf_lookup(ttok) > 0 - 1
+                    return 0
+            if not
+                if tmem is 0
+                    if digitb(peek_byte(ttok, 0)) is 0
+                        if inl_wordop(ttok) is 0
+                            if gn_lookup(ttok) < 0
+                                return 0
+            ti: tj
+        if not
+            ti: ti + 1
+    return 1
+
+inl_try_add_ml bf:
+    # multi-line inliner eligibility: small int-only bodies of
+    # assignments / ifs / returns with no loops, indexing, strings.
+    bnm: peek_i64(names, 16 + bf * 8)
+    if peek_byte(bnm, 0) is 0
+        return 0
+    if _sov_starts_with(bnm, "_sov_") is 1
+        return 0
+    if _sov_list_len(inl_set) > 0
+        if inl_lookup(bnm) > 0 - 1
+            return 0
+    if sf_lookup(bnm) > 0 - 1
+        return 0
+    bbd: peek_i64(bodies, 16 + bf * 8)
+    if _sov_list_len(bbd) < 2
+        return 0
+    if _sov_list_len(bbd) > 20
+        return 0
+    bps: peek_i64(params, 16 + bf * 8)
+    bipc: _sov_list_len(bps)
+    pj: 0
+    as long as pj < bipc
+        if _sov_starts_with(peek_i64(bps, 16 + pj * 8), "zz") is 1
+            return 0
+        pj: pj + 1
+    m: ml_collect(bf)
+    if m < 2
+        return 0
+    if m > 14
+        return 0
+    mq_ps: bps
+    li: 0
+    as long as li < _sov_list_len(mq_ls)
+        if _sov_starts_with(peek_i64(mq_ls, 16 + li * 8), "zz") is 1
+            return 0
+        li: li + 1
+    seenret: 0
+    li: 0
+    as long as li < m
+        txt: peek_i64(mq_txt, 16 + li * 8)
+        kind: peek_i64(mq_kind, 16 + li * 8)
+        if kind is 1
+            if ml_validate_expr(strip(cut(txt, 3, length(txt))), bnm) is 0
+                return 0
+        if kind is 2
+            seenret: 1
+            re: strip(cut(txt, 7, length(txt)))
+            if ml_validate_expr(re, bnm) is 0
+                return 0
+            lt: 1
+            k2: 0
+            as long as k2 < length(re)
+                if wordchar(peek_byte(re, k2)) is 0
+                    lt: 0
+                k2: k2 + 1
+            if lt is 1
+                if gn_lookup(re) > 0 - 1
+                    return 0
+        if kind is 3
+            seenret: 1
+        if kind is 0
+            cp2: look(txt, ":")
+            if ml_validate_expr(strip(cut(txt, cp2 + 1, length(txt))), bnm) is 0
+                return 0
+        li: li + 1
+    if seenret is 0
+        return 0
+    # indent structure: a line may exceed the stack top only right
+    # after an if-header, and dedents must land on an open level.
+    stki: _sov_list_new()
+    stki: _sov_list_add(stki, peek_i64(mq_ind, 16))
+    pvif: 0
+    li: 0
+    as long as li < m
+        v: peek_i64(mq_ind, 16 + li * 8)
+        top: peek_i64(stki, 16 + (_sov_list_len(stki) - 1) * 8)
+        if v > top
+            if pvif is 0
+                return 0
+            stki: _sov_list_add(stki, v)
+            top: v
+        if v < top
+            pgo: 1
+            as long as pgo is 1
+                if _sov_list_len(stki) < 2
+                    pgo: 0
+                if pgo is 1
+                    if peek_i64(stki, 16 + (_sov_list_len(stki) - 1) * 8) > v
+                        dummy: poke_i64(stki, 8, _sov_list_len(stki) - 1)
+                    if not
+                        pgo: 0
+            top: peek_i64(stki, 16 + (_sov_list_len(stki) - 1) * 8)
+            if top is not v
+                return 0
+        pvif: 0
+        if peek_i64(mq_kind, 16 + li * 8) is 1
+            pvif: 1
+        li: li + 1
+    ml_set: _sov_list_add(ml_set, bnm)
+    return 1
+
+ml_rename txt pfx:
+    # token-rename params/locals (mq_ps/mq_ls) with pfx; globals pass
+    # verbatim but a caller-local shadow sets ml_abort.  Returns buffer.
+    rn: length(txt)
+    pf: length(pfx)
+    ob: _sov_heap_alloc(rn * (pf + 1) + 64)
+    oi: 0
+    ri: 0
+    as long as ri < rn
+        rc: peek_byte(txt, ri)
+        if wordchar(rc) is 1
+            rj: ri
+            rgo: 1
+            as long as rgo is 1
+                if rj >= rn
+                    rgo: 0
+                if rgo is 1
+                    if wordchar(peek_byte(txt, rj)) is 1
+                        rj: rj + 1
+                    if not
+                        rgo: 0
+            rtok: cut(txt, ri, rj)
+            rnk: rj
+            rngo: 1
+            as long as rngo is 1
+                if rnk >= rn
+                    rngo: 0
+                if rngo is 1
+                    if peek_byte(txt, rnk) is 32
+                        rnk: rnk + 1
+                    if not
+                        rngo: 0
+            rcall: 0
+            if rnk < rn
+                if peek_byte(txt, rnk) is 40
+                    rcall: 1
+            rmem: 0
+            if rcall is 0
+                if _sov_list_len(mq_ps) > 0
+                    if list_idx(mq_ps, rtok) > 0 - 1
+                        rmem: 1
+                if _sov_list_len(mq_ls) > 0
+                    if list_idx(mq_ls, rtok) > 0 - 1
+                        rmem: 1
+            if rmem is 1
+                oi: inl_put(ob, oi, pfx)
+                oi: inl_put(ob, oi, rtok)
+            if not
+                if rcall is 0
+                    if digitb(peek_byte(rtok, 0)) is 0
+                        if inl_wordop(rtok) is 0
+                            if gn_lookup(rtok) > 0 - 1
+                                if lsh_find_s(rtok) > 0 - 1
+                                    ml_abort: 1
+                oi: inl_put(ob, oi, rtok)
+            ri: rj
+        if not
+            dummy: poke_byte(ob, oi, rc)
+            oi: oi + 1
+            ri: ri + 1
+    dummy: poke_byte(ob, oi, 0)
+    return ob
+
+ml_calls_ok:
+    # every call inside the collected body must have settled type:
+    # not string-returning, and (for real tasks) already walked.
+    li: 0
+    as long as li < _sov_list_len(mq_txt)
+        txt: peek_i64(mq_txt, 16 + li * 8)
+        tn: length(txt)
+        ti: 0
+        as long as ti < tn
+            if wordchar(peek_byte(txt, ti)) is 1
+                tj: ti
+                tgo: 1
+                as long as tgo is 1
+                    if tj >= tn
+                        tgo: 0
+                    if tgo is 1
+                        if wordchar(peek_byte(txt, tj)) is 1
+                            tj: tj + 1
+                        if not
+                            tgo: 0
+                tnk: tj
+                tngo: 1
+                as long as tngo is 1
+                    if tnk >= tn
+                        tngo: 0
+                    if tngo is 1
+                        if peek_byte(txt, tnk) is 32
+                            tnk: tnk + 1
+                        if not
+                            tngo: 0
+                if tnk < tn
+                    if peek_byte(txt, tnk) is 40
+                        ttok: cut(txt, ti, tj)
+                        if sf_lookup(ttok) > 0 - 1
+                            return 0
+                        if nm_lookup(ttok) > 0 - 1
+                            if fn_lookup(ttok) < 0
+                                return 0
+                ti: tj
+            if not
+                ti: ti + 1
+        li: li + 1
+    return 1
+
+try_stmt_inline var rhs:
+    # E6b statement-level inliner.  Fires when rhs holds exactly one
+    # top-level call to (a) an ml_set callee, or (b) a one-liner whose
+    # args carry calls/indexing or would be duplicated by substitution.
+    if inl_depth > 2
+        return 0
+    if no_frame is 1
+        return 0
+    # fast decline: the full scan below declines unless the (single)
+    # call name is in ml_set/inl_set and is not _sov_-prefixed. Find the
+    # first call name cheaply; declining here when it is in neither set
+    # is decision-identical (sites is then 0, >1, or the same name).
+    # Cheapest discriminator first: no '(' anywhere means no call.
+    qfp: cfind1(rhs, 40)
+    if qfp < 0
+        return 0
+    qwml: _sov_list_len(ml_set)
+    qwin: _sov_list_len(inl_set)
+    if qwml + qwin is 0
+        return 0
+    if cfind1(rhs, 34) > 0 - 1
+        return 0
+    qfname: 0
+    qfgo: 1
+    as long as qfgo is 1
+        if qfp < 0
+            return 0
+        qfe: qfp
+        qfsp: 1
+        as long as qfsp is 1
+            if qfe is 0
+                qfsp: 0
+            if qfsp is 1
+                if peek_byte(rhs, qfe - 1) is 32
+                    qfe: qfe - 1
+                if not
+                    qfsp: 0
+        qfs: qfe
+        qfsp: 1
+        as long as qfsp is 1
+            if qfs is 0
+                qfsp: 0
+            if qfsp is 1
+                if wordchar(peek_byte(rhs, qfs - 1)) is 1
+                    qfs: qfs - 1
+                if not
+                    qfsp: 0
+        if qfs < qfe
+            qfname: cut(rhs, qfs, qfe)
+            qfgo: 0
+        if qfgo is 1
+            qfrel: cfind1(rhs + qfp + 1, 40)
+            if qfrel < 0
+                return 0
+            qfp: qfp + 1 + qfrel
+    if _sov_starts_with(qfname, "_sov_") is 1
+        return 0
+    qfok: 0
+    if qwml > 0
+        if ml_lookup(qfname) > 0 - 1
+            qfok: 1
+    if qfok is 0
+        if qwin > 0
+            if inl_lookup(qfname) > 0 - 1
+                qfok: 1
+    if qfok is 0
+        return 0
+    qwrn: length(rhs)
+    qwns: 0
+    qwop: 0
+    qwcl: 0
+    qwnm: 0
+    sites: 0
+    qwi: 0
+    as long as qwi < qwrn
+        if wordchar(peek_byte(rhs, qwi)) is 1
+            qwj: qwi
+            qwgo: 1
+            as long as qwgo is 1
+                if qwj >= qwrn
+                    qwgo: 0
+                if qwgo is 1
+                    if wordchar(peek_byte(rhs, qwj)) is 1
+                        qwj: qwj + 1
+                    if not
+                        qwgo: 0
+            qwk: qwj
+            qwgo: 1
+            as long as qwgo is 1
+                if qwk >= qwrn
+                    qwgo: 0
+                if qwgo is 1
+                    if peek_byte(rhs, qwk) is 32
+                        qwk: qwk + 1
+                    if not
+                        qwgo: 0
+            qwfc: 0 - 1
+            if qwk < qwrn
+                if peek_byte(rhs, qwk) is 40
+                    sites: sites + 1
+                    qwdp: 0
+                    qwm: qwk
+                    qwgo: 1
+                    as long as qwgo is 1
+                        if qwm >= qwrn
+                            qwgo: 0
+                        if qwgo is 1
+                            qwcb: peek_byte(rhs, qwm)
+                            if qwcb is 40
+                                qwdp: qwdp + 1
+                            if qwcb is 41
+                                qwdp: qwdp - 1
+                                if qwdp is 0
+                                    qwfc: qwm
+                                    qwgo: 0
+                            qwm: qwm + 1
+                    if qwfc < 0
+                        return 0
+                    if sites is 1
+                        qwnm: cut(rhs, qwi, qwj)
+                        qwns: qwi
+                        qwop: qwk
+                        qwcl: qwfc
+            if qwfc > 0 - 1
+                qwi: qwfc + 1
+            if not
+                qwi: qwj
+        if not
+            qwi: qwi + 1
+    if sites is not 1
+        return 0
+    if _sov_starts_with(qwnm, "_sov_") is 1
+        return 0
+    qwinml: 0
+    if qwml > 0
+        if ml_lookup(qwnm) > 0 - 1
+            qwinml: 1
+    qwsi: 0 - 1
+    if qwin > 0
+        qwsi: inl_lookup(qwnm)
+    if qwinml is 0
+        if qwsi < 0
+            return 0
+    qwfi: nm_lookup(qwnm)
+    if qwfi < 0
+        return 0
+    if sf_lookup(qwnm) > 0 - 1
+        return 0
+    qwps: peek_i64(params, 16 + qwfi * 8)
+    qwpc: _sov_list_len(qwps)
+    qwat: cut(rhs, qwop + 1, qwcl)
+    if qwinml is 0
+        if cfind1(qwat, 40) < 0
+            if cfind1(qwat, 91) < 0
+                if peek_i64(inl_dpm, 16 + qwsi * 8) is 0
+                    return 0
+                qwho: 0
+                qwai: 0
+                qwan: length(qwat)
+                as long as qwai < qwan
+                    qwab: peek_byte(qwat, qwai)
+                    if qwab is 43
+                        qwho: 1
+                    if qwab is 45
+                        qwho: 1
+                    if qwab is 42
+                        qwho: 1
+                    if qwab is 47
+                        qwho: 1
+                    if qwab is 37
+                        qwho: 1
+                    if qwab is 60
+                        qwho: 1
+                    if qwab is 62
+                        qwho: 1
+                    if qwab is 61
+                        qwho: 1
+                    if qwab is 38
+                        qwho: 1
+                    if qwab is 124
+                        qwho: 1
+                    if qwab is 94
+                        qwho: 1
+                    if qwab is 33
+                        qwho: 1
+                    qwai: qwai + 1
+                if qwho is 0
+                    return 0
+    qwag: _sov_list_new()
+    if length(strip(qwat)) > 0
+        qwst: 0
+        qwdp: 0
+        qwbk: 0
+        qwai: 0
+        qwan: length(qwat)
+        as long as qwai < qwan
+            qwab: peek_byte(qwat, qwai)
+            if qwab is 40
+                qwdp: qwdp + 1
+            if qwab is 41
+                qwdp: qwdp - 1
+            if qwab is 91
+                qwbk: qwbk + 1
+            if qwab is 93
+                qwbk: qwbk - 1
+            if qwab is 44
+                if qwdp is 0
+                    if qwbk is 0
+                        qwag: _sov_list_add(qwag, strip(cut(qwat, qwst, qwai)))
+                        qwst: qwai + 1
+            qwai: qwai + 1
+        qwag: _sov_list_add(qwag, strip(cut(qwat, qwst, qwan)))
+    if _sov_list_len(qwag) is not qwpc
+        return 0
+    qwai: 0
+    as long as qwai < qwpc
+        if _sov_list_len(str_vars) > 0
+            if sv_lookup(peek_i64(qwag, 16 + qwai * 8)) > 0 - 1
+                return 0
+        qwai: qwai + 1
+    if qwinml is 0
+        worth: 0
+        qwai: 0
+        as long as qwai < qwpc
+            if cfind1(peek_i64(qwag, 16 + qwai * 8), 40) > 0 - 1
+                worth: 1
+            if cfind1(peek_i64(qwag, 16 + qwai * 8), 91) > 0 - 1
+                worth: 1
+            qwai: qwai + 1
+        qwmk: peek_i64(inl_dpm, 16 + qwsi * 8)
+        qwpw: 1
+        qwai: 0
+        as long as qwai < qwpc
+            if qwmk % (qwpw * 2) >= qwpw
+                if inl_trivial(peek_i64(qwag, 16 + qwai * 8)) is 0
+                    worth: 1
+            qwpw: qwpw * 2
+            qwai: qwai + 1
+        if worth is 0
+            return 0
+    qwm: 0
+    if qwinml is 1
+        qwm: ml_collect_cached(qwfi)
+        if qwm < 2
+            return 0
+        if ml_calls_ok() is 0
+            return 0
+    mq_ps: qwps
+    qwfx: 0
+    qwgo: 1
+    as long as qwgo is 1
+        inl_ctr: inl_ctr + 1
+        qwfx: join("zz", join(inl_itos(inl_ctr), "_"))
+        qwtn: join(qwfx, "zzr")
+        if lsh_find_s(qwtn) < 0
+            if gn_lookup(qwtn) < 0
+                qwgo: 0
+        if inl_ctr > 100000
+            return 0
+    ml_abort: 0
+    qwlt: _sov_list_new()
+    qwkd: _sov_list_new()
+    qwdi: _sov_list_new()
+    qw_e2: 0
+    if qwinml is 0
+        mq_ls: _sov_list_new()
+        qw_e2: ml_rename(peek_i64(inl_es, 16 + qwsi * 8), qwfx)
+    if qwinml is 1
+        qwli: 0
+        as long as qwli < qwm
+            qwtx: peek_i64(mq_txt, 16 + qwli * 8)
+            qwkn: peek_i64(mq_kind, 16 + qwli * 8)
+            qwone: 0
+            if qwkn is 1
+                qwone: ml_rename(strip(cut(qwtx, 3, length(qwtx))), qwfx)
+            if qwkn is 0
+                qwcp: look(qwtx, ":")
+                qwlh: peek_i64(mq_lhs, 16 + qwli * 8)
+                qwlr: qwlh
+                qwlrn: 0
+                if _sov_list_len(mq_ps) > 0
+                    if list_idx(mq_ps, qwlh) > 0 - 1
+                        qwlr: join(qwfx, qwlh)
+                        qwlrn: 1
+                if _sov_list_len(mq_ls) > 0
+                    if list_idx(mq_ls, qwlh) > 0 - 1
+                        qwlr: join(qwfx, qwlh)
+                        qwlrn: 1
+                if qwlrn is 0
+                    if lsh_find_s(qwlh) > 0 - 1
+                        ml_abort: 1
+                qwrv: ml_rename(strip(cut(qwtx, qwcp + 1, length(qwtx))), qwfx)
+                qwone: join(qwlr, join(": ", qwrv))
+            if qwkn is 2
+                qwone: join(join(qwfx, "zzr: "), ml_rename(strip(cut(qwtx, 7, length(qwtx))), qwfx))
+            qwlt: _sov_list_add(qwlt, qwone)
+            qwkd: _sov_list_add(qwkd, peek_i64(mq_kind, 16 + qwli * 8))
+            qwdi: _sov_list_add(qwdi, peek_i64(mq_ind, 16 + qwli * 8))
+            qwli: qwli + 1
+    if ml_abort is 1
+        return 0
+    inl_depth: inl_depth + 1
+    qwai: 0
+    as long as qwai < qwpc
+        stmt(join(join(qwfx, peek_i64(qwps, 16 + qwai * 8)), join(": ", peek_i64(qwag, 16 + qwai * 8))))
+        qwai: qwai + 1
+    if qwinml is 0
+        stmt(join(qwfx, "zzr: 0"))
+        stmt(join(join(qwfx, "zzr: "), qw_e2))
+    if qwinml is 1
+        stmt(join(qwfx, "zzr: 0"))
+        qwki: _sov_list_new()
+        qwkz: _sov_list_new()
+        qwend: _sov_list_new()
+        qwli: 0
+        as long as qwli < qwm
+            qwv: peek_i64(qwdi, 16 + qwli * 8)
+            qwgo: 1
+            as long as qwgo is 1
+                if _sov_list_len(qwki) is 0
+                    qwgo: 0
+                if qwgo is 1
+                    if peek_i64(qwki, 16 + (_sov_list_len(qwki) - 1) * 8) >= qwv
+                        cflush_all()
+                        patch(peek_i64(qwkz, 16 + (_sov_list_len(qwkz) - 1) * 8))
+                        dummy: poke_i64(qwki, 8, _sov_list_len(qwki) - 1)
+                        dummy: poke_i64(qwkz, 8, _sov_list_len(qwkz) - 1)
+                    if not
+                        qwgo: 0
+            qwkn: peek_i64(qwkd, 16 + qwli * 8)
+            if qwkn is 1
+                cflush_all()
+                qwz: fuse_cmp(peek_i64(qwlt, 16 + qwli * 8), 1)
+                if qwz is 0 - 1
+                    expr(peek_i64(qwlt, 16 + qwli * 8))
+                    test_rax()
+                    qwz: jz()
+                qwki: _sov_list_add(qwki, qwv)
+                qwkz: _sov_list_add(qwkz, qwz)
+            if qwkn is 0
+                stmt(peek_i64(qwlt, 16 + qwli * 8))
+            if qwkn is 2
+                stmt(peek_i64(qwlt, 16 + qwli * 8))
+                cflush_all()
+                qwend: _sov_list_add(qwend, jmp())
+            if qwkn is 3
+                cflush_all()
+                qwend: _sov_list_add(qwend, jmp())
+            qwli: qwli + 1
+        cflush_all()
+        qwai: 0
+        as long as qwai < _sov_list_len(qwkz)
+            patch(peek_i64(qwkz, 16 + qwai * 8))
+            qwai: qwai + 1
+        qwai: 0
+        as long as qwai < _sov_list_len(qwend)
+            patch(peek_i64(qwend, 16 + qwai * 8))
+            qwai: qwai + 1
+    stmt(join(join(var, ": "), join(cut(rhs, 0, qwns), join(join(qwfx, "zzr"), cut(rhs, qwcl + 1, qwrn)))))
+    inl_depth: inl_depth - 1
+    return 1
+
+inl_put iqbuf iqoi s:
+    iqk: 0
+    iqsn: length(s)
+    as long as iqk < iqsn
+        dummy: poke_byte(iqbuf, iqoi, peek_byte(s, iqk))
+        iqoi: iqoi + 1
+        iqk: iqk + 1
+    return iqoi
+
+inl_trivial iqs:
+    # duplicating this arg text is free: a lone atom (name/number,
+    # all word chars) or a string literal.
+    if cfind1(iqs, 34) is 0
+        return 1
+    iqsn: length(iqs)
+    if iqsn is 0
+        return 0
+    iqk: 0
+    as long as iqk < iqsn
+        if wordchar(peek_byte(iqs, iqk)) is 0
+            return 0
+        iqk: iqk + 1
+    return 1
+
+ret_par: 0
+rp_atom_ok rps2:
+    # self-contained atom check (expr_atom is kid-planted; do not call it)
+    rpn2: length(rps2)
+    if rpn2 is 0
+        return 0
+    rpi9: 0
+    as long as rpi9 < rpn2
+        rpc9: peek_byte(rps2, rpi9)
+        rpok: 0
+        if rpc9 > 96
+            if rpc9 < 123
+                rpok: 1
+        if rpc9 > 64
+            if rpc9 < 91
+                rpok: 1
+        if rpc9 > 47
+            if rpc9 < 58
+                rpok: 1
+        if rpc9 is 95
+            rpok: 1
+        if rpc9 is 46
+            rpok: 1
+        if rpok is 0
+            return 0
+        rpi9: rpi9 + 1
+    return 1
+
+rp_is_assign rpl rpnm2:
+    # 1 when this stripped line assigns rpnm2 (colon form lhs match, or
+    # C-style "name =" / "name=" at line start).
+    rfc: find_col(rpl)
+    if rfc > 0
+        rlh: repl(strip(cut(rpl, 0, rfc)), " ", "_")
+        if _sov_str_eq(rlh, rpnm2) is 1
+            return 1
+    if _sov_starts_with(rpl, rpnm2) is 1
+        rnn: length(rpnm2)
+        rnx: peek_byte(rpl, rnn)
+        if rnx is 61
+            return 1
+        if rnx is 32
+            if peek_byte(rpl, rnn + 1) is 61
+                return 1
+    return 0
+
+rp_scan fi:
+    # index of the param this task provably returns unchanged on every
+    # path, else -1: every return yields that param (directly or via a
+    # single unconditional copy into a never-reassigned local), the last
+    # real body line is a base-indent such return (no fall-off path),
+    # and neither the param nor the copy is ever assigned elsewhere.
+    rps: peek_i64(params, 16 + fi * 8)
+    rpc: _sov_list_len(rps)
+    if rpc is 0
+        return 0 - 1
+    rpb: peek_i64(bodies, 16 + fi * 8)
+    rpbn: _sov_list_len(rpb)
+    ratom: 0
+    rpfirst: 0 - 1
+    rpj: 0
+    as long as rpj < rpbn
+        rpl: strip(peek_i64(rpb, 16 + rpj * 8))
+        if length(rpl) > 0
+            if peek_byte(rpl, 0) is not 35
+                if word_id(rpl) is kid_return
+                    if length(rpl) < 8
+                        return 0 - 1
+                    rpr: strip(cut(rpl, 7, length(rpl)))
+                    if rp_atom_ok(rpr) is 0
+                        return 0 - 1
+                    if ratom is 0
+                        ratom: rpr
+                        rpfirst: rpj
+                    if _sov_str_eq(rpr, ratom) is 0
+                        return 0 - 1
+        rpj: rpj + 1
+    if ratom is 0
+        return 0 - 1
+    rpk: 0 - 1
+    rpi2: 0
+    as long as rpi2 < rpc
+        if _sov_str_eq(ratom, peek_i64(rps, 16 + rpi2 * 8)) is 1
+            rpk: rpi2
+        rpi2: rpi2 + 1
+    rpbase: 0 - 1
+    rplast: 0 - 1
+    rpj: 0
+    as long as rpj < rpbn
+        rpraw: peek_i64(rpb, 16 + rpj * 8)
+        rpl: strip(rpraw)
+        if length(rpl) > 0
+            if peek_byte(rpl, 0) is not 35
+                if rpbase < 0
+                    rpbase: nind(rpraw)
+                rplast: rpj
+        rpj: rpj + 1
+    if rplast < 0
+        return 0 - 1
+    rpraw: peek_i64(rpb, 16 + rplast * 8)
+    if nind(rpraw) is not rpbase
+        return 0 - 1
+    rpl: strip(rpraw)
+    if word_id(rpl) is not kid_return
+        return 0 - 1
+    if rpk > 0 - 1
+        rppn: peek_i64(rps, 16 + rpk * 8)
+        rpj: 0
+        as long as rpj < rpbn
+            rpl2: strip(peek_i64(rpb, 16 + rpj * 8))
+            if rp_is_assign(rpl2, rppn) is 1
+                return 0 - 1
+            rpj: rpj + 1
+        return rpk
+    # returns go through a copy local: it must be assigned exactly once,
+    # at base indent, from a param, before the first return.
+    rpcnt: 0
+    rpdef: 0 - 1
+    rpj: 0
+    as long as rpj < rpbn
+        rpraw: peek_i64(rpb, 16 + rpj * 8)
+        rpl: strip(rpraw)
+        if length(rpl) > 0
+            if rp_is_assign(rpl, ratom) is 1
+                rpcnt: rpcnt + 1
+                rpdef: rpj
+        rpj: rpj + 1
+    if rpcnt is not 1
+        return 0 - 1
+    if rpdef >= rpfirst
+        return 0 - 1
+    rpraw: peek_i64(rpb, 16 + rpdef * 8)
+    if nind(rpraw) is not rpbase
+        return 0 - 1
+    rpl: strip(rpraw)
+    rpfc: find_col(rpl)
+    if rpfc < 1
+        return 0 - 1
+    rprh: strip(cut(rpl, rpfc + 1, length(rpl)))
+    rpi2: 0
+    as long as rpi2 < rpc
+        if _sov_str_eq(rprh, peek_i64(rps, 16 + rpi2 * 8)) is 1
+            rpk: rpi2
+        rpi2: rpi2 + 1
+    if rpk < 0
+        return 0 - 1
+    rppn: peek_i64(rps, 16 + rpk * 8)
+    rpj: 0
+    as long as rpj < rpbn
+        rpl2: strip(peek_i64(rpb, 16 + rpj * 8))
+        if rp_is_assign(rpl2, rppn) is 1
+            return 0 - 1
+        rpj: rpj + 1
+    return rpk
+
+build_ret_par:
+    # ret_par[fi] = param index task fi returns unchanged, else -1.
+    # Built pre-walk alongside the inliner sets so call-site typing is
+    # order-independent.
+    kid_init()
+    ret_par: _sov_list_new()
+    rpi: 0
+    rpn: _sov_list_len(names)
+    as long as rpi < rpn
+        ret_par: _sov_list_add(ret_par, rp_scan(rpi))
+        rpi: rpi + 1
+    return 0
+
+rp_arg_str rpa rpdep:
+    # 1 when this argument text is provably string-valued: a literal, a
+    # string var/global atom, or a call to a string fn / returns-param
+    # task fed a string in the passed-through position.
+    if is_lit(rpa) is 1
+        return 1
+    if expr_atom(rpa) is 1
+        return atom_str_type(rpa)
+    rplp: look(rpa, "(")
+    if rplp < 1
+        return 0
+    if peek_byte(rpa, length(rpa) - 1) is not 41
+        return 0
+    rpn2: strip(cut(rpa, 0, rplp))
+    if sf_lookup(rpn2) > 0 - 1
+        return 1
+    rp_sub: _sov_list_new()
+    rp_sub: split_args(cut(rpa, rplp + 1, length(rpa) - 1), rp_sub)
+    return rp_type_of(rpn2, rp_sub, _sov_list_len(rp_sub), rpdep + 1)
+
+rp_type_of rpnm rpargs rpargc rpdep:
+    # 1 when a call rpnm(rpargs...) yields a string because rpnm returns
+    # its k-th param unchanged and the k-th argument is a string.
+    if rpdep > 2
+        return 0
+    if ret_par is 0
+        return 0
+    rpfi: nm_lookup(rpnm)
+    if rpfi < 0
+        return 0
+    rpk9: peek_i64(ret_par, 16 + rpfi * 8)
+    if rpk9 < 0
+        return 0
+    if rpk9 >= rpargc
+        return 0
+    return rp_arg_str(strip(peek_i64(rpargs, 16 + rpk9 * 8)), rpdep)
+
+try_inline_call name argc argl:
+    # v1 small-task inliner: callee body is exactly one line
+    # "return E" where E has no calls/indexing, every arg is pure
+    # (no calls/indexing either, so textual duplication is exact),
+    # and every free name in E is a global not shadowed in the caller.
+    # Substitution is whole-token with parenthesized args.  Returns
+    # the expr type on success, -1 to fall back to a real call.
+    # Eligibility of the callee is precomputed by build_inl_set.
+    if _sov_starts_with(name, "_sov_") is 1
+        return 0 - 1
+    if _sov_list_len(inl_set) is 0
+        return 0 - 1
+    iqsi: inl_lookup(name)
+    if iqsi < 0
+        return 0 - 1
+    iqf: nm_lookup(name)
+    if iqf < 0
+        return 0 - 1
+    iqp: peek_i64(params, 16 + iqf * 8)
+    if _sov_list_len(iqp) is not argc
+        return 0 - 1
+    iqe: peek_i64(inl_es, 16 + iqsi * 8)
+    iqa: _sov_list_new()
+    iqc: _sov_list_new()
+    iqai: 0
+    iqmx: 1
+    iqok: 1
+    as long as iqai < argc
+        iqag: strip(peek_i64(argl, 16 + iqai * 8))
+        iqa: _sov_list_add(iqa, iqag)
+        iqc: _sov_list_add(iqc, 0)
+        if cfind1(iqag, 40) > 0 - 1
+            iqok: 0
+        if cfind1(iqag, 91) > 0 - 1
+            iqok: 0
+        if cfind1(iqag, 34) > 0 - 1
+            iqok: 0
+        if length(iqag) > iqmx
+            iqmx: length(iqag)
+        iqai: iqai + 1
+    if iqok is 0
+        return 0 - 1
+    iqen: length(iqe)
+    iqob: _sov_heap_alloc((iqen + 8) * (iqmx + 3) + 64)
+    iqoi: 0
+    iqii: 0
+    iqok2: 1
+    as long as iqii < iqen
+        iqch: peek_byte(iqe, iqii)
+        if wordchar(iqch) is 1
+            iqij: iqii
+            iqgo: 1
+            as long as iqgo is 1
+                if iqij >= iqen
+                    iqgo: 0
+                if iqgo is 1
+                    if wordchar(peek_byte(iqe, iqij)) is 1
+                        iqij: iqij + 1
+                    if not
+                        iqgo: 0
+            iqtok: cut(iqe, iqii, iqij)
+            iqnk: iqij
+            iqngo: 1
+            as long as iqngo is 1
+                if iqnk >= iqen
+                    iqngo: 0
+                if iqngo is 1
+                    if peek_byte(iqe, iqnk) is 32
+                        iqnk: iqnk + 1
+                    if not
+                        iqngo: 0
+            iqcall: 0
+            if iqnk < iqen
+                if peek_byte(iqe, iqnk) is 40
+                    iqcall: 1
+            iqsub: 0
+            iqpm: 0 - 1
+            iqpj: 0
+            iqpgo: 1
+            as long as iqpgo is 1
+                if iqpj >= argc
+                    iqpgo: 0
+                if iqpgo is 1
+                    if _sov_str_eq(iqtok, peek_i64(iqp, 16 + iqpj * 8)) is 1
+                        iqsub: peek_i64(iqa, 16 + iqpj * 8)
+                        iqpm: iqpj
+                        iqpgo: 0
+                    if iqpgo is 1
+                        iqpj: iqpj + 1
+            if iqcall is 1
+                iqoi: inl_put(iqob, iqoi, iqtok)
+            if iqcall is 0
+                if iqsub is not 0
+                    dummy: poke_i64(iqc, 16 + iqpm * 8, peek_i64(iqc, 16 + iqpm * 8) + 1)
+                    if inl_trivial(iqsub) is 1
+                        iqoi: inl_put(iqob, iqoi, iqsub)
+                    if not
+                        dummy: poke_byte(iqob, iqoi, 40)
+                        iqoi: iqoi + 1
+                        iqoi: inl_put(iqob, iqoi, iqsub)
+                        dummy: poke_byte(iqob, iqoi, 41)
+                        iqoi: iqoi + 1
+                if not
+                    if digitb(peek_byte(iqtok, 0)) is 1
+                        iqoi: inl_put(iqob, iqoi, iqtok)
+                    if not
+                        if inl_wordop(iqtok) is 0
+                            if gn_lookup(iqtok) < 0
+                                iqok2: 0
+                            if lsh_find_s(iqtok) > 0 - 1
+                                iqok2: 0
+                        iqoi: inl_put(iqob, iqoi, iqtok)
+            iqii: iqij
+        if not
+            dummy: poke_byte(iqob, iqoi, iqch)
+            iqoi: iqoi + 1
+            iqii: iqii + 1
+    if iqok2 is 0
+        return 0 - 1
+    iqpj2: 0
+    as long as iqpj2 < argc
+        if peek_i64(iqc, 16 + iqpj2 * 8) > 1
+            if inl_trivial(peek_i64(iqa, 16 + iqpj2 * 8)) is 0
+                return 0 - 1
+        iqpj2: iqpj2 + 1
+    dummy: poke_byte(iqob, iqoi, 0)
+    iqrt: expr(iqob)
+    return iqrt
+
+cp_txt_of nm:
+    # escaped-form inner text of the tracked literal, or 0.  Guard triple
+    # only (no cp_ok): the stmt hook consults this while cp_ok is 0; expr
+    # fold sites pair it with cp_len_of, which enforces cp_ok.
+    if cp_ok is 1
+        if cp_kill is 1
+            return 0
+    if cp_nm is 0
+        return 0
+    if cp_txt is 0
+        return 0
+    if _sov_str_eq(nm, cp_nm) is 0
+        return 0
+    if cp_bid0 is not cp_bid
+        return 0
+    if cp_gen0 is not cp_gen
+        return 0
+    if cp_dep0 is not _sov_list_len(bk)
+        return 0
+    return cp_txt
+
+lit_len s:
+    # unescaped length of a quoted literal (compiler-side text still has
+    # backslash escapes; unesc maps every pair to one byte)
+    n: length(s)
+    c: 0
+    i: 1
+    as long as i < n - 1
+        if peek_byte(s, i) is 92
+            i: i + 1
+        c: c + 1
+        i: i + 1
+    return c
+is_lit s:
+    if length(s) < 2
+        return 0
+    if peek_byte(s, 0) is not 34
+        return 0
+    if peek_byte(s, length(s) - 1) is not 34
+        return 0
+    return 1
+atom_str_type av:
+    # expr type of a bare-atom load: 1 when the atom names a string var
+    # (task-local via str_vars, or a string-literal global not shadowed
+    # by a local of the same name), else 0.
+    if sv_lookup(av) > 0 - 1
+        return 1
+    if lsh_find_s(av) < 0
+        if sg_lookup(av) > 0 - 1
+            return 1
+    return 0
+
+expr_body e0:
+    e: e0
+    e0n: length(e0)
+    en: e0n
+    if peek_byte(e0, 0) < 33
+        e: strip(e0)
+        en: length(e)
+    if not
+        if e0n > 0
+            if peek_byte(e0, e0n - 1) < 33
+                e: strip(e0)
+                en: length(e)
+    fl_x: blank
+    if digitb(peek_byte(e, 0)) is 1
+        fl_x: fl_expand(e)
+    if peek_byte(fl_x, 0) is not 0
+        r_fl: expr(fl_x)
+        return r_fl
+    if en > 100000000
+        print "Error: torn text reached the parser"
+        _sov_print(e0)
+        err_where()
+        had_err: 1
+        xor_rax()
+        return 0
+    if peek_byte(e, 0) is 0
+        xor_rax()
+        return 0
+    # bracket-index sugar: NAME[ expr ] reads as _sov_list_get(NAME, expr).
+    # v1: a single top-level pair; bracket must end the expression.
+    if peek_byte(e, en - 1) is 93
+        ix_p: cfind1(e, 91)
+        if ix_p > 0
+            ix_nm: cut(e, 0, ix_p)
+            ix_ok: ix_name_ok(ix_nm)
+            if ix_ok is 1
+                bb_f: cut(e, ix_p + 1, en - 1)
+                if cfind1(bb_f, 91) is 0 - 1
+                    if cfind1(bb_f, 93) is 0 - 1
+                        if cfind1(bb_f, 34) is 0 - 1
+                            qb_done: 0
+                            if nat_gate is 1
+                                qb_args: _sov_list_new()
+                                qb_args: _sov_list_add(qb_args, ix_nm)
+                                qb_args: _sov_list_add(qb_args, bb_f)
+                                if try_inline_pkb("_sov_list_get", 2, qb_args) is 1
+                                    qb_done: 1
+                            if qb_done is 0
+                                qm0: reg_slot(ix_nm)
+                                qm1: reg_slot(bb_f)
+                                qmemd: 0
+                                if has_vm is 1
+                                    if try_mem("_sov_list_get", 2, qm0, qm1, 0 - 1, 0, 0) is 1
+                                        qmemd: 1
+                                if qmemd is 0
+                                    if is_imm(ix_nm) is 1
+                                        expr(ix_nm)
+                                        mov_rdi_rax()
+                                    if not
+                                        if try_lea_arg(ix_nm, 0) is 0
+                                            loadv_rdi(ix_nm)
+                                    if is_imm(bb_f) is 1
+                                        expr(bb_f)
+                                        mov_rsi_rax()
+                                    if not
+                                        if try_lea_arg(bb_f, 1) is 0
+                                            loadv_rsi(bb_f)
+                                    call_args("_sov_list_get", 2, 1)
+                            return
+                rem: cut(e, ix_p, en)
+                cur: ix_nm
+                good: 1
+                if good is 1
+                    good: 0
+                as long as good is 1
+                    if length(rem) > 0
+                        if peek_byte(rem, 0) is 91
+                            d9: 1
+                            j9: 1
+                            rn: length(rem)
+                            as long as d9 > 0
+                                if j9 >= rn
+                                    d9: 0
+                                    good: 0
+                                if not
+                                    bc9: peek_byte(rem, j9)
+                                    if bc9 is 91
+                                        d9: d9 + 1
+                                    if not
+                                        if bc9 is 93
+                                            d9: d9 - 1
+                                    j9: j9 + 1
+                            if good is 1
+                                q9: j9 - 1
+                                ixone: cut(rem, 1, q9)
+                                cur: str_cat("_sov_list_get(", str_cat(cur, str_cat(", ", str_cat(ixone, ")"))))
+                                rem: cut(rem, j9, rn)
+                            if not
+                                good: 0
+                        if not
+                            good: 0
+                    if length(rem) is 0
+                        good: 0
+                if length(rem) is 0
+                    expr_body(cur)
+                    return
+    # atom fast path: digit runs take the rax_imm tail
+    # atom fast path: digit runs take the rax_imm tail; word runs take the
+    # loadv tail (repl is the identity on space-free atoms, cops likewise).
+    if digitb(peek_byte(e, 0)) is 1
+        c1: peek_byte(e, 1)
+        if c1 is 0
+            rax_imm(peek_byte(e, 0) - 48)
+            return
+        if cfind1(e, 32) < 0
+            if en > 2
+                if peek_byte(e, 0) is 48
+                    c1h: peek_byte(e, 1)
+                    if c1h is 120
+                        rax_imm(num_of(e))
+                        return
+                    if c1h is 98
+                        rax_imm(num_of(e))
+                        return
+        iv: peek_byte(e, 0) - 48
+        ii: 1
+        iall: 1
+        as long as iall is 1
+            if ii >= en
+                iall: 0
+            if iall is 1
+                cb2e: peek_byte(e, ii)
+                if cb2e > 47
+                    if cb2e < 58
+                        iv: iv * 10 + cb2e - 48
+                        ii: ii + 1
+                    if not
+                        if cb2e is 46
+                            print "Error: float literals are not supported yet"
+                            _sov_print(e)
+                            err_where()
+                            had_err: 1
+                            return
+                        iall: 0 - 1
+                if not
+                    if cb2e is 46
+                        print "Error: float literals are not supported yet"
+                        _sov_print(e)
+                        err_where()
+                        had_err: 1
+                        return
+                    iall: 0 - 1
+        if iall is 0
+            rax_imm(iv)
+            return
+    if not
+        if expr_atom_word(e) is 1
+            loadv(e)
+            return atom_str_type(e)
+    if en >= 8
+        if peek_byte(e, en - 1) is 116
+            if peek_byte(e, en - 2) is 116
+                if sg_match(e, en - 8, " as text") is 1
+                    expr(cutn(e, 0, en - 8, en))
+                    return 1
+    if en >= 7
+        if peek_byte(e, en - 1) is 114
+            if peek_byte(e, en - 2) is 116
+                if sg_match(e, en - 7, " as ptr") is 1
+                    expr(cutn(e, 0, en - 7, en))
+                    return 1
+    if peek_byte(e, 0) is 34
+        if peek_byte(e, 1) is not 0
+            rax_str(cutn(e, 1, en - 1, en))
+            return 1
+        rax_str("")
+        return 1
+    if peek_byte(e, 0) is 97
+        eid: word_id(e)
+        if eid is kid_as
+            ar: strip(cutn(e, 3, en, en))
+            arn: length(ar)
+            aw: word_id(ar)
+            if aw is kid_text
+                expr(strip(cut(ar, 5, arn)))
+                return 1
+            if aw is kid_ptr
+                expr(strip(cut(ar, 4, arn)))
+                return 1
+        if eid is kid_addr_of
+            emit2(72, 184)
+            aat: here()
+            emit8(0)
+            addp(aat, "fnaddr", strip(cutn(e, 8, en, en)))
+            return 0
+    if peek_byte(e, 0) is 99
+        if _sov_starts_with(e, "const(") is 1
+            if en > 7
+                if peek_byte(e, en - 1) is 41 is 1
+                    if ceval(cutn(e, 6, en - 1, en)) is 1
+                        rax_imm(cval)
+                        return 0
+                    print "Error: const: not a compile-time number"
+                    err_where()
+                    had_err: 1
+                    xor_rax()
+                    return 0
+    if peek_byte(e, 0) is 108
+        if word_id(e) is kid_length
+            lr: strip(cutn(e, 7, en, en))
+            if word_id(lr) is kid_of
+                lo_a: strip(cut(lr, 3, length(lr)))
+                lo_c: cp_len_of(lo_a)
+                if lo_c > 0 - 1
+                    rax_imm(lo_c)
+                    return 0
+                expr(lo_a)
+                mov_rdi_rax()
+                used_sl: 1
+                calln("_sov_strlen")
+                return 0
+    c2: cops(e)
+    if c2 is not e
+        e: strip(c2)
+        en: length(e)
+    if expr_cascade(e, en) is 1
+        return casc_ret
+    if peek_byte(e, 0) is 98
+        if word_id(e) is kid_blank
+            rax_str("")
+            return 1
+    if en > 0
+        if peek_byte(e, 0) is 34
+            rax_str(cutn(e, 1, en - 1, en))
+            return 1
+    if peek_byte(e, 0) is 40
+        if peek_byte(e, en - 1) is 41 is 1
+            t: expr(cutn(e, 1, en - 1, en))
+            return t
+    lp: look(e, "(")
+    if lp > 0
+        if peek_byte(e, en - 1) is 41 is 1
+            name: strip(cutn(e, 0, lp, en))
+            is_spawn: 0
+            if peek_byte(name, 0) is 115
+                if word_id(name) is kid_spawn
+                    name: strip(cut(name, 6, length(name)))
+                    if name is blank
+                        print "Error: spawn needs a task name"
+                        err_where()
+                        had_err: 1
+                        xor_rax()
+                        return 0
+                    is_spawn: 1
+            inside: cutn(e, lp + 1, en - 1, en)
+            argc: 0
+            argl: _sov_list_new()
+            argl: split_args(inside, argl)
+            argc: _sov_list_len(argl)
+            nid: intern_kid(name)
+            ik_nm_ptr: name
+            ik_nm_kid: nid
+            # fx: pure f64 op trees evaluate register-resident in xmm
+            # (fx_ok declines anything else, leaving the generic path).
+            if is_spawn is 0
+                if argc is 2
+                    if fx_binop(nid) is 1
+                        if fx_tree(e) is 1
+                            return 0
+                if argc is 1
+                    if nid is kid_f64_sqrt
+                        if fx_tree(e) is 1
+                            return 0
+            # wrapping arithmetic builtins: same add/sub/imul as the checked
+            # operators but no chk_ov trap, so hash/prng/crypto code that
+            # relies on mod-2^64 wraparound is expressible. checked + - *
+            # remain the default everywhere else.
+            if nid is kid_wrap_add
+                if argc is 2
+                    bin(peek_i64(argl, 16), peek_i64(argl, 24), "wadd")
+                    return 0
+            if nid is kid_wrap_sub
+                if argc is 2
+                    bin(peek_i64(argl, 16), peek_i64(argl, 24), "wsub")
+                    return 0
+            if nid is kid_wrap_mul
+                if argc is 2
+                    bin(peek_i64(argl, 16), peek_i64(argl, 24), "wmul")
+                    return 0
+            if nid is kid_opband
+                if argc is 2
+                    bin(peek_i64(argl, 16), peek_i64(argl, 24), "band")
+                    return 0
+            if nid is kid_opbor
+                if argc is 2
+                    bin(peek_i64(argl, 16), peek_i64(argl, 24), "bor")
+                    return 0
+            if nid is kid_opbxor
+                if argc is 2
+                    bin(peek_i64(argl, 16), peek_i64(argl, 24), "bxor")
+                    return 0
+            if nid is kid_opbshl
+                if argc is 2
+                    bin(peek_i64(argl, 16), peek_i64(argl, 24), "bshl")
+                    return 0
+            if nid is kid_opbshr
+                if argc is 2
+                    bin(peek_i64(argl, 16), peek_i64(argl, 24), "bshr")
+                    return 0
+            if nid is kid_opbsar
+                if argc is 2
+                    bin(peek_i64(argl, 16), peek_i64(argl, 24), "bsar")
+                    return 0
+            if length(fib_nm) > 0
+                if _sov_str_eq(name, fib_nm) is 1
+                    if argc is 1
+                        a0: peek_i64(argl, 16)
+                        if is_imm(a0) is 1
+                            fv: num_of(a0)
+                            if fv < 2
+                                rax_imm(fv)
+                                return 0
+                            if fv < 93
+                                rax_imm(fib_of(fv))
+                                return 0
+            if kern_mode is 1
+                if nid is kid_fn_addr
+                    if argc is 1
+                        fa0: peek_i64(argl, 16)
+                        if length(fa0) > 1
+                            if peek_byte(fa0, 0) is 34
+                                emit2(72, 184)
+                                fadr: here()
+                                emit8(0)
+                                addp(fadr, "fnaddr", strip(cut(fa0, 1, length(fa0) - 1)))
+                                return 0
+            if peek_byte(name, 0) is 115
+                if argc is 1
+                    if _sov_str_eq(name, "str_len") is 1
+                        sf0: strip(peek_i64(argl, 16))
+                        if is_lit(sf0) is 1
+                            rax_imm(lit_len(sf0))
+                            return 0
+                        cpl2: cp_len_of(sf0)
+                        if cpl2 > 0 - 1
+                            rax_imm(cpl2)
+                            return 0
+                if argc is 2
+                    if _sov_str_eq(name, "str_cat") is 1
+                        sf1: strip(peek_i64(argl, 16))
+                        sf2: strip(peek_i64(argl, 24))
+                        ok1: 0
+                        i1: blank
+                        if is_lit(sf1) is 1
+                            i1: cut(sf1, 1, length(sf1) - 1)
+                            ok1: 1
+                        if not
+                            if cp_len_of(sf1) > 0 - 1
+                                i1: cp_txt_of(sf1)
+                                ok1: 1
+                        ok2: 0
+                        i2: blank
+                        if is_lit(sf2) is 1
+                            i2: cut(sf2, 1, length(sf2) - 1)
+                            ok2: 1
+                        if not
+                            if cp_len_of(sf2) > 0 - 1
+                                i2: cp_txt_of(sf2)
+                                ok2: 1
+                        if ok1 is 1
+                            if ok2 is 1
+                                rax_str(join(i1, i2))
+                                return 1
+            inr: try_inline_call(name, argc, argl)
+            if inr > 0 - 1
+                return inr
+            if try_scaled_mem(name, argc, argl) is 1
+                return 0
+            if nat_gate is 1
+                if try_inline_pkb(name, argc, argl) is 1
+                    return 0
+            all_s: 1
+            ai: 0
+            as long as ai < argc
+                ag: peek_i64(argl, 16 + ai * 8)
+                if digitb(peek_byte(ag, 0)) is 1
+                    if cfind1(ag, 46) > 0 - 1
+                        all_s: 0
+                if is_imm(ag) is 0
+                    if plain_name(ag) is 0
+                        if lea_ok(ag) is 0
+                            all_s: 0
+                ai: ai + 1
+            if nid is kid_syscall
+                all_s: 0
+            if nid is kid_sovcall
+                all_s: 0
+            if nid is kid_cfunc
+                all_s: 0
+            if nid is kid_thread_create
+                all_s: 0
+            if nid is kid_thread_wait
+                all_s: 0
+            if nid is kid_thread_wake
+                all_s: 0
+            if is_spawn is 1
+                all_s: 0
+                if argc > 6
+                    print "Error: spawn takes at most six values"
+                    err_where()
+                    had_err: 1
+                    xor_rax()
+                    return 0
+            if argc > 6
+                all_s: 0
+            if all_s is 1
+                m0: 0 - 1
+                m1: 0 - 1
+                m2: 0 - 1
+                p2: 0
+                i2: 0
+                ai: 0
+                as long as ai < argc
+                    ag: peek_i64(argl, 16 + ai * 8)
+                    if ai is 0
+                        m0: reg_slot(ag)
+                    if ai is 1
+                        m1: reg_slot(ag)
+                    if ai is 2
+                        m2: reg_slot(ag)
+                        if is_imm(ag) is 1
+                            p2: num_of(ag)
+                            i2: 1
+                    ai: ai + 1
+                if has_vm is 1
+                    if try_mem(name, argc, m0, m1, m2, i2, p2) is 1
+                        return 0
+                ai: 0
+                as long as ai < argc
+                    ag: peek_i64(argl, 16 + ai * 8)
+                    if ai is 0
+                        if is_imm(ag) is 1
+                            expr(ag)
+                            mov_rdi_rax()
+                        if not
+                            if try_lea_arg(ag, 0) is 0
+                                loadv_rdi(ag)
+                    if ai is 1
+                        if is_imm(ag) is 1
+                            expr(ag)
+                            mov_rsi_rax()
+                        if not
+                            if try_lea_arg(ag, 1) is 0
+                                loadv_rsi(ag)
+                    if ai is 2
+                        if is_imm(ag) is 1
+                            expr(ag)
+                            emit3(72, 137, 194)
+                        if not
+                            if try_lea_arg(ag, 2) is 0
+                                loadv_rdx(ag)
+                    if ai is 3
+                        if try_lea_arg(ag, 3) is 0
+                            expr(ag)
+                            emit3(72, 137, 193)
+                    if ai is 4
+                        if try_lea_arg(ag, 4) is 0
+                            expr(ag)
+                            emit3(73, 137, 192)
+                    if ai is 5
+                        if try_lea_arg(ag, 5) is 0
+                            expr(ag)
+                            emit3(73, 137, 193)
+                    ai: ai + 1
+                call_args(name, argc, 1)
+            if not
+                ai: 0
+                as long as ai < argc
+                    expr(peek_i64(argl, 16 + ai * 8))
+                    push_rax()
+                    ai: ai + 1
+                if is_spawn is 1
+                    spawn_emit(name, argc)
+                if not
+                    call_args(name, argc, 0)
+            axi: list_find(ar_names, name)
+            if axi > 0 - 1
+                if peek_i64(ar_cnt, 16 + axi * 8) is not argc
+                    print "Error: wrong number of values"
+                    _sov_print(name)
+                    err_where()
+                    had_err: 1
+            if nid is kid_cat
+                return 1
+            if nid is kid_strcat
+                return 1
+            if nid is kid__sov_strcat
+                return 1
+            if nid is kid_sub
+                return 1
+            if nid is kid_trim
+                return 1
+            if nid is kid_ch
+                return 1
+            if nid is kid__sov_substring
+                return 1
+            if sf_lookup(name) > 0 - 1
+                return 1
+            if rp_type_of(name, argl, argc, 0) is 1
+                return 1
+            return 0
+    if digitb(peek_byte(e, 0)) is 1
+        dq: 0
+        as long as dq < en
+            if digitb(peek_byte(e, dq)) is 0
+                print "Error: do not know these words"
+                _sov_print(e)
+                err_where()
+                had_err: 1
+                xor_rax()
+                return 0
+            dq: dq + 1
+        rax_imm(num_of(e))
+        return 0
+    if peek_byte(e, 0) is 45
+        if en > 1
+            if digitb(peek_byte(e, 1)) is 1
+                rax_imm(0 - num_of(cutn(e, 1, en, en)))
+                return 0
+    if look(e, " ") > 0 - 1
+        print "Error: do not know these words"
+        _sov_print(e)
+        err_where()
+        had_err: 1
+        xor_rax()
+        return 0
+    vn: e
+    loadv(vn)
+    return atom_str_type(vn)
+fail:
+    sys_exit(1)
+err_count: 0
+err_where:
+    # Bound total diagnostics: a source the front end rejects wholesale
+    # (e.g. a backend file fed to the wrong compiler) otherwise produces
+    # one error per line - hundreds of MB of spew.  200 errors is far
+    # past any useful report; abort instead.
+    err_count: err_count + 1
+    if err_count is 201
+        print "Error: too many errors; aborting"
+        dummy_ec: syscall(231, 1, 0, 0)
+    if err_count > 200
+        return
+    if length(src_name) > 0
+        _sov_print(src_name)
+    print err_line
+    if length(walk_nm) > 0
+        _sov_print(walk_nm)
+suggest_name name:
+    best: blank
+    bn: 0
+    si: 0
+    as long as si < _sov_list_len(names)
+        nm: peek_i64(names, 16 + si * 8)
+        hit: 0
+        if _sov_starts_with(nm, name) is 1
+            hit: 1
+        if _sov_starts_with(name, nm) is 1
+            if length(nm) > 1
+                hit: 1
+        if hit is 1
+            if length(nm) > bn
+                best: nm
+                bn: length(nm)
+        si: si + 1
+    si: 0
+    si_ln: _sov_list_len(locals)
+    as long as si < si_ln
+        nm: peek_i64(locals, 16 + si * 8)
+        if _sov_starts_with(nm, name) is 1
+            if length(nm) > bn
+                best: nm
+                bn: length(nm)
+        si: si + 1
+    si: 0
+    si_ln: _sov_list_len(glob_names)
+    as long as si < si_ln
+        nm: peek_i64(glob_names, 16 + si * 8)
+        if _sov_starts_with(nm, name) is 1
+            if length(nm) > bn
+                best: nm
+                bn: length(nm)
+        si: si + 1
+    if bn > 0
+        print "did you mean"
+        _sov_print(best)
+seed_str_fns:
+    str_fns: _sov_list_add(str_fns, "str_cat")
+    str_fns: _sov_list_add(str_fns, "str_cut")
+    str_fns: _sov_list_add(str_fns, "str_trim")
+    str_fns: _sov_list_add(str_fns, "str_join3")
+    str_fns: _sov_list_add(str_fns, "_sov_trim")
+    str_fns: _sov_list_add(str_fns, "join")
+    str_fns: _sov_list_add(str_fns, "strip")
+    str_fns: _sov_list_add(str_fns, "cut")
+    str_fns: _sov_list_add(str_fns, "repl")
+    str_fns: _sov_list_add(str_fns, "letter")
+fib_call_var line nm:
+    mark: join(nm, "(")
+    ln: length(line)
+    pos: 0
+    as long as pos < ln
+        p: look(cut(line, pos, ln), mark)
+        if p < 0
+            return 0
+        p: p + pos
+        inn: cut(line, p + length(mark), ln)
+        c: look(inn, ")")
+        if c < 0
+            return 0
+        arg: strip(cut(inn, 0, c))
+        if is_imm(arg) is 0
+            return 1
+        if num_of(arg) > 92
+            return 1
+        pos: p + length(mark) + c + 1
+fib_of n:
+    if n < 2
+        return n
+    a: 0
+    b: 1
+    i: 2
+    as long as i <= n
+        t: a + b
+        a: b
+        b: t
+        i: i + 1
+    return b
+fiblike nm ps blines:
+    if _sov_str_eq(nm, entry_nm) is 1
+        return 0
+    if _sov_list_len(ps) is not 1
+        return 0
+    p: peek_i64(ps, 16)
+    if _sov_list_len(blines) is not 3
+        return 0
+    l1: strip(peek_i64(blines, 16))
+    l2: strip(peek_i64(blines, 24))
+    l3: strip(peek_i64(blines, 32))
+    if _sov_str_eq(l1, join("if ", join(p, " < 2"))) is 0
+        return 0
+    if _sov_str_eq(l2, join("return ", p)) is 0
+        return 0
+    want3: join("return ", join(nm, join("(", join(p, " - 1)"))))
+    want3b: join(want3, join(" + ", join(nm, join("(", join(p, " - 2)")))))
+    if _sov_str_eq(l3, want3b) is 0
+        return 0
+    return 1
+file_ln li:
+    n: li + 1
+    if n > src_base
+        return n - src_base
+    return n
+find_col text:
+    if cfind1(text, 34) < 0
+        return cfind1(text, 58)
+    return find_col_q(text)
+find_col_q text:
+    i: 0
+    n: length(text)
+    ins: 0
+    as long as i < n
+        b: peek_byte(text, i)
+        if ins is 1
+            if b is 92
+                i: i + 1
+            if not
+                if b is 34
+                    ins: 0
+        if not
+            if b is 34
+                ins: 1
+            if not
+                if b is 58
+                    return i
+        i: i + 1
+    return 0 - 1
+find_last_sp text:
+    i: length(text) - 1
+    as long as i > 0 - 1
+        if peek_byte(text, i) is 32 is 1
+            return i
+        i: i - 1
+    return 0 - 1
+find_sep text:
+    if _sov_find_text(text, ":=") < 0
+        return 0 - 1
+    return find_sep_do(text)
+find_sep_do text:
+    i: 0
+    n: length(text)
+    ins: 0
+    as long as i < n - 3
+        b: peek_byte(text, i)
+        if ins is 1
+            if b is 92
+                i: i + 1
+            if not
+                if b is 34
+                    ins: 0
+        if not
+            if b is 34
+                ins: 1
+        if ins is 0
+            if sg_match(text, i, " := ") is 1
+                return i
+        i: i + 1
+    return 0 - 1
+fold_mem_h oc d i:
+    rx: 72
+    if d > 7
+        rx: rx + 4
+    if i > 7
+        rx: rx + 2
+    emit(rx)
+    emit(oc)
+    emit(4 + (d % 8) * 8)
+    emit(sibx(i))
+fold_rax_h oc h:
+    emit(rexx(h))
+    emit(oc)
+    emit(4)
+    emit(sibx(h))
+fop e op:
+    hit: 0 - 1
+    if peek_byte(op, 1) is 0
+        hit: cfind1(e, peek_byte(op, 0))
+    if not
+        hit: _sov_find_text(e, op)
+    if hit < 0
+        return 0 - 1
+    n: length(e)
+    d: 0
+    ins: 0
+    f: 0 - 1
+    i: 0
+    # swar skip: plain chars (not quote/paren/escape/op) advance 8 at a time;
+    # skip set is exactly {34, 40, 41, 92, op[0]}, so the walk is unchanged.
+    ones: 72340172838076673
+    high: 0 - 9187201950435737472
+    k34: ones * 34
+    k40: ones * 40
+    k41: ones * 41
+    k92: ones * 92
+    kop: ones * peek_byte(op, 0)
+    as long as i < n
+        sk: 0
+        as long as sk is 0
+            if i + 8 > n
+                sk: 1
+            if sk is 0
+                q: peek_i64(e, i)
+                xq: bxor(q, k34)
+                m: band(band(xq - ones, bxor(xq, 0 - 1)), high)
+                if m is 0
+                    xq: bxor(q, k40)
+                    m: band(band(xq - ones, bxor(xq, 0 - 1)), high)
+                if m is 0
+                    xq: bxor(q, k41)
+                    m: band(band(xq - ones, bxor(xq, 0 - 1)), high)
+                if m is 0
+                    xq: bxor(q, k92)
+                    m: band(band(xq - ones, bxor(xq, 0 - 1)), high)
+                if m is 0
+                    xq: bxor(q, kop)
+                    m: band(band(xq - ones, bxor(xq, 0 - 1)), high)
+                if m is 0
+                    i: i + 8
+                if m is not 0
+                    sk: 1
+        c: peek_byte(e, i)
+        if ins is 1
+            if c is 92
+                i: i + 1
+                if i < n
+                    i: i + 1
+            if not
+                if c is 34
+                    ins: 0
+                i: i + 1
+        if not
+            if c is 34
+                ins: 1
+                i: i + 1
+            if not
+                if c is 40 is 1
+                    d: d + 1
+                    i: i + 1
+                if not
+                    if c is 41 is 1
+                        d: d - 1
+                        i: i + 1
+                    if not
+                        if d is 0
+                            if sg_match_n(e, i, op, n) is 1
+                                f: i
+                        i: i + 1
+    return f
+fopn e op nxt:
+    hit: 0 - 1
+    if peek_byte(op, 1) is 0
+        hit: cfind1(e, peek_byte(op, 0))
+    if not
+        hit: _sov_find_text(e, op)
+    if hit < 0
+        return 0 - 1
+    n: length(e)
+    d: 0
+    ins: 0
+    f: 0 - 1
+    i: 0
+    as long as i < n
+        c: peek_byte(e, i)
+        if ins is 1
+            if c is 92
+                i: i + 1
+                if i < n
+                    i: i + 1
+            if not
+                if c is 34
+                    ins: 0
+                i: i + 1
+        if not
+            if c is 34
+                ins: 1
+                i: i + 1
+            if not
+                if c is 40 is 1
+                    d: d + 1
+                    i: i + 1
+                if not
+                    if c is 41 is 1
+                        d: d - 1
+                        i: i + 1
+                    if not
+                        if d is 0
+                            if sg_match(e, i, op) is 1
+                                fhit: 1
+                                if i + length(op) < n
+                                    if peek_byte(e, i + length(op)) is peek_byte(nxt, 0)
+                                        fhit: 0
+                                if i > 0
+                                    if peek_byte(e, i - 1) is peek_byte(nxt, 0)
+                                        fhit: 0
+                                if fhit is 1
+                                    f: i
+                        i: i + 1
+    return f
+bitop e p opn wide:
+    bin(cut(e, 0, p), cut(e, p + wide, length(e)), opn)
+    return 0
+
+bitop_n e en p opn wide:
+    bin_k(e, p, e + p + wide, en - p - wide, opn)
+    return 0
+binary_sign e i:
+    p: i - 1
+    as long as p >= 0
+        b: peek_byte(e, p)
+        if b is not 32
+            if b is not 9
+                leave
+        p: p - 1
+    if p < 0
+        return 0
+    b: peek_byte(e, p)
+    if b is 40 or b is 43 or b is 45 or b is 42 or b is 47 or b is 37
+        return 0
+    if b is 60 or b is 62 or b is 61 or b is 33 or b is 38 or b is 124 or b is 94 or b is 44
+        return 0
+    return 1
+fop2 e a b:
+    if _sov_find_text(e, a) < 0
+        if _sov_find_text(e, b) < 0
+            return 0 - 1
+    n: length(e)
+    d: 0
+    ins: 0
+    f: 0 - 1
+    i: 0
+    as long as i < n
+        c: peek_byte(e, i)
+        if ins is 1
+            if c is 92
+                i: i + 1
+            if not
+                if c is 34
+                    ins: 0
+            i: i + 1
+        if not
+            if c is 34
+                ins: 1
+                i: i + 1
+            if not
+                if c is 40 is 1
+                    d: d + 1
+                    i: i + 1
+                if not
+                    if c is 41 is 1
+                        d: d - 1
+                        i: i + 1
+                    if not
+                        if d is 0
+                            if c is peek_byte(a, 0) is 1
+                                if binary_sign(e, i) is 1
+                                    f: i
+                            if not
+                                if c is peek_byte(b, 0) is 1
+                                    if binary_sign(e, i) is 1
+                                        f: i
+                        i: i + 1
+    return f
+fop3 e:
+    n: length(e)
+    d: 0
+    ins: 0
+    f: 0 - 1
+    i: 0
+    as long as i < n
+        c: peek_byte(e, i)
+        if ins is 1
+            if c is 92
+                i: i + 1
+            if not
+                if c is 34
+                    ins: 0
+            i: i + 1
+        if not
+            if c is 34
+                ins: 1
+                i: i + 1
+            if not
+                if c is 40 is 1
+                    d: d + 1
+                    i: i + 1
+                if not
+                    if c is 41 is 1
+                        d: d - 1
+                        i: i + 1
+                    if not
+                        if d is 0
+                            if c is 42 is 1
+                                f: i
+                            if not
+                                if c is 47 is 1
+                                    f: i
+                                if not
+                                    if c is 37 is 1
+                                        f: i
+                        i: i + 1
+    return f

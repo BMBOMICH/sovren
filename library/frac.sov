@@ -1,0 +1,66 @@
+use gcd
+use num
+use string
+frac_pair n d:
+    return n + d * 4294967296
+frac_num f:
+    n: f % 4294967296
+    if n >= 2147483648 -> n: n - 4294967296
+    return n
+frac_den f:
+    n: frac_num(f)
+    return (f - n) / 4294967296
+frac_make n d:
+    if d is 0 -> return frac_pair(0, 1)
+    if d < 0
+        n: 0 - n
+        d: 0 - d
+    t: frac_top(n, d)
+    b: frac_bot(n, d)
+    return frac_pair(t, b)
+frac_neg f:
+    n: frac_num(f)
+    d: frac_den(f)
+    return frac_pair(0 - n, d)
+frac_add a b:
+    an: frac_num(a)
+    ad: frac_den(a)
+    bn: frac_num(b)
+    bd: frac_den(b)
+    num: an * bd + bn * ad
+    den: ad * bd
+    return frac_make(num, den)
+frac_sub a b:
+    nb: frac_neg(b)
+    return frac_add(a, nb)
+frac_mul a b:
+    an: frac_num(a)
+    bn: frac_num(b)
+    ad: frac_den(a)
+    bd: frac_den(b)
+    num: an * bn
+    den: ad * bd
+    return frac_make(num, den)
+frac_div a b:
+    an: frac_num(a)
+    ad: frac_den(a)
+    bn: frac_num(b)
+    bd: frac_den(b)
+    num: an * bd
+    den: ad * bn
+    return frac_make(num, den)
+frac_to_fx f:
+    n: frac_num(f)
+    d: frac_den(f)
+    return (n * 1000000) / d
+frac_from_fx v:
+    return frac_make(v, 1000000)
+frac_text f:
+    q: frac_num(f)
+    r: frac_den(f)
+    return frac_text_pair(q, r)
+frac_text_pair q r:
+    n: num_text(q)
+    d: num_text(r)
+    mid: str_cat(n, "/")
+    return str_cat(mid, d)

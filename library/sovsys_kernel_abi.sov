@@ -1,0 +1,926 @@
+# unsafe-module
+SOVSYS_ABI_VERSION: 1
+SOVSYS_MAX_ARGUMENTS: 6
+SOVSYS_AUDIT_RECORD_VERSION: 1
+SOVSYS_AUDIT_RECORD_SIZE: 32
+SOVSYS_ADD: 1
+SOVSYS_PATH_READ: 2
+SOVSYS_PATH_WRITE: 3
+SOVSYS_FORK: 4
+SOVSYS_PROCESS_SPAWN: 5
+SOVSYS_OPEN: 10
+SOVSYS_READ: 11
+SOVSYS_WRITE: 12
+SOVSYS_CLOSE: 13
+SOVSYS_SECCOMP_DENY: 14
+SOVSYS_DROP_CAPABILITY: 15
+SOVSYS_SIGNAL_INSTALL: 16
+SOVSYS_SIGNAL_RETURN: 17
+SOVSYS_MMAP_ANON: 18
+SOVSYS_MUNMAP: 19
+SOVSYS_PIPE: 21
+SOVSYS_DNS_QUERY: 22
+SOVSYS_POLL_ONE: 23
+SOVSYS_WAIT: 25
+SOVSYS_EXEC: 26
+SOVSYS_DUP: 27
+SOVSYS_ABI_QUERY: 28
+SOVSYS_DISPLAY_INFO: 29
+SOVSYS_DISPLAY_BLIT64: 30
+SOVSYS_DISPLAY_FILL: 31
+SOVSYS_READV: 32
+SOVSYS_WRITEV: 33
+SOVSYS_MPROTECT: 34
+SOVSYS_MADVISE: 35
+SOVSYS_VM_QUERY: 36
+SOVSYS_MLOCK: 37
+SOVSYS_MUNLOCK: 38
+SOVSYS_MREMAP: 39
+        i: i + 1
+SOVSYS_SERVICE_REGISTER: 40
+SOVSYS_SERVICE_LOOKUP: 41
+SOVSYS_SERVICE_SEND: 42
+SOVSYS_SERVICE_RECV: 43
+SOVSYS_SERVICE_UNREGISTER: 44
+SOVSYS_PROCESS_SELF: 45
+SOVSYS_SERVICE_SEND_ASYNC: 46
+SOVSYS_SERVICE_CANCEL: 47
+SOVSYS_SERVICE_POLL: 48
+SOVSYS_SERVICE_WAIT: 49
+SOVSYS_PROCESS_INTERRUPT: 50
+SOVSYS_PROCESS_SIGNAL: 51
+SOVSYS_SIGNAL_MASK: 52
+SOVSYS_SIGNAL_PENDING: 53
+SOVSYS_PROCESS_NAMESPACE_CREATE: 54
+SOVSYS_PROCESS_INFO: 55
+SOVSYS_SIGNAL_NEXT: 56
+SOVSYS_SERVICE_GRANT: 57
+SOVSYS_SERVICE_GRANT_WAIT: 58
+SOVSYS_SERVICE_REVOKE: 59
+SOVSYS_EXIT: 60
+SOVSYS_FILE_READ: 62
+SOVSYS_FILE_WRITE: 63
+SOVSYS_FILE_STAT: 64
+SOVSYS_FILE_LIST: 65
+SOVSYS_FILE_MKDIR: 66
+SOVSYS_FILE_UNLINK: 67
+SOVSYS_NET_RESOLVE: 68
+SOVSYS_NET_SOCKET: 69
+SOVSYS_NET_CONNECT: 70
+SOVSYS_NET_SEND: 71
+SOVSYS_NET_RECV: 72
+SOVSYS_NET_CLOSE: 73
+SOVSYS_SYSLOG_APPEND: 74 
+SOVSYS_SYSLOG_READ: 75
+sovsys_known number:
+    if number is SOVSYS_ADD -> return 1
+    if number is SOVSYS_PATH_READ -> return 1
+    if number is SOVSYS_PATH_WRITE -> return 1
+    if number is SOVSYS_FORK -> return 1
+    if number is SOVSYS_PROCESS_SPAWN -> return 1
+    if number is SOVSYS_OPEN -> return 1
+    if number is SOVSYS_READ -> return 1
+    if number is SOVSYS_WRITE -> return 1
+    if number is SOVSYS_CLOSE -> return 1
+    if number is SOVSYS_SECCOMP_DENY -> return 1
+    if number is SOVSYS_DROP_CAPABILITY -> return 1
+    if number is SOVSYS_SIGNAL_INSTALL -> return 1
+    if number is SOVSYS_SIGNAL_RETURN -> return 1
+    if number is SOVSYS_MMAP_ANON -> return 1
+    if number is SOVSYS_MUNMAP -> return 1
+    if number is SOVSYS_PIPE -> return 1
+    if number is SOVSYS_DNS_QUERY -> return 1
+    if number is SOVSYS_POLL_ONE -> return 1
+    if number is SOVSYS_WAIT -> return 1
+    if number is SOVSYS_EXEC -> return 1
+    if number is SOVSYS_DUP -> return 1
+    if number is SOVSYS_ABI_QUERY -> return 1
+    if number is SOVSYS_DISPLAY_INFO -> return 1
+    if number is SOVSYS_DISPLAY_BLIT64 -> return 1
+    if number is SOVSYS_DISPLAY_FILL -> return 1
+    if number is SOVSYS_READV -> return 1
+    if number is SOVSYS_WRITEV -> return 1
+    if number is SOVSYS_MPROTECT -> return 1
+    if number is SOVSYS_MADVISE -> return 1
+    if number is SOVSYS_VM_QUERY -> return 1
+    if number is SOVSYS_MLOCK -> return 1
+    if number is SOVSYS_MUNLOCK -> return 1
+    if number is SOVSYS_MREMAP -> return 1
+    if number is SOVSYS_SERVICE_REGISTER -> return 1
+    if number is SOVSYS_SERVICE_LOOKUP -> return 1
+    if number is SOVSYS_SERVICE_SEND -> return 1
+    if number is SOVSYS_SERVICE_RECV -> return 1
+    if number is SOVSYS_SERVICE_UNREGISTER -> return 1
+    if number is SOVSYS_PROCESS_SELF -> return 1
+    if number is SOVSYS_SERVICE_SEND_ASYNC -> return 1
+    if number is SOVSYS_SERVICE_CANCEL -> return 1
+    if number is SOVSYS_SERVICE_POLL -> return 1
+    if number is SOVSYS_SERVICE_WAIT -> return 1
+    if number is SOVSYS_PROCESS_INTERRUPT -> return 1
+    if number is SOVSYS_PROCESS_SIGNAL -> return 1
+    if number is SOVSYS_SIGNAL_MASK -> return 1
+    if number is SOVSYS_SIGNAL_PENDING -> return 1
+    if number is SOVSYS_PROCESS_NAMESPACE_CREATE -> return 1
+    if number is SOVSYS_PROCESS_INFO -> return 1
+    if number is SOVSYS_SIGNAL_NEXT -> return 1
+    if number is SOVSYS_SERVICE_GRANT -> return 1
+    if number is SOVSYS_SERVICE_GRANT_WAIT -> return 1
+    if number is SOVSYS_SERVICE_REVOKE -> return 1
+    if number is SOVSYS_EXIT -> return 1
+    if number is SOVSYS_PROCESS_VMA_INFO -> return 1
+    if number is SOVSYS_FILE_READ -> return 1
+    if number is SOVSYS_FILE_WRITE -> return 1
+    if number is SOVSYS_FILE_STAT -> return 1
+    if number is SOVSYS_FILE_LIST -> return 1
+    if number is SOVSYS_FILE_MKDIR -> return 1
+    if number is SOVSYS_FILE_UNLINK -> return 1
+    if number is SOVSYS_NET_RESOLVE -> return 1
+    if number is SOVSYS_NET_SOCKET -> return 1
+    if number is SOVSYS_NET_CONNECT -> return 1
+    if number is SOVSYS_NET_SEND -> return 1
+    if number is SOVSYS_NET_RECV -> return 1
+    if number is SOVSYS_NET_CLOSE -> return 1
+    if number is SOVSYS_SYSLOG_APPEND -> return 1
+    if number is SOVSYS_SYSLOG_READ -> return 1
+sovsys_trace_name number:
+    if number is SOVSYS_ADD -> return "ADD"
+    if number is SOVSYS_PATH_READ -> return "PATH_READ"
+    if number is SOVSYS_PATH_WRITE -> return "PATH_WRITE"
+    if number is SOVSYS_FORK -> return "FORK"
+    if number is SOVSYS_PROCESS_SPAWN -> return "PROCESS_SPAWN"
+    if number is SOVSYS_OPEN -> return "OPEN"
+    if number is SOVSYS_READ -> return "READ"
+    if number is SOVSYS_WRITE -> return "WRITE"
+    if number is SOVSYS_CLOSE -> return "CLOSE"
+    if number is SOVSYS_SECCOMP_DENY -> return "SECCOMP_DENY"
+    if number is SOVSYS_DROP_CAPABILITY -> return "DROP_CAPABILITY"
+    if number is SOVSYS_SIGNAL_INSTALL -> return "SIGNAL_INSTALL"
+    if number is SOVSYS_SIGNAL_RETURN -> return "SIGNAL_RETURN"
+    if number is SOVSYS_MMAP_ANON -> return "MMAP_ANON"
+    if number is SOVSYS_MUNMAP -> return "MUNMAP"
+    if number is SOVSYS_PIPE -> return "PIPE"
+    if number is SOVSYS_DNS_QUERY -> return "DNS_QUERY"
+    if number is SOVSYS_POLL_ONE -> return "POLL_ONE"
+    if number is SOVSYS_WAIT -> return "WAIT"
+    if number is SOVSYS_EXEC -> return "EXEC"
+    if number is SOVSYS_DUP -> return "DUP"
+    if number is SOVSYS_ABI_QUERY -> return "ABI_QUERY"
+    if number is SOVSYS_DISPLAY_INFO -> return "DISPLAY_INFO"
+    if number is SOVSYS_DISPLAY_BLIT64 -> return "DISPLAY_BLIT64"
+    if number is SOVSYS_DISPLAY_FILL -> return "DISPLAY_FILL"
+    if number is SOVSYS_READV -> return "READV"
+    if number is SOVSYS_WRITEV -> return "WRITEV"
+    if number is SOVSYS_MPROTECT -> return "MPROTECT"
+    if number is SOVSYS_MADVISE -> return "MADVISE"
+    if number is SOVSYS_VM_QUERY -> return "VM_QUERY"
+    if number is SOVSYS_MLOCK -> return "MLOCK"
+    if number is SOVSYS_MUNLOCK -> return "MUNLOCK"
+    if number is SOVSYS_MREMAP -> return "MREMAP"
+    if number is SOVSYS_SERVICE_REGISTER -> return "SERVICE_REGISTER"
+    if number is SOVSYS_SERVICE_LOOKUP -> return "SERVICE_LOOKUP"
+    if number is SOVSYS_SERVICE_SEND -> return "SERVICE_SEND"
+    if number is SOVSYS_SERVICE_RECV -> return "SERVICE_RECV"
+    if number is SOVSYS_SERVICE_UNREGISTER -> return "SERVICE_UNREGISTER"
+    if number is SOVSYS_PROCESS_SELF -> return "PROCESS_SELF"
+    if number is SOVSYS_SERVICE_SEND_ASYNC -> return "SERVICE_SEND_ASYNC"
+    if number is SOVSYS_SERVICE_CANCEL -> return "SERVICE_CANCEL"
+    if number is SOVSYS_SERVICE_POLL -> return "SERVICE_POLL"
+    if number is SOVSYS_SERVICE_WAIT -> return "SERVICE_WAIT"
+    if number is SOVSYS_PROCESS_INTERRUPT -> return "PROCESS_INTERRUPT"
+    if number is SOVSYS_PROCESS_SIGNAL -> return "PROCESS_SIGNAL"
+    if number is SOVSYS_SIGNAL_MASK -> return "SIGNAL_MASK"
+    if number is SOVSYS_SIGNAL_PENDING -> return "SIGNAL_PENDING"
+    if number is SOVSYS_PROCESS_NAMESPACE_CREATE -> return "PROCESS_NAMESPACE_CREATE"
+    if number is SOVSYS_PROCESS_INFO -> return "PROCESS_INFO"
+    if number is SOVSYS_SIGNAL_NEXT -> return "SIGNAL_NEXT"
+    if number is SOVSYS_SERVICE_GRANT -> return "SERVICE_GRANT"
+    if number is SOVSYS_SERVICE_GRANT_WAIT -> return "SERVICE_GRANT_WAIT"
+    if number is SOVSYS_SERVICE_REVOKE -> return "SERVICE_REVOKE"
+    if number is SOVSYS_EXIT -> return "EXIT"
+    if number is SOVSYS_PROCESS_VMA_INFO -> return "PROCESS_VMA_INFO"
+    if number is SOVSYS_FILE_READ -> return "FILE_READ"
+    if number is SOVSYS_FILE_WRITE -> return "FILE_WRITE"
+    if number is SOVSYS_FILE_STAT -> return "FILE_STAT"
+    if number is SOVSYS_FILE_LIST -> return "FILE_LIST"
+    if number is SOVSYS_FILE_MKDIR -> return "FILE_MKDIR"
+    if number is SOVSYS_FILE_UNLINK -> return "FILE_UNLINK"
+    if number is SOVSYS_NET_RESOLVE -> return "NET_RESOLVE"
+    if number is SOVSYS_NET_SOCKET -> return "NET_SOCKET"
+    if number is SOVSYS_NET_CONNECT -> return "NET_CONNECT"
+    if number is SOVSYS_NET_SEND -> return "NET_SEND"
+    if number is SOVSYS_NET_RECV -> return "NET_RECV"
+    if number is SOVSYS_NET_CLOSE -> return "NET_CLOSE"
+    if number is SOVSYS_SYSLOG_APPEND -> return "SYSLOG_APPEND"
+    if number is SOVSYS_SYSLOG_READ -> return "SYSLOG_READ"
+    return "UNKNOWN"
+sovsys_audit_write record sequence number result:
+    poke_raw64(record, 0, SOVSYS_AUDIT_RECORD_VERSION)
+    poke_raw64(record + 8, 0, sequence)
+    poke_raw64(record + 16, 0, number)
+    poke_raw64(record + 24, 0, result)
+sovsys_audit_version record:
+    return peek_raw64(record, 0)
+sovsys_audit_sequence record:
+    return peek_raw64(record + 8, 0)
+sovsys_audit_number record:
+    return peek_raw64(record + 16, 0)
+sovsys_audit_result record:
+    return peek_raw64(record + 24, 0)
+sovsys_argc number:
+    if number is SOVSYS_ADD -> return 2
+    if number is SOVSYS_PATH_READ -> return 2
+    if number is SOVSYS_PATH_WRITE -> return 2
+    if number is SOVSYS_FORK -> return 0
+    if number is SOVSYS_PROCESS_SPAWN -> return 1
+    if number is SOVSYS_OPEN -> return 1
+    if number is SOVSYS_READ -> return 3
+    if number is SOVSYS_WRITE -> return 3
+    if number is SOVSYS_CLOSE -> return 1
+    if number is SOVSYS_SECCOMP_DENY -> return 1
+    if number is SOVSYS_DROP_CAPABILITY -> return 1
+    if number is SOVSYS_SIGNAL_INSTALL -> return 2
+    if number is SOVSYS_SIGNAL_RETURN -> return 0
+    if number is SOVSYS_MMAP_ANON -> return 1
+    if number is SOVSYS_MUNMAP -> return 2
+    if number is SOVSYS_PIPE -> return 1
+    if number is SOVSYS_DNS_QUERY -> return 1
+    if number is SOVSYS_POLL_ONE -> return 1
+    if number is SOVSYS_WAIT -> return 1
+    if number is SOVSYS_EXEC -> return 1
+    if number is SOVSYS_DUP -> return 1
+    if number is SOVSYS_ABI_QUERY -> return 1
+    if number is SOVSYS_DISPLAY_INFO -> return 1
+    if number is SOVSYS_DISPLAY_BLIT64 -> return 3
+    if number is SOVSYS_DISPLAY_FILL -> return 5
+    if number is SOVSYS_READV -> return 3
+    if number is SOVSYS_WRITEV -> return 3
+    if number is SOVSYS_MPROTECT -> return 3
+    if number is SOVSYS_MADVISE -> return 3
+    if number is SOVSYS_VM_QUERY -> return 2
+    if number is SOVSYS_MLOCK -> return 2
+    if number is SOVSYS_MUNLOCK -> return 2
+    if number is SOVSYS_MREMAP -> return 4
+    if number is SOVSYS_SERVICE_REGISTER -> return 1
+    if number is SOVSYS_SERVICE_LOOKUP -> return 1
+    if number is SOVSYS_SERVICE_SEND -> return 3
+    if number is SOVSYS_SERVICE_RECV -> return 3
+    if number is SOVSYS_SERVICE_UNREGISTER -> return 1
+    if number is SOVSYS_PROCESS_SELF -> return 0
+    if number is SOVSYS_SERVICE_SEND_ASYNC -> return 3
+    if number is SOVSYS_SERVICE_CANCEL -> return 2
+    if number is SOVSYS_SERVICE_POLL -> return 1
+    if number is SOVSYS_SERVICE_WAIT -> return 3
+    if number is SOVSYS_PROCESS_INTERRUPT -> return 1
+    if number is SOVSYS_PROCESS_SIGNAL -> return 2
+    if number is SOVSYS_SIGNAL_MASK -> return 1
+    if number is SOVSYS_SIGNAL_PENDING -> return 0
+    if number is SOVSYS_PROCESS_NAMESPACE_CREATE -> return 0
+    if number is SOVSYS_PROCESS_INFO -> return 2
+    if number is SOVSYS_SIGNAL_NEXT -> return 0
+    if number is SOVSYS_SERVICE_GRANT -> return 2
+    if number is SOVSYS_SERVICE_GRANT_WAIT -> return 2
+    if number is SOVSYS_SERVICE_REVOKE -> return 2
+    if number is SOVSYS_EXIT -> return 1
+    if number is SOVSYS_PROCESS_VMA_INFO -> return 2
+    if number is SOVSYS_FILE_READ -> return 3
+    if number is SOVSYS_FILE_WRITE -> return 3
+    if number is SOVSYS_FILE_STAT -> return 2
+    if number is SOVSYS_FILE_LIST -> return 1
+    if number is SOVSYS_FILE_MKDIR -> return 1
+    if number is SOVSYS_FILE_UNLINK -> return 1
+    if number is SOVSYS_NET_RESOLVE -> return 2
+    if number is SOVSYS_NET_SOCKET -> return 2
+    if number is SOVSYS_NET_CONNECT -> return 3
+    if number is SOVSYS_NET_SEND -> return 3
+    if number is SOVSYS_NET_RECV -> return 3
+    if number is SOVSYS_NET_CLOSE -> return 1
+    if number is SOVSYS_SYSLOG_APPEND -> return 1
+    if number is SOVSYS_SYSLOG_READ -> return 2
+sovsys_capability number:
+    if number is SOVSYS_ADD -> return 0
+    if number is SOVSYS_PATH_READ -> return 0
+    if number is SOVSYS_PATH_WRITE -> return 1
+    if number is SOVSYS_FORK -> return 0
+    if number is SOVSYS_PROCESS_SPAWN -> return 0
+    if number is SOVSYS_OPEN -> return 0
+    if number is SOVSYS_READ -> return 0
+    if number is SOVSYS_WRITE -> return 0
+    if number is SOVSYS_CLOSE -> return 0
+    if number is SOVSYS_SECCOMP_DENY -> return 0
+    if number is SOVSYS_DROP_CAPABILITY -> return 0
+    if number is SOVSYS_SIGNAL_INSTALL -> return 0
+    if number is SOVSYS_SIGNAL_RETURN -> return 0
+    if number is SOVSYS_MMAP_ANON -> return 0
+    if number is SOVSYS_MUNMAP -> return 0
+    if number is SOVSYS_PIPE -> return 0
+    if number is SOVSYS_DNS_QUERY -> return 0
+    if number is SOVSYS_POLL_ONE -> return 0
+    if number is SOVSYS_WAIT -> return 0
+    if number is SOVSYS_EXEC -> return 0
+    if number is SOVSYS_DUP -> return 0
+    if number is SOVSYS_ABI_QUERY -> return 0
+    if number is SOVSYS_DISPLAY_INFO -> return 0
+    if number is SOVSYS_DISPLAY_BLIT64 -> return 2
+    if number is SOVSYS_DISPLAY_FILL -> return 2
+    if number is SOVSYS_READV -> return 0
+    if number is SOVSYS_WRITEV -> return 0
+    if number is SOVSYS_MPROTECT -> return 0
+    if number is SOVSYS_MADVISE -> return 0
+    if number is SOVSYS_VM_QUERY -> return 0
+    if number is SOVSYS_MLOCK -> return 0
+    if number is SOVSYS_MUNLOCK -> return 0
+    if number is SOVSYS_MREMAP -> return 0
+    if number is SOVSYS_SERVICE_REGISTER -> return 0
+    if number is SOVSYS_SERVICE_LOOKUP -> return 0
+    if number is SOVSYS_SERVICE_SEND -> return 0
+    if number is SOVSYS_SERVICE_RECV -> return 0
+    if number is SOVSYS_SERVICE_UNREGISTER -> return 0
+    if number is SOVSYS_PROCESS_SELF -> return 0
+    if number is SOVSYS_SERVICE_SEND_ASYNC -> return 0
+    if number is SOVSYS_SERVICE_CANCEL -> return 0
+    if number is SOVSYS_SERVICE_POLL -> return 0
+    if number is SOVSYS_SERVICE_WAIT -> return 0
+    if number is SOVSYS_PROCESS_INTERRUPT -> return 0
+    if number is SOVSYS_PROCESS_SIGNAL -> return 0
+    if number is SOVSYS_SIGNAL_MASK -> return 0
+    if number is SOVSYS_SIGNAL_PENDING -> return 0
+    if number is SOVSYS_PROCESS_NAMESPACE_CREATE -> return 0
+    if number is SOVSYS_PROCESS_INFO -> return 0
+    if number is SOVSYS_SIGNAL_NEXT -> return 0
+    if number is SOVSYS_SERVICE_GRANT -> return 0
+    if number is SOVSYS_SERVICE_GRANT_WAIT -> return 0
+    if number is SOVSYS_SERVICE_REVOKE -> return 0
+    if number is SOVSYS_EXIT -> return 0
+    if number is SOVSYS_PROCESS_VMA_INFO -> return 0
+    if number is SOVSYS_FILE_READ -> return 0
+    if number is SOVSYS_FILE_WRITE -> return 1
+    if number is SOVSYS_FILE_STAT -> return 0
+    if number is SOVSYS_FILE_LIST -> return 0
+    if number is SOVSYS_FILE_MKDIR -> return 1
+    if number is SOVSYS_FILE_UNLINK -> return 1
+    if number is SOVSYS_NET_RESOLVE -> return 0
+    if number is SOVSYS_NET_SOCKET -> return 0
+    if number is SOVSYS_NET_CONNECT -> return 0
+    if number is SOVSYS_NET_SEND -> return 1
+    if number is SOVSYS_NET_RECV -> return 0
+    if number is SOVSYS_NET_CLOSE -> return 0
+    if number is SOVSYS_SYSLOG_APPEND -> return 0
+    if number is SOVSYS_SYSLOG_READ -> return 0
+sovsys_copy_pointer_arg number:
+    if number is SOVSYS_ADD -> return -1
+    if number is SOVSYS_PATH_READ -> return 0
+    if number is SOVSYS_PATH_WRITE -> return 0
+    if number is SOVSYS_FORK -> return -1
+    if number is SOVSYS_PROCESS_SPAWN -> return -1
+    if number is SOVSYS_OPEN -> return 0
+    if number is SOVSYS_READ -> return 1
+    if number is SOVSYS_WRITE -> return 1
+    if number is SOVSYS_CLOSE -> return -1
+    if number is SOVSYS_SECCOMP_DENY -> return -1
+    if number is SOVSYS_DROP_CAPABILITY -> return -1
+    if number is SOVSYS_SIGNAL_INSTALL -> return -1
+    if number is SOVSYS_SIGNAL_RETURN -> return -1
+    if number is SOVSYS_MMAP_ANON -> return -1
+    if number is SOVSYS_MUNMAP -> return -1
+    if number is SOVSYS_PIPE -> return 0
+    if number is SOVSYS_DNS_QUERY -> return 0
+    if number is SOVSYS_POLL_ONE -> return -1
+    if number is SOVSYS_WAIT -> return -1
+    if number is SOVSYS_EXEC -> return 0
+    if number is SOVSYS_DUP -> return -1
+    if number is SOVSYS_ABI_QUERY -> return -1
+    if number is SOVSYS_DISPLAY_INFO -> return -1
+    if number is SOVSYS_DISPLAY_BLIT64 -> return 0
+    if number is SOVSYS_DISPLAY_FILL -> return -1
+    if number is SOVSYS_READV -> return 1
+    if number is SOVSYS_WRITEV -> return 1
+    if number is SOVSYS_MPROTECT -> return -1
+    if number is SOVSYS_MADVISE -> return -1
+    if number is SOVSYS_VM_QUERY -> return 1
+    if number is SOVSYS_MLOCK -> return -1
+    if number is SOVSYS_MUNLOCK -> return -1
+    if number is SOVSYS_MREMAP -> return -1
+    if number is SOVSYS_SERVICE_REGISTER -> return 0
+    if number is SOVSYS_SERVICE_LOOKUP -> return 0
+    if number is SOVSYS_SERVICE_SEND -> return 1
+    if number is SOVSYS_SERVICE_RECV -> return 1
+    if number is SOVSYS_SERVICE_UNREGISTER -> return -1
+    if number is SOVSYS_PROCESS_SELF -> return -1
+    if number is SOVSYS_SERVICE_SEND_ASYNC -> return 1
+    if number is SOVSYS_SERVICE_CANCEL -> return -1
+    if number is SOVSYS_SERVICE_POLL -> return -1
+    if number is SOVSYS_SERVICE_WAIT -> return -1
+    if number is SOVSYS_PROCESS_INTERRUPT -> return -1
+    if number is SOVSYS_PROCESS_SIGNAL -> return -1
+    if number is SOVSYS_SIGNAL_MASK -> return -1
+    if number is SOVSYS_SIGNAL_PENDING -> return -1
+    if number is SOVSYS_PROCESS_NAMESPACE_CREATE -> return -1
+    if number is SOVSYS_PROCESS_INFO -> return 1
+    if number is SOVSYS_SIGNAL_NEXT -> return -1
+    if number is SOVSYS_SERVICE_GRANT -> return -1
+    if number is SOVSYS_SERVICE_GRANT_WAIT -> return -1
+    if number is SOVSYS_SERVICE_REVOKE -> return -1
+    if number is SOVSYS_EXIT -> return -1
+    if number is SOVSYS_PROCESS_VMA_INFO -> return 1
+    if number is SOVSYS_FILE_READ -> return 0
+    if number is SOVSYS_FILE_WRITE -> return 1
+    if number is SOVSYS_FILE_STAT -> return 0
+    if number is SOVSYS_FILE_LIST -> return 0
+    if number is SOVSYS_FILE_MKDIR -> return 0
+    if number is SOVSYS_FILE_UNLINK -> return 0
+    if number is SOVSYS_NET_RESOLVE -> return 0
+    if number is SOVSYS_NET_SOCKET -> return -1
+    if number is SOVSYS_NET_CONNECT -> return -1
+    if number is SOVSYS_NET_SEND -> return 1
+    if number is SOVSYS_NET_RECV -> return 1
+    if number is SOVSYS_NET_CLOSE -> return -1
+    if number is SOVSYS_SYSLOG_APPEND -> return 0
+    if number is SOVSYS_SYSLOG_READ -> return 1
+sovsys_copy_length_arg number:
+    if number is SOVSYS_ADD -> return -1
+    if number is SOVSYS_PATH_READ -> return 1
+    if number is SOVSYS_PATH_WRITE -> return 1
+    if number is SOVSYS_FORK -> return -1
+    if number is SOVSYS_PROCESS_SPAWN -> return -1
+    if number is SOVSYS_OPEN -> return -1
+    if number is SOVSYS_READ -> return 2
+    if number is SOVSYS_WRITE -> return 2
+    if number is SOVSYS_CLOSE -> return -1
+    if number is SOVSYS_SECCOMP_DENY -> return -1
+    if number is SOVSYS_DROP_CAPABILITY -> return -1
+    if number is SOVSYS_SIGNAL_INSTALL -> return -1
+    if number is SOVSYS_SIGNAL_RETURN -> return -1
+    if number is SOVSYS_MMAP_ANON -> return -1
+    if number is SOVSYS_MUNMAP -> return -1
+    if number is SOVSYS_PIPE -> return -1
+    if number is SOVSYS_DNS_QUERY -> return -1
+    if number is SOVSYS_POLL_ONE -> return -1
+    if number is SOVSYS_WAIT -> return -1
+    if number is SOVSYS_EXEC -> return -1
+    if number is SOVSYS_DUP -> return -1
+    if number is SOVSYS_ABI_QUERY -> return -1
+    if number is SOVSYS_DISPLAY_INFO -> return -1
+    if number is SOVSYS_DISPLAY_BLIT64 -> return -1
+    if number is SOVSYS_DISPLAY_FILL -> return -1
+    if number is SOVSYS_READV -> return 2
+    if number is SOVSYS_WRITEV -> return 2
+    if number is SOVSYS_MPROTECT -> return -1
+    if number is SOVSYS_MADVISE -> return -1
+    if number is SOVSYS_VM_QUERY -> return -1
+    if number is SOVSYS_MLOCK -> return -1
+    if number is SOVSYS_MUNLOCK -> return -1
+    if number is SOVSYS_MREMAP -> return -1
+    if number is SOVSYS_SERVICE_REGISTER -> return -1
+    if number is SOVSYS_SERVICE_LOOKUP -> return -1
+    if number is SOVSYS_SERVICE_SEND -> return 2
+    if number is SOVSYS_SERVICE_RECV -> return 2
+    if number is SOVSYS_SERVICE_UNREGISTER -> return -1
+    if number is SOVSYS_PROCESS_SELF -> return -1
+    if number is SOVSYS_SERVICE_SEND_ASYNC -> return 2
+    if number is SOVSYS_SERVICE_CANCEL -> return -1
+    if number is SOVSYS_SERVICE_POLL -> return -1
+    if number is SOVSYS_SERVICE_WAIT -> return -1
+    if number is SOVSYS_PROCESS_INTERRUPT -> return -1
+    if number is SOVSYS_PROCESS_SIGNAL -> return -1
+    if number is SOVSYS_SIGNAL_MASK -> return -1
+    if number is SOVSYS_SIGNAL_PENDING -> return -1
+    if number is SOVSYS_PROCESS_NAMESPACE_CREATE -> return -1
+    if number is SOVSYS_PROCESS_INFO -> return -1
+    if number is SOVSYS_SIGNAL_NEXT -> return -1
+    if number is SOVSYS_SERVICE_GRANT -> return -1
+    if number is SOVSYS_SERVICE_GRANT_WAIT -> return -1
+    if number is SOVSYS_SERVICE_REVOKE -> return -1
+    if number is SOVSYS_EXIT -> return -1
+    if number is SOVSYS_PROCESS_VMA_INFO -> return -1
+    if number is SOVSYS_FILE_READ -> return -1
+    if number is SOVSYS_FILE_WRITE -> return 2
+    if number is SOVSYS_FILE_STAT -> return -1
+    if number is SOVSYS_FILE_LIST -> return -1
+    if number is SOVSYS_FILE_MKDIR -> return -1
+    if number is SOVSYS_FILE_UNLINK -> return -1
+    if number is SOVSYS_NET_RESOLVE -> return -1
+    if number is SOVSYS_NET_SOCKET -> return -1
+    if number is SOVSYS_NET_CONNECT -> return -1
+    if number is SOVSYS_NET_SEND -> return 2
+    if number is SOVSYS_NET_RECV -> return 2
+    if number is SOVSYS_NET_CLOSE -> return -1
+    if number is SOVSYS_SYSLOG_APPEND -> return -1
+    if number is SOVSYS_SYSLOG_READ -> return -1
+sovsys_copy_fixed_bytes number:
+    if number is SOVSYS_ADD -> return 0
+    if number is SOVSYS_PATH_READ -> return 0
+    if number is SOVSYS_PATH_WRITE -> return 0
+    if number is SOVSYS_FORK -> return 0
+    if number is SOVSYS_PROCESS_SPAWN -> return 0
+    if number is SOVSYS_OPEN -> return 32
+    if number is SOVSYS_READ -> return 0
+    if number is SOVSYS_WRITE -> return 0
+    if number is SOVSYS_CLOSE -> return 0
+    if number is SOVSYS_SECCOMP_DENY -> return 0
+    if number is SOVSYS_DROP_CAPABILITY -> return 0
+    if number is SOVSYS_SIGNAL_INSTALL -> return 0
+    if number is SOVSYS_SIGNAL_RETURN -> return 0
+    if number is SOVSYS_MMAP_ANON -> return 0
+    if number is SOVSYS_MUNMAP -> return 0
+    if number is SOVSYS_PIPE -> return 16
+    if number is SOVSYS_DNS_QUERY -> return 4
+    if number is SOVSYS_POLL_ONE -> return 0
+    if number is SOVSYS_WAIT -> return 0
+    if number is SOVSYS_EXEC -> return 32
+    if number is SOVSYS_DUP -> return 0
+    if number is SOVSYS_ABI_QUERY -> return 0
+    if number is SOVSYS_DISPLAY_INFO -> return 0
+    if number is SOVSYS_DISPLAY_BLIT64 -> return 256
+    if number is SOVSYS_DISPLAY_FILL -> return 0
+    if number is SOVSYS_READV -> return 0
+    if number is SOVSYS_WRITEV -> return 0
+    if number is SOVSYS_MPROTECT -> return 0
+    if number is SOVSYS_MADVISE -> return 0
+    if number is SOVSYS_VM_QUERY -> return 48
+    if number is SOVSYS_MLOCK -> return 0
+    if number is SOVSYS_MUNLOCK -> return 0
+    if number is SOVSYS_MREMAP -> return 0
+    if number is SOVSYS_SERVICE_REGISTER -> return 32
+    if number is SOVSYS_SERVICE_LOOKUP -> return 32
+    if number is SOVSYS_SERVICE_SEND -> return 0
+    if number is SOVSYS_SERVICE_RECV -> return 0
+    if number is SOVSYS_SERVICE_UNREGISTER -> return 0
+    if number is SOVSYS_PROCESS_SELF -> return 0
+    if number is SOVSYS_SERVICE_SEND_ASYNC -> return 0
+    if number is SOVSYS_SERVICE_CANCEL -> return 0
+    if number is SOVSYS_SERVICE_POLL -> return 0
+    if number is SOVSYS_SERVICE_WAIT -> return 0
+    if number is SOVSYS_PROCESS_INTERRUPT -> return 0
+    if number is SOVSYS_PROCESS_SIGNAL -> return 0
+    if number is SOVSYS_SIGNAL_MASK -> return 0
+    if number is SOVSYS_SIGNAL_PENDING -> return 0
+    if number is SOVSYS_PROCESS_NAMESPACE_CREATE -> return 0
+    if number is SOVSYS_PROCESS_INFO -> return 64
+    if number is SOVSYS_SIGNAL_NEXT -> return 0
+    if number is SOVSYS_SERVICE_GRANT -> return 0
+    if number is SOVSYS_SERVICE_GRANT_WAIT -> return 0
+    if number is SOVSYS_SERVICE_REVOKE -> return 0
+    if number is SOVSYS_EXIT -> return 0
+    if number is SOVSYS_PROCESS_VMA_INFO -> return 40
+    if number is SOVSYS_FILE_READ -> return 32
+    if number is SOVSYS_FILE_WRITE -> return 0
+    if number is SOVSYS_FILE_STAT -> return 32
+    if number is SOVSYS_FILE_LIST -> return 512
+    if number is SOVSYS_FILE_MKDIR -> return 32
+    if number is SOVSYS_FILE_UNLINK -> return 32
+    if number is SOVSYS_NET_RESOLVE -> return 8
+    if number is SOVSYS_NET_SOCKET -> return 0
+    if number is SOVSYS_NET_CONNECT -> return 0
+    if number is SOVSYS_NET_SEND -> return 0
+    if number is SOVSYS_NET_RECV -> return 0
+    if number is SOVSYS_NET_CLOSE -> return 0
+    if number is SOVSYS_SYSLOG_APPEND -> return 96
+    if number is SOVSYS_SYSLOG_READ -> return 96
+sovsys_copy_write_access number:
+    if number is SOVSYS_ADD -> return -1
+    if number is SOVSYS_PATH_READ -> return 1
+    if number is SOVSYS_PATH_WRITE -> return 0
+    if number is SOVSYS_FORK -> return -1
+    if number is SOVSYS_PROCESS_SPAWN -> return -1
+    if number is SOVSYS_OPEN -> return 0
+    if number is SOVSYS_READ -> return 1
+    if number is SOVSYS_WRITE -> return 0
+    if number is SOVSYS_CLOSE -> return -1
+    if number is SOVSYS_SECCOMP_DENY -> return -1
+    if number is SOVSYS_DROP_CAPABILITY -> return -1
+    if number is SOVSYS_SIGNAL_INSTALL -> return -1
+    if number is SOVSYS_SIGNAL_RETURN -> return -1
+    if number is SOVSYS_MMAP_ANON -> return -1
+    if number is SOVSYS_MUNMAP -> return -1
+    if number is SOVSYS_PIPE -> return 1
+    if number is SOVSYS_DNS_QUERY -> return 1
+    if number is SOVSYS_POLL_ONE -> return -1
+    if number is SOVSYS_WAIT -> return -1
+    if number is SOVSYS_EXEC -> return 0
+    if number is SOVSYS_DUP -> return -1
+    if number is SOVSYS_ABI_QUERY -> return -1
+    if number is SOVSYS_DISPLAY_INFO -> return -1
+    if number is SOVSYS_DISPLAY_BLIT64 -> return 0
+    if number is SOVSYS_DISPLAY_FILL -> return -1
+    if number is SOVSYS_READV -> return 0
+    if number is SOVSYS_WRITEV -> return 0
+    if number is SOVSYS_MPROTECT -> return -1
+    if number is SOVSYS_MADVISE -> return -1
+    if number is SOVSYS_VM_QUERY -> return 1
+    if number is SOVSYS_MLOCK -> return -1
+    if number is SOVSYS_MUNLOCK -> return -1
+    if number is SOVSYS_MREMAP -> return -1
+    if number is SOVSYS_SERVICE_REGISTER -> return 0
+    if number is SOVSYS_SERVICE_LOOKUP -> return 0
+    if number is SOVSYS_SERVICE_SEND -> return 0
+    if number is SOVSYS_SERVICE_RECV -> return 1
+    if number is SOVSYS_SERVICE_UNREGISTER -> return -1
+    if number is SOVSYS_PROCESS_SELF -> return -1
+    if number is SOVSYS_SERVICE_SEND_ASYNC -> return 0
+    if number is SOVSYS_SERVICE_CANCEL -> return -1
+    if number is SOVSYS_SERVICE_POLL -> return -1
+    if number is SOVSYS_SERVICE_WAIT -> return -1
+    if number is SOVSYS_PROCESS_INTERRUPT -> return -1
+    if number is SOVSYS_PROCESS_SIGNAL -> return -1
+    if number is SOVSYS_SIGNAL_MASK -> return -1
+    if number is SOVSYS_SIGNAL_PENDING -> return -1
+    if number is SOVSYS_PROCESS_NAMESPACE_CREATE -> return -1
+    if number is SOVSYS_PROCESS_INFO -> return 1
+    if number is SOVSYS_SIGNAL_NEXT -> return -1
+    if number is SOVSYS_SERVICE_GRANT -> return -1
+    if number is SOVSYS_SERVICE_GRANT_WAIT -> return -1
+    if number is SOVSYS_SERVICE_REVOKE -> return -1
+    if number is SOVSYS_EXIT -> return -1
+    if number is SOVSYS_PROCESS_VMA_INFO -> return 1
+    if number is SOVSYS_FILE_READ -> return 0
+    if number is SOVSYS_FILE_WRITE -> return 0
+    if number is SOVSYS_FILE_STAT -> return 0
+    if number is SOVSYS_FILE_LIST -> return 1
+    if number is SOVSYS_FILE_MKDIR -> return 0
+    if number is SOVSYS_FILE_UNLINK -> return 0
+    if number is SOVSYS_NET_RESOLVE -> return 1
+    if number is SOVSYS_NET_SOCKET -> return -1
+    if number is SOVSYS_NET_CONNECT -> return -1
+    if number is SOVSYS_NET_SEND -> return 0
+    if number is SOVSYS_NET_RECV -> return 1
+    if number is SOVSYS_NET_CLOSE -> return -1
+    if number is SOVSYS_SYSLOG_APPEND -> return 0
+    if number is SOVSYS_SYSLOG_READ -> return 1
+sovsys_copy_max_bytes number:
+    if number is SOVSYS_ADD -> return 0
+    if number is SOVSYS_PATH_READ -> return 4096
+    if number is SOVSYS_PATH_WRITE -> return 4096
+    if number is SOVSYS_FORK -> return 0
+    if number is SOVSYS_PROCESS_SPAWN -> return 0
+    if number is SOVSYS_OPEN -> return 32
+    if number is SOVSYS_READ -> return 4096
+    if number is SOVSYS_WRITE -> return 4096
+    if number is SOVSYS_CLOSE -> return 0
+    if number is SOVSYS_SECCOMP_DENY -> return 0
+    if number is SOVSYS_DROP_CAPABILITY -> return 0
+    if number is SOVSYS_SIGNAL_INSTALL -> return 0
+    if number is SOVSYS_SIGNAL_RETURN -> return 0
+    if number is SOVSYS_MMAP_ANON -> return 0
+    if number is SOVSYS_MUNMAP -> return 0
+    if number is SOVSYS_PIPE -> return 16
+    if number is SOVSYS_DNS_QUERY -> return 4
+    if number is SOVSYS_POLL_ONE -> return 0
+    if number is SOVSYS_WAIT -> return 0
+    if number is SOVSYS_EXEC -> return 32
+    if number is SOVSYS_DUP -> return 0
+    if number is SOVSYS_ABI_QUERY -> return 0
+    if number is SOVSYS_DISPLAY_INFO -> return 0
+    if number is SOVSYS_DISPLAY_BLIT64 -> return 256
+    if number is SOVSYS_DISPLAY_FILL -> return 0
+    if number is SOVSYS_READV -> return 128
+    if number is SOVSYS_WRITEV -> return 128
+    if number is SOVSYS_MPROTECT -> return 0
+    if number is SOVSYS_MADVISE -> return 0
+    if number is SOVSYS_VM_QUERY -> return 48
+    if number is SOVSYS_MLOCK -> return 0
+    if number is SOVSYS_MUNLOCK -> return 0
+    if number is SOVSYS_MREMAP -> return 0
+    if number is SOVSYS_SERVICE_REGISTER -> return 32
+    if number is SOVSYS_SERVICE_LOOKUP -> return 32
+    if number is SOVSYS_SERVICE_SEND -> return 256
+    if number is SOVSYS_SERVICE_RECV -> return 256
+    if number is SOVSYS_SERVICE_UNREGISTER -> return 0
+    if number is SOVSYS_PROCESS_SELF -> return 0
+    if number is SOVSYS_SERVICE_SEND_ASYNC -> return 256
+    if number is SOVSYS_SERVICE_CANCEL -> return 0
+    if number is SOVSYS_SERVICE_POLL -> return 0
+    if number is SOVSYS_SERVICE_WAIT -> return 0
+    if number is SOVSYS_PROCESS_INTERRUPT -> return 0
+    if number is SOVSYS_PROCESS_SIGNAL -> return 0
+    if number is SOVSYS_SIGNAL_MASK -> return 0
+    if number is SOVSYS_SIGNAL_PENDING -> return 0
+    if number is SOVSYS_PROCESS_NAMESPACE_CREATE -> return 0
+    if number is SOVSYS_PROCESS_INFO -> return 64
+    if number is SOVSYS_SIGNAL_NEXT -> return 0
+    if number is SOVSYS_SERVICE_GRANT -> return 0
+    if number is SOVSYS_SERVICE_GRANT_WAIT -> return 0
+    if number is SOVSYS_SERVICE_REVOKE -> return 0
+    if number is SOVSYS_EXIT -> return 0
+    if number is SOVSYS_PROCESS_VMA_INFO -> return 40
+    if number is SOVSYS_FILE_READ -> return 32
+    if number is SOVSYS_FILE_WRITE -> return 12288
+    if number is SOVSYS_FILE_STAT -> return 32
+    if number is SOVSYS_FILE_LIST -> return 512
+    if number is SOVSYS_FILE_MKDIR -> return 32
+    if number is SOVSYS_FILE_UNLINK -> return 32
+    if number is SOVSYS_NET_RESOLVE -> return 8
+    if number is SOVSYS_NET_SOCKET -> return 0
+    if number is SOVSYS_NET_CONNECT -> return 0
+    if number is SOVSYS_NET_SEND -> return 2048
+    if number is SOVSYS_NET_RECV -> return 2048
+    if number is SOVSYS_NET_CLOSE -> return 0
+    if number is SOVSYS_SYSLOG_APPEND -> return 96
+    if number is SOVSYS_SYSLOG_READ -> return 96
+sovsys_copy_length_scale number:
+    if number is SOVSYS_ADD -> return 0
+    if number is SOVSYS_PATH_READ -> return 1
+    if number is SOVSYS_PATH_WRITE -> return 1
+    if number is SOVSYS_FORK -> return 0
+    if number is SOVSYS_PROCESS_SPAWN -> return 0
+    if number is SOVSYS_OPEN -> return 0
+    if number is SOVSYS_READ -> return 1
+    if number is SOVSYS_WRITE -> return 1
+    if number is SOVSYS_CLOSE -> return 0
+    if number is SOVSYS_SECCOMP_DENY -> return 0
+    if number is SOVSYS_DROP_CAPABILITY -> return 0
+    if number is SOVSYS_SIGNAL_INSTALL -> return 0
+    if number is SOVSYS_SIGNAL_RETURN -> return 0
+    if number is SOVSYS_MMAP_ANON -> return 0
+    if number is SOVSYS_MUNMAP -> return 0
+    if number is SOVSYS_PIPE -> return 0
+    if number is SOVSYS_DNS_QUERY -> return 0
+    if number is SOVSYS_POLL_ONE -> return 0
+    if number is SOVSYS_WAIT -> return 0
+    if number is SOVSYS_EXEC -> return 0
+    if number is SOVSYS_DUP -> return 0
+    if number is SOVSYS_ABI_QUERY -> return 0
+    if number is SOVSYS_DISPLAY_INFO -> return 0
+    if number is SOVSYS_DISPLAY_BLIT64 -> return 0
+    if number is SOVSYS_DISPLAY_FILL -> return 0
+    if number is SOVSYS_READV -> return 16
+    if number is SOVSYS_WRITEV -> return 16
+    if number is SOVSYS_MPROTECT -> return 0
+    if number is SOVSYS_MADVISE -> return 0
+    if number is SOVSYS_VM_QUERY -> return 0
+    if number is SOVSYS_MLOCK -> return 0
+    if number is SOVSYS_MUNLOCK -> return 0
+    if number is SOVSYS_MREMAP -> return 0
+    if number is SOVSYS_SERVICE_REGISTER -> return 0
+    if number is SOVSYS_SERVICE_LOOKUP -> return 0
+    if number is SOVSYS_SERVICE_SEND -> return 1
+    if number is SOVSYS_SERVICE_RECV -> return 1
+    if number is SOVSYS_SERVICE_UNREGISTER -> return 0
+    if number is SOVSYS_PROCESS_SELF -> return 0
+    if number is SOVSYS_SERVICE_SEND_ASYNC -> return 1
+    if number is SOVSYS_SERVICE_CANCEL -> return 0
+    if number is SOVSYS_SERVICE_POLL -> return 0
+    if number is SOVSYS_SERVICE_WAIT -> return 0
+    if number is SOVSYS_PROCESS_INTERRUPT -> return 0
+    if number is SOVSYS_PROCESS_SIGNAL -> return 0
+    if number is SOVSYS_SIGNAL_MASK -> return 0
+    if number is SOVSYS_SIGNAL_PENDING -> return 0
+    if number is SOVSYS_PROCESS_NAMESPACE_CREATE -> return 0
+    if number is SOVSYS_PROCESS_INFO -> return 0
+    if number is SOVSYS_SIGNAL_NEXT -> return 0
+    if number is SOVSYS_SERVICE_GRANT -> return 0
+    if number is SOVSYS_SERVICE_GRANT_WAIT -> return 0
+    if number is SOVSYS_SERVICE_REVOKE -> return 0
+    if number is SOVSYS_EXIT -> return 0
+    if number is SOVSYS_PROCESS_VMA_INFO -> return 0
+    if number is SOVSYS_FILE_READ -> return 0
+    if number is SOVSYS_FILE_WRITE -> return 1
+    if number is SOVSYS_FILE_STAT -> return 0
+    if number is SOVSYS_FILE_LIST -> return 0
+    if number is SOVSYS_FILE_MKDIR -> return 0
+    if number is SOVSYS_FILE_UNLINK -> return 0
+    if number is SOVSYS_NET_RESOLVE -> return 0
+    if number is SOVSYS_NET_SOCKET -> return 0
+    if number is SOVSYS_NET_CONNECT -> return 0
+    if number is SOVSYS_NET_SEND -> return 1
+    if number is SOVSYS_NET_RECV -> return 1
+    if number is SOVSYS_NET_CLOSE -> return 0
+    if number is SOVSYS_SYSLOG_APPEND -> return 0
+    if number is SOVSYS_SYSLOG_READ -> return 0
+sov_ADD a0 a1:
+    return sovcall(SOVSYS_ADD, a0, a1)
+sov_PATH_READ a0 a1:
+    return sovcall(SOVSYS_PATH_READ, a0, a1)
+sov_PATH_WRITE a0 a1:
+    return sovcall(SOVSYS_PATH_WRITE, a0, a1)
+sov_FORK:
+    return sovcall(SOVSYS_FORK)
+sov_PROCESS_SPAWN a0:
+    return sovcall(SOVSYS_PROCESS_SPAWN, a0)
+sov_OPEN a0:
+    return sovcall(SOVSYS_OPEN, a0)
+sov_READ a0 a1 a2:
+    return sovcall(SOVSYS_READ, a0, a1, a2)
+sov_WRITE a0 a1 a2:
+    return sovcall(SOVSYS_WRITE, a0, a1, a2)
+sov_CLOSE a0:
+    return sovcall(SOVSYS_CLOSE, a0)
+sov_SECCOMP_DENY a0:
+    return sovcall(SOVSYS_SECCOMP_DENY, a0)
+sov_DROP_CAPABILITY a0:
+    return sovcall(SOVSYS_DROP_CAPABILITY, a0)
+sov_SIGNAL_INSTALL a0 a1:
+    return sovcall(SOVSYS_SIGNAL_INSTALL, a0, a1)
+sov_SIGNAL_RETURN:
+    return sovcall(SOVSYS_SIGNAL_RETURN)
+sov_MMAP_ANON a0:
+    return sovcall(SOVSYS_MMAP_ANON, a0)
+sov_MUNMAP a0 a1:
+    return sovcall(SOVSYS_MUNMAP, a0, a1)
+sov_PIPE a0:
+    return sovcall(SOVSYS_PIPE, a0)
+sov_DNS_QUERY a0:
+    return sovcall(SOVSYS_DNS_QUERY, a0)
+sov_POLL_ONE a0:
+    return sovcall(SOVSYS_POLL_ONE, a0)
+sov_WAIT a0:
+    return sovcall(SOVSYS_WAIT, a0)
+sov_EXEC a0:
+    return sovcall(SOVSYS_EXEC, a0)
+sov_DUP a0:
+    return sovcall(SOVSYS_DUP, a0)
+sov_ABI_QUERY a0:
+    return sovcall(SOVSYS_ABI_QUERY, a0)
+sov_DISPLAY_INFO a0:
+    return sovcall(SOVSYS_DISPLAY_INFO, a0)
+sov_DISPLAY_BLIT64 a0 a1 a2:
+    return sovcall(SOVSYS_DISPLAY_BLIT64, a0, a1, a2)
+sov_DISPLAY_FILL a0 a1 a2 a3 a4:
+    return sovcall(SOVSYS_DISPLAY_FILL, a0, a1, a2, a3, a4)
+sov_READV a0 a1 a2:
+    return sovcall(SOVSYS_READV, a0, a1, a2)
+sov_WRITEV a0 a1 a2:
+    return sovcall(SOVSYS_WRITEV, a0, a1, a2)
+sov_MPROTECT a0 a1 a2:
+    return sovcall(SOVSYS_MPROTECT, a0, a1, a2)
+sov_MADVISE a0 a1 a2:
+    return sovcall(SOVSYS_MADVISE, a0, a1, a2)
+sov_VM_QUERY a0 a1:
+    return sovcall(SOVSYS_VM_QUERY, a0, a1)
+sov_MLOCK a0 a1:
+    return sovcall(SOVSYS_MLOCK, a0, a1)
+sov_MUNLOCK a0 a1:
+    return sovcall(SOVSYS_MUNLOCK, a0, a1)
+sov_MREMAP a0 a1 a2 a3:
+    return sovcall(SOVSYS_MREMAP, a0, a1, a2, a3)
+sov_SERVICE_REGISTER a0:
+    return sovcall(SOVSYS_SERVICE_REGISTER, a0)
+sov_SERVICE_LOOKUP a0:
+    return sovcall(SOVSYS_SERVICE_LOOKUP, a0)
+sov_SERVICE_SEND a0 a1 a2:
+    return sovcall(SOVSYS_SERVICE_SEND, a0, a1, a2)
+sov_SERVICE_RECV a0 a1 a2:
+    return sovcall(SOVSYS_SERVICE_RECV, a0, a1, a2)
+sov_SERVICE_UNREGISTER a0:
+    return sovcall(SOVSYS_SERVICE_UNREGISTER, a0)
+sov_PROCESS_SELF:
+    return sovcall(SOVSYS_PROCESS_SELF)
+sov_SERVICE_SEND_ASYNC a0 a1 a2:
+    return sovcall(SOVSYS_SERVICE_SEND_ASYNC, a0, a1, a2)
+sov_SERVICE_CANCEL a0 a1:
+    return sovcall(SOVSYS_SERVICE_CANCEL, a0, a1)
+sov_SERVICE_POLL a0:
+    return sovcall(SOVSYS_SERVICE_POLL, a0)
+sov_SERVICE_WAIT a0 a1 a2:
+    return sovcall(SOVSYS_SERVICE_WAIT, a0, a1, a2)
+sov_PROCESS_INTERRUPT a0:
+    return sovcall(SOVSYS_PROCESS_INTERRUPT, a0)
+sov_PROCESS_SIGNAL a0 a1:
+    return sovcall(SOVSYS_PROCESS_SIGNAL, a0, a1)
+sov_SIGNAL_MASK a0:
+    return sovcall(SOVSYS_SIGNAL_MASK, a0)
+sov_SIGNAL_PENDING:
+    return sovcall(SOVSYS_SIGNAL_PENDING)
+sov_PROCESS_NAMESPACE_CREATE:
+    return sovcall(SOVSYS_PROCESS_NAMESPACE_CREATE)
+sov_PROCESS_INFO a0 a1:
+    return sovcall(SOVSYS_PROCESS_INFO, a0, a1)
+sov_SIGNAL_NEXT:
+    return sovcall(SOVSYS_SIGNAL_NEXT)
+sov_SERVICE_GRANT a0 a1:
+    return sovcall(SOVSYS_SERVICE_GRANT, a0, a1)
+sov_SERVICE_GRANT_WAIT a0 a1:
+    return sovcall(SOVSYS_SERVICE_GRANT_WAIT, a0, a1)
+sov_SERVICE_REVOKE a0 a1:
+    return sovcall(SOVSYS_SERVICE_REVOKE, a0, a1)
+sov_EXIT a0:
+    return sovcall(SOVSYS_EXIT, a0)
+sov_PROCESS_VMA_INFO a0 a1:
+    return sovcall(SOVSYS_PROCESS_VMA_INFO, a0, a1)
+sov_FILE_READ a0 a1 a2:
+    return sovcall(SOVSYS_FILE_READ, a0, a1, a2)
+sov_FILE_WRITE a0 a1 a2:
+    return sovcall(SOVSYS_FILE_WRITE, a0, a1, a2)
+sov_FILE_STAT a0 a1:
+    return sovcall(SOVSYS_FILE_STAT, a0, a1)
+sov_FILE_LIST a0:
+    return sovcall(SOVSYS_FILE_LIST, a0)
+sov_FILE_MKDIR a0:
+    return sovcall(SOVSYS_FILE_MKDIR, a0)
+sov_FILE_UNLINK a0:
+    return sovcall(SOVSYS_FILE_UNLINK, a0)
+sov_NET_RESOLVE a0 a1:
+    return sovcall(SOVSYS_NET_RESOLVE, a0, a1)
+sov_NET_SOCKET a0 a1:
+    return sovcall(SOVSYS_NET_SOCKET, a0, a1)
+sov_NET_CONNECT a0 a1 a2:
+    return sovcall(SOVSYS_NET_CONNECT, a0, a1, a2)
+sov_NET_SEND a0 a1 a2:
+    return sovcall(SOVSYS_NET_SEND, a0, a1, a2)
+sov_NET_RECV a0 a1 a2:
+    return sovcall(SOVSYS_NET_RECV, a0, a1, a2)
+sov_NET_CLOSE a0:
+    return sovcall(SOVSYS_NET_CLOSE, a0)
+sov_SYSLOG_APPEND a0:
+    return sovcall(SOVSYS_SYSLOG_APPEND, a0)
+sov_SYSLOG_READ a0 a1:
+    return sovcall(SOVSYS_SYSLOG_READ, a0, a1)

@@ -1,0 +1,20 @@
+# Linux-host driver adapters for newer shared frontend diagnostics.
+compat_prof_mode: 0
+compat_prof_ready: 0
+compat_prof_buf: 0
+compat_prof_time: 0
+mark label:
+    if compat_prof_ready = 0
+        compat_prof_ready: 1
+        compat_prof_mode: acx_has('--prof')
+    if compat_prof_mode = 0 -> return 0
+    if compat_prof_buf = 0 -> compat_prof_buf: _sov_alloc(64)
+    dummy: syscall(228, 1, compat_prof_buf, 0, 0, 0, 0)
+    t: peek_i64(compat_prof_buf, 0) * 1000000000 + peek_i64(compat_prof_buf, 8)
+    if compat_prof_time = 0 -> compat_prof_time: t
+    _sov_print(label)
+    print (t - compat_prof_time) / 1000
+    compat_prof_time: t
+    return t
+
+

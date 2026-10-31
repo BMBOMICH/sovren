@@ -1,0 +1,17 @@
+hash_text s:
+    h: 5381
+    i: 0
+    n: _sov_strlen(s)
+    as long as i < n
+        h: h * 33 + peek_byte(s, i)
+        h: h % 2147483647
+        i: i + 1
+    return h
+hash_bytes p n:
+    h: 5381
+    i: 0
+    as long as i < n
+        h: h * 33 + peek_byte(p, i)
+        h: h % 2147483647
+        i: i + 1
+    return h

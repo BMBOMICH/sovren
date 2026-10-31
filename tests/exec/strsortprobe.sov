@@ -1,0 +1,22 @@
+use list
+use sort
+use string
+main:
+    sl: list_new()
+    sl: list_add(sl, "pear")
+    sl: list_add(sl, "apple")
+    sl: list_add(sl, "fig")
+    sl: list_add(sl, "banana")
+    sl: sort_strs(sl)
+    i: 0
+    as long as i < 4
+        print as text list_get(sl, i)
+        i: i + 1
+    nl: list_new()
+    nl: list_add(nl, 3)
+    nl: list_add(nl, 1)
+    nl: list_add(nl, 2)
+    nl: sort_ints_desc(nl)
+    print list_get(nl, 0)
+    print list_get(nl, 2)
+    return 0

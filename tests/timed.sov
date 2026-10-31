@@ -1,0 +1,9 @@
+# timed - clock-driven accumulator
+main:
+    i: 0
+    acc: 0
+    as long as i < 1000
+        acc: acc + i % 7
+        i: i + 1
+    print acc
+    print 0

@@ -1,0 +1,2059 @@
+# pad line so main is not first
+# unsafe-module
+frame_wipe:
+    emit3(72, 137, 239)
+    emit3(72, 129, 239)
+    fw_a: here()
+    br_at: _sov_list_add(br_at, fw_a)
+    br_pv: _sov_list_add(br_pv, pad_ver)
+    br_id: _sov_list_add(br_id, fw_a)
+    br_st: _sov_list_add(br_st, 0)
+    emit4(0)
+    emit(185)
+    fw_b: here()
+    br_at: _sov_list_add(br_at, fw_b)
+    br_pv: _sov_list_add(br_pv, pad_ver)
+    br_id: _sov_list_add(br_id, fw_b)
+    br_st: _sov_list_add(br_st, 0)
+    emit4(0)
+    emit3(49, 192, 243)
+    emit(170)
+    fw_pos: _sov_list_add(fw_pos, fw_a)
+    fw_pos: _sov_list_add(fw_pos, fw_b)
+fuse_cmp cond inv:
+    e: strip(cops(cond))
+    if cfind1(e, 38) > 0 - 1
+        if look(e, "&&") > 0 - 1
+            return 0 - 1
+    if cfind1(e, 124) > 0 - 1
+        if look(e, "||") > 0 - 1
+            return 0 - 1
+    if look(e, " and ") > 0 - 1
+        return 0 - 1
+    if look(e, " or ") > 0 - 1
+        return 0 - 1
+    p: fop(e, "==")
+    op: "eq"
+    ow: 2
+    if p < 0
+        p: fop(e, "!=")
+        op: "ne"
+        ow: 2
+    if p < 0
+        p: fop(e, "<=")
+        op: "le"
+        ow: 2
+    if p < 0
+        p: fop(e, ">=")
+        op: "ge"
+        ow: 2
+    if p < 0
+        p: fop(e, "<")
+        op: "lt"
+        ow: 1
+    if p < 0
+        p: fop(e, ">")
+        op: "gt"
+        ow: 1
+    if p < 0
+        return 0 - 1
+    oid: intern_kid(op)
+    le: strip(cut(e, 0, p))
+    re: strip(cut(e, p + ow, length(e)))
+    if look(le, "(") > 0 - 1
+        expr(le)
+        if is_imm(re) is 1
+            cmp_rax_imm(num_of(re))
+            return fuse_jcc(op, inv)
+        push_rax()
+        expr(re)
+        mov_rcx_rax()
+        pop_rax()
+        cmp_rax_rcx()
+        return fuse_jcc(op, inv)
+    if oid is kid_opeq
+        if peek_byte(re, 0) is 34
+            expr(le)
+            push_rax()
+            expr(re)
+            mov_rsi_rax()
+            pop_rax()
+            mov_rdi_rax()
+            calln("_sov_txt_eq")
+            cmp_rax_imm(1)
+            return fuse_jcc("eq", inv)
+        if peek_byte(le, 0) is 34
+            expr(re)
+            push_rax()
+            expr(le)
+            mov_rsi_rax()
+            pop_rax()
+            mov_rdi_rax()
+            calln("_sov_txt_eq")
+            cmp_rax_imm(1)
+            return fuse_jcc("eq", inv)
+    if oid is kid_opne
+        if peek_byte(re, 0) is 34
+            expr(le)
+            push_rax()
+            expr(re)
+            mov_rsi_rax()
+            pop_rax()
+            mov_rdi_rax()
+            calln("_sov_txt_eq")
+            cmp_rax_imm(1)
+            return fuse_jcc("ne", inv)
+        if peek_byte(le, 0) is 34
+            expr(re)
+            push_rax()
+            expr(le)
+            mov_rsi_rax()
+            pop_rax()
+            mov_rdi_rax()
+            calln("_sov_txt_eq")
+            cmp_rax_imm(1)
+            return fuse_jcc("ne", inv)
+    if is_imm(re) is 1
+        if is_imm(le) is 0
+            sl: bin_rslot(le)
+            if sl > 0 - 1
+                cflush(le)
+                cmp_reg_imm(sl, num_of(re))
+            if not
+                expr(le)
+                cmp_rax_imm(num_of(re))
+            return fuse_jcc(op, inv)
+    if is_imm(le) is 1
+        if is_imm(re) is 0
+            sl: bin_rslot(re)
+            if sl > 0 - 1
+                cflush(re)
+                cmp_reg_imm(sl, num_of(le))
+            if not
+                expr(re)
+                cmp_rax_imm(num_of(le))
+            return fuse_jcc(swap_op(op), inv)
+    la: reg_slot(le)
+    ra: reg_slot(re)
+    if la > 0 - 1
+        if ra > 0 - 1
+            cflush(le)
+            cflush(re)
+            cmp_reg_reg(la, ra)
+            return fuse_jcc(op, inv)
+        mr: mem_scaled(re)
+        if mr > 0 - 1
+            mb: mr / 65536
+            mq: mr % 65536
+            cflush(le)
+            emit_cmp_reg_scaled(la, mb, mq / 4096, mq % 4096 - 128)
+            return fuse_jcc(op, inv)
+        cflush(le)
+        expr(re)
+        cmp_reg_rax(la)
+        return fuse_jcc(op, inv)
+    if ra > 0 - 1
+        ml: mem_scaled(le)
+        if ml > 0 - 1
+            mb: ml / 65536
+            mq: ml % 65536
+            cflush(re)
+            emit_cmp_reg_scaled(ra, mb, mq / 4096, mq % 4096 - 128)
+            return fuse_jcc(swap_op(op), inv)
+        cflush(re)
+        expr(le)
+        cmp_rax_reg(ra)
+        return fuse_jcc(op, inv)
+    ml: mem_scaled(le)
+    if ml > 0 - 1
+        mr: mem_scaled(re)
+        if mr > 0 - 1
+            mb: ml / 65536
+            mq: ml % 65536
+            nb: mr / 65536
+            nq: mr % 65536
+            emit_rax_scaled(mb, mq / 4096, mq % 4096 - 128)
+            emit_cmp_rax_scaled(nb, nq / 4096, nq % 4096 - 128)
+            return fuse_jcc(op, inv)
+    expr(le)
+    push_rax()
+    expr(re)
+    mov_rcx_rax()
+    pop_rax()
+    cmp_rax_rcx()
+    return fuse_jcc(op, inv)
+fuse_jcc op inv:
+    oid: intern_kid(op)
+    if oid is kid_opeq
+        if inv is 1
+            return jne()
+        return jz()
+    if oid is kid_opne
+        if inv is 1
+            return jz()
+        return jne()
+    if oid is kid_oplt
+        if inv is 1
+            return jge()
+        return jl()
+    if oid is kid_ople
+        if inv is 1
+            return jg()
+        return jle()
+    if oid is kid_opgt
+        if inv is 1
+            return jle()
+        return jg()
+    if oid is kid_opge
+        if inv is 1
+            return jl()
+        return jge()
+    return 0 - 1
+here:
+    return oc_here(oc)
+homereg name:
+    sl: reg_slot(name)
+    if sl > 0 - 1
+        if sl is 0
+            return 3
+        return sl + 11
+    if leaf8 is 1
+        sl8: lsh_find_s(name)
+        if sl8 > 4
+            if sl8 < 9
+                return sl8 + 3
+    return 0 - 1
+i2s n:
+    r: ""
+    v: n
+    if v is 0
+        return "0\n"
+    neg: 0
+    if v < 0
+        neg: 1
+    as long as v is not 0
+        d: v % 10
+        if d < 0
+            d: 0 - d
+        r: join(cut("0123456789", d, d + 1), r)
+        v: v / 10
+    if neg is 1
+        r: join("-", r)
+    return join(r, "\n")
+idiv_reg sl:
+    emit(op_rex_b(sl))
+    emit(247)
+    emit(248 + op_low3(sl))
+list_idx lst name:
+    # one open-addressed probe replaces the old O(names) walk; a hit
+    # is verified against the live list, so a rebuilt list cannot alias.
+    i: list_find(lst, name)
+    if i > 0 - 1
+        return i
+    return 0 - 1
+imul_rax_rcx:
+    emit3(72, 15, 175)
+    emit(193)
+imul_rax_reg sl:
+    emit(op_rex_b(sl))
+    emit2(15, 175)
+    emit(192 + op_low3(sl))
+inc_var name:
+    sl: lsh_find_s(name)
+    if sl is 0
+        emit3(72, 255, 195)
+        return
+    if sl is 1
+        emit3(73, 255, 196)
+        return
+    if sl is 2
+        emit3(73, 255, 197)
+        return
+    if sl is 3
+        emit3(73, 255, 198)
+        return
+    if sl is 4
+        emit3(73, 255, 199)
+        return
+    if sl < 0
+        loadv(name)
+        emit3(72, 255, 192)
+        storev(name)
+        return
+    if sl is 5
+        if leaf8 is 1
+            emit3(73, 255, 192)
+            return
+    if sl is 6
+        if leaf8 is 1
+            emit3(73, 255, 193)
+            return
+    if sl is 7
+        if leaf8 is 1
+            emit3(73, 255, 194)
+            return
+    if sl is 8
+        if leaf8 is 1
+            emit3(73, 255, 195)
+            return
+    cflush(name)
+    of: loc_off(sl)
+    emit2(72, 255)
+    if of > 0 - 129
+        emit(69)
+        emit(of)
+        return
+    emit(133)
+    emit4(of)
+    return
+intern s:
+    return intern_fast_do(s)
+intern_nz s:
+
+    # Raw, already-decoded bytes. The general interner decodes escapes;
+    # shield literal backslashes so it cannot decode a print payload twice.
+    if look(s, str_chr(92)) < 0
+        return intern_fast_do(s)
+    n: length(s)
+    raw: _sov_heap_alloc(n * 2 + 1)
+    i: 0
+    j: 0
+    as long as i < n
+        b: peek_byte(s, i)
+        if b is 92
+            poke_byte(raw, j, 92)
+            j: j + 1
+        poke_byte(raw, j, b)
+        j: j + 1
+        i: i + 1
+    poke_byte(raw, j, 0)
+    return intern_fast_do(raw)
+is_imm s:
+    n: length(s)
+    if n is 0
+        return 0
+    i: 0
+    if peek_byte(s, 0) is 45
+        i: 1
+    if i >= n
+        return 0
+    as long as i < n
+        if digitb(peek_byte(s, i)) is 0
+            return 0
+        i: i + 1
+    return 1
+cval: 0
+cvop: 0
+cspl: 0
+cstk: 0
+opt_peep: 1
+opt_dce: 0
+lcut lst n:
+    out: _sov_list_new()
+    i: 0
+    as long as i < n
+        out: _sov_list_add(out, peek_i64(lst, 16 + i * 8))
+        i: i + 1
+    return out
+include constant_eval.sov
+is_task_hdr s:
+    n: length(s)
+    if n < 2
+        return 0
+    if peek_byte(s, 0) is 35
+        return 0
+    if peek_byte(s, n - 1) is 58
+        return 1
+jae:
+    emit2(15, 131)
+    at: here()
+    emit4(0)
+    br_at: _sov_list_add(br_at, at)
+    br_pv: _sov_list_add(br_pv, pad_ver)
+    br_id: _sov_list_add(br_id, at)
+    br_st: _sov_list_add(br_st, 0)
+    return at
+j_abv:
+    emit2(15, 135)
+    at: here()
+    emit4(0)
+    br_at: _sov_list_add(br_at, at)
+    br_pv: _sov_list_add(br_pv, pad_ver)
+    br_id: _sov_list_add(br_id, at)
+    br_st: _sov_list_add(br_st, 0)
+    return at
+j_par:
+    emit2(15, 138)
+    at: here()
+    emit4(0)
+    br_at: _sov_list_add(br_at, at)
+    br_pv: _sov_list_add(br_pv, pad_ver)
+    br_id: _sov_list_add(br_id, at)
+    br_st: _sov_list_add(br_st, 0)
+    return at
+jnp:
+    emit2(15, 139)
+    at: here()
+    emit4(0)
+    br_at: _sov_list_add(br_at, at)
+    br_pv: _sov_list_add(br_pv, pad_ver)
+    br_id: _sov_list_add(br_id, at)
+    br_st: _sov_list_add(br_st, 0)
+    return at
+jb:
+    emit2(15, 130)
+    at: here()
+    emit4(0)
+    br_at: _sov_list_add(br_at, at)
+    br_pv: _sov_list_add(br_pv, pad_ver)
+    br_id: _sov_list_add(br_id, at)
+    br_st: _sov_list_add(br_st, 0)
+    return at
+jg:
+    emit2(15, 143)
+    at: here()
+    emit4(0)
+    br_at: _sov_list_add(br_at, at)
+    br_pv: _sov_list_add(br_pv, pad_ver)
+    br_id: _sov_list_add(br_id, at)
+    br_st: _sov_list_add(br_st, 0)
+    return at
+jge:
+    emit2(15, 141)
+    at: here()
+    emit4(0)
+    br_at: _sov_list_add(br_at, at)
+    br_pv: _sov_list_add(br_pv, pad_ver)
+    br_id: _sov_list_add(br_id, at)
+    br_st: _sov_list_add(br_st, 0)
+    return at
+jl:
+    emit2(15, 140)
+    at: here()
+    emit4(0)
+    br_at: _sov_list_add(br_at, at)
+    br_pv: _sov_list_add(br_pv, pad_ver)
+    br_id: _sov_list_add(br_id, at)
+    br_st: _sov_list_add(br_st, 0)
+    return at
+jle:
+    emit2(15, 142)
+    at: here()
+    emit4(0)
+    br_at: _sov_list_add(br_at, at)
+    br_pv: _sov_list_add(br_pv, pad_ver)
+    br_id: _sov_list_add(br_id, at)
+    br_st: _sov_list_add(br_st, 0)
+    return at
+jmp:
+    
+    emit(233)
+    at: here()
+    emit4(0)
+    br_at: _sov_list_add(br_at, at)
+    br_pv: _sov_list_add(br_pv, pad_ver)
+    br_id: _sov_list_add(br_id, at)
+    br_st: _sov_list_add(br_st, 0)
+    return at
+jne:
+    emit2(15, 133)
+    at: here()
+    emit4(0)
+    br_at: _sov_list_add(br_at, at)
+    br_pv: _sov_list_add(br_pv, pad_ver)
+    br_id: _sov_list_add(br_id, at)
+    br_st: _sov_list_add(br_st, 0)
+    return at
+jnz:
+    emit2(15, 133)
+    at: here()
+    emit4(0)
+    br_at: _sov_list_add(br_at, at)
+    br_pv: _sov_list_add(br_pv, pad_ver)
+    br_id: _sov_list_add(br_id, at)
+    br_st: _sov_list_add(br_st, 0)
+    return at
+join a b:
+    if a is 0
+        return b
+    if peek_byte(a, 0) is 0
+        return b
+    if b is 0
+        return a
+    if peek_byte(b, 0) is 0
+        return a
+    return _sov_strcat(a, b)
+jz:
+    
+    emit2(15, 132)
+    at: here()
+    emit4(0)
+    br_at: _sov_list_add(br_at, at)
+    br_pv: _sov_list_add(br_pv, pad_ver)
+    br_id: _sov_list_add(br_id, at)
+    br_st: _sov_list_add(br_st, 0)
+    return at
+lea_ok ag:
+    p: look(ag, " - ")
+    neg: 1
+    if p < 0
+        p: look(ag, " + ")
+        neg: 0
+    if p < 0
+        return 0
+    nm: strip(cut(ag, 0, p))
+    cs: strip(cut(ag, p + 3, length(ag)))
+    if plain_name(nm) is 0
+        return 0
+    if is_imm(cs) is 0
+        return 0
+    v: num_of(cs)
+    if neg is 1
+        v: 0 - v
+    if v > 127
+        return 0
+    if v < 0 - 128
+        return 0
+    if v is 0
+        return 0
+    if reg_slot(nm) < 0
+        return 0
+    return 1
+leaf8_scan lines:
+
+    li: 0
+    li_ln: _sov_list_len(lines)
+    as long as li < li_ln
+        s: peek_i64(lines, 16 + li * 8)
+        as long as peek_byte(s, 0) is 32
+            s: s + 1
+        as long as peek_byte(s, 0) is 9
+            s: s + 1
+        skip: 0
+        if peek_byte(s, 0) is 0
+            skip: 1
+        if peek_byte(s, 0) is 35
+            skip: 1
+        if skip is 0
+            cm: cfind1(s, 35)
+            if cm > 0 - 1
+                s: cut(s, 0, cm)
+            if look(s, "_sov_") > 0 - 1
+                return 0
+            if look(s, "print") > 0 - 1
+                return 0
+            if look(s, "syscall") > 0 - 1
+                return 0
+            if look(s, "raise") > 0 - 1
+                return 0
+            if cfind1(s, 34) > 0 - 1
+                return 0
+            if look(s, "length of ") > 0 - 1
+                return 0
+            wd: word_id(s)
+            if wd is kid_wipe
+                return 0
+            if wd is kid_join
+                return 0
+            if wd is kid_try
+                return 0
+            if wd is kid_except
+                return 0
+            p: 0
+            as long as peek_byte(s, p) > 0
+                if peek_byte(s, p) is 40
+                    q: p
+                    go: 1
+                    as long as go is 1
+                        if q is 0
+                            go: 0
+                        if not
+                            b: peek_byte(s, q - 1)
+                            if wordchar(b) is 1
+                                q: q - 1
+                            if not
+                                go: 0
+                    tn: p - q
+                    ok: 0
+                    if tn is 3
+                        if sg_match(s, q, "bor") is 1
+                            ok: 1
+                    if tn is 4
+                        if sg_match(s, q, "band") is 1
+                            ok: 1
+                        if sg_match(s, q, "bxor") is 1
+                            ok: 1
+                        if sg_match(s, q, "bshl") is 1
+                            ok: 1
+                        if sg_match(s, q, "bshr") is 1
+                            ok: 1
+                        if sg_match(s, q, "bsar") is 1
+                            ok: 1
+                    if tn is 8
+                        if sg_match(s, q, "peek_i64") is 1
+                            ok: 1
+                        if sg_match(s, q, "poke_i64") is 1
+                            ok: 1
+                        if sg_match(s, q, "wrap_add") is 1
+                            ok: 1
+                        if sg_match(s, q, "wrap_sub") is 1
+                            ok: 1
+                        if sg_match(s, q, "wrap_mul") is 1
+                            ok: 1
+                    if tn is 9
+                        if sg_match(s, q, "peek_byte") is 1
+                            ok: 1
+                        if sg_match(s, q, "poke_byte") is 1
+                            ok: 1
+                    if tn is 10
+                        if sg_match(s, q, "peek_raw64") is 1
+                            ok: 1
+                        if sg_match(s, q, "poke_raw64") is 1
+                            ok: 1
+                    if ok is 0
+                        return 0
+                p: p + 1
+        li: li + 1
+    return 1
+length s:
+    if s < 4096
+        return 0
+    return _sov_strlen(s)
+letter t i:
+
+    if letter_tab is 0
+        letter_tab: _sov_heap_alloc(512)
+        k: 0
+        as long as k < 256
+            poke_byte(letter_tab, k * 2, k)
+            poke_byte(letter_tab, k * 2 + 1, 0)
+            k: k + 1
+    if t < 4096
+        return letter_tab
+    if i < 0
+        return letter_tab
+    return letter_tab + peek_byte(t, i) * 2
+lim_const lim:
+    if _sov_str_eq(lim, kn) is 1
+        if kv > 0
+            if kv < 2147483648
+                return kv
+    if is_imm(lim) is 1
+        v: num_of(lim)
+        if v > 0
+            if v < 2147483648
+                return v
+lim_source_const lines li lim:
+    jj: li - 1
+    pref: join(lim, ": ")
+    loopind: nind(peek_i64(lines, 16 + li * 8))
+    as long as jj >= 0
+        raw: peek_i64(lines, 16 + jj * 8)
+        pl: strip(raw)
+        if length(pl) > 0
+            if peek_byte(pl, 0) is not 35
+                if _sov_starts_with(pl, pref) is 1
+                    if nind(raw) <= loopind
+                        vs: strip(cut(pl, length(pref), length(pl)))
+                        if digitb(peek_byte(vs, 0)) is 1
+                            if look(vs, " ") < 0
+                                return num_of(vs)
+                    return 0
+        jj: jj - 1
+lines_of source:
+    lst: _sov_list_new()
+    start: 0
+    i: 0
+    return lines_of_fast(source)
+    # fast line descriptors share one backing allocation.
+    #
+    #
+    #
+    #
+    #
+load_file path:
+    fd: _sov_open(path, 0)
+    if fd < 0
+        return 0
+    sz: _sov_lseek(fd, 0, 2)
+    _sov_lseek(fd, 0, 0)
+    if sz < 1
+        _sov_close(fd)
+        return 0
+    buf: _sov_heap_alloc(sz + 1)
+    got: _sov_read(fd, buf, sz)
+    _sov_close(fd)
+    dummy: poke_byte(buf, got, 0)
+    return buf
+load_loc slot:
+    if slot is 0
+        emit3(72, 137, 216)
+        return
+    if slot is 1
+        emit3(76, 137, 224)
+        return
+    if slot is 2
+        emit3(76, 137, 232)
+        return
+    if slot is 3
+        emit3(76, 137, 240)
+        return
+    if slot is 4
+        emit3(76, 137, 248)
+        return
+    if slot is 5
+        if leaf8 is 1
+            emit3(76, 137, 192)
+            return
+    if slot is 6
+        if leaf8 is 1
+            emit3(76, 137, 200)
+            return
+    if slot is 7
+        if leaf8 is 1
+            emit3(76, 137, 208)
+            return
+    if slot is 8
+        if leaf8 is 1
+            emit3(76, 137, 216)
+            return
+    emit3(72, 139, 133)
+    emit4(loc_off(slot))
+loadv name:
+    if peek_byte(name, 0) is 98
+        if word_id(name) is kid_blank
+            rax_str("")
+            return
+    fl_x5: fl_expand(name)
+    if peek_byte(fl_x5, 0) is not 0
+        dummy: expr(fl_x5)
+        return
+    cflush(name)
+    i: lsh_find_s(name)
+    if i > 0 - 1
+        load_loc(i)
+        return
+    g: gn_lookup(name)
+    if g > 0 - 1
+        load_glob(name)
+        return
+    # undeclared reads auto-register (stale-era tolerance; k*-tests rely on it)
+    if wr_used is 0
+        wr_used: _sov_list_new()
+    if list_find(wr_used, name) is 0 - 1
+        wr_used: _sov_list_add(wr_used, name)
+        print "Warning: undeclared read, auto-registers as a local starting at 0"
+        _sov_print(name)
+        err_where()
+    load_loc(slot(name))
+loadv_rcx name:
+    loadv(name)
+    li: lsh_find_s(name)
+    if li > 0 - 1
+        if li < 5
+            if oc_n > 0
+                lb: peek_byte(oc, oc_n - 1)
+                if lb is 216
+                    dummy: ocset(oc_n - 1, 217)
+                if lb is 224
+                    dummy: ocset(oc_n - 1, 225)
+                if lb is 232
+                    dummy: ocset(oc_n - 1, 233)
+                if lb is 240
+                    dummy: ocset(oc_n - 1, 241)
+                if lb is 248
+                    dummy: ocset(oc_n - 1, 249)
+                return 0
+        if leaf8 is 1
+            if li < 9
+                if oc_n > 0
+                    lb: peek_byte(oc, oc_n - 1)
+                    if lb is 192
+                        dummy: ocset(oc_n - 1, 193)
+                    if lb is 200
+                        dummy: ocset(oc_n - 1, 201)
+                    if lb is 208
+                        dummy: ocset(oc_n - 1, 209)
+                    if lb is 216
+                        dummy: ocset(oc_n - 1, 217)
+                    return 0
+    mov_rcx_rax()
+loadv_rdi name:
+    g9: gn_lookup(name)
+    if g9 > 0 - 1
+        if lsh_find_s(name) < 0
+            cflush(name)
+            emit3(72, 139, 61)
+            at: here()
+            emit4(0)
+            addp(at, "grel", name)
+            return 0
+    loadv(name)
+    li: lsh_find_s(name)
+    if li > 0 - 1
+        if li < 5
+            if oc_n > 0
+                lb: peek_byte(oc, oc_n - 1)
+                if lb is 216
+                    dummy: ocset(oc_n - 1, 223)
+                if lb is 224
+                    dummy: ocset(oc_n - 1, 231)
+                if lb is 232
+                    dummy: ocset(oc_n - 1, 239)
+                if lb is 240
+                    dummy: ocset(oc_n - 1, 247)
+                if lb is 248
+                    dummy: ocset(oc_n - 1, 255)
+                return 0
+        if leaf8 is 1
+            if li < 9
+                if oc_n > 0
+                    lb: peek_byte(oc, oc_n - 1)
+                    if lb is 192
+                        dummy: ocset(oc_n - 1, 199)
+                    if lb is 200
+                        dummy: ocset(oc_n - 1, 207)
+                    if lb is 208
+                        dummy: ocset(oc_n - 1, 215)
+                    if lb is 216
+                        dummy: ocset(oc_n - 1, 223)
+                    return 0
+    mov_rdi_rax()
+loadv_rdx name:
+    g9: gn_lookup(name)
+    if g9 > 0 - 1
+        if lsh_find_s(name) < 0
+            cflush(name)
+            emit3(72, 139, 21)
+            at: here()
+            emit4(0)
+            addp(at, "grel", name)
+            return 0
+    loadv(name)
+    li: lsh_find_s(name)
+    if li > 0 - 1
+        if li < 5
+            if oc_n > 0
+                lb: peek_byte(oc, oc_n - 1)
+                if lb is 216
+                    dummy: ocset(oc_n - 1, 218)
+                if lb is 224
+                    dummy: ocset(oc_n - 1, 226)
+                if lb is 232
+                    dummy: ocset(oc_n - 1, 234)
+                if lb is 240
+                    dummy: ocset(oc_n - 1, 242)
+                if lb is 248
+                    dummy: ocset(oc_n - 1, 250)
+                return 0
+        if leaf8 is 1
+            if li < 9
+                if oc_n > 0
+                    lb: peek_byte(oc, oc_n - 1)
+                    if lb is 192
+                        dummy: ocset(oc_n - 1, 194)
+                    if lb is 200
+                        dummy: ocset(oc_n - 1, 202)
+                    if lb is 208
+                        dummy: ocset(oc_n - 1, 210)
+                    if lb is 216
+                        dummy: ocset(oc_n - 1, 218)
+                    return 0
+    emit3(72, 137, 194)
+loadv_rsi name:
+    g9: gn_lookup(name)
+    if g9 > 0 - 1
+        if lsh_find_s(name) < 0
+            cflush(name)
+            emit3(72, 139, 53)
+            at: here()
+            emit4(0)
+            addp(at, "grel", name)
+            return 0
+    loadv(name)
+    li: lsh_find_s(name)
+    if li > 0 - 1
+        if li < 5
+            if oc_n > 0
+                lb: peek_byte(oc, oc_n - 1)
+                if lb is 216
+                    dummy: ocset(oc_n - 1, 222)
+                if lb is 224
+                    dummy: ocset(oc_n - 1, 230)
+                if lb is 232
+                    dummy: ocset(oc_n - 1, 238)
+                if lb is 240
+                    dummy: ocset(oc_n - 1, 246)
+                if lb is 248
+                    dummy: ocset(oc_n - 1, 254)
+                return 0
+        if leaf8 is 1
+            if li < 9
+                if oc_n > 0
+                    lb: peek_byte(oc, oc_n - 1)
+                    if lb is 192
+                        dummy: ocset(oc_n - 1, 198)
+                    if lb is 200
+                        dummy: ocset(oc_n - 1, 206)
+                    if lb is 208
+                        dummy: ocset(oc_n - 1, 214)
+                    if lb is 216
+                        dummy: ocset(oc_n - 1, 222)
+                    return 0
+    mov_rsi_rax()
+loc_off slot:
+    return 0 - (slot + 1) * 8
+look t s:
+
+    # one-byte needles (":", " ", ",") go through the swar scan; anything
+    # longer keeps the runtime's substring search.
+    if peek_byte(s, 1) is 0
+        if peek_byte(s, 0) is not 0
+            return cfind1(t, peek_byte(s, 0))
+    kr: _sov_find_text(t, s)
+    return kr
+mark_fn_str name:
+    if sf_lookup(name) < 0
+        str_fns: _sov_list_add(str_fns, name)
+        dhmf: plog_str(40, name)
+mark_str name:
+    if sv_lookup(name) < 0
+        str_vars: _sov_list_add(str_vars, name)
+mem_peek_byte b x:
+    if b is 0
+        if x is 0
+                emit3(72, 15, 182)
+                emit2(4, 27)
+    if b is 0
+        if x is 1
+                emit3(74, 15, 182)
+                emit2(4, 35)
+    if b is 0
+        if x is 2
+                emit3(74, 15, 182)
+                emit2(4, 43)
+    if b is 0
+        if x is 3
+                emit3(74, 15, 182)
+                emit2(4, 51)
+    if b is 0
+        if x is 4
+                emit3(74, 15, 182)
+                emit2(4, 59)
+    if b is 1
+        if x is 0
+                emit3(73, 15, 182)
+                emit2(4, 28)
+    if b is 1
+        if x is 1
+                emit3(75, 15, 182)
+                emit2(4, 36)
+    if b is 1
+        if x is 2
+                emit3(75, 15, 182)
+                emit2(4, 44)
+    if b is 1
+        if x is 3
+                emit3(75, 15, 182)
+                emit2(4, 52)
+    if b is 1
+        if x is 4
+                emit3(75, 15, 182)
+                emit2(4, 60)
+    if b is 2
+        if x is 0
+                emit3(73, 15, 182)
+                emit3(68, 29, 0)
+    if b is 2
+        if x is 1
+                emit3(75, 15, 182)
+                emit3(68, 37, 0)
+    if b is 2
+        if x is 2
+                emit3(75, 15, 182)
+                emit3(68, 45, 0)
+    if b is 2
+        if x is 3
+                emit3(75, 15, 182)
+                emit3(68, 53, 0)
+    if b is 2
+        if x is 4
+                emit3(75, 15, 182)
+                emit3(68, 61, 0)
+    if b is 3
+        if x is 0
+                emit3(73, 15, 182)
+                emit2(4, 30)
+    if b is 3
+        if x is 1
+                emit3(75, 15, 182)
+                emit2(4, 38)
+    if b is 3
+        if x is 2
+                emit3(75, 15, 182)
+                emit2(4, 46)
+    if b is 3
+        if x is 3
+                emit3(75, 15, 182)
+                emit2(4, 54)
+    if b is 3
+        if x is 4
+                emit3(75, 15, 182)
+                emit2(4, 62)
+    if b is 4
+        if x is 0
+                emit3(73, 15, 182)
+                emit2(4, 31)
+    if b is 4
+        if x is 1
+                emit3(75, 15, 182)
+                emit2(4, 39)
+    if b is 4
+        if x is 2
+                emit3(75, 15, 182)
+                emit2(4, 47)
+    if b is 4
+        if x is 3
+                emit3(75, 15, 182)
+                emit2(4, 55)
+    if b is 4
+        if x is 4
+                emit3(75, 15, 182)
+                emit2(4, 63)
+mem_poke_byte_imm b x v:
+    if b is 0
+        if x is 0
+                emit3(64, 198, 4)
+                emit(27)
+                emit(v % 256)
+    if b is 0
+        if x is 1
+                emit3(66, 198, 4)
+                emit(35)
+                emit(v % 256)
+    if b is 0
+        if x is 2
+                emit3(66, 198, 4)
+                emit(43)
+                emit(v % 256)
+    if b is 0
+        if x is 3
+                emit3(66, 198, 4)
+                emit(51)
+                emit(v % 256)
+    if b is 0
+        if x is 4
+                emit3(66, 198, 4)
+                emit(59)
+                emit(v % 256)
+    if b is 1
+        if x is 0
+                emit3(65, 198, 4)
+                emit(28)
+                emit(v % 256)
+    if b is 1
+        if x is 1
+                emit3(67, 198, 4)
+                emit(36)
+                emit(v % 256)
+    if b is 1
+        if x is 2
+                emit3(67, 198, 4)
+                emit(44)
+                emit(v % 256)
+    if b is 1
+        if x is 3
+                emit3(67, 198, 4)
+                emit(52)
+                emit(v % 256)
+    if b is 1
+        if x is 4
+                emit3(67, 198, 4)
+                emit(60)
+                emit(v % 256)
+    if b is 2
+        if x is 0
+                emit3(65, 198, 68)
+                emit2(29, 0)
+                emit(v % 256)
+    if b is 2
+        if x is 1
+                emit3(67, 198, 68)
+                emit2(37, 0)
+                emit(v % 256)
+    if b is 2
+        if x is 2
+                emit3(67, 198, 68)
+                emit2(45, 0)
+                emit(v % 256)
+    if b is 2
+        if x is 3
+                emit3(67, 198, 68)
+                emit2(53, 0)
+                emit(v % 256)
+    if b is 2
+        if x is 4
+                emit3(67, 198, 68)
+                emit2(61, 0)
+                emit(v % 256)
+    if b is 3
+        if x is 0
+                emit3(65, 198, 4)
+                emit(30)
+                emit(v % 256)
+    if b is 3
+        if x is 1
+                emit3(67, 198, 4)
+                emit(38)
+                emit(v % 256)
+    if b is 3
+        if x is 2
+                emit3(67, 198, 4)
+                emit(46)
+                emit(v % 256)
+    if b is 3
+        if x is 3
+                emit3(67, 198, 4)
+                emit(54)
+                emit(v % 256)
+    if b is 3
+        if x is 4
+                emit3(67, 198, 4)
+                emit(62)
+                emit(v % 256)
+    if b is 4
+        if x is 0
+                emit3(65, 198, 4)
+                emit(31)
+                emit(v % 256)
+    if b is 4
+        if x is 1
+                emit3(67, 198, 4)
+                emit(39)
+                emit(v % 256)
+    if b is 4
+        if x is 2
+                emit3(67, 198, 4)
+                emit(47)
+                emit(v % 256)
+    if b is 4
+        if x is 3
+                emit3(67, 198, 4)
+                emit(55)
+                emit(v % 256)
+    if b is 4
+        if x is 4
+                emit3(67, 198, 4)
+                emit(63)
+                emit(v % 256)
+mem_poke_byte_reg b x v:
+    if b is 0
+        if x is 0
+            if v is 0
+                emit3(64, 136, 28)
+                emit(27)
+    if b is 0
+        if x is 0
+            if v is 1
+                emit3(68, 136, 36)
+                emit(27)
+    if b is 0
+        if x is 0
+            if v is 2
+                emit3(68, 136, 44)
+                emit(27)
+    if b is 0
+        if x is 0
+            if v is 3
+                emit3(68, 136, 52)
+                emit(27)
+    if b is 0
+        if x is 0
+            if v is 4
+                emit3(68, 136, 60)
+                emit(27)
+    if b is 0
+        if x is 1
+            if v is 0
+                emit3(66, 136, 28)
+                emit(35)
+    if b is 0
+        if x is 1
+            if v is 1
+                emit3(70, 136, 36)
+                emit(35)
+    if b is 0
+        if x is 1
+            if v is 2
+                emit3(70, 136, 44)
+                emit(35)
+    if b is 0
+        if x is 1
+            if v is 3
+                emit3(70, 136, 52)
+                emit(35)
+    if b is 0
+        if x is 1
+            if v is 4
+                emit3(70, 136, 60)
+                emit(35)
+    if b is 0
+        if x is 2
+            if v is 0
+                emit3(66, 136, 28)
+                emit(43)
+    if b is 0
+        if x is 2
+            if v is 1
+                emit3(70, 136, 36)
+                emit(43)
+    if b is 0
+        if x is 2
+            if v is 2
+                emit3(70, 136, 44)
+                emit(43)
+    if b is 0
+        if x is 2
+            if v is 3
+                emit3(70, 136, 52)
+                emit(43)
+    if b is 0
+        if x is 2
+            if v is 4
+                emit3(70, 136, 60)
+                emit(43)
+    if b is 0
+        if x is 3
+            if v is 0
+                emit3(66, 136, 28)
+                emit(51)
+    if b is 0
+        if x is 3
+            if v is 1
+                emit3(70, 136, 36)
+                emit(51)
+    if b is 0
+        if x is 3
+            if v is 2
+                emit3(70, 136, 44)
+                emit(51)
+    if b is 0
+        if x is 3
+            if v is 3
+                emit3(70, 136, 52)
+                emit(51)
+    if b is 0
+        if x is 3
+            if v is 4
+                emit3(70, 136, 60)
+                emit(51)
+    if b is 0
+        if x is 4
+            if v is 0
+                emit3(66, 136, 28)
+                emit(59)
+    if b is 0
+        if x is 4
+            if v is 1
+                emit3(70, 136, 36)
+                emit(59)
+    if b is 0
+        if x is 4
+            if v is 2
+                emit3(70, 136, 44)
+                emit(59)
+    if b is 0
+        if x is 4
+            if v is 3
+                emit3(70, 136, 52)
+                emit(59)
+    if b is 0
+        if x is 4
+            if v is 4
+                emit3(70, 136, 60)
+                emit(59)
+    if b is 1
+        if x is 0
+            if v is 0
+                emit3(65, 136, 28)
+                emit(28)
+    if b is 1
+        if x is 0
+            if v is 1
+                emit3(69, 136, 36)
+                emit(28)
+    if b is 1
+        if x is 0
+            if v is 2
+                emit3(69, 136, 44)
+                emit(28)
+    if b is 1
+        if x is 0
+            if v is 3
+                emit3(69, 136, 52)
+                emit(28)
+    if b is 1
+        if x is 0
+            if v is 4
+                emit3(69, 136, 60)
+                emit(28)
+    if b is 1
+        if x is 1
+            if v is 0
+                emit3(67, 136, 28)
+                emit(36)
+    if b is 1
+        if x is 1
+            if v is 1
+                emit3(71, 136, 36)
+                emit(36)
+    if b is 1
+        if x is 1
+            if v is 2
+                emit3(71, 136, 44)
+                emit(36)
+    if b is 1
+        if x is 1
+            if v is 3
+                emit3(71, 136, 52)
+                emit(36)
+    if b is 1
+        if x is 1
+            if v is 4
+                emit3(71, 136, 60)
+                emit(36)
+    if b is 1
+        if x is 2
+            if v is 0
+                emit3(67, 136, 28)
+                emit(44)
+    if b is 1
+        if x is 2
+            if v is 1
+                emit3(71, 136, 36)
+                emit(44)
+    if b is 1
+        if x is 2
+            if v is 2
+                emit3(71, 136, 44)
+                emit(44)
+    if b is 1
+        if x is 2
+            if v is 3
+                emit3(71, 136, 52)
+                emit(44)
+    if b is 1
+        if x is 2
+            if v is 4
+                emit3(71, 136, 60)
+                emit(44)
+    if b is 1
+        if x is 3
+            if v is 0
+                emit3(67, 136, 28)
+                emit(52)
+    if b is 1
+        if x is 3
+            if v is 1
+                emit3(71, 136, 36)
+                emit(52)
+    if b is 1
+        if x is 3
+            if v is 2
+                emit3(71, 136, 44)
+                emit(52)
+    if b is 1
+        if x is 3
+            if v is 3
+                emit3(71, 136, 52)
+                emit(52)
+    if b is 1
+        if x is 3
+            if v is 4
+                emit3(71, 136, 60)
+                emit(52)
+    if b is 1
+        if x is 4
+            if v is 0
+                emit3(67, 136, 28)
+                emit(60)
+    if b is 1
+        if x is 4
+            if v is 1
+                emit3(71, 136, 36)
+                emit(60)
+    if b is 1
+        if x is 4
+            if v is 2
+                emit3(71, 136, 44)
+                emit(60)
+    if b is 1
+        if x is 4
+            if v is 3
+                emit3(71, 136, 52)
+                emit(60)
+    if b is 1
+        if x is 4
+            if v is 4
+                emit3(71, 136, 60)
+                emit(60)
+    if b is 2
+        if x is 0
+            if v is 0
+                emit2(65, 136)
+                emit(92)
+                emit2(29, 0)
+    if b is 2
+        if x is 0
+            if v is 1
+                emit3(69, 136, 100)
+                emit2(29, 0)
+    if b is 2
+        if x is 0
+            if v is 2
+                emit3(69, 136, 108)
+                emit2(29, 0)
+    if b is 2
+        if x is 0
+            if v is 3
+                emit3(69, 136, 116)
+                emit2(29, 0)
+    if b is 2
+        if x is 0
+            if v is 4
+                emit3(69, 136, 124)
+                emit2(29, 0)
+    if b is 2
+        if x is 1
+            if v is 0
+                emit2(67, 136)
+                emit(92)
+                emit2(37, 0)
+    if b is 2
+        if x is 1
+            if v is 1
+                emit3(71, 136, 100)
+                emit2(37, 0)
+    if b is 2
+        if x is 1
+            if v is 2
+                emit3(71, 136, 108)
+                emit2(37, 0)
+    if b is 2
+        if x is 1
+            if v is 3
+                emit3(71, 136, 116)
+                emit2(37, 0)
+    if b is 2
+        if x is 1
+            if v is 4
+                emit3(71, 136, 124)
+                emit2(37, 0)
+    if b is 2
+        if x is 2
+            if v is 0
+                emit2(67, 136)
+                emit(92)
+                emit2(45, 0)
+    if b is 2
+        if x is 2
+            if v is 1
+                emit3(71, 136, 100)
+                emit2(45, 0)
+    if b is 2
+        if x is 2
+            if v is 2
+                emit3(71, 136, 108)
+                emit2(45, 0)
+    if b is 2
+        if x is 2
+            if v is 3
+                emit3(71, 136, 116)
+                emit2(45, 0)
+    if b is 2
+        if x is 2
+            if v is 4
+                emit3(71, 136, 124)
+                emit2(45, 0)
+    if b is 2
+        if x is 3
+            if v is 0
+                emit2(67, 136)
+                emit(92)
+                emit2(53, 0)
+    if b is 2
+        if x is 3
+            if v is 1
+                emit3(71, 136, 100)
+                emit2(53, 0)
+    if b is 2
+        if x is 3
+            if v is 2
+                emit3(71, 136, 108)
+                emit2(53, 0)
+    if b is 2
+        if x is 3
+            if v is 3
+                emit3(71, 136, 116)
+                emit2(53, 0)
+    if b is 2
+        if x is 3
+            if v is 4
+                emit3(71, 136, 124)
+                emit2(53, 0)
+    if b is 2
+        if x is 4
+            if v is 0
+                emit2(67, 136)
+                emit(92)
+                emit2(61, 0)
+    if b is 2
+        if x is 4
+            if v is 1
+                emit3(71, 136, 100)
+                emit2(61, 0)
+    if b is 2
+        if x is 4
+            if v is 2
+                emit3(71, 136, 108)
+                emit2(61, 0)
+    if b is 2
+        if x is 4
+            if v is 3
+                emit3(71, 136, 116)
+                emit2(61, 0)
+    if b is 2
+        if x is 4
+            if v is 4
+                emit3(71, 136, 124)
+                emit2(61, 0)
+    if b is 3
+        if x is 0
+            if v is 0
+                emit3(65, 136, 28)
+                emit(30)
+    if b is 3
+        if x is 0
+            if v is 1
+                emit3(69, 136, 36)
+                emit(30)
+    if b is 3
+        if x is 0
+            if v is 2
+                emit3(69, 136, 44)
+                emit(30)
+    if b is 3
+        if x is 0
+            if v is 3
+                emit3(69, 136, 52)
+                emit(30)
+    if b is 3
+        if x is 0
+            if v is 4
+                emit3(69, 136, 60)
+                emit(30)
+    if b is 3
+        if x is 1
+            if v is 0
+                emit3(67, 136, 28)
+                emit(38)
+    if b is 3
+        if x is 1
+            if v is 1
+                emit3(71, 136, 36)
+                emit(38)
+    if b is 3
+        if x is 1
+            if v is 2
+                emit3(71, 136, 44)
+                emit(38)
+    if b is 3
+        if x is 1
+            if v is 3
+                emit3(71, 136, 52)
+                emit(38)
+    if b is 3
+        if x is 1
+            if v is 4
+                emit3(71, 136, 60)
+                emit(38)
+    if b is 3
+        if x is 2
+            if v is 0
+                emit3(67, 136, 28)
+                emit(46)
+    if b is 3
+        if x is 2
+            if v is 1
+                emit3(71, 136, 36)
+                emit(46)
+    if b is 3
+        if x is 2
+            if v is 2
+                emit3(71, 136, 44)
+                emit(46)
+    if b is 3
+        if x is 2
+            if v is 3
+                emit3(71, 136, 52)
+                emit(46)
+    if b is 3
+        if x is 2
+            if v is 4
+                emit3(71, 136, 60)
+                emit(46)
+    if b is 3
+        if x is 3
+            if v is 0
+                emit3(67, 136, 28)
+                emit(54)
+    if b is 3
+        if x is 3
+            if v is 1
+                emit3(71, 136, 36)
+                emit(54)
+    if b is 3
+        if x is 3
+            if v is 2
+                emit3(71, 136, 44)
+                emit(54)
+    if b is 3
+        if x is 3
+            if v is 3
+                emit3(71, 136, 52)
+                emit(54)
+    if b is 3
+        if x is 3
+            if v is 4
+                emit3(71, 136, 60)
+                emit(54)
+    if b is 3
+        if x is 4
+            if v is 0
+                emit3(67, 136, 28)
+                emit(62)
+    if b is 3
+        if x is 4
+            if v is 1
+                emit3(71, 136, 36)
+                emit(62)
+    if b is 3
+        if x is 4
+            if v is 2
+                emit3(71, 136, 44)
+                emit(62)
+    if b is 3
+        if x is 4
+            if v is 3
+                emit3(71, 136, 52)
+                emit(62)
+    if b is 3
+        if x is 4
+            if v is 4
+                emit3(71, 136, 60)
+                emit(62)
+    if b is 4
+        if x is 0
+            if v is 0
+                emit3(65, 136, 28)
+                emit(31)
+    if b is 4
+        if x is 0
+            if v is 1
+                emit3(69, 136, 36)
+                emit(31)
+    if b is 4
+        if x is 0
+            if v is 2
+                emit3(69, 136, 44)
+                emit(31)
+    if b is 4
+        if x is 0
+            if v is 3
+                emit3(69, 136, 52)
+                emit(31)
+    if b is 4
+        if x is 0
+            if v is 4
+                emit3(69, 136, 60)
+                emit(31)
+    if b is 4
+        if x is 1
+            if v is 0
+                emit3(67, 136, 28)
+                emit(39)
+    if b is 4
+        if x is 1
+            if v is 1
+                emit3(71, 136, 36)
+                emit(39)
+    if b is 4
+        if x is 1
+            if v is 2
+                emit3(71, 136, 44)
+                emit(39)
+    if b is 4
+        if x is 1
+            if v is 3
+                emit3(71, 136, 52)
+                emit(39)
+    if b is 4
+        if x is 1
+            if v is 4
+                emit3(71, 136, 60)
+                emit(39)
+    if b is 4
+        if x is 2
+            if v is 0
+                emit3(67, 136, 28)
+                emit(47)
+    if b is 4
+        if x is 2
+            if v is 1
+                emit3(71, 136, 36)
+                emit(47)
+    if b is 4
+        if x is 2
+            if v is 2
+                emit3(71, 136, 44)
+                emit(47)
+    if b is 4
+        if x is 2
+            if v is 3
+                emit3(71, 136, 52)
+                emit(47)
+    if b is 4
+        if x is 2
+            if v is 4
+                emit3(71, 136, 60)
+                emit(47)
+    if b is 4
+        if x is 3
+            if v is 0
+                emit3(67, 136, 28)
+                emit(55)
+    if b is 4
+        if x is 3
+            if v is 1
+                emit3(71, 136, 36)
+                emit(55)
+    if b is 4
+        if x is 3
+            if v is 2
+                emit3(71, 136, 44)
+                emit(55)
+    if b is 4
+        if x is 3
+            if v is 3
+                emit3(71, 136, 52)
+                emit(55)
+    if b is 4
+        if x is 3
+            if v is 4
+                emit3(71, 136, 60)
+                emit(55)
+    if b is 4
+        if x is 4
+            if v is 0
+                emit3(67, 136, 28)
+                emit(63)
+    if b is 4
+        if x is 4
+            if v is 1
+                emit3(71, 136, 36)
+                emit(63)
+    if b is 4
+        if x is 4
+            if v is 2
+                emit3(71, 136, 44)
+                emit(63)
+    if b is 4
+        if x is 4
+            if v is 3
+                emit3(71, 136, 52)
+                emit(63)
+    if b is 4
+        if x is 4
+            if v is 4
+                emit3(71, 136, 60)
+                emit(63)
+mem_scaled t:
+    if _sov_starts_with(t, "peek_raw64(") is 0
+        return 0 - 1
+    if peek_byte(t, length(t) - 1) is 41 is 0
+        return 0 - 1
+    mn: cut(t, 11, length(t) - 1)
+    mc: look(mn, ",")
+    if mc < 0
+        return 0 - 1
+    mb: strip(cut(mn, 0, mc))
+    mx: strip(cut(mn, mc + 1, length(mn)))
+    if name_ok(mb) is 0
+        return 0 - 1
+    mbs: reg_slot(mb)
+    if mbs < 0
+        return 0 - 1
+    mq: raw_scaled(mx)
+    if mq < 0
+        return 0 - 1
+    cflush(mb)
+    return mbs * 65536 + mq
+memabs_scaled t:
+    if _sov_starts_with(t, "peek_raw64(") is 0
+        return 0 - 1
+    if peek_byte(t, length(t) - 1) is 41 is 0
+        return 0 - 1
+    mn: cut(t, 11, length(t) - 1)
+    mc: look(mn, ",")
+    if mc < 0
+        return 0 - 1
+    mb: strip(cut(mn, 0, mc))
+    mx: strip(cut(mn, mc + 1, length(mn)))
+    if name_ok(mb) is 0
+        return 0 - 1
+    mbs: reg_slot(mb)
+    if mbs < 0
+        return 0 - 1
+    if is_imm(mx) is 0
+        return 0 - 1
+    mi: num_of(mx)
+    if mi < 0
+        return 0 - 1
+    if mi > 2147483647
+        return 0 - 1
+    cflush(mb)
+    return (mbs + 1) * 4294967296 + mi
+mov_rax_rcx:
+    emit3(72, 137, 200)
+mov_rax_rdi:
+    emit3(72, 137, 248)
+mov_rax_rsi:
+    emit3(72, 137, 240)
+mov_rcx_rsi:
+    emit3(72, 137, 241)
+mov_rcx_rax:
+    emit3(72, 137, 193)
+mov_rdi_rax:
+    emit3(72, 137, 199)
+mov_rsi_rax:
+    emit3(72, 137, 198)
+name_ok t:
+    if plain_name(t) is 1
+        if is_imm(t) is 0
+            return 1
+nind line:
+
+    c: 0
+    i: 0
+    as long as 1
+        b: peek_byte(line, i)
+        if b is 0
+            return c
+        if b is 9
+            print "Error: tab indent, use spaces"
+            _sov_print(line)
+            err_where()
+            had_err: 1
+            return c
+        if b is not 32
+            return c
+        c: c + 1
+        i: i + 1
+bk: 0
+bi: 0
+bj: 0
+bs: 0
+be: 0
+br: 0
+bx: 0
+bw: 0
+sk_pos: 0
+sk_to: 0
+op_low3 sl:
+    return (sl + 3) % 8
+op_rex_b sl:
+    rx: 72
+    if sl > 0
+        rx: rx + 1
+    return rx
+op_rex_r sl:
+    rx: 72
+    if sl > 0
+        rx: rx + 4
+    return rx
+parse_sq t:
+    p: fop3(t)
+    if p < 0
+        return 0
+    if peek_byte(t, p) is 42 is 0
+        return 0
+    l: strip(cut(t, 0, p))
+    r: strip(cut(t, p + 1, length(t)))
+    if fop3(l) > 0 - 1
+        return 0
+    if fop3(r) > 0 - 1
+        return 0
+    if _sov_str_eq(l, r) is 0
+        return 0
+    if plain_name(l) is 0
+        return 0
+    if is_imm(l) is 1
+        return 0
+    sq_name: l
+    return 1
+patch at:
+    put(at, here() - (at + 4))
+peek_home e:
+    if sg_match(e, length(e) - 4, " * 8") is 0
+        return 0 - 1
+    head: strip(cut(e, 0, length(e) - 4))
+    if name_ok(head) is 0
+        return 0 - 1
+    return homereg(head)
+peek_rax_h h:
+    emit(rexx(h))
+    emit2(139, 4)
+    emit(sibx(h))
+peek_reg_h d i:
+    rx: 72
+    if d > 7
+        rx: rx + 4
+    if i > 7
+        rx: rx + 2
+    emit(rx)
+    emit(139)
+    emit(4 + (d % 8) * 8)
+    emit(sibx(i))
+pf_movb o:
+    emit(138)
+    if o is 0
+        emit(6)
+    if not
+        emit(70)
+        emit(o)
+    emit(136)
+    if o is 0
+        emit(7)
+    if not
+        emit(71)
+        emit(o)
+pf_movdqu o:
+    emit3(243, 15, 111)
+    if o is 0
+        emit(6)
+    if not
+        if o < 128
+            emit(70)
+            emit(o)
+        if not
+            emit(134)
+            emit4(o)
+    emit3(243, 15, 127)
+    if o is 0
+        emit(7)
+    if not
+        if o < 128
+            emit(71)
+            emit(o)
+        if not
+            emit(135)
+            emit4(o)
+pkacc g x v:
+    if _sov_starts_with(v, "peek_i64(") is 0
+        return 0
+    d: 1
+    k: 9
+    k2: 0 - 1
+    pk_ln: length(v)
+    as long as k < pk_ln
+        b: peek_byte(v, k)
+        if b is 40
+            d: d + 1
+        if b is 41
+            d: d - 1
+            if d is 0
+                if k2 < 0
+                    k2: k
+        k: k + 1
+    if k2 < 0
+        return 0
+    rest: strip(cut(v, k2 + 1, length(v)))
+    if peek_byte(rest, 0) is not 43
+        return 0
+    t2: strip(cut(rest, 1, length(rest)))
+    if length(t2) is 0
+        return 0
+    inn: cut(v, 9, k2)
+    c1: look(inn, ",")
+    if c1 < 0
+        return 0
+    g2: strip(cut(inn, 0, c1))
+    if _sov_str_eq(g2, g) is 0
+        return 0
+    x2: strip(cut(inn, c1 + 1, length(inn)))
+    if _sov_str_eq(x2, x) is 0
+        return 0
+    pk_t: t2
+    return 1
+pkpeek t:
+    if _sov_starts_with(t, "peek_i64(") is 0
+        return 0
+    if peek_byte(t, length(t) - 1) is 41 is 0
+        return 0
+    inn: cut(t, 9, length(t) - 1)
+    c1: look(inn, ",")
+    if c1 < 0
+        return 0
+    g2: strip(cut(inn, 0, c1))
+    x2: strip(cut(inn, c1 + 1, length(inn)))
+    if name_ok(g2) is 0
+        return 0
+    if scaled_shape(x2) is 0
+        return 0
+    pk_g: g2
+    pk_x: x2
+    return 1
+pn_bad: 0
+sc_dx: blank
+plain_name s:
+    if pn_bad is 0
+        pn_bad: _sov_heap_alloc(256)
+        poke_byte(pn_bad, 32, 1)
+        poke_byte(pn_bad, 33, 1)
+        poke_byte(pn_bad, 34, 1)
+        poke_byte(pn_bad, 37, 1)
+        poke_byte(pn_bad, 38, 1)
+        poke_byte(pn_bad, 40, 1)
+        poke_byte(pn_bad, 41, 1)
+        poke_byte(pn_bad, 42, 1)
+        poke_byte(pn_bad, 43, 1)
+        poke_byte(pn_bad, 45, 1)
+        poke_byte(pn_bad, 47, 1)
+        poke_byte(pn_bad, 60, 1)
+        poke_byte(pn_bad, 61, 1)
+        poke_byte(pn_bad, 62, 1)
+        poke_byte(pn_bad, 91, 1)
+        poke_byte(pn_bad, 93, 1)
+        poke_byte(pn_bad, 124, 1)
+    if s < 4096
+        return 1
+    i: 0
+    as long as 1
+        b: peek_byte(s, i)
+        if b is 0
+            return 1
+        if peek_byte(pn_bad, b) is 1
+            return 0
+        i: i + 1
+pk_g: blank
+pk_x: blank
+pk_t: blank
+poke4 p off v:
+    x: v
+    if x < 0
+        x: x + 4294967296
+    i: 0
+    as long as i < 4
+        dummy: poke_byte(p, off + i, x % 256)
+        x: x / 256
+        i: i + 1

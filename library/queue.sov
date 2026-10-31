@@ -1,0 +1,22 @@
+use vec
+queue_new:
+    return vec_new(8)
+queue_put q v:
+    return vec_push(q, v)
+queue_len q:
+    return vec_len(q)
+queue_get q:
+    n: vec_len(q)
+    if n is 0 -> return 0
+    f: vec_get(q, 0)
+    i: 1
+    as long as i < n
+        vec_set(q, i - 1, vec_get(q, i))
+        i: i + 1
+    poke_i64(q, 0, n - 1)
+    return f
+queue_peek q:
+    if vec_len(q) is 0 -> return 0
+    return vec_get(q, 0)
+queue_empty q:
+    if vec_len(q) is 0 -> return 1

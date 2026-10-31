@@ -1,0 +1,3458 @@
+include inc/inc05.sov 1125 3
+    aes
+    gcm
+    tls
+    json
+0:
+    cr_pass: 0
+    cr_fail: 0
+    cr_skipn: 0
+    sh: 0
+ns: 1 ;; ci: 0
+use wasm
+cr_ok name:
+    write_out('ok ') ;; write_out(name)
+    write_out("\n")
+    cr_pass: cr_pass + 1
+cr_bad name:
+    include inc/inc03.sov 1475 3
+    cr_fail: cr_fail + 1
+cr_skip name:
+    include inc/inc04.sov 1387 3
+    cr_skipn: cr_skipn + 1
+cr_which name:
+    p: str_cat('/usr/bin/', name)
+    if file_exists(p) = 1 -> return p
+    p: str_cat('/usr/local/bin/', name)
+    if file_exists(p) = 1 -> return p
+    p: str_cat('/bin/', name)
+    if file_exists(p) = 1 -> return p ;; return 0
+cr_mode: 0
+cr_data: ''
+cr_tout: 120
+cr_out: ''
+cr_rc: 0
+include inc/px00.sov 548 4 (cr_pr cr_pw)
+cr_go path args envp:
+    if file_exists('/tmp/cr-timeout') = 1 -> file_delete('/tmp/cr-timeout')
+    cr_out: ''
+    opf: _sov_alloc(16) ;; sys_pipe(opf)
+    ipf: 0 ;; if cr_mode = 1 -> ipf: _sov_alloc(16)
+        sys_pipe(ipf)
+    pid: proc_fork() ;; if pid = 0 -> sys_dup2(cr_pw(opf), 1)
+        sys_close(cr_pr(opf)) ;; if cr_mode = 1 -> sys_dup2(cr_pr(ipf), 0)
+            sys_close(cr_pw(ipf))
+        if not -> if cr_mode = 2
+                nf: sys_open('/dev/null', 0)
+                sys_dup2(nf, 0) ;; sys_close(nf)
+        sys_exec(path, args, envp) ;; sys_exit(127)
+    sys_close(cr_pw(opf)) ;; wr: 0
+    if cr_mode = 1 -> sys_close(cr_pr(ipf))
+        wr: proc_fork() ;; if wr = 0 -> n: str_len(cr_data)
+            sys_write(cr_pw(ipf), cr_data, n) ;; sys_close(cr_pw(ipf))
+            sys_exit(0)
+        sys_close(cr_pw(ipf))
+    if cr_tout = 0 -> sys_close(cr_pr(opf))
+        cr_rc: 0 ;; cr_lastpid: pid
+        return 0
+    wd: 0 ;; if cr_tout > 0 -> wd: proc_fork()
+        if wd = 0 -> i: 0
+            as long as i < cr_tout -> ts: _sov_alloc(16)
+                ts: poke_i64 0 + 8 * i: 1 0 ;; sys_nanosleep(ts)
+                if sys_kill(pid, 0) != 0 -> sys_exit(0) ;; i: i + 1
+            file_write_all('/tmp/cr-timeout', '1')
+            proc_kill9(pid) ;; sys_exit(0)
+    include inc/inc03.sov 1478 3
+    as long as more = 1 -> n: sys_read(cr_pr(opf), buf, 8192)
+        if n <= 0 -> more: 0 ;; if not -> poke_byte(buf, n, 0)
+            t: as text buf ;; out: str_cat(out, t)
+    sys_close(cr_pr(opf)) ;; stp: _sov_alloc(8)
+    syscall(61, pid, stp, 0, 0, 0, 0) ;; st: peek_i64(stp, 0)
+    if wr != 0 -> syscall(61, wr, stp, 0, 0, 0, 0) ;; if wd != 0 -> syscall(61, wd, stp, 0, 0, 0, 0)
+    code: (st / 256) % 256 ;; if st % 256 != 0 -> code: 128 + st % 256
+    if file_exists('/tmp/cr-timeout') = 1 -> code: 124
+        file_delete('/tmp/cr-timeout')
+    cr_rc: code ;; cr_out: out
+    cr_lastpid: pid ;; return code
+include inc/px01.sov 1716 4 (cr_run 0)
+cr_run_in path args envp data tout:
+    cr_mode: 1 ;; cr_data: data
+    cr_tout: tout ;; return cr_go(path, args, envp)
+include inc/px01.sov 1716 4 (cr_run_dev 2)
+cr_build src out flag:
+    args: _sov_alloc(64)
+    poke_i64(args, 0, './sovren')
+    poke_i64(args, 8, src) ;; if str_len(flag) > 0 -> poke_i64(args, 16, flag)
+        poke_i64(args, 24, '-o')
+        args: poke_i64 32 + 8 * i: out 0
+    if not -> poke_i64(args, 16, '-o')
+        args: poke_i64 24 + 8 * i: out 0
+    cr_run('./sovren', args, 0, 120)
+    return cr_rc
+cr_bin path tout:
+    args: _sov_alloc(16) ;; args: poke_i64 0 + 8 * i: path 0
+    cr_run(path, args, 0, tout) ;; return cr_rc
+cr_line src s:
+    return str_cat(str_cat(src, s), "\n")
+cr_same a b:
+    if file_size(a) != file_size(b) -> return 0 ;; n: file_size(a)
+    d1: file_read_all(a) ;; d2: file_read_all(b)
+    include inc/px00.sov 320 4 (n d1 d2)
+    return 1
+cr_flat s:
+    n: str_len(s) ;; o: _sov_alloc(n + 1)
+    include inc/px00.sov 207 4 (0 j i i n c peek_byte s i)
+        if c = 10 -> i: i + 1 ;; if not -> if c = 13
+                i: i + 1
+            if not -> poke_byte(o, j, c)
+                j: j + 1 ;; i: i + 1
+    poke_byte(o, j, 0) ;; return o
+cr_eqs a b:
+    if str_len(a) != str_len(b) -> return 0 ;; n: str_len(a)
+    include inc/px00.sov 320 4 (n a b)
+    return 1
+cr_file_has p needle:
+    fd: sys_open(p, 0)
+    if fd < 0 -> return 0
+    n: file_size(p)
+    buf: _sov_alloc(n + 1)
+    got: syscall(0, fd, buf, n, 0, 0, 0)
+    sys_close(fd)
+    if got < 0 -> return 0
+    m: str_len(needle)
+    if m = 0 -> return 1
+    i: 0
+    as long as i + m <= got -> j: 0
+        ok: 1
+        as long as j < m -> if peek_byte(buf, i + j) != peek_byte(needle, j) -> ok: 0
+                leave
+            j: j + 1
+        if ok = 1 -> return 1
+        i: i + 1
+    return 0
+cr_file_has_u32 p val:
+    fd: sys_open(p, 0)
+    if fd < 0 -> return 0
+    n: file_size(p)
+    buf: _sov_alloc(n + 1)
+    got: syscall(0, fd, buf, n, 0, 0, 0)
+    sys_close(fd)
+    if got < 4 -> return 0
+    b0: val & 255
+    b1: (val / 256) & 255
+    b2: (val / 65536) & 255
+    b3: (val / 16777216) & 255
+    i: 0
+    as long as i + 4 <= got -> if peek_byte(buf, i) = b0
+            if peek_byte(buf, i + 1) = b1 -> if peek_byte(buf, i + 2) = b2
+                    if peek_byte(buf, i + 3) = b3 -> return 1
+        i: i + 1
+    return 0
+cr_trim s:
+    n: str_len(s) ;; if n > 0 -> if peek_byte(s, n - 1) = 10
+            return str_cut(s, 0, n - 1)
+    return s
+ck_all:
+    r: cr_build('tests/all.sov', '/tmp/sov-all', '')
+    if r = 0 -> cr_bin('/tmp/sov-all', 300)
+        if cr_rc = 0 -> cr_ok('the Sovren suite')
+        if not -> cr_bad('the Sovren suite')
+    if not -> cr_bad('could not build tests/all.sov')
+ck_arm_emu:
+    r: cr_build('tests/arm64/run.sov', '/tmp/sov-armrun', '')
+    if r != 0 -> cr_bad('could not build tests/arm64/run.sov')
+        return 0
+    src: cr_line('', 'main:')
+    src: cr_line(src, '    print 5 * 3 / 2')
+    include inc/px01.sov 1721 4 (ea ea)
+    if str_eq(g, '7') = 1 -> cr_ok('arm-emulator-in-sovren')
+    if not -> cr_bad('arm-emulator-in-sovren')
+    include inc/inc04.sov 317 4
+    include inc/px01.sov 1721 4 (ea2 ea2)
+    if str_eq(g, 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad') = 1 -> cr_ok('arm-emulator-sha256')
+    if not -> cr_bad('arm-emulator-sha256')
+ck_arm64:
+    r: cr_build('tests/arm64/verify.sov', '/tmp/sov-verify', '')
+    if r = 0 -> cr_bin('/tmp/sov-verify', 120)
+        if str_has(cr_out, 'every encoding is right') = 1 -> cr_ok('arm64-encodings')
+        if not -> cr_bad('arm64-encodings')
+    if not -> cr_bad('could not build tests/arm64/verify.sov')
+    r: cr_build('tests/arm64/test.sov', '/tmp/sov-armtest', '')
+    if r = 0 -> cr_bin('/tmp/sov-armtest', 120)
+        if str_has(cr_out, 'the ARM back end is right') = 1 -> cr_ok('arm64-codegen')
+        if not -> cr_bad('arm64-codegen')
+    if not -> cr_bad('could not build tests/arm64/test.sov')
+    src: cr_line('', 'main:')
+    src: cr_line(src, '    print 5 * 3 / 2')
+    file_write_all('/tmp/sov-so.sov', src)
+    cr_build('/tmp/sov-so.sov', '/tmp/sov-so.so', '--android-so')
+    r: cr_build('tests/arm64/runso.sov', '/tmp/sov-runso', '')
+    if r = 0 -> cr_bin('/tmp/sov-runso', 300)
+        g: cr_flat(cr_out)
+        if str_eq(g, '77') = 1 -> cr_ok('so-exports')
+        if not -> cr_bad('so-exports')
+    if not -> cr_bad('could not build tests/arm64/runso.sov')
+ck_ios:
+    r: cr_build('tests/hello.sov', '/tmp/sov-ios.bin', '--ios')
+    if r != 0 -> cr_bad('could not build the ios test binary')
+        return 0
+    r: cr_build('tests/arm64/check_sig.sov', '/tmp/sov-csig', '')
+    if r != 0 -> cr_bad('could not build tests/arm64/check_sig.sov')
+        return 0
+    include inc/px00.sov 1311 5 (24 csig sov ios bin csig 60)
+    if cr_rc = 0 -> cr_ok('ios-code-signature')
+    if not -> cr_bad('ios-code-signature')
+ap_le32 p i:
+    return peek_byte(p, i) + peek_byte(p, i + 1) * 256 + peek_byte(p, i + 2) * 65536 + peek_byte(p, i + 3) * 16777216
+ap_got_plat: 0
+ap_got_off: 0
+ap_got_sig: 0
+ap_got_ent: 0
+ap_walk d:
+    ncmds: ap_le32(d, 16)
+    off: 32
+    i: 0
+    ap_got_plat: 0 - 1
+    ap_got_sig: 0 - 1
+    ap_got_ent: 0 - 1
+    as long as i < ncmds -> cmd: ap_le32(d, off)
+        sz: ap_le32(d, off + 4)
+        if sz < 8 -> leave
+        if cmd = 50 -> ap_got_plat: ap_le32(d, off + 8)
+        if cmd = 29 -> ap_got_sig: ap_le32(d, off + 8)
+        if cmd = 2147483688 -> ap_got_ent: ap_le32(d, off + 8)
+        off: off + sz
+        i: i + 1
+    ap_got_off: off
+ap_check tgt plat:
+    out: str_cat('/tmp/sov-apple-', tgt)
+    r: cr_build('tests/hello.sov', out, str_cat('--', tgt))
+    if r != 0 -> cr_bad(str_cat('apple-platform ', tgt))
+        return 0
+    d: file_read_all(out)
+    if d = 0 -> cr_bad(str_cat('apple-platform ', tgt))
+        return 0
+    dummy: ap_walk(d)
+    ok: 1
+    if ap_le32(d, 4) != 16777228 -> ok: 0
+    if ap_got_plat != plat -> ok: 0
+    if ap_got_off != 32 + ap_le32(d, 20) -> ok: 0
+    if ap_got_ent != ap_got_off -> ok: 0
+    if ap_got_sig < 0 -> ok: 0
+    if ok = 1 -> cr_ok(str_cat('apple-platform ', tgt))
+    if not -> cr_bad(str_cat('apple-platform ', tgt))
+    return 0
+ck_apple:
+    dummy: ap_check('ios', 2)
+    dummy: ap_check('ipados', 2)
+    dummy: ap_check('tvos', 3)
+    dummy: ap_check('watchos', 4)
+    dummy: ap_check('visionos', 11)
+    dummy: ap_check('ios-simulator', 7)
+    dummy: ap_check('tvos-simulator', 8)
+    dummy: ap_check('watchos-simulator', 9)
+    dummy: ap_check('visionos-simulator', 12)
+    return 0
+ck_apple_none:
+    return 0
+ck_x86ins:
+    r: cr_build('tests/x86ins.sov', '/tmp/sov-x86ins', '')
+    if r = 0 -> cr_bin('/tmp/sov-x86ins', 120)
+        if str_has(cr_out, 'every instruction is right') = 1 -> cr_ok('x86-instructions')
+        if not -> cr_bad('x86-instructions')
+    if not -> cr_bad('could not build tests/x86ins.sov')
+ck_cprog:
+    gcc: cr_which('gcc')
+    if gcc = 0 -> cr_skip('a real C program (no gcc)')
+        return 0
+    c: "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n"
+    c: str_cat(c, "static int cmp(const void *a, const void *b) { return *(int*)a - *(int*)b; }\n")
+    c: str_cat(c, "int main(void) {\n")
+    c: str_cat(c, "    int *a = malloc(sizeof(int) * 50);\n")
+    c: str_cat(c, "    for (int i = 0; i < 50; i++) a[i] = (i * 7919) % 1000;\n")
+    c: str_cat(c, "    qsort(a, 50, sizeof(int), cmp);\n")
+    c: str_cat(c, "    printf(\"%d %d\\n\", a[0], a[49]);\n")
+    c: str_cat(c, "    char *s = malloc(256);\n")
+    c: str_cat(c, "    snprintf(s, 256, \"%s|%d|%x\", \"fmt\", 42, 255);\n")
+    c: str_cat(c, "    printf(\"%s %zu\\n\", s, strlen(s));\n")
+    c: str_cat(c, "    long long b = 1;\n")
+    c: str_cat(c, "    for (int i = 0; i < 20; i++) b *= 3;\n")
+    c: str_cat(c, "    printf(\"%lld\\n\", b);\n")
+    c: str_cat:
+        "    free(a); free(s);\n"
+        "    return 0;\n}\n"
+    file_write_all('/tmp/sov-cprog.c', c)
+    include inc/inc03.sov 1336 5
+    include inc/px00.sov 1879 4 (args cprog args cprog args args)
+    if cr_rc != 0 -> cr_skip('a real C program (gcc cannot build static)')
+        return 0
+    ck_emu_driver()
+    cr_bin('/tmp/sov-cprog', 60)
+    include inc/inc04.sov 1441 3
+    include inc/px01.sov 1726 4 (cprog runs a real c program)
+    if not -> cr_bad('x86-runs-a-real-c-program')
+include inc/px00.sov 1884 4 (ck_emu_driver x86 arg)
+    src: cr_line(src, '    m: x86_new()')
+    src: cr_line(src, '    if x86_load(m, arg_at(1)) is 0')
+    src: cr_line:
+        "        print \"cannot load\""
+        '        stop'
+        '    x86_run(m)'
+        '    write_out(x86_out(m))'
+        '    write_err(x86_reason(m))'
+    file_write_all('/tmp/sov-runc.sov', src)
+    cr_build('/tmp/sov-runc.sov', '/tmp/sov-runc', '')
+ck_fp:
+    gcc: cr_which('gcc')
+    if gcc = 0 -> cr_skip('decimals in C (no gcc)')
+        return 0
+    c: "#include <stdio.h>\nint main(void) {\n"
+    c: str_cat(c, "    double v[] = {1.0, 2.5, -3.75, 0.1, 1e10, 1e-10, 123456.789};\n")
+    c: str_cat(c, "    double s = 0, p = 1;\n")
+    c: str_cat(c, "    for (int i = 0; i < 7; i++) { s += v[i]; p *= v[i]; }\n")
+    c: str_cat(c, "    printf(\"sum=%.10f\\nprod=%.10e\\n\", s, p);\n")
+    c: str_cat(c, "    for (int i = 0; i < 5; i++) printf(\"%d:%.4f \", i, (double)i / 7.0);\n")
+    c: str_cat(c, "    printf(\"\\n\");\n")
+    c: str_cat(c, "    printf(\"big=%.3e small=%.3e\\n\", 1e300 * 1e5, 1e-300 / 1e5);\n")
+    c: str_cat(c, "    printf(\"cast=%d %d %lld\\n\", (int)3.99, (int)-3.99, (long long)1e15);\n")
+    c: str_cat(c, "    printf(\"cmp %d %d %d\\n\", 1.5 < 2.5, 1.5 == 1.5, 3.0 > 4.0);\n")
+    c: str_cat(c, "    double a = 0.1, b = 0.2;\n")
+    c: str_cat(c, "    printf(\"tenths=%.17g exact=%d\\n\", a + b, (a + b) == 0.3);\n")
+    c: str_cat(c, "    return 0;\n}\n")
+    file_write_all('/tmp/sov-fp.c', c)
+    include inc/inc03.sov 1336 5
+    include inc/px00.sov 1879 4 (args fp args fp args args)
+    if cr_rc != 0 -> cr_skip('decimals in C (gcc cannot build static)')
+        return 0
+    cr_bin('/tmp/sov-fp', 60)
+    include inc/inc04.sov 1441 3
+    include inc/px01.sov 1726 4 (fp decimals match the real thing)
+    if not -> cr_bad('x86-decimals-match-the-real-thing')
+ck_windows_gui:
+    xvfb: cr_which('Xvfb')
+    if xvfb = 0 -> cr_skip('the window libraries (no screen to draw on)')
+        return 0
+    d: 77
+    disp: ''
+    as long as d < 82 -> lock: str_cat('/tmp/.X', num_text(d))
+        lock: str_cat(lock, '-lock')
+        sock: str_cat('/tmp/.X11-unix/X', num_text(d))
+        if file_exists(lock) = 0 -> if file_exists(sock) = 0
+                include inc/inc03.sov 1341 5
+                poke_i64(args, 24, '0 640x480x24')
+                include inc/inc05.sov 905 4
+                if str_len(disp) > 0 -> d: 82
+        d: d + 1
+    if str_len(disp) = 0 -> cr_skip('the window libraries (no screen to draw on)')
+        return 0
+    envp: cr_disp_env(disp) ;; ck_win_draw(envp, disp)
+    ck_win_game(envp, disp) ;; ck_win_ui(envp, disp)
+    proc_kill(xvfbpid)
+cr_disp_env disp:
+    e: _sov_alloc(64)
+    p1: str_cat('DISPLAY=', disp)
+    poke_i64(e, 0, p1)
+    poke_i64(e, 8, 'PATH=/usr/bin:/bin')
+    poke_i64(e, 16, 'HOME=/tmp')
+    poke_i64(e, 24, 0) ;; return e
+ck_win_draw envp disp:
+    include inc/inc04.sov 1444 3
+    src: cr_line(src, "    w: win_open(320, 240, \"sovrencheck\")")
+    include inc/inc04.sov 325 4
+    src: cr_line(src, '    as long as i < 30')
+    src: cr_line(src, '        win_fill(w, 0, 0, 320, 240, WIN_WHITE)')
+    src: cr_line(src, '        win_fill(w, 20, 20, 80, 60, WIN_RED)')
+    src: cr_line(src, '        win_box(w, 140, 20, 90, 60, WIN_BLUE)')
+    src: cr_line(src, '        win_line(w, 10, 200, 300, 160, WIN_GREEN)')
+    src: cr_line(src, "        win_text(w, 20, 120, \"sovren\", WIN_BLACK)")
+    src: cr_line(src, '        win_flush(w)')
+    src: cr_line(src, '        sleep_ms(100)')
+    src: cr_line(src, '        i: i + 1')
+    src: cr_line(src, "    print \"drew\"")
+    include inc/px00.sov 1115 4 (win win win window)
+    cr_run('/tmp/sov-win', args1(), envp, 60)
+    if str_has(cr_out, 'drew') = 1 -> cr_ok('window-finishes')
+    if not -> cr_bad('window-finishes')
+    cr_ok('window-opens')
+    imp: cr_which('import')
+    if imp = 0 -> cr_skip('looking at the screen (no import)')
+        return 0
+    a2: _sov_alloc(40) ;; poke_i64(a2, 0, imp)
+    poke_i64(a2, 8, '-window')
+    poke_i64(a2, 16, 'root')
+    poke_i64(a2, 24, '/tmp/sov-w.bmp')
+    poke_i64(a2, 32, 0) ;; cr_run(imp, a2, envp, 60)
+    if file_exists('/tmp/sov-w.bmp') = 0 -> cr_bad('capturing the screen')
+        return 0
+    b: file_read_all('/tmp/sov-w.bmp')
+    got: 1 ;; if cr_bmp_has(b, 255, 0, 0) = 0 -> got: 0
+    if cr_bmp_has(b, 0, 0, 255) = 0 -> got: 0 ;; if cr_bmp_has(b, 0, 255, 0) = 0 -> got: 0
+    if got = 1 -> cr_ok('the red, blue and green reached the screen')
+    if not -> cr_bad('the red, blue and green reached the screen')
+args1:
+    a: _sov_alloc(16)
+    poke_i64(a, 0, '/tmp/sov-win')
+    poke_i64(a, 8, 0) ;; return a
+ck_win_game envp disp:
+    src: cr_line('', 'use game')
+    src: cr_line(src, 'use num')
+    include inc/px00.sov 2781 6 (g game_new 200 150 g g)
+    src: cr_line(src, '    game_speed(g, 50)')
+    src: cr_line(src, '    t0: time_ms()')
+    src: cr_line(src, '    n: 0')
+    src: cr_line(src, '    as long as n < 50')
+    src: cr_line(src, '        game_step(g)')
+    src: cr_line(src, '        game_clear(g, WIN_BLACK)')
+    src: cr_line(src, '        game_rect(g, n, 40, 10, 10, WIN_RED)')
+    src: cr_line(src, '        game_show(g)')
+    src: cr_line(src, '        n: n + 1')
+    src: cr_line(src, '    el: time_ms() - t0')
+    src: cr_line:
+        '    if el > 800'
+        '        if el < 1400'
+        "            print \"paced\""
+    include inc/px00.sov 1115 4 (game game game game)
+    include inc/px00.sov 1889 4 (game game 40)
+    if str_has(cr_out, 'paced') = 1 -> cr_ok('game-loop-keeps-time')
+    if not -> cr_bad('game-loop-keeps-time')
+ck_win_ui envp disp:
+    src: cr_line('', 'use ui')
+    include inc/px00.sov 2781 6 (u ui_new 300 200 form u)
+    src: cr_line(src, "    ui_label(u, 20, 16, \"name\")")
+    src: cr_line(src, '    e: ui_entry(u, 20, 40, 260, 28)')
+    src: cr_line(src, "    b: ui_button(u, 20, 90, 100, 32, \"Go\")")
+    src: cr_line(src, "    c: ui_check(u, 20, 140, \"keep me\")")
+    src: cr_line(src, "    ui_set_text(u, e, \"Elxan\")")
+    src: cr_line(src, '    ui_tick(u, c, 1)')
+    src: cr_line(src, '    i: 0')
+    src: cr_line(src, '    as long as i < 20')
+    src: cr_line(src, '        ui_draw(u)')
+    src: cr_line(src, '        sleep_ms(100)')
+    src: cr_line(src, '        i: i + 1')
+    src: cr_line(src, "    print \"form drawn\"")
+    include inc/px00.sov 1115 4 (ui ui ui widget)
+    include inc/px00.sov 1889 4 (ui ui 60)
+    if str_has(cr_out, 'form drawn') = 1 -> cr_ok('widgets-draw')
+    if not -> cr_bad('widgets-draw')
+ck_win_hang:
+    xvfb: cr_which('Xvfb')
+    if xvfb = 0 -> return 0 ;; d: 84
+    disp: ''
+    as long as d < 87 -> sock: str_cat('/tmp/.X11-unix/X', num_text(d))
+        lock: str_cat('/tmp/.X', num_text(d))
+        lock: str_cat(lock, '-lock')
+        if file_exists(sock) = 0 -> if file_exists(lock) = 0
+                include inc/inc03.sov 1341 5
+                poke_i64(args, 24, '0 320x240x24')
+                include inc/inc05.sov 905 4
+                if str_len(disp) > 0 -> d: 87
+        d: d + 1
+    if str_len(disp) = 0 -> return 0
+    include inc/inc04.sov 1444 3
+    src: cr_line(src, "    w: win_open(200, 150, \"hangcheck\")")
+    include inc/inc04.sov 325 4
+    src: cr_line(src, '    as long as i < 300')
+    src: cr_line(src, '        win_fill(w, 0, 0, 200, 150, WIN_RED)')
+    src: cr_line(src, '        win_flush(w)')
+    src: cr_line(src, '        if win_alive(w) is 0')
+    src: cr_line(src, "            print \"noticed\"")
+    src: cr_line(src, '            stop')
+    src: cr_line(src, '        sleep_ms(100)')
+    src: cr_line(src, '        i: i + 1')
+    src: cr_line(src, "    print \"ranout\"")
+    include inc/px00.sov 1115 4 (hang hang hang hang)
+    envp: cr_disp_env(disp)
+    include inc/px00.sov 1889 4 (hang hang 25)
+    proc_kill(xvfbpid)
+    if str_has(cr_out, 'noticed') = 1 -> cr_ok('window-notices-a-dead-screen')
+    if not -> cr_bad('window-notices-a-dead-screen')
+ck_win_imports:
+    py: cr_which('python3')
+    if py = 0 -> return 0
+    cr_build('tests/hello.sov', '/tmp/sov-imp.exe', '--windows')
+    s: "import struct\n"
+    s: str_cat(s, "d = open('/tmp/sov-imp.exe','rb').read()\n")
+    s: str_cat(s, "pe = struct.unpack_from('<I', d, 0x3c)[0]\n")
+    s: str_cat(s, "imp = struct.unpack_from('<I', d, pe+24+112+8)[0]\n")
+    s: str_cat(s, "so = pe+24+240\n")
+    s: str_cat(s, "nsec = struct.unpack_from('<H', d, pe+6)[0]\n")
+    s: str_cat(s, "sects = []\n")
+    s: str_cat(s, "for k in range(nsec):\n")
+    s: str_cat(s, "    vs, va, rs, ra = struct.unpack_from('<IIII', d, so+k*40+8)\n")
+    s: str_cat(s, "    sects.append((vs, va, rs, ra))\n")
+    s: str_cat(s, "def rd(rva, n):\n")
+    s: str_cat(s, "    for vs, va, rs, ra in sects:\n")
+    s: str_cat(s, "        if va <= rva < va + max(vs, rs):\n")
+    s: str_cat(s, "            off = ra + (rva - va)\n")
+    s: str_cat(s, "            return d[off:off+n]\n")
+    s: str_cat(s, "    return b''\n")
+    s: str_cat(s, "ilt, ts, fc, nm, iat = struct.unpack_from('<IIIII', rd(imp, 20), 0)\n")
+    s: str_cat(s, "names = []\n")
+    s: str_cat(s, "j = 0\n")
+    s: str_cat(s, "while True:\n")
+    s: str_cat(s, "    v = struct.unpack_from('<Q', rd(iat+j*8, 8))[0]\n")
+    s: str_cat(s, "    if v == 0: break\n")
+    s: str_cat(s, "    names.append(rd(v+2, 24).split(b'\\0')[0].decode())\n")
+    s: str_cat:
+        "    j += 1\n"
+        "print(' '.join(names))\n"
+    file_write_all('/tmp/sov-imp.py', s)
+    args: _sov_alloc(24) ;; poke_i64(args, 0, py)
+    poke_i64(args, 8, '/tmp/sov-imp.py')
+    poke_i64(args, 16, 0) ;; cr_run(py, args, 0, 60)
+    if str_has(cr_out, 'LoadLibraryA') = 1 -> if str_has(cr_out, 'GetProcAddress') = 1
+            cr_ok('windows-can-reach-other-libraries')
+        if not -> cr_bad('windows-can-reach-other-libraries')
+    if not -> cr_bad('windows-can-reach-other-libraries')
+include inc/px00.sov 1884 4 (ck_ww window sys)
+    include inc/px00.sov 3713 5 (window_open 200 150 noscreen)
+        '    print window_which(w)'
+        '    window_shut(w)'
+    file_write_all('/tmp/sov-ww.sov', src)
+    r: cr_build('/tmp/sov-ww.sov', '/tmp/sov-ww.exe', '--windows')
+    if r = 0 -> cr_ok('window-library-builds-for-windows')
+    if not -> cr_bad('window-library-builds-for-windows')
+    r: cr_build('/tmp/sov-ww.sov', '/tmp/sov-ww', '')
+    if r = 0 -> cr_bin('/tmp/sov-ww', 20)
+        g: cr_trim(cr_out)
+        if str_eq(g, 'noscreen') = 1 -> cr_ok('window-library-honest-with-no-screen')
+        if not -> cr_bad('window-library-honest-with-no-screen')
+ck_nodisp:
+    src: cr_line('', 'use win')
+    src: cr_line(src, 'main:')
+    include inc/px00.sov 3713 5 (win_open 100 100 nodisplay)
+        "    print \"opened\""
+    file_write_all('/tmp/sov-nodisp.sov', src)
+    r: cr_build('/tmp/sov-nodisp.sov', '/tmp/sov-nodisp', '')
+    if r = 0 -> cr_bin('/tmp/sov-nodisp', 20)
+        g: cr_trim(cr_out)
+        if str_eq(g, 'nodisplay') = 1 -> cr_ok('window-without-a-screen')
+        if not -> cr_bad('window-without-a-screen')
+ck_telegram:
+    r: cr_build('tests/tgsrv.sov', '/tmp/sov-tgsrv', '')
+    if r != 0 -> cr_bad('could not build the telegram server')
+        return 0
+    a: _sov_alloc(16)
+    poke_i64(a, 0, '/tmp/sov-tgsrv')
+    poke_i64(a, 8, 0)
+    0:
+        cr_mode ;; cr_tout
+    cr_go('/tmp/sov-tgsrv', a, 0)
+    srvpid: cr_lastpid ;; ts: _sov_alloc(16)
+    ts: poke_i64 0 + 8 * i: 0 300000000 ;; sys_nanosleep(ts)
+    src: cr_line('', 'use telegram')
+    src: cr_line(src, 'use num')
+    src: cr_line(src, 'use sys')
+    src: cr_line(src, 'main:')
+    src: cr_line(src, "    t: tg_new(\"test:token\")")
+    src: cr_line(src, "    tg_base(t, \"http://127.0.0.1:8877\")")
+    src: cr_line(src, "    if str_eq(tg_me(t), \"sovren_test_bot\") is 0")
+    src: cr_line(src, "        print \"bad-me\"")
+    src: cr_line(src, '        stop')
+    src: cr_line(src, '    n: tg_poll(t)')
+    src: cr_line(src, '    if n is not 1')
+    src: cr_line(src, "        print \"bad-count\"")
+    src: cr_line(src, '        stop')
+    src: cr_line(src, "    if str_eq(tg_text(t, 0), \"hello bot\") is 0")
+    src: cr_line(src, "        print \"bad-text\"")
+    src: cr_line(src, '        stop')
+    src: cr_line(src, '    if tg_chat(t, 0) is not 999')
+    src: cr_line(src, "        print \"bad-chat\"")
+    src: cr_line(src, '        stop')
+    src: cr_line(src, "    if tg_say(t, 999, \"hi back\") is not 1")
+    src: cr_line:
+        "        print \"bad-send\""
+        '        stop'
+        "    print \"telegram-ok\""
+    file_write_all('/tmp/sov-tg.sov', src)
+    r: cr_build('/tmp/sov-tg.sov', '/tmp/sov-tg', '')
+    if r = 0 -> cr_bin('/tmp/sov-tg', 30)
+        if str_has(cr_out, 'telegram-ok') = 1 -> cr_ok('telegram-bot')
+        if not -> cr_bad('telegram-bot')
+    if not -> cr_bad('could not build the telegram check')
+    proc_kill9(srvpid)
+ck_wine:
+    wine: cr_which('wine')
+    if wine = 0 -> cr_skip('windows (apt install wine)')
+        return 0
+    envp: _sov_alloc(48)
+    poke_i64(envp, 0, 'WINEDEBUG=-all')
+    poke_i64(envp, 8, 'WINEPREFIX=/tmp/cr-wp')
+    poke_i64(envp, 16, 'PATH=/usr/bin:/bin')
+    poke_i64(envp, 24, 'HOME=/tmp')
+    poke_i64(envp, 32, 0)
+    mk: cr_which('mkdir')
+    if mk != 0 -> a: _sov_alloc(16)
+        poke_i64(a, 0, mk)
+        poke_i64(a, 8, '-p')
+        poke_i64(a, 16, '/tmp/cr-wp')
+        poke_i64(a, 24, 0) ;; cr_run(mk, a, 0, 30)
+    src: cr_line('', 'main:')
+    src: cr_line(src, '    print 5 * 3 / 2')
+    include inc/px00.sov 1317 5 (w1 w1 w1 w1 7 run run)
+    src: cr_line('', 'add a b:')
+    src: cr_line(src, '    return a + b')
+    src: cr_line(src, '')
+    src: cr_line(src, 'main:')
+    src: cr_line(src, '    print add(40, 2)')
+    include inc/px00.sov 1317 5 (w2 w2 w2 w2 42 job job)
+    include inc/inc04.sov 317 4
+    include inc/px00.sov 1317 5 (w3 w3 w3 w3 ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad sha256 sha256)
+    cr_build('compilers/windows/compiler.sov', '/tmp/sov-selfw.exe', '--windows')
+    a: _sov_alloc(24)
+    poke_i64(a, 0, '/tmp/sov-selfw.exe')
+    poke_i64(a, 8, 'compilers/windows/compiler.sov')
+    poke_i64(a, 16, '-o')
+    poke_i64(a, 24, '/tmp/sov-selfw2.exe')
+    poke_i64(a, 32, 0) ;; cr_run(wine, a, envp, 400)
+    if file_exists('/tmp/sov-selfw2.exe') = 1 -> if cr_same('/tmp/sov-selfw.exe', '/tmp/sov-selfw2.exe') = 1
+            cr_ok('windows-self-host')
+        if not -> cr_bad('windows-self-host')
+    if not -> cr_bad('windows-self-host')
+cr_wine_run wine exe envp:
+    a: _sov_alloc(16) ;; a: poke_i64 0 + 8 * i: wine exe 0
+    cr_run(wine, a, envp, 120) ;; return cr_rc
+ck_editor:
+    include inc/inc04.sov 329 4
+    src: cr_line(src, '    l: list_add(l, 3)')
+    src: cr_line(src, '    l: list_ins(l, 1, 2)')
+    include inc/px00.sov 2788 6 (1 li li li li insert insert)
+    include inc/inc04.sov 329 4
+    src: cr_line(src, '    l: list_add(l, 2)')
+    src: cr_line(src, '    l: list_del(l, 0)')
+    include inc/px00.sov 2788 6 (0 ld ld ld ld delete delete)
+    src: cr_line('', 'use tui')
+    src: cr_line(src, 'main:')
+    src: cr_line(src, '    tui_goto(3, 5)')
+    file_write_all('/tmp/sov-tui.sov', src)
+    cr_build('/tmp/sov-tui.sov', '/tmp/sov-tui.bin', '')
+    cr_bin('/tmp/sov-tui.bin', 20)
+    exp: _sov_alloc(16) ;; exp: poke_byte 0 + i: 27 91 51 59 53 72 0
+    if cr_eqs(cr_trim(cr_out), exp) = 1 -> cr_ok('tui-goto')
+    if not -> cr_bad('tui-goto')
+ck_examples:
+    i: 0 ;; names: _sov_alloc(64)
+    poke_i64(names, 0, 'tests/hello.sov')
+    poke_i64(names, 8, 0) ;; as long as i < 1 -> ex: peek_i64(names, i * 8)
+        r: cr_build(ex, '/tmp/sov-ex', '')
+        if r = 0 -> a: _sov_alloc(16)
+            poke_i64(a, 0, '/tmp/sov-ex')
+            poke_i64(a, 8, 0)
+            cr_run_dev('/tmp/sov-ex', a, 0, 25)
+            if cr_rc = 0 -> cr_ok(ex) ;; if not -> cr_bad(ex)
+        i: i + 1
+ck_managed_blocks:
+    src: cr_line('', 'add a b:')
+    src: cr_line(src, '    return a + b')
+    src: cr_line(src, 'main:')
+    src: cr_line(src, '    x: 0')
+    src: cr_line(src, "    if x = 0 -> print 'zero'")
+    src: cr_line(src, '        print add(2, 5)')
+    src: cr_line(src, "    if not -> print 'bad'")
+    src: cr_line(src, '    as long as x < 3 -> print x')
+    src: cr_line(src, '        x: x + 1')
+    src: cr_line(src, '    return 0')
+    file_write_all('/tmp/sov-managed-blocks.sov', src)
+    a: _sov_alloc(56)
+    poke_i64(a, 0, './sovren')
+    poke_i64(a, 8, '/tmp/sov-managed-blocks.sov')
+    poke_i64(a, 16, '--js')
+    poke_i64(a, 24, '-o')
+    poke_i64(a, 32, '/tmp/sov-managed-blocks.js')
+    poke_i64(a, 40, 0)
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> node: cr_which('node')
+        if node != 0 -> na: _sov_alloc(24)
+            poke_i64(na, 0, node)
+            poke_i64(na, 8, '/tmp/sov-managed-blocks.js')
+            poke_i64(na, 16, 0)
+            cr_run(node, na, 0, 120)
+            if str_eq(cr_trim(cr_out), "zero\n7\n0\n1\n2") = 1 -> cr_ok('target--js-blocks')
+            if not -> cr_bad('target--js-blocks')
+        if not -> cr_skip('target--js-blocks')
+    if not -> cr_bad('target--js-blocks')
+    poke_i64(a, 16, '--ts')
+    poke_i64(a, 32, '/tmp/sov-managed-blocks.ts')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> ts: file_read_all('/tmp/sov-managed-blocks.ts')
+        if str_has(ts, 'if (x === 0)') = 1 -> if str_has(ts, 'while (x < 3)') = 1 -> if str_has(ts, 'x = x + 1;') = 1
+                    cr_ok('target--ts-blocks')
+                if not -> cr_bad('target--ts-blocks')
+            if not -> cr_bad('target--ts-blocks')
+        if not -> cr_bad('target--ts-blocks')
+    if not -> cr_bad('target--ts-blocks')
+    poke_i64(a, 16, '--csharp')
+    poke_i64(a, 32, '/tmp/sov-managed-blocks.cs')
+    cr_run('./sovren', a, 0, 120)
+    okcs: 0
+    if cr_rc = 0 -> cs: file_read_all('/tmp/sov-managed-blocks.cs')
+        okcs: 1
+        if str_has(cs, 'Console.WriteLine') = 0 -> okcs: 0
+        if str_has(cs, 'while (x < 3)') = 0 -> okcs: 0
+        if str_has(cs, 'return (int)r;') = 0 -> okcs: 0
+    if okcs = 1 -> cr_ok('target--csharp-blocks')
+    if not -> cr_bad('target--csharp-blocks')
+    poke_i64(a, 8, '/tmp/sov-managed-blocks.sov')
+    poke_i64(a, 16, '--cil')
+    poke_i64(a, 32, '/tmp/sov-cil-blocks.il')
+    cr_run('./sovren', a, 0, 120)
+    okil: 0
+    if cr_rc = 0 -> il: file_read_all('/tmp/sov-cil-blocks.il')
+        okil: 1
+        if str_has(il, '.entrypoint') = 0 -> okil: 0
+        if str_has(il, 'call int64 SovrenMain::add') = 0 -> okil: 0
+        if str_has(il, 'brfalse') = 0 -> okil: 0
+        if str_has(il, 'WH') = 0 -> okil: 0
+        if str_has(il, 'stloc') = 0 -> okil: 0
+        if str_has(il, 'System.Console::WriteLine') = 0 -> okil: 0
+    if okil = 1 -> cr_ok('target--cil-blocks')
+    if not -> cr_bad('target--cil-blocks')
+    poke_i64(a, 8, '/tmp/sov-managed-blocks.sov')
+    poke_i64(a, 16, '--c')
+    poke_i64(a, 32, '/tmp/sov-managed-blocks.c')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cc: cr_which('cc')
+        if cc != 0 -> ca: _sov_alloc(48)
+            poke_i64(ca, 0, cc)
+            poke_i64(ca, 8, '/tmp/sov-managed-blocks.c')
+            poke_i64(ca, 16, '-o')
+            poke_i64(ca, 24, '/tmp/sov-managed-blocks-c')
+            poke_i64(ca, 32, 0)
+            ce: _sov_alloc(16)
+            poke_i64(ce, 0, 'PATH=/usr/bin:/bin')
+            poke_i64(ce, 8, 0)
+            cr_run(cc, ca, ce, 120)
+            if cr_rc = 0 -> cr_bin('/tmp/sov-managed-blocks-c', 120)
+                if str_eq(cr_trim(cr_out), "zero\n7\n0\n1\n2") = 1 -> cr_ok('target--c-blocks')
+                if not -> cr_bad('target--c-blocks')
+            if not -> cr_bad('target--c-blocks')
+        if not -> cr_skip('target--c-blocks')
+    if not -> cr_bad('target--c-blocks')
+    misrc: cr_line('', 'sum n:')
+    misrc: cr_line(misrc, '    x: 0')
+    misrc: cr_line(misrc, '    acc: 0')
+    misrc: cr_line(misrc, '    as long as x < n -> acc: acc + x ;; x: x + 1')
+    misrc: cr_line(misrc, '    return acc')
+    misrc: cr_line(misrc, 'main:')
+    misrc: cr_line(misrc, '    return sum(6)')
+    file_write_all('/tmp/sov-managed-inline.sov', misrc)
+    okmi: 1
+    poke_i64(a, 8, '/tmp/sov-managed-inline.sov')
+    poke_i64(a, 16, '--c')
+    poke_i64(a, 32, '/tmp/sov-managed-inline.c')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okmi: 0
+    if cr_rc = 0 -> mic: file_read_all('/tmp/sov-managed-inline.c')
+        if str_has(mic, 'while (x < n)') = 0 -> okmi: 0
+        if str_has(mic, 'acc = acc + x;') = 0 -> okmi: 0
+        if str_has(mic, 'x = x + 1;') = 0 -> okmi: 0
+    poke_i64(a, 16, '--js')
+    poke_i64(a, 32, '/tmp/sov-managed-inline.js')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okmi: 0
+    if cr_rc = 0 -> mijs: file_read_all('/tmp/sov-managed-inline.js')
+        if str_has(mijs, 'while (x < n)') = 0 -> okmi: 0
+        if str_has(mijs, 'x = x + 1;') = 0 -> okmi: 0
+    poke_i64(a, 16, '--ts')
+    poke_i64(a, 32, '/tmp/sov-managed-inline.ts')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okmi: 0
+    if cr_rc = 0 -> mits: file_read_all('/tmp/sov-managed-inline.ts')
+        if str_has(mits, 'while (x < n)') = 0 -> okmi: 0
+        if str_has(mits, 'x = x + 1;') = 0 -> okmi: 0
+    poke_i64(a, 16, '--csharp')
+    poke_i64(a, 32, '/tmp/sov-managed-inline.cs')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okmi: 0
+    if cr_rc = 0 -> mics: file_read_all('/tmp/sov-managed-inline.cs')
+        if str_has(mics, 'while (x < n)') = 0 -> okmi: 0
+        if str_has(mics, 'x = x + 1;') = 0 -> okmi: 0
+    poke_i64(a, 16, '--cil')
+    poke_i64(a, 32, '/tmp/sov-managed-inline.il')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okmi: 0
+    if cr_rc = 0 -> miil: file_read_all('/tmp/sov-managed-inline.il')
+        if str_has(miil, 'br WH') = 0 -> okmi: 0
+        if str_has(miil, 'stloc') = 0 -> okmi: 0
+    poke_i64(a, 16, '--llvm-ir')
+    poke_i64(a, 32, '/tmp/sov-managed-inline.ll')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okmi: 0
+    if cr_rc = 0 -> mill: file_read_all('/tmp/sov-managed-inline.ll')
+        if str_has(mill, 'br label %while') = 0 -> okmi: 0
+        if str_has(mill, '@sum') = 0 -> okmi: 0
+    poke_i64(a, 16, '--jvm')
+    poke_i64(a, 32, '/tmp/SovrenInline.class')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okmi: 0
+    if file_size('/tmp/SovrenInline.class') <= 0 -> okmi: 0
+    if okmi = 1 -> cr_ok('target--managed-inline-multi')
+    if not -> cr_bad('target--managed-inline-multi')
+    watsrc: cr_line('', 'add a b:')
+    watsrc: cr_line(watsrc, '    return a + b * 2')
+    watsrc: cr_line(watsrc, 'main:')
+    watsrc: cr_line(watsrc, '    return add(3, 4)')
+    file_write_all('/tmp/sov-wat-calls.sov', watsrc)
+    poke_i64(a, 8, '/tmp/sov-wat-calls.sov')
+    poke_i64(a, 16, '--wat')
+    poke_i64(a, 32, '/tmp/sov-wat-calls.wat')
+    cr_run('./sovren', a, 0, 120)
+    okwat: 0
+    if cr_rc = 0 -> wt: file_read_all('/tmp/sov-wat-calls.wat')
+        okwat: 1
+        if str_has(wt, '(func $add') = 0 -> okwat: 0
+        if str_has(wt, '(param $a i32)') = 0 -> okwat: 0
+        if str_has(wt, '(param $b i32)') = 0 -> okwat: 0
+        if str_has(wt, '(result i32)') = 0 -> okwat: 0
+        if str_has(wt, 'local.get $a') = 0 -> okwat: 0
+        if str_has(wt, 'i32.mul') = 0 -> okwat: 0
+        if str_has(wt, 'call $add') = 0 -> okwat: 0
+        if str_has(wt, '(export ') = 0 -> okwat: 0
+    if okwat = 1 -> cr_ok('target--wat-calls')
+    if not -> cr_bad('target--wat-calls')
+    poke_i64(a, 8, '/tmp/sov-wat-calls.sov')
+    poke_i64(a, 16, '--wasm32')
+    poke_i64(a, 32, '/tmp/sov-wasm32-calls.wasm')
+    cr_run('./sovren', a, 0, 120)
+    okwm: 0
+    if cr_rc = 0 -> wh: ck_load('/tmp/sov-wasm32-calls.wasm')
+        if wh != 0 -> wr: wasm_call(wh, 'main', 0, 0, 0, 0)
+            if wr = 11 -> if wasm_trap(wh) = 0 -> wradd: wasm_call(wh, 'add', 3, 4, 0, 0)
+                if wradd = 11 -> if wasm_trap(wh) = 0 -> okwm: 1
+    if okwm = 1 -> cr_ok('target--wasm32-calls')
+    if not -> cr_bad('target--wasm32-calls')
+    wbsrc: cr_line('', 'add a b:')
+    wbsrc: cr_line(wbsrc, '    return a + b')
+    wbsrc: cr_line(wbsrc, 'sum n:')
+    wbsrc: cr_line(wbsrc, '    x: 0')
+    wbsrc: cr_line(wbsrc, '    acc: 0')
+    wbsrc: cr_line(wbsrc, '    as long as x < n -> acc: acc + x')
+    wbsrc: cr_line(wbsrc, '        x: x + 1')
+    wbsrc: cr_line(wbsrc, '    return acc')
+    wbsrc: cr_line(wbsrc, 'mx a b:')
+    wbsrc: cr_line(wbsrc, '    if a > b -> return a')
+    wbsrc: cr_line(wbsrc, '    if not -> return b')
+    wbsrc: cr_line(wbsrc, 'main:')
+    wbsrc: cr_line(wbsrc, '    return sum(6) + mx(9, 4) + add(1, 2)')
+    file_write_all('/tmp/sov-wasm-blocks.sov', wbsrc)
+    poke_i64(a, 8, '/tmp/sov-wasm-blocks.sov')
+    poke_i64(a, 16, '--wat')
+    poke_i64(a, 32, '/tmp/sov-wasm-blocks.wat')
+    cr_run('./sovren', a, 0, 120)
+    okwatb: 0
+    if cr_rc = 0 -> wbt: file_read_all('/tmp/sov-wasm-blocks.wat')
+        okwatb: 1
+        if str_has(wbt, '(local $x i32)') = 0 -> okwatb: 0
+        if str_has(wbt, 'i32.lt_s') = 0 -> okwatb: 0
+        if str_has(wbt, 'loop') = 0 -> okwatb: 0
+        if str_has(wbt, 'br_if 1') = 0 -> okwatb: 0
+        if str_has(wbt, 'else') = 0 -> okwatb: 0
+        if str_has(wbt, 'call $sum') = 0 -> okwatb: 0
+    if okwatb = 1 -> cr_ok('target--wat-blocks')
+    if not -> cr_bad('target--wat-blocks')
+    poke_i64(a, 16, '--wasm32')
+    poke_i64(a, 32, '/tmp/sov-wasm32-blocks.wasm')
+    cr_run('./sovren', a, 0, 120)
+    okwmb: 0
+    if cr_rc = 0 -> wbh: ck_load('/tmp/sov-wasm32-blocks.wasm')
+        if wbh != 0 -> wbr: wasm_call(wbh, 'main', 0, 0, 0, 0)
+            if wbr = 27 -> if wasm_trap(wbh) = 0 -> okwmb: 1
+    if okwmb = 1 -> cr_ok('target--wasm32-blocks')
+    if not -> cr_bad('target--wasm32-blocks')
+    wisrc: cr_line('', 'sum n:')
+    wisrc: cr_line(wisrc, '    x: 0')
+    wisrc: cr_line(wisrc, '    acc: 0')
+    wisrc: cr_line(wisrc, '    as long as x < n -> acc: acc + x ;; x: x + 1')
+    wisrc: cr_line(wisrc, '    return acc')
+    wisrc: cr_line(wisrc, 'main:')
+    wisrc: cr_line(wisrc, '    return sum(6)')
+    file_write_all('/tmp/sov-wasm-inline-multi.sov', wisrc)
+    poke_i64(a, 8, '/tmp/sov-wasm-inline-multi.sov')
+    poke_i64(a, 16, '--wat')
+    poke_i64(a, 32, '/tmp/sov-wasm-inline-multi.wat')
+    cr_run('./sovren', a, 0, 120)
+    okwatim: 0
+    if cr_rc = 0 -> wim: file_read_all('/tmp/sov-wasm-inline-multi.wat')
+        okwatim: 1
+        if str_has(wim, 'local.set $acc') = 0 -> okwatim: 0
+        if str_has(wim, 'local.set $x') = 0 -> okwatim: 0
+        if str_has(wim, 'br 0') = 0 -> okwatim: 0
+    if okwatim = 1 -> cr_ok('target--wat-inline-multi')
+    if not -> cr_bad('target--wat-inline-multi')
+    poke_i64(a, 16, '--wasm32')
+    poke_i64(a, 32, '/tmp/sov-wasm-inline-multi.wasm')
+    cr_run('./sovren', a, 0, 120)
+    okwim: 0
+    if cr_rc = 0 -> wimh: ck_load('/tmp/sov-wasm-inline-multi.wasm')
+        if wimh != 0 -> wimr: wasm_call(wimh, 'main', 0, 0, 0, 0)
+            if wimr = 15 -> if wasm_trap(wimh) = 0 -> okwim: 1
+    if okwim = 1 -> cr_ok('target--wasm32-inline-multi')
+    if not -> cr_bad('target--wasm32-inline-multi')
+    poke_i64(a, 8, '/tmp/sov-wasm-blocks.sov')
+    poke_i64(a, 16, '--wasm32-simd')
+    poke_i64(a, 32, '/tmp/sov-wasm32-simd-blocks.wasm')
+    cr_run('./sovren', a, 0, 120)
+    oksimdb: 0
+    if cr_rc = 0 -> oksimdb: 1
+    if oksimdb = 1 -> if cr_file_has_u32('/tmp/sov-wasm32-simd-blocks.wasm', 17646920) = 0 -> oksimdb: 0
+    if oksimdb = 1 -> if cr_file_has('/tmp/sov-wasm32-simd-blocks.wasm', 'sovren_simd_probe') = 0 -> oksimdb: 0
+    if oksimdb = 1 -> if cr_file_has_u32('/tmp/sov-wasm32-simd-blocks.wasm', 33623293) = 0 -> oksimdb: 0
+    if oksimdb = 1 -> if cr_file_has('/tmp/sov-wasm32-simd-blocks.wasm', 'sovren_simd_i32x4_add_lane') = 0 -> oksimdb: 0
+    if oksimdb = 1 -> if cr_file_has_u32('/tmp/sov-wasm32-simd-blocks.wasm', 4244745981) = 0 -> oksimdb: 0
+    if oksimdb = 1 -> cr_ok('target--wasm32-simd-blocks')
+    if not -> cr_bad('target--wasm32-simd-blocks')
+    poke_i64(a, 16, '--wasm64')
+    poke_i64(a, 32, '/tmp/sov-wasm64-blocks.wasm')
+    cr_run('./sovren', a, 0, 120)
+    okw64b: 0
+    if cr_rc = 0 -> okw64b: 1
+        if cr_file_has_u32('/tmp/sov-wasm64-blocks.wasm', 17646920) = 0 -> okw64b: 0
+        if cr_file_has('/tmp/sov-wasm64-blocks.wasm', 'sovren_memory64_probe') = 0 -> okw64b: 0
+        if cr_file_has_u32('/tmp/sov-wasm64-blocks.wasm', 67175173) = 0 -> okw64b: 0
+        if cr_file_has_u32('/tmp/sov-wasm64-blocks.wasm', 4215341088) = 0 -> okw64b: 0
+    if okw64b = 1 -> cr_ok('target--wasm64-blocks')
+    if not -> cr_bad('target--wasm64-blocks')
+    poke_i64(a, 16, '--wasm32-threads')
+    poke_i64(a, 32, '/tmp/sov-wasm32-threads-blocks.wasm')
+    cr_run('./sovren', a, 0, 120)
+    okwthb: 0
+    if cr_rc = 0 -> okwthb: 1
+    if okwthb = 1 -> if cr_file_has_u32('/tmp/sov-wasm32-threads-blocks.wasm', 17646920) = 0 -> okwthb: 0
+    if okwthb = 1 -> if cr_file_has_u32('/tmp/sov-wasm32-threads-blocks.wasm', 137214) = 0 -> okwthb: 0
+    if okwthb = 1 -> if cr_file_has_u32('/tmp/sov-wasm32-threads-blocks.wasm', 135422) = 0 -> okwthb: 0
+    if okwthb = 1 -> if cr_file_has('/tmp/sov-wasm32-threads-blocks.wasm', 'sovren_thread_rmw_add_probe') = 0 -> okwthb: 0
+    if okwthb = 1 -> if cr_file_has_u32('/tmp/sov-wasm32-threads-blocks.wasm', 139006) = 0 -> okwthb: 0
+    if okwthb = 1 -> cr_ok('target--wasm32-threads-blocks')
+    if not -> cr_bad('target--wasm32-threads-blocks')
+    wm64src: cr_line('', 'main:')
+    wm64src: cr_line(wm64src, '    memory64_store(8, 44)')
+    wm64src: cr_line(wm64src, '    return memory64_load(8) + 1')
+    file_write_all('/tmp/sov-wasm64-source-memory.sov', wm64src)
+    poke_i64(a, 8, '/tmp/sov-wasm64-source-memory.sov')
+    poke_i64(a, 16, '--wasm64')
+    poke_i64(a, 32, '/tmp/sov-wasm64-source-memory.wasm')
+    cr_run('./sovren', a, 0, 120)
+    okw64s: 0
+    if cr_rc = 0 -> okw64s: 1
+    if okw64s = 1 -> if cr_file_has('/tmp/sov-wasm64-source-memory.wasm', 'sovren_memory64_probe') = 0 -> okw64s: 0
+    if okw64s = 1 -> if cr_file_has_u32('/tmp/sov-wasm64-source-memory.wasm', 908870061) = 0 -> okw64s: 0
+    if okw64s = 1 -> if cr_file_has_u32('/tmp/sov-wasm64-source-memory.wasm', 36220168) = 0 -> okw64s: 0
+    if okw64s = 1 -> cr_ok('target--wasm64-source-memory64')
+    if not -> cr_bad('target--wasm64-source-memory64')
+    watsrc2: cr_line('', 'main:')
+    watsrc2: cr_line(watsrc2, '    atomic_store(0, 10)')
+    watsrc2: cr_line(watsrc2, '    atomic_fence()')
+    watsrc2: cr_line(watsrc2, '    old: atomic_rmw_add(0, 5)')
+    watsrc2: cr_line(watsrc2, '    n: atomic_notify(0, 1)')
+    watsrc2: cr_line(watsrc2, '    return atomic_load(0) + old + n')
+    file_write_all('/tmp/sov-wasm32-source-atomics.sov', watsrc2)
+    poke_i64(a, 8, '/tmp/sov-wasm32-source-atomics.sov')
+    poke_i64(a, 16, '--wasm32-threads')
+    poke_i64(a, 32, '/tmp/sov-wasm32-source-atomics.wasm')
+    cr_run('./sovren', a, 0, 120)
+    okwats: 0
+    if cr_rc = 0 -> okwats: 1
+    if okwats = 1 -> if cr_file_has('/tmp/sov-wasm32-source-atomics.wasm', 'sovren_thread_rmw_add_probe') = 0 -> okwats: 0
+    if okwats = 1 -> if cr_file_has_u32('/tmp/sov-wasm32-source-atomics.wasm', 1090520062) = 0 -> okwats: 0
+    if okwats = 1 -> if cr_file_has_u32('/tmp/sov-wasm32-source-atomics.wasm', 131326) = 0 -> okwats: 0
+    if okwats = 1 -> cr_ok('target--wasm32-threads-source-atomics')
+    if not -> cr_bad('target--wasm32-threads-source-atomics')
+    poke_i64(a, 8, '/tmp/sov-wasm-blocks.sov')
+    poke_i64(a, 16, '--wasm32-browser')
+    poke_i64(a, 32, '/tmp/sov-wasm-blocks-browser.html')
+    cr_run('./sovren', a, 0, 120)
+    okwrapb: 0
+    if cr_rc = 0 -> whb: file_read_all('/tmp/sov-wasm-blocks-browser.html')
+        okwrapb: 1
+        if str_has(whb, '72,69,13,1') = 0 -> okwrapb: 0
+        if str_has(whb, '74,4,64') = 0 -> okwrapb: 0
+    if okwrapb = 1 -> cr_ok('target--wasm32-browser-blocks')
+    if not -> cr_bad('target--wasm32-browser-blocks')
+    poke_i64(a, 16, '--wasm32-emscripten')
+    poke_i64(a, 32, '/tmp/sov-wasm-blocks-emscripten.html')
+    cr_run('./sovren', a, 0, 120)
+    okwrapem: 0
+    if cr_rc = 0 -> whem: file_read_all('/tmp/sov-wasm-blocks-emscripten.html')
+        okwrapem: 1
+        if str_has(whem, '72,69,13,1') = 0 -> okwrapem: 0
+        if str_has(whem, '74,4,64') = 0 -> okwrapem: 0
+        if str_has(whem, 'ccall') = 0 -> okwrapem: 0
+        if str_has(whem, 'stackAlloc') = 0 -> okwrapem: 0
+        if str_has(whem, 'UTF8ToString') = 0 -> okwrapem: 0
+        if str_has(whem, 'Module.ready') = 0 -> okwrapem: 0
+        if str_has(whem, 'HEAPF64') = 0 -> okwrapem: 0
+        if str_has(whem, 'addFunction') = 0 -> okwrapem: 0
+        if str_has(whem, 'fd_read') = 0 -> okwrapem: 0
+        if str_has(whem, '___syscall_stat64') = 0 -> okwrapem: 0
+        if str_has(whem, '3,97,100,100,0') = 0 -> okwrapem: 0
+    if okwrapem = 1 -> cr_ok('target--wasm32-emscripten-blocks')
+    if not -> cr_bad('target--wasm32-emscripten-blocks')
+    poke_i64(a, 16, '--wasm32-edge')
+    poke_i64(a, 32, '/tmp/sov-wasm-blocks-edge.mjs')
+    cr_run('./sovren', a, 0, 120)
+    okwrapedge: 0
+    if cr_rc = 0 -> whe: file_read_all('/tmp/sov-wasm-blocks-edge.mjs')
+        okwrapedge: 1
+        if str_has(whe, '72,69,13,1') = 0 -> okwrapedge: 0
+        if str_has(whe, '74,4,64') = 0 -> okwrapedge: 0
+        if str_has(whe, 'export default') = 0 -> okwrapedge: 0
+    if okwrapedge = 1 -> cr_ok('target--wasm32-edge-blocks')
+    if not -> cr_bad('target--wasm32-edge-blocks')
+    poke_i64(a, 16, '--wasm-component')
+    poke_i64(a, 32, '/tmp/sov-wasm-blocks-component.wasm')
+    cr_run('./sovren', a, 0, 120)
+    okcompb: 0
+    if cr_rc = 0 -> okcompb: 1
+    if okcompb = 1 -> if cr_file_has_u32('/tmp/sov-wasm-blocks-component.wasm', 1836278016) = 0 -> okcompb: 0
+    if okcompb = 1 -> if cr_file_has_u32('/tmp/sov-wasm-blocks-component.wasm', 65549) = 0 -> okcompb: 0
+    if okcompb = 1 -> if cr_file_has('/tmp/sov-wasm-blocks-component.wasm', 'component-type') = 0 -> okcompb: 0
+    if okcompb = 1 -> if cr_file_has('/tmp/sov-wasm-blocks-component.wasm', 'component-canonical-abi') = 0 -> okcompb: 0
+    if okcompb = 1 -> if cr_file_has('/tmp/sov-wasm-blocks-component.wasm', 'sovren:core-module') = 0 -> okcompb: 0
+    if okcompb = 1 -> if cr_file_has('/tmp/sov-wasm-blocks-component.wasm', 'canonical-lift=func main') = 0 -> okcompb: 0
+    if okcompb = 1 -> if cr_file_has('/tmp/sov-wasm-blocks-component.wasm', 'export add: func(a: s32, b: s32)') = 0 -> okcompb: 0
+    if okcompb = 1 -> if cr_file_has('/tmp/sov-wasm-blocks-component.wasm', 'canonical-lift=func add') = 0 -> okcompb: 0
+    if okcompb = 1 -> if cr_file_has_u32('/tmp/sov-wasm-blocks-component.wasm', 17646920) = 0 -> okcompb: 0
+    if okcompb = 1 -> cr_ok('target--wasm-component-blocks')
+    if not -> cr_bad('target--wasm-component-blocks')
+    poke_i64(a, 8, '/tmp/sov-managed-blocks.sov')
+    poke_i64(a, 16, '--llvm-ir')
+    poke_i64(a, 32, '/tmp/sov-llvm-blocks.ll')
+    cr_run('./sovren', a, 0, 120)
+    okll: 0
+    if cr_rc = 0 -> ll: file_read_all('/tmp/sov-llvm-blocks.ll')
+        okll: 1
+        if str_has(ll, 'define i64 @add(i64 %a.arg, i64 %b.arg)') = 0 -> okll: 0
+        if str_has(ll, 'call i64 @add') = 0 -> okll: 0
+        if str_has(ll, 'else') = 0 -> okll: 0
+        if str_has(ll, 'whilebody') = 0 -> okll: 0
+        if str_has(ll, 'endwhile') = 0 -> okll: 0
+        if str_has(ll, 'store i64 %r') = 0 -> okll: 0
+        if str_has(ll, 'ret i32') = 0 -> okll: 0
+    if okll = 1 -> cr_ok('target--llvm-ir-blocks')
+    if not -> cr_bad('target--llvm-ir-blocks')
+    poke_i64(a, 8, '/tmp/sov-managed-blocks.sov')
+    poke_i64(a, 16, '--jvm')
+    poke_i64(a, 32, '/tmp/SovrenMain.class')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> java: cr_which('java')
+        if java != 0 -> ja: _sov_alloc(40)
+            poke_i64(ja, 0, java)
+            poke_i64(ja, 8, '-cp')
+            poke_i64(ja, 16, '/tmp')
+            poke_i64(ja, 24, 'SovrenMain')
+            poke_i64(ja, 32, 0)
+            cr_run(java, ja, 0, 120)
+            if str_eq(cr_trim(cr_out), "zero\n7\n0\n1\n2") = 1 -> cr_ok('target--jvm-blocks')
+            if not -> cr_bad('target--jvm-blocks')
+        if not -> cr_skip('target--jvm-blocks')
+    if not -> cr_bad('target--jvm-blocks')
+    return 0
+ck_targets:
+    a: _sov_alloc(48)
+    poke_i64(a, 0, './sovren')
+    poke_i64(a, 8, 'tests/hello.sov')
+    poke_i64(a, 16, '--android')
+    poke_i64(a, 24, '-o')
+    poke_i64(a, 32, '/tmp/sov-tgt.bin')
+    poke_i64(a, 40, 0)
+    include inc/px01.sov 1731 4 (android android)
+    poke_i64(a, 16, '--linux-arm64')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--linux-arm64')
+    if not -> cr_bad('target--linux-arm64')
+    poke_i64(a, 16, '--ios')
+    include inc/px01.sov 1731 4 (ios ios)
+    poke_i64(a, 16, '--ios-framework')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--ios-framework')
+    if not -> cr_bad('target--ios-framework')
+    okfw: 0
+    if cr_rc = 0 -> if cr_file_has('/tmp/sov-tgt.bin', '_sovren_main') = 1 -> okfw: 1
+    if okfw = 1 -> cr_ok('target--ios-framework-export')
+    if not -> cr_bad('target--ios-framework-export')
+    poke_i64(a, 16, '--macos-arm64')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--macos-arm64')
+    if not -> cr_bad('target--macos-arm64')
+    poke_i64(a, 16, '--macos-dylib')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--macos-dylib')
+    if not -> cr_bad('target--macos-dylib')
+    okdylib: 0
+    if cr_rc = 0 -> if cr_file_has('/tmp/sov-tgt.bin', '_sovren_main') = 1 -> okdylib: 1
+    if okdylib = 1 -> cr_ok('target--macos-dylib-export')
+    if not -> cr_bad('target--macos-dylib-export')
+    poke_i64(a, 16, '--android-so')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--android-so')
+    if not -> cr_bad('target--android-so')
+    poke_i64(a, 16, '--linux-arm64-so')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--linux-arm64-so')
+    if not -> cr_bad('target--linux-arm64-so')
+    poke_i64(a, 16, '--linux-so')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--linux-so')
+    if not -> cr_bad('target--linux-so')
+    okso: 0
+    if cr_rc = 0 -> if cr_file_has('/tmp/sov-tgt.bin', 'sovren_main') = 1 -> okso: 1
+    if okso = 1 -> cr_ok('target--linux-so-export')
+    if not -> cr_bad('target--linux-so-export')
+    poke_i64(a, 8, 'tests/hello.sov')
+    poke_i64(a, 32, '/tmp/sov-tgt.bin')
+    poke_i64(a, 16, '--freebsd')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--freebsd')
+    if not -> cr_bad('target--freebsd')
+    poke_i64(a, 16, '--netbsd')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--netbsd')
+    if not -> cr_bad('target--netbsd')
+    poke_i64(a, 16, '--openbsd')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--openbsd')
+    if not -> cr_bad('target--openbsd')
+    poke_i64(a, 16, '--dragonfly')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--dragonfly')
+    if not -> cr_bad('target--dragonfly')
+    poke_i64(a, 16, '--illumos')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--illumos')
+    if not -> cr_bad('target--illumos')
+    poke_i64(a, 16, '--haiku')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--haiku')
+    if not -> cr_bad('target--haiku')
+    poke_i64(a, 16, '--redox')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--redox')
+    if not -> cr_bad('target--redox')
+    poke_i64(a, 16, '--qnx')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--qnx')
+    if not -> cr_bad('target--qnx')
+    poke_i64(a, 16, '--serenityos')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--serenityos')
+    if not -> cr_bad('target--serenityos')
+    poke_i64(a, 16, '--menuetos')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--menuetos')
+    if not -> cr_bad('target--menuetos')
+    poke_i64(a, 16, '--sovrenos')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--sovrenos')
+    if not -> cr_bad('target--sovrenos')
+    poke_i64(a, 8, 'tests/wasi/hello.sov')
+    poke_i64(a, 16, '--wasi')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--wasi')
+    if not -> cr_bad('target--wasi')
+    file_write_all('/tmp/sov-wasm32-main.sov', "main:\n    return 42\n")
+    poke_i64(a, 8, '/tmp/sov-wasm32-main.sov')
+    poke_i64(a, 16, '--wasm32')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--wasm32')
+    if not -> cr_bad('target--wasm32')
+    poke_i64(a, 16, '--wasm32-simd')
+    poke_i64(a, 32, '/tmp/sov-wasm32-simd.wasm')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--wasm32-simd')
+    if not -> cr_bad('target--wasm32-simd')
+    oksimd: 0
+    if cr_rc = 0 -> oksimd: 1
+    if oksimd = 1 -> if cr_file_has('/tmp/sov-wasm32-simd.wasm', 'sovren_simd_probe') = 0 -> oksimd: 0
+    if oksimd = 1 -> if cr_file_has_u32('/tmp/sov-wasm32-simd.wasm', 33623293) = 0 -> oksimd: 0
+    if oksimd = 1 -> if cr_file_has('/tmp/sov-wasm32-simd.wasm', 'sovren_simd_i32x4_add_lane') = 0 -> oksimd: 0
+    if oksimd = 1 -> if cr_file_has_u32('/tmp/sov-wasm32-simd.wasm', 4244745981) = 0 -> oksimd: 0
+    if oksimd = 1 -> cr_ok('target--wasm32-simd-v128')
+    if not -> cr_bad('target--wasm32-simd-v128')
+    poke_i64(a, 16, '--wasm64')
+    poke_i64(a, 32, '/tmp/sov-wasm64.wasm')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--wasm64')
+    if not -> cr_bad('target--wasm64')
+    okw64: 0
+    if cr_rc = 0 -> okw64: 1
+        if cr_file_has_u32('/tmp/sov-wasm64.wasm', 67175173) = 0 -> okw64: 0
+        if cr_file_has('/tmp/sov-wasm64.wasm', 'memory') = 0 -> okw64: 0
+        if cr_file_has('/tmp/sov-wasm64.wasm', 'sovren_memory64_probe') = 0 -> okw64: 0
+        if cr_file_has_u32('/tmp/sov-wasm64.wasm', 4215341088) = 0 -> okw64: 0
+    if okw64 = 1 -> cr_ok('target--wasm64-memory64')
+    if not -> cr_bad('target--wasm64-memory64')
+    poke_i64(a, 16, '--wasm32-threads')
+    poke_i64(a, 32, '/tmp/sov-wasm32-threads.wasm')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--wasm32-threads')
+    if not -> cr_bad('target--wasm32-threads')
+    okwth: 0
+    if cr_rc = 0 -> okwth: 1
+    if okwth = 1 -> if cr_file_has('/tmp/sov-wasm32-threads.wasm', 'sovren_thread_probe') = 0 -> okwth: 0
+    if okwth = 1 -> if cr_file_has_u32('/tmp/sov-wasm32-threads.wasm', 137214) = 0 -> okwth: 0
+    if okwth = 1 -> if cr_file_has_u32('/tmp/sov-wasm32-threads.wasm', 135422) = 0 -> okwth: 0
+    if okwth = 1 -> if cr_file_has('/tmp/sov-wasm32-threads.wasm', 'sovren_thread_rmw_add_probe') = 0 -> okwth: 0
+    if okwth = 1 -> if cr_file_has_u32('/tmp/sov-wasm32-threads.wasm', 139006) = 0 -> okwth: 0
+    if okwth = 1 -> cr_ok('target--wasm32-threads-atomics')
+    if not -> cr_bad('target--wasm32-threads-atomics')
+    poke_i64(a, 16, '--wasm32-browser')
+    poke_i64(a, 32, '/tmp/sov-wasm32-browser.html')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--wasm32-browser')
+    if not -> cr_bad('target--wasm32-browser')
+    okwb: 0
+    if cr_rc = 0 -> wb: file_read_all('/tmp/sov-wasm32-browser.html')
+        okwb: 1
+        if str_has(wb, 'WebAssembly.instantiate') = 0 -> okwb: 0
+        if str_has(wb, 'new Uint8Array') = 0 -> okwb: 0
+    if okwb = 1 -> cr_ok('target--wasm32-browser-glue')
+    if not -> cr_bad('target--wasm32-browser-glue')
+    poke_i64(a, 16, '--wasm32-emscripten')
+    poke_i64(a, 32, '/tmp/sov-wasm32-emscripten.html')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--wasm32-emscripten')
+    if not -> cr_bad('target--wasm32-emscripten')
+    okem: 0
+    if cr_rc = 0 -> em: file_read_all('/tmp/sov-wasm32-emscripten.html')
+        okem: 1
+        if str_has(em, 'var Module') = 0 -> okem: 0
+        if str_has(em, 'ccall') = 0 -> okem: 0
+        if str_has(em, 'cwrap') = 0 -> okem: 0
+        if str_has(em, 'HEAPU8') = 0 -> okem: 0
+        if str_has(em, 'HEAP32') = 0 -> okem: 0
+        if str_has(em, '_emscripten_memcpy_js') = 0 -> okem: 0
+        if str_has(em, '_emscripten_get_now') = 0 -> okem: 0
+        if str_has(em, '_emscripten_resize_heap') = 0 -> okem: 0
+        if str_has(em, 'stringToUTF8') = 0 -> okem: 0
+        if str_has(em, 'lengthBytesUTF8') = 0 -> okem: 0
+        if str_has(em, 'fd_write') = 0 -> okem: 0
+        if str_has(em, 'fd_read') = 0 -> okem: 0
+        if str_has(em, 'HEAPF32') = 0 -> okem: 0
+        if str_has(em, 'HEAPF64') = 0 -> okem: 0
+        if str_has(em, 'allocate') = 0 -> okem: 0
+        if str_has(em, 'intArrayFromString') = 0 -> okem: 0
+        if str_has(em, 'setTempRet0') = 0 -> okem: 0
+        if str_has(em, 'getTempRet0') = 0 -> okem: 0
+        if str_has(em, 'addFunction') = 0 -> okem: 0
+        if str_has(em, 'dynCall') = 0 -> okem: 0
+        if str_has(em, 'emscripten_notify_memory_growth') = 0 -> okem: 0
+        if str_has(em, 'emscripten_random') = 0 -> okem: 0
+        if str_has(em, 'environ_sizes_get') = 0 -> okem: 0
+        if str_has(em, 'random_get') = 0 -> okem: 0
+        if str_has(em, 'FS') = 0 -> okem: 0
+    if okem = 1 -> cr_ok('target--wasm32-emscripten-shell')
+    if not -> cr_bad('target--wasm32-emscripten-shell')
+    poke_i64(a, 16, '--wasm32-edge')
+    poke_i64(a, 32, '/tmp/sov-wasm32-edge.mjs')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--wasm32-edge')
+    if not -> cr_bad('target--wasm32-edge')
+    okwe: 0
+    if cr_rc = 0 -> we: file_read_all('/tmp/sov-wasm32-edge.mjs')
+        okwe: 1
+        if str_has(we, 'export default') = 0 -> okwe: 0
+        if str_has(we, 'async fetch') = 0 -> okwe: 0
+        if str_has(we, 'WebAssembly.instantiate') = 0 -> okwe: 0
+    if okwe = 1 -> cr_ok('target--wasm32-edge-glue')
+    if not -> cr_bad('target--wasm32-edge-glue')
+    poke_i64(a, 16, '--wasm-component')
+    poke_i64(a, 32, '/tmp/sov-wasm-component.wasm')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--wasm-component')
+    if not -> cr_bad('target--wasm-component')
+    okcomp: 0
+    if cr_rc = 0 -> okcomp: 1
+    if okcomp = 1 -> if cr_file_has_u32('/tmp/sov-wasm-component.wasm', 1836278016) = 0 -> okcomp: 0
+    if okcomp = 1 -> if cr_file_has_u32('/tmp/sov-wasm-component.wasm', 65549) = 0 -> okcomp: 0
+    if okcomp = 1 -> if cr_file_has('/tmp/sov-wasm-component.wasm', 'component-type') = 0 -> okcomp: 0
+    if okcomp = 1 -> if cr_file_has('/tmp/sov-wasm-component.wasm', 'world command') = 0 -> okcomp: 0
+    if okcomp = 1 -> if cr_file_has('/tmp/sov-wasm-component.wasm', 'export run: func()') = 0 -> okcomp: 0
+    if okcomp = 1 -> if cr_file_has('/tmp/sov-wasm-component.wasm', 's32') = 0 -> okcomp: 0
+    if okcomp = 1 -> if cr_file_has('/tmp/sov-wasm-component.wasm', 'component-canonical-abi') = 0 -> okcomp: 0
+    if okcomp = 1 -> if cr_file_has('/tmp/sov-wasm-component.wasm', 'sovren:core-module') = 0 -> okcomp: 0
+    if okcomp = 1 -> if cr_file_has('/tmp/sov-wasm-component.wasm', 'main') = 0 -> okcomp: 0
+    if okcomp = 1 -> cr_ok('target--wasm-component-metadata')
+    if not -> cr_bad('target--wasm-component-metadata')
+    poke_i64(a, 32, '/tmp/sov-tgt.bin')
+    poke_i64(a, 16, '--wat')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--wat')
+    if not -> cr_bad('target--wat')
+    poke_i64(a, 16, '--js')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--js')
+    if not -> cr_bad('target--js')
+    poke_i64(a, 16, '--ts')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--ts')
+    if not -> cr_bad('target--ts')
+    poke_i64(a, 16, '--jvm')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--jvm')
+    if not -> cr_bad('target--jvm')
+    poke_i64(a, 16, '--csharp')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--csharp')
+    if not -> cr_bad('target--csharp')
+    poke_i64(a, 16, '--cil')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--cil')
+    if not -> cr_bad('target--cil')
+    pesrc: cr_line('', 'main:')
+    pesrc: cr_line(pesrc, '    return 6 * (20 + 1) - 3')
+    file_write_all('/tmp/sov-cil-pe.sov', pesrc)
+    poke_i64(a, 8, '/tmp/sov-cil-pe.sov')
+    poke_i64(a, 16, '--cil-pe')
+    poke_i64(a, 32, '/tmp/sov-cil-pe.exe')
+    cr_run('./sovren', a, 0, 120)
+    okcilpe: 0
+    if cr_rc = 0 -> okcilpe: 1
+        if cr_file_has('/tmp/sov-cil-pe.exe', 'BSJB') = 0 -> okcilpe: 0
+        if cr_file_has('/tmp/sov-cil-pe.exe', 'Program') = 0 -> okcilpe: 0
+        if cr_file_has_u32('/tmp/sov-cil-pe.exe', 100663297) = 0 -> okcilpe: 0
+        if cr_file_has_u32('/tmp/sov-cil-pe.exe', 123) = 0 -> okcilpe: 0
+    if okcilpe = 1 -> cr_ok('target--cil-pe')
+    if not -> cr_bad('target--cil-pe')
+    cilpeb: cr_line('', 'add a b:')
+    cilpeb: cr_line(cilpeb, '    return a + b')
+    cilpeb: cr_line(cilpeb, 'sum n:')
+    cilpeb: cr_line(cilpeb, '    x: 0')
+    cilpeb: cr_line(cilpeb, '    acc: 0')
+    cilpeb: cr_line(cilpeb, '    as long as x < n -> acc: acc + x ;; x: x + 1')
+    cilpeb: cr_line(cilpeb, '    return acc')
+    cilpeb: cr_line(cilpeb, 'mx a b:')
+    cilpeb: cr_line(cilpeb, '    if a > b -> return a')
+    cilpeb: cr_line(cilpeb, '    if not -> return b')
+    cilpeb: cr_line(cilpeb, 'main:')
+    cilpeb: cr_line(cilpeb, '    return sum(6) + mx(9, 4) + add(1, 2)')
+    file_write_all('/tmp/sov-cil-pe-blocks.sov', cilpeb)
+    poke_i64(a, 8, '/tmp/sov-cil-pe-blocks.sov')
+    poke_i64(a, 16, '--cil-pe')
+    poke_i64(a, 32, '/tmp/sov-cil-pe-blocks.exe')
+    cr_run('./sovren', a, 0, 120)
+    okcilpeb: 0
+    if cr_rc = 0 -> okcilpeb: 1
+        if cr_file_has('/tmp/sov-cil-pe-blocks.exe', 'BSJB') = 0 -> okcilpeb: 0
+        if cr_file_has_u32('/tmp/sov-cil-pe-blocks.exe', 27) = 0 -> okcilpeb: 0
+    if okcilpeb = 1 -> cr_ok('target--cil-pe-blocks')
+    if not -> cr_bad('target--cil-pe-blocks')
+    cilpei: cr_line('', 'sum n:')
+    cilpei: cr_line(cilpei, '    x: 0')
+    cilpei: cr_line(cilpei, '    acc: 0')
+    cilpei: cr_line(cilpei, '    as long as x < n -> acc: acc + x')
+    cilpei: cr_line(cilpei, '        x: x + 1')
+    cilpei: cr_line(cilpei, '    return acc')
+    cilpei: cr_line(cilpei, 'main:')
+    cilpei: cr_line(cilpei, '    return sum(6)')
+    file_write_all('/tmp/sov-cil-pe-indent.sov', cilpei)
+    poke_i64(a, 8, '/tmp/sov-cil-pe-indent.sov')
+    poke_i64(a, 16, '--cil-pe')
+    poke_i64(a, 32, '/tmp/sov-cil-pe-indent.exe')
+    cr_run('./sovren', a, 0, 120)
+    okcilpei: 0
+    if cr_rc = 0 -> okcilpei: 1
+        if cr_file_has('/tmp/sov-cil-pe-indent.exe', 'BSJB') = 0 -> okcilpei: 0
+        if cr_file_has_u32('/tmp/sov-cil-pe-indent.exe', 15) = 0 -> okcilpei: 0
+    if okcilpei = 1 -> cr_ok('target--cil-pe-indent-blocks')
+    if not -> cr_bad('target--cil-pe-indent-blocks')
+    poke_i64(a, 8, 'tests/hello.sov')
+    poke_i64(a, 32, '/tmp/sov-tgt.bin')
+    gpusrc: cr_line('', 'main:')
+    gpusrc: cr_line(gpusrc, '    return 6 * (20 + 1) - 3')
+    file_write_all('/tmp/sov-gpu-expr.sov', gpusrc)
+    poke_i64(a, 8, '/tmp/sov-gpu-expr.sov')
+    poke_i64(a, 16, '--metal')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--metal')
+    if not -> cr_bad('target--metal')
+    okmetal: 0
+    if cr_rc = 0 -> ms: file_read_all('/tmp/sov-tgt.bin')
+        okmetal: 1
+        if str_has(ms, 'kernel void sovren_main') = 0 -> okmetal: 0
+        if str_has(ms, '[[buffer(0)]]') = 0 -> okmetal: 0
+        if str_has(ms, 'sovren_out[0]') = 0 -> okmetal: 0
+        if str_has(ms, 'sovren_user_main') = 0 -> okmetal: 0
+        if str_has(ms, 'return 6 * (20 + 1) - 3;') = 0 -> okmetal: 0
+    if okmetal = 1 -> cr_ok('target--metal-store-param')
+    if not -> cr_bad('target--metal-store-param')
+    poke_i64(a, 16, '--wgsl')
+    cr_run('./sovren', a, 0, 120)
+    okwgsl: 0
+    if cr_rc = 0 -> wgs: file_read_all('/tmp/sov-tgt.bin')
+        okwgsl: 1
+        if str_has(wgs, '@compute') = 0 -> okwgsl: 0
+        if str_has(wgs, 'sovren_out[0]') = 0 -> okwgsl: 0
+        if str_has(wgs, 'u32(sovren_user_main())') = 0 -> okwgsl: 0
+        if str_has(wgs, 'return 6 * (20 + 1) - 3;') = 0 -> okwgsl: 0
+    if okwgsl = 1 -> cr_ok('target--wgsl')
+    if not -> cr_bad('target--wgsl')
+    poke_i64(a, 16, '--glsl')
+    cr_run('./sovren', a, 0, 120)
+    okglsl: 0
+    if cr_rc = 0 -> gls: file_read_all('/tmp/sov-tgt.bin')
+        okglsl: 1
+        if str_has(gls, '#version 450') = 0 -> okglsl: 0
+        if str_has(gls, 'gl_GlobalInvocationID') = 0 -> okglsl: 0
+        if str_has(gls, 'uint(sovren_user_main())') = 0 -> okglsl: 0
+        if str_has(gls, 'return 6 * (20 + 1) - 3;') = 0 -> okglsl: 0
+    if okglsl = 1 -> cr_ok('target--glsl')
+    if not -> cr_bad('target--glsl')
+    poke_i64(a, 16, '--hlsl')
+    cr_run('./sovren', a, 0, 120)
+    okhlsl: 0
+    if cr_rc = 0 -> hls: file_read_all('/tmp/sov-tgt.bin')
+        okhlsl: 1
+        if str_has(hls, 'RWStructuredBuffer') = 0 -> okhlsl: 0
+        if str_has(hls, 'SV_DispatchThreadID') = 0 -> okhlsl: 0
+        if str_has(hls, 'uint(sovren_user_main())') = 0 -> okhlsl: 0
+        if str_has(hls, 'return 6 * (20 + 1) - 3;') = 0 -> okhlsl: 0
+    if okhlsl = 1 -> cr_ok('target--hlsl')
+    if not -> cr_bad('target--hlsl')
+    poke_i64(a, 16, '--metal-air')
+    poke_i64(a, 32, '/tmp/sov-metal.air')
+    cr_run('./sovren', a, 0, 120)
+    okair: 0
+    if cr_rc = 0 -> if cr_file_has('/tmp/sov-metal.air', 'AIR2') = 1
+            if cr_file_has('/tmp/sov-metal.air', 'SOVREN-METAL-AIR') = 1 -> if cr_file_has('/tmp/sov-metal.air', 'uint(sovren_user_main())') = 1 -> okair: 1
+    if okair = 1 -> cr_ok('target--metal-air')
+    if not -> cr_bad('target--metal-air')
+    poke_i64(a, 16, '--metallib')
+    poke_i64(a, 32, '/tmp/sov.metallib')
+    cr_run('./sovren', a, 0, 120)
+    okmlib: 0
+    if cr_rc = 0 -> if cr_file_has('/tmp/sov.metallib', 'MTLB') = 1
+            if cr_file_has('/tmp/sov.metallib', 'SOVREN-METALLIB') = 1 -> if cr_file_has('/tmp/sov.metallib', 'uint(sovren_user_main())') = 1 -> okmlib: 1
+    if okmlib = 1 -> cr_ok('target--metallib')
+    if not -> cr_bad('target--metallib')
+    gpublk: cr_line('', 'inc a:')
+    gpublk: cr_line(gpublk, '    return a + 1')
+    gpublk: cr_line(gpublk, '')
+    gpublk: cr_line(gpublk, 'main:')
+    gpublk: cr_line(gpublk, '    x: 0')
+    gpublk: cr_line(gpublk, '    acc: 0')
+    gpublk: cr_line(gpublk, '    as long as x < 4 -> acc: acc + inc(x) ;; x: x + 1')
+    gpublk: cr_line(gpublk, '    if acc = 10 -> acc: acc + 5')
+    gpublk: cr_line(gpublk, '    if not -> acc: acc + 100')
+    gpublk: cr_line(gpublk, '    return acc')
+    file_write_all('/tmp/sov-gpu-blocks.sov', gpublk)
+    poke_i64(a, 8, '/tmp/sov-gpu-blocks.sov')
+    poke_i64(a, 32, '/tmp/sov-gpu-blocks.out')
+    poke_i64(a, 16, '--metal')
+    cr_run('./sovren', a, 0, 120)
+    okgpub: 0
+    if cr_rc = 0 -> gb: file_read_all('/tmp/sov-gpu-blocks.out')
+        okgpub: 1
+        if str_has(gb, 'int inc(int a)') = 0 -> okgpub: 0
+        if str_has(gb, 'while (x < 4)') = 0 -> okgpub: 0
+        if str_has(gb, 'acc == 10') = 0 -> okgpub: 0
+        if str_has(gb, 'uint(sovren_user_main())') = 0 -> okgpub: 0
+    if okgpub = 1 -> cr_ok('target--metal-blocks')
+    if not -> cr_bad('target--metal-blocks')
+    poke_i64(a, 16, '--wgsl')
+    cr_run('./sovren', a, 0, 120)
+    okwgpub: 0
+    if cr_rc = 0 -> wgb: file_read_all('/tmp/sov-gpu-blocks.out')
+        okwgpub: 1
+        if str_has(wgb, 'fn inc') = 0 -> okwgpub: 0
+        if str_has(wgb, 'a: i32') = 0 -> okwgpub: 0
+        if str_has(wgb, 'while (x < 4)') = 0 -> okwgpub: 0
+        if str_has(wgb, 'acc == 10') = 0 -> okwgpub: 0
+        if str_has(wgb, 'u32(sovren_user_main())') = 0 -> okwgpub: 0
+    if okwgpub = 1 -> cr_ok('target--wgsl-blocks')
+    if not -> cr_bad('target--wgsl-blocks')
+    poke_i64(a, 16, '--glsl')
+    cr_run('./sovren', a, 0, 120)
+    okglpub: 0
+    if cr_rc = 0 -> glb: file_read_all('/tmp/sov-gpu-blocks.out')
+        okglpub: 1
+        if str_has(glb, 'int inc(int a)') = 0 -> okglpub: 0
+        if str_has(glb, 'while (x < 4)') = 0 -> okglpub: 0
+        if str_has(glb, 'acc == 10') = 0 -> okglpub: 0
+        if str_has(glb, 'uint(sovren_user_main())') = 0 -> okglpub: 0
+    if okglpub = 1 -> cr_ok('target--glsl-blocks')
+    if not -> cr_bad('target--glsl-blocks')
+    poke_i64(a, 16, '--hlsl')
+    cr_run('./sovren', a, 0, 120)
+    okhlpub: 0
+    if cr_rc = 0 -> hlb: file_read_all('/tmp/sov-gpu-blocks.out')
+        okhlpub: 1
+        if str_has(hlb, 'int inc(int a)') = 0 -> okhlpub: 0
+        if str_has(hlb, 'while (x < 4)') = 0 -> okhlpub: 0
+        if str_has(hlb, 'acc == 10') = 0 -> okhlpub: 0
+        if str_has(hlb, 'uint(sovren_user_main())') = 0 -> okhlpub: 0
+    if okhlpub = 1 -> cr_ok('target--hlsl-blocks')
+    if not -> cr_bad('target--hlsl-blocks')
+    poke_i64(a, 16, '--metal-air')
+    poke_i64(a, 32, '/tmp/sov-gpu-blocks.air')
+    cr_run('./sovren', a, 0, 120)
+    okairb: 0
+    if cr_rc = 0 -> if cr_file_has('/tmp/sov-gpu-blocks.air', 'SOVREN-METAL-AIR') = 1
+            if cr_file_has('/tmp/sov-gpu-blocks.air', 'while (x < 4)') = 1 -> if cr_file_has('/tmp/sov-gpu-blocks.air', 'acc == 10') = 1 -> okairb: 1
+    if okairb = 1 -> cr_ok('target--metal-air-blocks')
+    if not -> cr_bad('target--metal-air-blocks')
+    poke_i64(a, 16, '--metallib')
+    poke_i64(a, 32, '/tmp/sov-gpu-blocks.metallib')
+    cr_run('./sovren', a, 0, 120)
+    okmlibb: 0
+    if cr_rc = 0 -> if cr_file_has('/tmp/sov-gpu-blocks.metallib', 'SOVREN-METALLIB') = 1
+            if cr_file_has('/tmp/sov-gpu-blocks.metallib', 'while (x < 4)') = 1 -> if cr_file_has('/tmp/sov-gpu-blocks.metallib', 'acc == 10') = 1 -> okmlibb: 1
+    if okmlibb = 1 -> cr_ok('target--metallib-blocks')
+    if not -> cr_bad('target--metallib-blocks')
+    poke_i64(a, 8, '/tmp/sov-gpu-expr.sov')
+    poke_i64(a, 32, '/tmp/sov-tgt.bin')
+    poke_i64(a, 16, '--ptx')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--ptx')
+    if not -> cr_bad('target--ptx')
+    okptx: 0
+    if cr_rc = 0 -> ptxs: file_read_all('/tmp/sov-tgt.bin')
+        okptx: 1
+        if str_has(ptxs, '.param .u64 sovren_out') = 0 -> okptx: 0
+        if str_has(ptxs, 'mov.u32 %r1, 123;') = 0 -> okptx: 0
+        if str_has(ptxs, 'st.u32 [%rd1], %r1') = 0 -> okptx: 0
+    if okptx = 1 -> cr_ok('target--ptx-store-param')
+    if not -> cr_bad('target--ptx-store-param')
+    poke_i64(a, 16, '--amdgcn')
+    poke_i64(a, 32, '/tmp/sov-amdgcn.s')
+    cr_run('./sovren', a, 0, 120)
+    okamd: 0
+    if cr_rc = 0 -> amds: file_read_all('/tmp/sov-amdgcn.s')
+        okamd: 1
+        if str_has(amds, '.amdgcn_target') = 0 -> okamd: 0
+        if str_has(amds, 'v_mov_b32_e32 v0, 123') = 0 -> okamd: 0
+        if str_has(amds, 'global_store_dword') = 0 -> okamd: 0
+        if str_has(amds, 's_endpgm') = 0 -> okamd: 0
+    if okamd = 1 -> cr_ok('target--amdgcn')
+    if not -> cr_bad('target--amdgcn')
+    poke_i64(a, 16, '--intel-xe')
+    poke_i64(a, 32, '/tmp/sov-intel-xe.asm')
+    cr_run('./sovren', a, 0, 120)
+    okxe: 0
+    if cr_rc = 0 -> xes: file_read_all('/tmp/sov-intel-xe.asm')
+        okxe: 1
+        if str_has(xes, '.platform xe_hpg') = 0 -> okxe: 0
+        if str_has(xes, 'result.0<1>:ud 123:ud') = 0 -> okxe: 0
+        if str_has(xes, 'send.dc1') = 0 -> okxe: 0
+        if str_has(xes, '.end_kernel') = 0 -> okxe: 0
+    if okxe = 1 -> cr_ok('target--intel-xe')
+    if not -> cr_bad('target--intel-xe')
+    poke_i64(a, 16, '--spirv')
+    poke_i64(a, 32, '/tmp/sov-tgt.bin')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--spirv')
+    if not -> cr_bad('target--spirv')
+    okspv: 0
+    if cr_rc = 0 -> spvsz: file_size('/tmp/sov-tgt.bin')
+        spvmain: cr_file_has('/tmp/sov-tgt.bin', 'main')
+        if spvsz > 300 -> if spvmain = 1 -> okspv: 1
+    if okspv = 1 -> cr_ok('target--spirv-storage-store')
+    if not -> cr_bad('target--spirv-storage-store')
+    spvsrc: cr_line('', 'main:')
+    spvsrc: cr_line(spvsrc, '    return 6 * (20 + 1) - 3')
+    file_write_all('/tmp/sov-spirv-expr.sov', spvsrc)
+    poke_i64(a, 8, '/tmp/sov-spirv-expr.sov')
+    poke_i64(a, 16, '--spirv')
+    poke_i64(a, 32, '/tmp/sov-spirv-expr.spv')
+    cr_run('./sovren', a, 0, 120)
+    okspvx: 0
+    if cr_rc = 0 -> if cr_file_has_u32('/tmp/sov-spirv-expr.spv', 123) = 1 -> okspvx: 1
+    if okspvx = 1 -> cr_ok('target--spirv-static-expr')
+    if not -> cr_bad('target--spirv-static-expr')
+    poke_i64(a, 8, '/tmp/sov-gpu-blocks.sov')
+    poke_i64(a, 16, '--ptx')
+    poke_i64(a, 32, '/tmp/sov-gpu-blocks.ptx')
+    cr_run('./sovren', a, 0, 120)
+    okptxb: 0
+    if cr_rc = 0 -> ptxb: file_read_all('/tmp/sov-gpu-blocks.ptx')
+        okptxb: 1
+        if str_has(ptxb, 'mov.u32 %r1, 15;') = 0 -> okptxb: 0
+        if str_has(ptxb, 'st.u32 [%rd1], %r1;') = 0 -> okptxb: 0
+    if okptxb = 1 -> cr_ok('target--ptx-blocks')
+    if not -> cr_bad('target--ptx-blocks')
+    poke_i64(a, 16, '--amdgcn')
+    poke_i64(a, 32, '/tmp/sov-gpu-blocks.amdgcn.s')
+    cr_run('./sovren', a, 0, 120)
+    okamdb: 0
+    if cr_rc = 0 -> amdb: file_read_all('/tmp/sov-gpu-blocks.amdgcn.s')
+        okamdb: 1
+        if str_has(amdb, 'v_mov_b32_e32 v0, 15') = 0 -> okamdb: 0
+        if str_has(amdb, '.amdhsa_kernel sovren_main') = 0 -> okamdb: 0
+    if okamdb = 1 -> cr_ok('target--amdgcn-blocks')
+    if not -> cr_bad('target--amdgcn-blocks')
+    poke_i64(a, 16, '--intel-xe')
+    poke_i64(a, 32, '/tmp/sov-gpu-blocks.intel-xe.asm')
+    cr_run('./sovren', a, 0, 120)
+    okxeb: 0
+    if cr_rc = 0 -> xeb: file_read_all('/tmp/sov-gpu-blocks.intel-xe.asm')
+        okxeb: 1
+        if str_has(xeb, 'result.0<1>:ud 15:ud') = 0 -> okxeb: 0
+        if str_has(xeb, 'send.dc1') = 0 -> okxeb: 0
+    if okxeb = 1 -> cr_ok('target--intel-xe-blocks')
+    if not -> cr_bad('target--intel-xe-blocks')
+    poke_i64(a, 16, '--spirv')
+    poke_i64(a, 32, '/tmp/sov-gpu-blocks.spv')
+    cr_run('./sovren', a, 0, 120)
+    okspvb: 0
+    if cr_rc = 0 -> okspvb: 1
+        if cr_file_has_u32('/tmp/sov-gpu-blocks.spv', 15) = 0 -> okspvb: 0
+    if okspvb = 1 -> cr_ok('target--spirv-blocks')
+    if not -> cr_bad('target--spirv-blocks')
+    gpui: cr_line('', 'sum n:')
+    gpui: cr_line(gpui, '    x: 0')
+    gpui: cr_line(gpui, '    acc: 0')
+    gpui: cr_line(gpui, '    as long as x < n -> acc: acc + x')
+    gpui: cr_line(gpui, '        x: x + 1')
+    gpui: cr_line(gpui, '    return acc')
+    gpui: cr_line(gpui, 'main:')
+    gpui: cr_line(gpui, '    return sum(6)')
+    file_write_all('/tmp/sov-gpu-indent.sov', gpui)
+    poke_i64(a, 8, '/tmp/sov-gpu-indent.sov')
+    poke_i64(a, 16, '--ptx')
+    poke_i64(a, 32, '/tmp/sov-gpu-indent.ptx')
+    cr_run('./sovren', a, 0, 120)
+    okptxi: 0
+    if cr_rc = 0 -> ptxi: file_read_all('/tmp/sov-gpu-indent.ptx')
+        okptxi: 1
+        if str_has(ptxi, 'mov.u32 %r1, 15;') = 0 -> okptxi: 0
+    if okptxi = 1 -> cr_ok('target--ptx-indent-blocks')
+    if not -> cr_bad('target--ptx-indent-blocks')
+    poke_i64(a, 16, '--spirv')
+    poke_i64(a, 32, '/tmp/sov-gpu-indent.spv')
+    cr_run('./sovren', a, 0, 120)
+    okspvi: 0
+    if cr_rc = 0 -> okspvi: 1
+        if cr_file_has_u32('/tmp/sov-gpu-indent.spv', 15) = 0 -> okspvi: 0
+    if okspvi = 1 -> cr_ok('target--spirv-indent-blocks')
+    if not -> cr_bad('target--spirv-indent-blocks')
+    poke_i64(a, 8, 'tests/hello.sov')
+    poke_i64(a, 32, '/tmp/sov-tgt.bin')
+    poke_i64(a, 16, '--c')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--c')
+    if not -> cr_bad('target--c')
+    poke_i64(a, 16, '--llvm-ir')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--llvm-ir')
+    if not -> cr_bad('target--llvm-ir')
+    poke_i64(a, 16, '--windows-arm64')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--windows-arm64')
+    if not -> cr_bad('target--windows-arm64')
+    poke_i64(a, 16, '--windows-dll')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--windows-dll')
+    if not -> cr_bad('target--windows-dll')
+    okdll: 0
+    if cr_rc = 0 -> if cr_file_has('/tmp/sov-tgt.bin', 'sovren_main') = 1 -> okdll: 1
+    if okdll = 1 -> cr_ok('target--windows-dll-export')
+    if not -> cr_bad('target--windows-dll-export')
+    se_src: cr_line('', 'add a b:')
+    se_src: cr_line(se_src, '    c: a + b')
+    se_src: cr_line(se_src, '    return c')
+    se_src: cr_line(se_src, 'main:')
+    se_src: cr_line(se_src, '    return add(7, 8)')
+    file_write_all('/tmp/sov-shared-entry-eval.sov', se_src)
+    okse: 1
+    poke_i64(a, 8, '/tmp/sov-shared-entry-eval.sov')
+    poke_i64(a, 16, '--linux-so')
+    poke_i64(a, 32, '/tmp/sov-se-linux-so')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okse: 0
+    if cr_rc = 0 -> if cr_file_has_u32('/tmp/sov-se-linux-so', 4024) = 0 -> okse: 0
+    poke_i64(a, 16, '--macos-dylib')
+    poke_i64(a, 32, '/tmp/sov-se-macos-dylib')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okse: 0
+    if cr_rc = 0 -> if cr_file_has_u32('/tmp/sov-se-macos-dylib', 4024) = 0 -> okse: 0
+    poke_i64(a, 16, '--ios-framework')
+    poke_i64(a, 32, '/tmp/sov-se-ios-framework')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okse: 0
+    if cr_rc = 0 -> if cr_file_has_u32('/tmp/sov-se-ios-framework', 1384120800) = 0 -> okse: 0
+    poke_i64(a, 16, '--windows-arm64')
+    poke_i64(a, 32, '/tmp/sov-se-win-arm64')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okse: 0
+    if cr_rc = 0 -> if cr_file_has_u32('/tmp/sov-se-win-arm64', 1384120800) = 0 -> okse: 0
+    poke_i64(a, 16, '--windows-dll')
+    poke_i64(a, 32, '/tmp/sov-se-win-dll')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okse: 0
+    if cr_rc = 0 -> if cr_file_has_u32('/tmp/sov-se-win-dll', 4024) = 0 -> okse: 0
+    poke_i64(a, 16, '--linux-riscv64')
+    poke_i64(a, 32, '/tmp/sov-se-riscv64')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okse: 0
+    if cr_rc = 0 -> if cr_file_has_u32('/tmp/sov-se-riscv64', 15729939) = 0 -> okse: 0
+    poke_i64(a, 16, '--linux-armv7')
+    poke_i64(a, 32, '/tmp/sov-se-armv7')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okse: 0
+    if cr_rc = 0 -> if cr_file_has_u32('/tmp/sov-se-armv7', 3818913807) = 0 -> okse: 0
+    if okse = 1 -> cr_ok('target--shared-entry-static-eval')
+    if not -> cr_bad('target--shared-entry-static-eval')
+    poke_i64(a, 8, 'tests/hello.sov')
+    poke_i64(a, 32, '/tmp/sov-tgt.bin')
+    poke_i64(a, 16, '--linux-riscv64')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--linux-riscv64')
+    if not -> cr_bad('target--linux-riscv64')
+    okrv: 0
+    if cr_rc = 0 -> rvhas: cr_file_has('/tmp/sov-tgt.bin', "30\n")
+        rvsmall: cr_file_has('/tmp/sov-tgt.bin', 'z is small')
+        if rvhas = 1 -> if rvsmall = 0 -> okrv: 1
+    if okrv = 1 -> cr_ok('target--linux-riscv64-static-main')
+    if not -> cr_bad('target--linux-riscv64-static-main')
+    ppcsrc: cr_line('', 'main:')
+    ppcsrc: cr_line(ppcsrc, '    return 6 * (20 + 1) - 3')
+    file_write_all('/tmp/sov-ppc64le.sov', ppcsrc)
+    poke_i64(a, 8, '/tmp/sov-ppc64le.sov')
+    poke_i64(a, 16, '--linux-ppc64le')
+    poke_i64(a, 32, '/tmp/sov-ppc64le')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--linux-ppc64le')
+    if not -> cr_bad('target--linux-ppc64le')
+    okppc: 0
+    if cr_rc = 0 -> if cr_file_has('/tmp/sov-ppc64le', 'SOVREN-PPC64LE') = 1
+            if cr_file_has_u32('/tmp/sov-ppc64le', 945815675) = 1 -> okppc: 1
+    if okppc = 1 -> cr_ok('target--linux-ppc64le-static-main')
+    if not -> cr_bad('target--linux-ppc64le-static-main')
+    poke_i64(a, 16, '--linux-s390x')
+    poke_i64(a, 32, '/tmp/sov-s390x')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--linux-s390x')
+    if not -> cr_bad('target--linux-s390x')
+    oks390: 0
+    if cr_rc = 0 -> if cr_file_has('/tmp/sov-s390x', 'SOVREN-S390X') = 1
+            if cr_file_has_u32('/tmp/sov-s390x', 2063608231) = 1 -> oks390: 1
+    if oks390 = 1 -> cr_ok('target--linux-s390x-static-main')
+    if not -> cr_bad('target--linux-s390x-static-main')
+    poke_i64(a, 16, '--linux-mips64')
+    poke_i64(a, 32, '/tmp/sov-mips64')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--linux-mips64')
+    if not -> cr_bad('target--linux-mips64')
+    okmips: 0
+    if cr_rc = 0 -> if cr_file_has('/tmp/sov-mips64', 'SOVREN-MIPS64') = 1
+            if cr_file_has_u32('/tmp/sov-mips64', 3256025652) = 1 -> if cr_file_has_u32('/tmp/sov-mips64', 2063598644) = 1 -> okmips: 1
+    if okmips = 1 -> cr_ok('target--linux-mips64-static-main')
+    if not -> cr_bad('target--linux-mips64-static-main')
+    poke_i64(a, 16, '--linux-mips64el')
+    poke_i64(a, 32, '/tmp/sov-mips64el')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--linux-mips64el')
+    if not -> cr_bad('target--linux-mips64el')
+    okmipsel: 0
+    if cr_rc = 0 -> if cr_file_has('/tmp/sov-mips64el', 'SOVREN-MIPS64EL') = 1
+            if cr_file_has_u32('/tmp/sov-mips64el', 872551362) = 1 -> if cr_file_has_u32('/tmp/sov-mips64el', 872677499) = 1 -> okmipsel: 1
+    if okmipsel = 1 -> cr_ok('target--linux-mips64el-static-main')
+    if not -> cr_bad('target--linux-mips64el-static-main')
+    poke_i64(a, 16, '--linux-loongarch64')
+    poke_i64(a, 32, '/tmp/sov-loongarch64')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--linux-loongarch64')
+    if not -> cr_bad('target--linux-loongarch64')
+    okloong: 0
+    if cr_rc = 0 -> if cr_file_has('/tmp/sov-loongarch64', 'SOVREN-LOONGARCH64') = 1
+            if cr_file_has_u32('/tmp/sov-loongarch64', 46232587) = 1 -> if cr_file_has_u32('/tmp/sov-loongarch64', 46263300) = 1 -> okloong: 1
+    if okloong = 1 -> cr_ok('target--linux-loongarch64-static-main')
+    if not -> cr_bad('target--linux-loongarch64-static-main')
+    lse: cr_line('', 'sum n:')
+    lse: cr_line(lse, '    x: 0')
+    lse: cr_line(lse, '    acc: 0')
+    lse: cr_line(lse, '    as long as x < n -> acc: acc + x')
+    lse: cr_line(lse, '        x: x + 1')
+    lse: cr_line(lse, '    return acc')
+    lse: cr_line(lse, 'main:')
+    lse: cr_line(lse, '    return sum(6)')
+    file_write_all('/tmp/sov-linux-seed-eval.sov', lse)
+    oklse: 1
+    poke_i64(a, 8, '/tmp/sov-linux-seed-eval.sov')
+    poke_i64(a, 16, '--linux-ppc64le')
+    poke_i64(a, 32, '/tmp/sov-linux-seed-ppc64le')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> oklse: 0
+    if cr_rc = 0 -> if cr_file_has_u32('/tmp/sov-linux-seed-ppc64le', 945815567) = 0 -> oklse: 0
+    poke_i64(a, 16, '--linux-s390x')
+    poke_i64(a, 32, '/tmp/sov-linux-seed-s390x')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> oklse: 0
+    if cr_rc = 0 -> if cr_file_has_u32('/tmp/sov-linux-seed-s390x', 251668903) = 0 -> oklse: 0
+    poke_i64(a, 16, '--linux-mips64')
+    poke_i64(a, 32, '/tmp/sov-linux-seed-mips64')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> oklse: 0
+    if cr_rc = 0 -> if cr_file_has_u32('/tmp/sov-linux-seed-mips64', 251659316) = 0 -> oklse: 0
+    poke_i64(a, 16, '--linux-mips64el')
+    poke_i64(a, 32, '/tmp/sov-linux-seed-mips64el')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> oklse: 0
+    if cr_rc = 0 -> if cr_file_has_u32('/tmp/sov-linux-seed-mips64el', 872677391) = 0 -> oklse: 0
+    poke_i64(a, 16, '--linux-loongarch64')
+    poke_i64(a, 32, '/tmp/sov-linux-seed-loongarch64')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> oklse: 0
+    if cr_rc = 0 -> if cr_file_has_u32('/tmp/sov-linux-seed-loongarch64', 46152708) = 0 -> oklse: 0
+    if oklse = 1 -> cr_ok('target--linux-seed-static-eval')
+    if not -> cr_bad('target--linux-seed-static-eval')
+    poke_i64(a, 8, 'tests/hello.sov')
+    poke_i64(a, 32, '/tmp/sov-tgt.bin')
+    poke_i64(a, 16, '--linux-armv7')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--linux-armv7')
+    if not -> cr_bad('target--linux-armv7')
+    okav: 0
+    if cr_rc = 0 -> avhas: cr_file_has('/tmp/sov-tgt.bin', "30\n")
+        avsmall: cr_file_has('/tmp/sov-tgt.bin', 'z is small')
+        if avhas = 1 -> if avsmall = 0 -> okav: 1
+    if okav = 1 -> cr_ok('target--linux-armv7-static-main')
+    if not -> cr_bad('target--linux-armv7-static-main')
+    poke_i64(a, 16, '--uefi')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--uefi')
+    if not -> cr_bad('target--uefi')
+    poke_i64(a, 16, '--uefi-arm64')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc = 0 -> cr_ok('target--uefi-arm64')
+    if not -> cr_bad('target--uefi-arm64')
+    uefi_src: cr_line('', 'sum n:')
+    uefi_src: cr_line(uefi_src, '    x: 0')
+    uefi_src: cr_line(uefi_src, '    acc: 0')
+    uefi_src: cr_line(uefi_src, '    as long as x < n -> acc: acc + x')
+    uefi_src: cr_line(uefi_src, '        x: x + 1')
+    uefi_src: cr_line(uefi_src, '    return acc')
+    uefi_src: cr_line(uefi_src, 'main:')
+    uefi_src: cr_line(uefi_src, '    return sum(6)')
+    file_write_all('/tmp/sov-uefi-eval.sov', uefi_src)
+    okuefi: 1
+    poke_i64(a, 8, '/tmp/sov-uefi-eval.sov')
+    poke_i64(a, 16, '--uefi')
+    poke_i64(a, 32, '/tmp/sov-uefi-x64.efi')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okuefi: 0
+    if cr_rc = 0 -> if cr_file_has_u32('/tmp/sov-uefi-x64.efi', 4024) = 0 -> okuefi: 0
+    poke_i64(a, 16, '--uefi-arm64')
+    poke_i64(a, 32, '/tmp/sov-uefi-arm64.efi')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okuefi: 0
+    if cr_rc = 0 -> if cr_file_has_u32('/tmp/sov-uefi-arm64.efi', 3531604448) = 0 -> okuefi: 0
+    if okuefi = 1 -> cr_ok('target--uefi-static-eval')
+    if not -> cr_bad('target--uefi-static-eval')
+    bare_src: cr_line('', 'main:')
+    bare_src: cr_line(bare_src, '    return 6 * (20 + 1) - 3')
+    file_write_all('/tmp/sov-bare.sov', bare_src)
+    poke_i64(a, 8, '/tmp/sov-bare.sov')
+    poke_i64(a, 16, '--bare')
+    poke_i64(a, 32, '/tmp/sov-bare.bin')
+    cr_run('./sovren', a, 0, 120)
+    okbare: 0
+    if cr_rc = 0 -> if file_size('/tmp/sov-bare.bin') = 512
+            if cr_file_has('/tmp/sov-bare.bin', 'SOVREN-BARE-X64') = 1 -> if cr_file_has_u32('/tmp/sov-bare.bin', 123) = 1 -> okbare: 1
+    if okbare = 1 -> cr_ok('target--bare')
+    if not -> cr_bad('target--bare')
+    poke_i64(a, 16, '--cortex-m')
+    poke_i64(a, 32, '/tmp/sov-cortex-m.bin')
+    cr_run('./sovren', a, 0, 120)
+    okcm: 0
+    if cr_rc = 0 -> if file_size('/tmp/sov-cortex-m.bin') = 512
+            if cr_file_has('/tmp/sov-cortex-m.bin', 'SOVREN-CORTEX-M') = 1 -> if cr_file_has_u32('/tmp/sov-cortex-m.bin', 536875008) = 1
+                    if cr_file_has_u32('/tmp/sov-cortex-m.bin', 33) = 1 -> if cr_file_has_u32('/tmp/sov-cortex-m.bin', 123) = 1 -> okcm: 1
+    if okcm = 1 -> cr_ok('target--cortex-m')
+    if not -> cr_bad('target--cortex-m')
+    poke_i64(a, 16, '--riscv64-bare')
+    poke_i64(a, 32, '/tmp/sov-riscv64-bare.bin')
+    cr_run('./sovren', a, 0, 120)
+    okrvb: 0
+    if cr_rc = 0 -> if file_size('/tmp/sov-riscv64-bare.bin') = 512
+            if cr_file_has('/tmp/sov-riscv64-bare.bin', 'SOVREN-RISCV64-BARE') = 1 -> if cr_file_has_u32('/tmp/sov-riscv64-bare.bin', 129303827) = 1
+                    if cr_file_has_u32('/tmp/sov-riscv64-bare.bin', 1048691) = 1 -> if cr_file_has_u32('/tmp/sov-riscv64-bare.bin', 111) = 1 -> okrvb: 1
+    if okrvb = 1 -> cr_ok('target--riscv64-bare')
+    if not -> cr_bad('target--riscv64-bare')
+    poke_i64(a, 16, '--riscv32-bare')
+    poke_i64(a, 32, '/tmp/sov-riscv32-bare.bin')
+    cr_run('./sovren', a, 0, 120)
+    okrv32b: 0
+    if cr_rc = 0 -> if file_size('/tmp/sov-riscv32-bare.bin') = 512
+            if cr_file_has('/tmp/sov-riscv32-bare.bin', 'SOVREN-RISCV32-BARE') = 1 -> if cr_file_has_u32('/tmp/sov-riscv32-bare.bin', 129303827) = 1
+                    if cr_file_has_u32('/tmp/sov-riscv32-bare.bin', 1048691) = 1 -> if cr_file_has_u32('/tmp/sov-riscv32-bare.bin', 111) = 1 -> okrv32b: 1
+    if okrv32b = 1 -> cr_ok('target--riscv32-bare')
+    if not -> cr_bad('target--riscv32-bare')
+    poke_i64(a, 16, '--ihex')
+    poke_i64(a, 32, '/tmp/sov-bare.hex')
+    cr_run('./sovren', a, 0, 120)
+    okihex: 0
+    if cr_rc = 0 -> hx: file_read_all('/tmp/sov-bare.hex')
+        okihex: 1
+        if str_has(hx, ':10000000B87B000000FAF4EBFD') = 0 -> okihex: 0
+        if str_has(hx, '534F5652454E2D424152452D583634') = 0 -> okihex: 0
+        if str_has(hx, ':00000001FF') = 0 -> okihex: 0
+    if okihex = 1 -> cr_ok('target--intel-hex')
+    if not -> cr_bad('target--intel-hex')
+    poke_i64(a, 16, '--srec')
+    poke_i64(a, 32, '/tmp/sov-bare.srec')
+    cr_run('./sovren', a, 0, 120)
+    oksrec: 0
+    if cr_rc = 0 -> sr: file_read_all('/tmp/sov-bare.srec')
+        oksrec: 1
+        if str_has(sr, 'S1130000B87B000000FAF4EBFD') = 0 -> oksrec: 0
+        if str_has(sr, '534F5652454E2D424152452D583634') = 0 -> oksrec: 0
+        if str_has(sr, 'S9030000FC') = 0 -> oksrec: 0
+    if oksrec = 1 -> cr_ok('target--srec')
+    if not -> cr_bad('target--srec')
+    poke_i64(a, 16, '--uf2')
+    poke_i64(a, 32, '/tmp/sov-bare.uf2')
+    cr_run('./sovren', a, 0, 120)
+    okuf2: 0
+    if cr_rc = 0 -> if file_size('/tmp/sov-bare.uf2') = 1024
+            if cr_file_has('/tmp/sov-bare.uf2', 'SOVREN-BARE-X64') = 1 -> if cr_file_has_u32('/tmp/sov-bare.uf2', 171066965) = 1 -> okuf2: 1
+    if okuf2 = 1 -> cr_ok('target--uf2')
+    if not -> cr_bad('target--uf2')
+    poke_i64(a, 16, '--dfu')
+    poke_i64(a, 32, '/tmp/sov-bare.dfu')
+    cr_run('./sovren', a, 0, 120)
+    okdfu: 0
+    if cr_rc = 0 -> if file_size('/tmp/sov-bare.dfu') = 821
+            if cr_file_has('/tmp/sov-bare.dfu', 'DfuSe') = 1 -> if cr_file_has('/tmp/sov-bare.dfu', 'Target') = 1
+                    if cr_file_has('/tmp/sov-bare.dfu', 'UFD') = 1 -> if cr_file_has('/tmp/sov-bare.dfu', 'SOVREN-BARE-X64') = 1 -> okdfu: 1
+    if okdfu = 1 -> cr_ok('target--dfu')
+    if not -> cr_bad('target--dfu')
+    poke_i64(a, 16, '--firmware-img')
+    poke_i64(a, 32, '/tmp/sov-bare.img')
+    cr_run('./sovren', a, 0, 120)
+    okimg: 0
+    if cr_rc = 0 -> if file_size('/tmp/sov-bare.img') = 548
+            if cr_file_has('/tmp/sov-bare.img', 'SOVREN-BARE-X64') = 1 -> if cr_file_has_u32('/tmp/sov-bare.img', 2532554813) = 1
+                    if cr_file_has_u32('/tmp/sov-bare.img', 512) = 1 -> okimg: 1
+    if okimg = 1 -> cr_ok('target--mcuboot-img')
+    if not -> cr_bad('target--mcuboot-img')
+    fws: cr_line('', 'sum n:')
+    fws: cr_line(fws, '    x: 0')
+    fws: cr_line(fws, '    acc: 0')
+    fws: cr_line(fws, '    as long as x < n -> acc: acc + x')
+    fws: cr_line(fws, '        x: x + 1')
+    fws: cr_line(fws, '    return acc')
+    fws: cr_line(fws, 'main:')
+    fws: cr_line(fws, '    return sum(6)')
+    file_write_all('/tmp/sov-firmware-eval.sov', fws)
+    okfwe: 1
+    poke_i64(a, 8, '/tmp/sov-firmware-eval.sov')
+    poke_i64(a, 16, '--bare')
+    poke_i64(a, 32, '/tmp/sov-firmware-eval-bare.bin')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okfwe: 0
+    if cr_rc = 0 -> if cr_file_has_u32('/tmp/sov-firmware-eval-bare.bin', 15) = 0 -> okfwe: 0
+    poke_i64(a, 16, '--cortex-m')
+    poke_i64(a, 32, '/tmp/sov-firmware-eval-cortex.bin')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okfwe: 0
+    if cr_rc = 0 -> if cr_file_has_u32('/tmp/sov-firmware-eval-cortex.bin', 15) = 0 -> okfwe: 0
+    poke_i64(a, 16, '--riscv64-bare')
+    poke_i64(a, 32, '/tmp/sov-firmware-eval-rv64.bin')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okfwe: 0
+    if cr_rc = 0 -> if cr_file_has_u32('/tmp/sov-firmware-eval-rv64.bin', 16057619) = 0 -> okfwe: 0
+    poke_i64(a, 16, '--riscv32-bare')
+    poke_i64(a, 32, '/tmp/sov-firmware-eval-rv32.bin')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okfwe: 0
+    if cr_rc = 0 -> if cr_file_has_u32('/tmp/sov-firmware-eval-rv32.bin', 16057619) = 0 -> okfwe: 0
+    poke_i64(a, 16, '--intel-hex')
+    poke_i64(a, 32, '/tmp/sov-firmware-eval.hex')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okfwe: 0
+    if cr_rc = 0 -> ihe: file_read_all('/tmp/sov-firmware-eval.hex')
+        if str_has(ihe, '0F000000') = 0 -> okfwe: 0
+    poke_i64(a, 16, '--srec')
+    poke_i64(a, 32, '/tmp/sov-firmware-eval.srec')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okfwe: 0
+    if cr_rc = 0 -> sre: file_read_all('/tmp/sov-firmware-eval.srec')
+        if str_has(sre, '0F000000') = 0 -> okfwe: 0
+    poke_i64(a, 16, '--uf2')
+    poke_i64(a, 32, '/tmp/sov-firmware-eval.uf2')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okfwe: 0
+    if cr_rc = 0 -> if cr_file_has_u32('/tmp/sov-firmware-eval.uf2', 15) = 0 -> okfwe: 0
+    poke_i64(a, 16, '--dfu')
+    poke_i64(a, 32, '/tmp/sov-firmware-eval.dfu')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okfwe: 0
+    if cr_rc = 0 -> if cr_file_has_u32('/tmp/sov-firmware-eval.dfu', 15) = 0 -> okfwe: 0
+    poke_i64(a, 16, '--mcuboot-img')
+    poke_i64(a, 32, '/tmp/sov-firmware-eval.img')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okfwe: 0
+    if cr_rc = 0 -> if cr_file_has_u32('/tmp/sov-firmware-eval.img', 15) = 0 -> okfwe: 0
+    if okfwe = 1 -> cr_ok('target--firmware-static-eval')
+    if not -> cr_bad('target--firmware-static-eval')
+    poke_i64(a, 8, '/tmp/sov-bare.sov')
+    poke_i64(a, 32, '/tmp/sov-tgt.bin')
+    poke_i64(a, 16, '--freertos')
+    poke_i64(a, 32, '/tmp/sov-freertos.c')
+    cr_run('./sovren', a, 0, 120)
+    okfr: 0
+    if cr_rc = 0 -> fr: file_read_all('/tmp/sov-freertos.c')
+        okfr: 1
+        if str_has(fr, 'sovren_freertos_task') = 0 -> okfr: 0
+        if str_has(fr, 'xTaskCreate') = 0 -> okfr: 0
+        if str_has(fr, 'return 123;') = 0 -> okfr: 0
+    if okfr = 1 -> cr_ok('target--freertos')
+    if not -> cr_bad('target--freertos')
+    poke_i64(a, 16, '--zephyr')
+    poke_i64(a, 32, '/tmp/sov-zephyr.c')
+    cr_run('./sovren', a, 0, 120)
+    okze: 0
+    if cr_rc = 0 -> ze: file_read_all('/tmp/sov-zephyr.c')
+        okze: 1
+        if str_has(ze, 'sovren_zephyr_entry') = 0 -> okze: 0
+        if str_has(ze, 'K_THREAD_DEFINE') = 0 -> okze: 0
+        if str_has(ze, 'return 123;') = 0 -> okze: 0
+    if okze = 1 -> cr_ok('target--zephyr')
+    if not -> cr_bad('target--zephyr')
+    poke_i64(a, 16, '--nuttx')
+    poke_i64(a, 32, '/tmp/sov-nuttx.c')
+    cr_run('./sovren', a, 0, 120)
+    oknx: 0
+    if cr_rc = 0 -> nx: file_read_all('/tmp/sov-nuttx.c')
+        oknx: 1
+        if str_has(nx, 'sovren_nuttx_thread') = 0 -> oknx: 0
+        if str_has(nx, 'pthread_create') = 0 -> oknx: 0
+        if str_has(nx, 'return 123;') = 0 -> oknx: 0
+    if oknx = 1 -> cr_ok('target--nuttx')
+    if not -> cr_bad('target--nuttx')
+    poke_i64(a, 16, '--riot')
+    poke_i64(a, 32, '/tmp/sov-riot.c')
+    cr_run('./sovren', a, 0, 120)
+    okriot: 0
+    if cr_rc = 0 -> ri: file_read_all('/tmp/sov-riot.c')
+        okriot: 1
+        if str_has(ri, 'sovren_riot_entry') = 0 -> okriot: 0
+        if str_has(ri, 'thread_create') = 0 -> okriot: 0
+        if str_has(ri, 'return 123;') = 0 -> okriot: 0
+    if okriot = 1 -> cr_ok('target--riot')
+    if not -> cr_bad('target--riot')
+    poke_i64(a, 16, '--rt-thread')
+    poke_i64(a, 32, '/tmp/sov-rt-thread.c')
+    cr_run('./sovren', a, 0, 120)
+    okrt: 0
+    if cr_rc = 0 -> rt: file_read_all('/tmp/sov-rt-thread.c')
+        okrt: 1
+        if str_has(rt, 'sovren_rtthread_entry') = 0 -> okrt: 0
+        if str_has(rt, 'rt_thread_create') = 0 -> okrt: 0
+        if str_has(rt, 'return 123;') = 0 -> okrt: 0
+    if okrt = 1 -> cr_ok('target--rt-thread')
+    if not -> cr_bad('target--rt-thread')
+    poke_i64(a, 16, '--mbed')
+    poke_i64(a, 32, '/tmp/sov-mbed.cpp')
+    cr_run('./sovren', a, 0, 120)
+    okmbed: 0
+    if cr_rc = 0 -> mb: file_read_all('/tmp/sov-mbed.cpp')
+        okmbed: 1
+        if str_has(mb, 'sovren_mbed_entry') = 0 -> okmbed: 0
+        if str_has(mb, 'sovren_thread.start') = 0 -> okmbed: 0
+        if str_has(mb, 'return 123;') = 0 -> okmbed: 0
+    if okmbed = 1 -> cr_ok('target--mbed')
+    if not -> cr_bad('target--mbed')
+    poke_i64(a, 16, '--threadx')
+    poke_i64(a, 32, '/tmp/sov-threadx.c')
+    cr_run('./sovren', a, 0, 120)
+    oktx: 0
+    if cr_rc = 0 -> tx: file_read_all('/tmp/sov-threadx.c')
+        oktx: 1
+        if str_has(tx, 'sovren_threadx_entry') = 0 -> oktx: 0
+        if str_has(tx, 'tx_thread_create') = 0 -> oktx: 0
+        if str_has(tx, 'return 123;') = 0 -> oktx: 0
+    if oktx = 1 -> cr_ok('target--threadx')
+    if not -> cr_bad('target--threadx')
+    poke_i64(a, 16, '--ti-rtos')
+    poke_i64(a, 32, '/tmp/sov-ti-rtos.c')
+    cr_run('./sovren', a, 0, 120)
+    okti: 0
+    if cr_rc = 0 -> ti: file_read_all('/tmp/sov-ti-rtos.c')
+        okti: 1
+        if str_has(ti, 'sovren_tirtos_task') = 0 -> okti: 0
+        if str_has(ti, 'Task_create') = 0 -> okti: 0
+        if str_has(ti, 'return 123;') = 0 -> okti: 0
+    if okti = 1 -> cr_ok('target--ti-rtos')
+    if not -> cr_bad('target--ti-rtos')
+    poke_i64(a, 16, '--embos')
+    poke_i64(a, 32, '/tmp/sov-embos.c')
+    cr_run('./sovren', a, 0, 120)
+    okemb: 0
+    if cr_rc = 0 -> eb: file_read_all('/tmp/sov-embos.c')
+        okemb: 1
+        if str_has(eb, 'sovren_embos_task') = 0 -> okemb: 0
+        if str_has(eb, 'OS_CREATETASK') = 0 -> okemb: 0
+        if str_has(eb, 'return 123;') = 0 -> okemb: 0
+    if okemb = 1 -> cr_ok('target--embos')
+    if not -> cr_bad('target--embos')
+    poke_i64(a, 16, '--chromium-ec')
+    poke_i64(a, 32, '/tmp/sov-chromium-ec.c')
+    cr_run('./sovren', a, 0, 120)
+    okcec: 0
+    if cr_rc = 0 -> ce: file_read_all('/tmp/sov-chromium-ec.c')
+        okcec: 1
+        if str_has(ce, 'sovren_chromium_ec_task') = 0 -> okcec: 0
+        if str_has(ce, 'DECLARE_TASK') = 0 -> okcec: 0
+        if str_has(ce, 'return 123;') = 0 -> okcec: 0
+    if okcec = 1 -> cr_ok('target--chromium-ec')
+    if not -> cr_bad('target--chromium-ec')
+    rts: cr_line('', 'sum n:')
+    rts: cr_line(rts, '    x: 0')
+    rts: cr_line(rts, '    acc: 0')
+    rts: cr_line(rts, '    as long as x < n -> acc: acc + x')
+    rts: cr_line(rts, '        x: x + 1')
+    rts: cr_line(rts, '    return acc')
+    rts: cr_line(rts, 'main:')
+    rts: cr_line(rts, '    return sum(6)')
+    file_write_all('/tmp/sov-rtos-eval.sov', rts)
+    okrtos: 1
+    poke_i64(a, 8, '/tmp/sov-rtos-eval.sov')
+    poke_i64(a, 16, '--freertos')
+    poke_i64(a, 32, '/tmp/sov-rtos-eval-freertos.c')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okrtos: 0
+    if cr_rc = 0 -> if cr_file_has('/tmp/sov-rtos-eval-freertos.c', 'return 15;') = 0 -> okrtos: 0
+    poke_i64(a, 16, '--zephyr')
+    poke_i64(a, 32, '/tmp/sov-rtos-eval-zephyr.c')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okrtos: 0
+    if cr_rc = 0 -> if cr_file_has('/tmp/sov-rtos-eval-zephyr.c', 'return 15;') = 0 -> okrtos: 0
+    poke_i64(a, 16, '--nuttx')
+    poke_i64(a, 32, '/tmp/sov-rtos-eval-nuttx.c')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okrtos: 0
+    if cr_rc = 0 -> if cr_file_has('/tmp/sov-rtos-eval-nuttx.c', 'return 15;') = 0 -> okrtos: 0
+    poke_i64(a, 16, '--riot')
+    poke_i64(a, 32, '/tmp/sov-rtos-eval-riot.c')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okrtos: 0
+    if cr_rc = 0 -> if cr_file_has('/tmp/sov-rtos-eval-riot.c', 'return 15;') = 0 -> okrtos: 0
+    poke_i64(a, 16, '--rt-thread')
+    poke_i64(a, 32, '/tmp/sov-rtos-eval-rt-thread.c')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okrtos: 0
+    if cr_rc = 0 -> if cr_file_has('/tmp/sov-rtos-eval-rt-thread.c', 'return 15;') = 0 -> okrtos: 0
+    poke_i64(a, 16, '--mbed')
+    poke_i64(a, 32, '/tmp/sov-rtos-eval-mbed.cpp')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okrtos: 0
+    if cr_rc = 0 -> if cr_file_has('/tmp/sov-rtos-eval-mbed.cpp', 'return 15;') = 0 -> okrtos: 0
+    poke_i64(a, 16, '--threadx')
+    poke_i64(a, 32, '/tmp/sov-rtos-eval-threadx.c')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okrtos: 0
+    if cr_rc = 0 -> if cr_file_has('/tmp/sov-rtos-eval-threadx.c', 'return 15;') = 0 -> okrtos: 0
+    poke_i64(a, 16, '--ti-rtos')
+    poke_i64(a, 32, '/tmp/sov-rtos-eval-ti-rtos.c')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okrtos: 0
+    if cr_rc = 0 -> if cr_file_has('/tmp/sov-rtos-eval-ti-rtos.c', 'return 15;') = 0 -> okrtos: 0
+    poke_i64(a, 16, '--embos')
+    poke_i64(a, 32, '/tmp/sov-rtos-eval-embos.c')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okrtos: 0
+    if cr_rc = 0 -> if cr_file_has('/tmp/sov-rtos-eval-embos.c', 'return 15;') = 0 -> okrtos: 0
+    poke_i64(a, 16, '--chromium-ec')
+    poke_i64(a, 32, '/tmp/sov-rtos-eval-chromium-ec.c')
+    cr_run('./sovren', a, 0, 120)
+    if cr_rc != 0 -> okrtos: 0
+    if cr_rc = 0 -> if cr_file_has('/tmp/sov-rtos-eval-chromium-ec.c', 'return 15;') = 0 -> okrtos: 0
+    if okrtos = 1 -> cr_ok('target--rtos-static-eval')
+    if not -> cr_bad('target--rtos-static-eval')
+    poke_i64(a, 8, 'tests/hello.sov')
+    poke_i64(a, 32, '/tmp/sov-tgt.bin')
+    ck_ebpf()
+    ck_qbe()
+    ck_multiboot()
+    ck_dos()
+    ck_mz()
+    ck_coff()
+    ck_arm64e()
+    ck_i386()
+    ck_x32()
+    ck_riscv32()
+    ck_mipsel()
+    ck_arm64_32()
+    ck_ppc64()
+    ck_armhf()
+    ck_ppc32()
+    ck_mips()
+    ck_thumbv7a()
+    ck_sparc64()
+    ck_sparc_v8()
+    ck_armv5()
+    ck_armel()
+    ck_arch()
+    ck_hyp()
+    ck_ehf()
+    ck_pd()
+    ck_st()
+    ck_ec()
+    ck_hap()
+    ck_avr()
+    ck_p9()
+    ck_msp()
+    ck_arcx()
+    ck_xtn()
+    ck_dex()
+    ck_aix()
+    ck_fux()
+    ck_hx()
+    ck_rvbe()
+    ck_sve()
+    ck_sve2()
+    ck_mte()
+    ck_evm()
+    ck_hpu()
+    ck_c166()
+    ck_i51()
+    ck_z8()
+    ck_ez()
+    ck_i65()
+    ck_p16()
+    ck_p18()
+    ck_so()
+    ck_dll()
+    ck_riscv64v()
+    ck_riscv64h()
+    ck_riscv32zfinx()
+    ck_riscv32zdinx()
+    ck_bare_variants()
+    ck_m68k()
+    ck_microblaze()
+    ck_openrisc()
+    ck_nios2()
+    ck_sh4()
+    ck_x86_64_v2()
+    ck_x86_64_v3()
+    ck_x86_64_v4()
+    ck_managed_blocks()
+    return 0
+ck_ebpf:
+    src: cr_line('', 'main:')
+    src: cr_line(src, '    a: 20')
+    src: cr_line(src, '    b: 22')
+    src: cr_line(src, '    return a + b')
+    file_write_all('/tmp/sov-ebpf.sov', src)
+    ea: _sov_alloc(48)
+    poke_i64(ea, 0, './sovren')
+    poke_i64(ea, 8, '/tmp/sov-ebpf.sov')
+    poke_i64(ea, 16, '--ebpf')
+    poke_i64(ea, 24, '-o')
+    poke_i64(ea, 32, '/tmp/sov-ebpf.s')
+    poke_i64(ea, 40, 0)
+    cr_run('./sovren', ea, 0, 120)
+    okbpf: 0
+    if cr_rc = 0 -> bpf: file_read_all('/tmp/sov-ebpf.s')
+        okbpf: 1
+        if str_has(bpf, 'EM_BPF') = 0 -> okbpf: 0
+        if str_has(bpf, 'sovren_main') = 0 -> okbpf: 0
+        if str_has(bpf, 'mov64') = 0 -> okbpf: 0
+        if str_has(bpf, 'r0, 42') = 0 -> okbpf: 0
+        if str_has(bpf, 'exit') = 0 -> okbpf: 0
+    if okbpf = 1 -> cr_ok('target--ebpf')
+    if not -> cr_bad('target--ebpf')
+    return 0
+ck_qbe:
+    src: cr_line('', 'main:')
+    src: cr_line(src, '    a: 20')
+    src: cr_line(src, '    b: 22')
+    src: cr_line(src, '    return a + b')
+    file_write_all('/tmp/sov-qbe.sov', src)
+    qa: _sov_alloc(48)
+    poke_i64(qa, 0, './sovren')
+    poke_i64(qa, 8, '/tmp/sov-qbe.sov')
+    poke_i64(qa, 16, '--qbe')
+    poke_i64(qa, 24, '-o')
+    poke_i64(qa, 32, '/tmp/sov-qbe.qbe')
+    poke_i64(qa, 40, 0)
+    cr_run('./sovren', qa, 0, 120)
+    okq: 0
+    if cr_rc = 0 -> qb: file_read_all('/tmp/sov-qbe.qbe')
+        okq: 1
+        if str_has(qb, 'function w $sovren_main') = 0 -> okq: 0
+        if str_has(qb, '@start') = 0 -> okq: 0
+        if str_has(qb, 'ret 42') = 0 -> okq: 0
+    if okq = 1 -> cr_ok('target--qbe')
+    if not -> cr_bad('target--qbe')
+    return 0
+ck_multiboot:
+    src: cr_line('', 'main:')
+    src: cr_line(src, '    a: 20')
+    src: cr_line(src, '    b: 22')
+    src: cr_line(src, '    return a + b')
+    file_write_all('/tmp/sov-mb.sov', src)
+    ma: _sov_alloc(48)
+    poke_i64(ma, 0, './sovren')
+    poke_i64(ma, 8, '/tmp/sov-mb.sov')
+    poke_i64(ma, 16, '--multiboot')
+    poke_i64(ma, 24, '-o')
+    poke_i64(ma, 32, '/tmp/sov-mb.mb')
+    poke_i64(ma, 40, 0)
+    cr_run('./sovren', ma, 0, 120)
+    okmb: 0
+    if cr_rc = 0 -> okmb: 1
+        if cr_file_has_u32('/tmp/sov-mb.mb', 464367618) = 0 -> okmb: 0
+        if cr_file_has('/tmp/sov-mb.mb', 'SOVREN-BARE-X64') = 0 -> okmb: 0
+    if okmb = 1 -> cr_ok('target--multiboot')
+    if not -> cr_bad('target--multiboot')
+    return 0
+ck_dos:
+    src: cr_line('', 'main:')
+    src: cr_line(src, '    a: 20')
+    src: cr_line(src, '    b: 22')
+    src: cr_line(src, '    return a + b')
+    file_write_all('/tmp/sov-dos.sov', src)
+    ma: _sov_alloc(48)
+    poke_i64(ma, 0, './sovren')
+    poke_i64(ma, 8, '/tmp/sov-dos.sov')
+    poke_i64(ma, 16, '--dos')
+    poke_i64(ma, 24, '-o')
+    poke_i64(ma, 32, '/tmp/sov-dos.com')
+    poke_i64(ma, 40, 0)
+    cr_run('./sovren', ma, 0, 120)
+    okd: 0
+    if cr_rc = 0 -> okd: 1
+        if cr_file_has('/tmp/sov-dos.com', 'SOVREN-DOS-COM') = 0 -> okd: 0
+    if okd = 1 -> cr_ok('target--dos')
+    if not -> cr_bad('target--dos')
+    return 0
+ck_mz:
+    src: cr_line('', 'main:')
+    src: cr_line(src, '    a: 20')
+    src: cr_line(src, '    b: 22')
+    src: cr_line(src, '    return a + b')
+    file_write_all('/tmp/sov-mz.sov', src)
+    ma: _sov_alloc(48)
+    poke_i64(ma, 0, './sovren')
+    poke_i64(ma, 8, '/tmp/sov-mz.sov')
+    poke_i64(ma, 16, '--mz')
+    poke_i64(ma, 24, '-o')
+    poke_i64(ma, 32, '/tmp/sov-mz.exe')
+    poke_i64(ma, 40, 0)
+    cr_run('./sovren', ma, 0, 120)
+    okmz: 0
+    if cr_rc = 0 -> okmz: 1
+        if cr_file_has('/tmp/sov-mz.exe', 'MZ') = 0 -> okmz: 0
+        if cr_file_has('/tmp/sov-mz.exe', 'SOVREN-DOS-MZ') = 0 -> okmz: 0
+    if okmz = 1 -> cr_ok('target--mz')
+    if not -> cr_bad('target--mz')
+    return 0
+ck_coff:
+    src: cr_line('', 'main:')
+    src: cr_line(src, '    a: 20')
+    src: cr_line(src, '    b: 22')
+    src: cr_line(src, '    return a + b')
+    file_write_all('/tmp/sov-coff.sov', src)
+    ma: _sov_alloc(48)
+    poke_i64(ma, 0, './sovren')
+    poke_i64(ma, 8, '/tmp/sov-coff.sov')
+    poke_i64(ma, 16, '--obj')
+    poke_i64(ma, 24, '-o')
+    poke_i64(ma, 32, '/tmp/sov-coff.obj')
+    poke_i64(ma, 40, 0)
+    cr_run('./sovren', ma, 0, 120)
+    okc: 0
+    if cr_rc = 0 -> okc: 1
+        if cr_file_has_u32('/tmp/sov-coff.obj', 99940) = 0 -> okc: 0
+        if cr_file_has('/tmp/sov-coff.obj', '.text') = 0 -> okc: 0
+    if okc = 1 -> cr_ok('target--coff')
+    if not -> cr_bad('target--coff')
+    return 0
+ck_arm64e:
+    out: '/tmp/sov-arm64e'
+    r: cr_build('tests/hello.sov', out, '--arm64e')
+    if r != 0 -> cr_bad('could not build the arm64e test binary')
+        return 0
+    d: file_read_all(out)
+    oke: 0
+    if ap_le32(d, 0) = 4277009103 -> oke: 1
+        if ap_le32(d, 4) != 16777228 -> oke: 0
+        if ap_le32(d, 8) != 2 -> oke: 0
+    if oke = 1 -> cr_ok('target--arm64e')
+    if not -> cr_bad('target--arm64e')
+    return 0
+ck_i386:
+    out: '/tmp/sov-i386'
+    r: cr_build('tests/hello.sov', out, '--i386')
+    if r != 0 -> cr_bad('could not build the i386 test binary')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if ap_le32(d, 0) = 1179403647 -> ok: 1
+        if ap_le32(d, 16) != 196610 -> ok: 0
+    if ok = 1 -> cr_ok('target--i386')
+    if not -> cr_bad('target--i386')
+    return 0
+ck_x32:
+    out: '/tmp/sov-x32'
+    r: cr_build('tests/hello.sov', out, '--x32')
+    if r != 0 -> cr_bad('could not build the x32 test binary')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if ap_le32(d, 0) = 1179403647 -> ok: 1
+        if ap_le32(d, 16) != 4063234 -> ok: 0
+    if ok = 1 -> cr_ok('target--x32')
+    if not -> cr_bad('target--x32')
+    return 0
+ck_riscv32:
+    out: '/tmp/sov-riscv32'
+    r: cr_build('tests/hello.sov', out, '--riscv32')
+    if r != 0 -> cr_bad('could not build the riscv32 test binary')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if ap_le32(d, 0) = 1179403647 -> ok: 1
+        if ap_le32(d, 16) != 15925250 -> ok: 0
+    if ok = 1 -> cr_ok('target--riscv32')
+    if not -> cr_bad('target--riscv32')
+    return 0
+ck_mipsel:
+    out: '/tmp/sov-mipsel'
+    r: cr_build('tests/hello.sov', out, '--mipsel')
+    if r != 0 -> cr_bad('could not build the mipsel test binary')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if ap_le32(d, 0) = 1179403647 -> ok: 1
+        if ap_le32(d, 16) != 524290 -> ok: 0
+    if ok = 1 -> cr_ok('target--mipsel')
+    if not -> cr_bad('target--mipsel')
+    return 0
+ck_arm64_32:
+    out: '/tmp/sov-arm64_32'
+    r: cr_build('tests/hello.sov', out, '--arm64_32')
+    if r != 0 -> cr_bad('could not build the arm64_32 test binary')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if ap_le32(d, 0) = 4277009103 -> ok: 1
+        if ap_le32(d, 4) != 33554444 -> ok: 0
+    if ok = 1 -> cr_ok('target--arm64_32')
+    if not -> cr_bad('target--arm64_32')
+    return 0
+ck_ppc64:
+    out: '/tmp/sov-ppc64'
+    r: cr_build('tests/hello.sov', out, '--ppc64')
+    if r != 0 -> cr_bad('could not build the ppc64 test binary')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if peek_byte(d, 0) = 127 -> if peek_byte(d, 1) = 69
+        if peek_byte(d, 5) = 2 -> ok: 1
+            if peek_byte(d, 18) != 0 -> ok: 0
+            if peek_byte(d, 19) != 21 -> ok: 0
+    if ok = 1 -> cr_ok('target--ppc64')
+    if not -> cr_bad('target--ppc64')
+    return 0
+ck_armhf:
+    out: '/tmp/sov-armhf'
+    r: cr_build('tests/hello.sov', out, '--armhf')
+    if r != 0 -> cr_bad('could not build the armhf test binary')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if ap_le32(d, 0) = 1179403647 -> ok: 1
+        if ap_le32(d, 16) != 2621442 -> ok: 0
+        if ap_le32(d, 36) != 83887104 -> ok: 0
+    if ok = 1 -> cr_ok('target--armhf')
+    if not -> cr_bad('target--armhf')
+    return 0
+ck_ppc32:
+    out: '/tmp/sov-ppc32'
+    r: cr_build('tests/hello.sov', out, '--ppc32')
+    if r != 0 -> cr_bad('could not build the ppc32 test binary')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if peek_byte(d, 0) = 127 -> if peek_byte(d, 1) = 69
+        if peek_byte(d, 5) = 2 -> ok: 1
+            if peek_byte(d, 18) != 0 -> ok: 0
+            if peek_byte(d, 19) != 20 -> ok: 0
+    if ok = 1 -> cr_ok('target--ppc32')
+    if not -> cr_bad('target--ppc32')
+    return 0
+ck_mips:
+    out: '/tmp/sov-mips'
+    r: cr_build('tests/hello.sov', out, '--mips')
+    if r != 0 -> cr_bad('could not build the mips test binary')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if peek_byte(d, 0) = 127 -> if peek_byte(d, 1) = 69
+        if peek_byte(d, 5) = 2 -> ok: 1
+            if peek_byte(d, 18) != 0 -> ok: 0
+            if peek_byte(d, 19) != 8 -> ok: 0
+    if ok = 1 -> cr_ok('target--mips')
+    if not -> cr_bad('target--mips')
+    return 0
+ck_thumbv7a:
+    out: '/tmp/sov-thumbv7a'
+    r: cr_build('tests/hello.sov', out, '--thumbv7a')
+    if r != 0 -> cr_bad('could not build the thumbv7a test binary')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if ap_le32(d, 0) = 1179403647 -> ok: 1
+        if ap_le32(d, 16) != 2621442 -> ok: 0
+        if ap_le32(d, 24) % 2 != 1 -> ok: 0
+    if ok = 1 -> cr_ok('target--thumbv7a')
+    if not -> cr_bad('target--thumbv7a')
+    return 0
+ck_sparc64:
+    out: '/tmp/sov-sparc64'
+    r: cr_build('tests/hello.sov', out, '--sparc64')
+    if r != 0 -> cr_bad('could not build the sparc64 test binary')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if peek_byte(d, 0) = 127 -> if peek_byte(d, 1) = 69
+        if peek_byte(d, 5) = 2 -> ok: 1
+            if peek_byte(d, 18) != 0 -> ok: 0
+            if peek_byte(d, 19) != 43 -> ok: 0
+    if ok = 1 -> cr_ok('target--sparc64')
+    if not -> cr_bad('target--sparc64')
+    return 0
+ck_sparc_v8:
+    out: '/tmp/sov-sparc-v8'
+    r: cr_build('tests/hello.sov', out, '--sparc-v8')
+    if r != 0 -> cr_bad('could not build the sparc-v8 test binary')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if peek_byte(d, 0) = 127 -> if peek_byte(d, 1) = 69
+        if peek_byte(d, 4) = 1 -> if peek_byte(d, 5) = 2
+            if peek_byte(d, 18) = 0 -> ok: 1
+                if peek_byte(d, 19) != 2 -> ok: 0
+    if ok = 1 -> cr_ok('target--sparc-v8')
+    if not -> cr_bad('target--sparc-v8')
+    return 0
+ck_armv5:
+    out: '/tmp/sov-armv5'
+    r: cr_build('tests/hello.sov', out, '--armv5')
+    if r != 0 -> cr_bad('could not build the armv5 test binary')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if peek_byte(d, 0) = 127 -> if peek_byte(d, 1) = 69
+        if peek_byte(d, 4) = 1 -> if peek_byte(d, 5) = 1
+            if peek_byte(d, 18) = 40 -> if peek_byte(d, 19) = 0
+                if peek_byte(d, 36) = 0 -> if peek_byte(d, 37) = 0
+                    if peek_byte(d, 38) = 0 -> if peek_byte(d, 39) = 0 -> ok: 1
+    if ok = 1 -> cr_ok('target--armv5')
+    if not -> cr_bad('target--armv5')
+    return 0
+ck_armel:
+    out: '/tmp/sov-armel'
+    r: cr_build('tests/hello.sov', out, '--armv7a-armel')
+    if r != 0 -> cr_bad('cannot build armel test binary')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if peek_byte(d, 0) = 127 -> if peek_byte(d, 1) = 69
+        if peek_byte(d, 4) = 1 -> if peek_byte(d, 5) = 1
+            if peek_byte(d, 18) = 40 -> if peek_byte(d, 19) = 0
+                if peek_byte(d, 36) = 0 -> if peek_byte(d, 37) = 2
+                    if peek_byte(d, 38) = 0 -> if peek_byte(d, 39) = 5 -> ok: 1
+    if ok = 1 -> cr_ok('target--armel')
+    if not -> cr_bad('target--armel')
+    return 0
+ck_arch:
+    out: '/tmp/sov-a'
+    r: cr_build('tests/hello.sov', out, '--a')
+    if r != 0 -> cr_bad('cannot build archive')
+        return 0
+    d: file_read_all(out)
+    if peek_byte(d, 0) = 33 -> cr_ok('target--a')
+    if not -> cr_bad('target--a')
+    return 0
+ck_hyp:
+    out: '/tmp/sov-hv'
+    r: cr_build('tests/hello.sov', out, '--hypervisor')
+    if r != 0 -> cr_bad('cannot build hv')
+        return 0
+    d: file_read_all(out)
+    if peek_byte(d, 18) = 62 -> cr_ok('target--hypervisor')
+    if not -> cr_bad('target--hypervisor')
+    return 0
+ck_ehf:
+    out: '/tmp/sov-ef'
+    r: cr_build('tests/hello.sov', out, '--eh-frame')
+    if r != 0 -> cr_bad('cannot build ehf')
+        return 0
+    d: file_read_all(out)
+    if peek_byte(d, 18) = 62 -> cr_ok('target--eh-frame')
+    if not -> cr_bad('target--eh-frame')
+    return 0
+ck_pd:
+    out: '/tmp/sov-pd'
+    r: cr_build('tests/hello.sov', out, '--pdata')
+    if r != 0 -> cr_bad('cannot build pdata')
+        return 0
+    d: file_read_all(out)
+    if peek_byte(d, 0) = 77 -> cr_ok('target--pdata')
+    if not -> cr_bad('target--pdata')
+    return 0
+ck_st:
+    out: '/tmp/sov-st'
+    r: cr_build('tests/hello.sov', out, '--windows-store')
+    if r != 0 -> cr_bad('cannot build store')
+        return 0
+    d: file_read_all(out)
+    if peek_byte(d, 0) = 77 -> cr_ok('target--store')
+    if not -> cr_bad('target--store')
+    return 0
+ck_ec:
+    out: '/tmp/sov-ec'
+    r: cr_build('tests/hello.sov', out, '--windows-arm64ec')
+    if r != 0 -> cr_bad('cannot build ec')
+        return 0
+    d: file_read_all(out)
+    if peek_byte(d, 0) = 77 -> cr_ok('target--arm64ec')
+    if not -> cr_bad('target--arm64ec')
+    return 0
+ck_p9:
+    out: '/tmp/sov-p9'
+    r: cr_build('tests/hello.sov', out, '--plan9')
+    if r != 0 -> cr_bad('cannot build plan9')
+        return 0
+    d: file_read_all(out)
+    if peek_byte(d, 0) = 0 -> if peek_byte(d, 1) = 0
+        if peek_byte(d, 2) = 138 -> if peek_byte(d, 3) = 151 -> cr_ok('target--plan9')
+    if not -> cr_bad('target--plan9')
+    return 0
+ck_avr:
+    out: '/tmp/sov-avr'
+    r: cr_build('tests/hello.sov', out, '--avr')
+    if r != 0 -> cr_bad('cannot build avr')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if peek_byte(d, 0) = 127 -> if peek_byte(d, 1) = 69
+        if peek_byte(d, 18) = 83 -> ok: 1
+    if ok = 1 -> cr_ok('target--avr')
+    if not -> cr_bad('target--avr')
+    return 0
+ck_msp:
+    out: '/tmp/sov-msp'
+    r: cr_build('tests/hello.sov', out, '--msp430')
+    if r != 0 -> cr_bad('cannot build msp')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if peek_byte(d, 0) = 127 -> if peek_byte(d, 1) = 69
+        if peek_byte(d, 18) = 105 -> ok: 1
+    if ok = 1 -> cr_ok('target--msp')
+    if not -> cr_bad('target--msp')
+    return 0
+ck_arcx:
+    out: '/tmp/sov-arcx'
+    r: cr_build('tests/hello.sov', out, '--arc')
+    if r != 0 -> cr_bad('cannot build arcx')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if peek_byte(d, 0) = 127 -> if peek_byte(d, 1) = 69
+        if peek_byte(d, 18) = 93 -> ok: 1
+    if ok = 1 -> cr_ok('target--arcx')
+    if not -> cr_bad('target--arcx')
+    return 0
+ck_xtn:
+    out: '/tmp/sov-xtn'
+    r: cr_build('tests/hello.sov', out, '--xtensa')
+    if r != 0 -> cr_bad('cannot build xtn')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if peek_byte(d, 0) = 127 -> if peek_byte(d, 1) = 69
+        if peek_byte(d, 18) = 94 -> ok: 1
+    if ok = 1 -> cr_ok('target--xtn')
+    if not -> cr_bad('target--xtn')
+    return 0
+ck_p18:
+    out: '/tmp/sov-p18'
+    r: cr_build('tests/hello.sov', out, '--pic18')
+    if r != 0 -> cr_bad('cannot build p18')
+        return 0
+    d: file_read_all(out)
+    if peek_byte(d, 1) = 14 -> cr_ok('target--p18')
+    if not -> cr_bad('target--p18')
+    return 0
+ck_p16:
+    out: '/tmp/sov-p16'
+    r: cr_build('tests/hello.sov', out, '--pic16')
+    if r != 0 -> cr_bad('cannot build p16')
+        return 0
+    d: file_read_all(out)
+    if peek_byte(d, 1) = 48 -> cr_ok('target--p16')
+    if not -> cr_bad('target--p16')
+    return 0
+ck_i65:
+    out: '/tmp/sov-i65'
+    r: cr_build('tests/hello.sov', out, '--6502')
+    if r != 0 -> cr_bad('cannot build i65')
+        return 0
+    d: file_read_all(out)
+    if peek_byte(d, 0) = 169 -> cr_ok('target--i65')
+    if not -> cr_bad('target--i65')
+    return 0
+ck_ez:
+    out: '/tmp/sov-ez'
+    r: cr_build('tests/hello.sov', out, '--ez80')
+    if r != 0 -> cr_bad('cannot build ez')
+        return 0
+    d: file_read_all(out)
+    if peek_byte(d, 0) = 62 -> cr_ok('target--ez')
+    if not -> cr_bad('target--ez')
+    return 0
+ck_z8:
+    out: '/tmp/sov-z8'
+    r: cr_build('tests/hello.sov', out, '--z80')
+    if r != 0 -> cr_bad('cannot build z8')
+        return 0
+    d: file_read_all(out)
+    if peek_byte(d, 0) = 62 -> cr_ok('target--z8')
+    if not -> cr_bad('target--z8')
+    return 0
+ck_i51:
+    out: '/tmp/sov-i51'
+    r: cr_build('tests/hello.sov', out, '--8051')
+    if r != 0 -> cr_bad('cannot build i51')
+        return 0
+    d: file_read_all(out)
+    if peek_byte(d, 0) = 116 -> cr_ok('target--i51')
+    if not -> cr_bad('target--i51')
+    return 0
+ck_hpu:
+    out: '/tmp/sov-hpux'
+    r: cr_build('tests/hello.sov', out, '--hpux')
+    if r != 0 -> cr_bad('cannot build hpux')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if peek_byte(d, 0) = 2 -> if peek_byte(d, 1) = 16
+        if peek_byte(d, 2) = 1 -> if peek_byte(d, 3) = 8 -> ok: 1
+    if ok = 1 -> cr_ok('target--hpux')
+    if not -> cr_bad('target--hpux')
+    return 0
+ck_c166:
+    out: '/tmp/sov-c166'
+    r: cr_build('tests/hello.sov', out, '--c166')
+    if r != 0 -> cr_bad('cannot build c166')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if peek_byte(d, 0) = 128 -> if peek_byte(d, 16) = 185
+        if peek_byte(d, 23) = 224 -> if peek_byte(d, 24) = 4 -> ok: 1
+    if ok = 1 -> cr_ok('target--c166')
+    if not -> cr_bad('target--c166')
+    return 0
+ck_evm:
+    out: '/tmp/sov-evm'
+    r: cr_build('tests/hello.sov', out, '--evm')
+    if r != 0 -> cr_bad('cannot build evm')
+        return 0
+    d: file_read_all(out)
+    if peek_byte(d, 0) = 96 -> cr_ok('target--evm')
+    if not -> cr_bad('target--evm')
+    return 0
+ck_mte:
+    out: '/tmp/sov-mte'
+    r: cr_build('tests/hello.sov', out, '--arm64-mte')
+    if r != 0 -> cr_bad('cannot build mte')
+        return 0
+    d: file_read_all(out)
+    if peek_byte(d, 0) = 127 -> if peek_byte(d, 1) = 69
+        if peek_byte(d, 18) = 183 -> if peek_byte(d, 19) = 0
+            cr_ok('target--mte')
+    if not -> cr_bad('target--mte')
+    return 0
+ck_sve2:
+    out: '/tmp/sov-sve2'
+    r: cr_build('tests/hello.sov', out, '--arm64-sve2')
+    if r != 0 -> cr_bad('cannot build sve2')
+        return 0
+    d: file_read_all(out)
+    if peek_byte(d, 0) = 127 -> if peek_byte(d, 1) = 69
+        if peek_byte(d, 18) = 183 -> if peek_byte(d, 19) = 0
+            cr_ok('target--sve2')
+    if not -> cr_bad('target--sve2')
+    return 0
+ck_sve:
+    out: '/tmp/sov-sve'
+    r: cr_build('tests/hello.sov', out, '--arm64-sve')
+    if r != 0 -> cr_bad('cannot build sve')
+        return 0
+    d: file_read_all(out)
+    if peek_byte(d, 0) = 127 -> if peek_byte(d, 1) = 69
+        if peek_byte(d, 18) = 183 -> if peek_byte(d, 19) = 0
+            cr_ok('target--sve')
+    if not -> cr_bad('target--sve')
+    return 0
+ck_rvbe:
+    out: '/tmp/sov-rvbe'
+    r: cr_build('tests/hello.sov', out, '--riscv64-be')
+    if r != 0 -> cr_bad('cannot build rvbe')
+        return 0
+    d: file_read_all(out)
+    if peek_byte(d, 0) = 127 -> if peek_byte(d, 1) = 69
+        if peek_byte(d, 5) = 2 -> cr_ok('target--rvbe')
+    if not -> cr_bad('target--rvbe')
+    return 0
+ck_hx:
+    out: '/tmp/sov-hx'
+    r: cr_build('tests/hello.sov', out, '--hexagon')
+    if r != 0 -> cr_bad('cannot build hx')
+        return 0
+    d: file_read_all(out)
+    if peek_byte(d, 0) = 127 -> if peek_byte(d, 1) = 69
+        if peek_byte(d, 18) = 164 -> if peek_byte(d, 19) = 0
+            cr_ok('target--hx')
+    if not -> cr_bad('target--hx')
+    return 0
+ck_fux:
+    out: '/tmp/sov-fux'
+    r: cr_build('tests/hello.sov', out, '--fuchsia')
+    if r != 0 -> cr_bad('cannot build fuchsia')
+        return 0
+    d: file_read_all(out)
+    if peek_byte(d, 0) = 200 -> if peek_byte(d, 1) = 191
+        if peek_byte(d, 7) = 17 -> cr_ok('target--fuchsia')
+    if not -> cr_bad('target--fuchsia')
+    return 0
+ck_aix:
+    out: '/tmp/sov-aix'
+    r: cr_build('tests/hello.sov', out, '--aix')
+    if r != 0 -> cr_bad('cannot build aix')
+        return 0
+    d: file_read_all(out)
+    if peek_byte(d, 0) = 1 -> if peek_byte(d, 1) = 247
+        if peek_byte(d, 4) = 0 -> cr_ok('target--aix')
+    if not -> cr_bad('target--aix')
+    return 0
+ck_dex:
+    out: '/tmp/sov-dex'
+    r: cr_build('tests/hello.sov', out, '--dex')
+    if r != 0 -> cr_bad('cannot build dex')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if peek_byte(d, 0) = 100 -> if peek_byte(d, 1) = 101
+        if peek_byte(d, 2) = 120 -> if peek_byte(d, 3) = 10 -> ok: 1
+    if ok = 1 -> cr_ok('target--dex')
+    if not -> cr_bad('target--dex')
+    return 0
+ck_hap:
+    out: '/tmp/sov-hap'
+    r: cr_build('tests/hello.sov', out, '--harmonyos')
+    if r != 0 -> cr_bad('cannot build hap')
+        return 0
+    d: file_read_all(out)
+    if peek_byte(d, 0) = 80 -> cr_ok('target--hap')
+    if not -> cr_bad('target--hap')
+    return 0
+ck_so:
+    out: '/tmp/sov-so'
+    r: cr_build('tests/hello.sov', out, '--so')
+    if r != 0 -> cr_bad('cannot build so')
+        return 0
+    d: file_read_all(out)
+    if peek_byte(d, 0) = 127 -> cr_ok('target--so')
+    if not -> cr_bad('target--so')
+    return 0
+ck_dll:
+    out: '/tmp/sov-dll'
+    r: cr_build('tests/hello.sov', out, '--dll')
+    if r != 0 -> cr_bad('cannot build dll')
+        return 0
+    d: file_read_all(out)
+    if peek_byte(d, 0) = 77 -> cr_ok('target--dll')
+    if not -> cr_bad('target--dll')
+    return 0
+ck_riscv64v:
+    out: '/tmp/sov-riscv64v'
+    r: cr_build('tests/hello.sov', out, '--riscv64v')
+    if r != 0 -> cr_bad('could not build the riscv64v test binary')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if peek_byte(d, 0) = 127 -> if peek_byte(d, 1) = 69
+        if peek_byte(d, 4) = 2 -> if peek_byte(d, 18) = 243 -> if peek_byte(d, 19) = 0
+            if cr_file_has(out, 'rv64imafdcv') = 1 -> ok: 1
+    if ok = 1 -> cr_ok('target--riscv64v')
+    if not -> cr_bad('target--riscv64v')
+    return 0
+ck_riscv64h:
+    out: '/tmp/sov-riscv64h'
+    r: cr_build('tests/hello.sov', out, '--riscv64h')
+    if r != 0 -> cr_bad('could not build the riscv64h test binary')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if peek_byte(d, 0) = 127 -> if peek_byte(d, 1) = 69
+        if peek_byte(d, 4) = 2 -> if peek_byte(d, 18) = 243 -> if peek_byte(d, 19) = 0
+            if cr_file_has(out, 'rv64imafdch') = 1 -> ok: 1
+    if ok = 1 -> cr_ok('target--riscv64h')
+    if not -> cr_bad('target--riscv64h')
+    return 0
+ck_riscv32zfinx:
+    out: '/tmp/sov-riscv32zfinx'
+    r: cr_build('tests/hello.sov', out, '--riscv32zfinx')
+    if r != 0 -> cr_bad('could not build the riscv32zfinx test binary')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if peek_byte(d, 0) = 127 -> if peek_byte(d, 1) = 69
+        if peek_byte(d, 4) = 1 -> if peek_byte(d, 18) = 243 -> if peek_byte(d, 19) = 0
+            if cr_file_has(out, 'rv32imac_zfinx') = 1 -> ok: 1
+    if ok = 1 -> cr_ok('target--riscv32zfinx')
+    if not -> cr_bad('target--riscv32zfinx')
+    return 0
+ck_riscv32zdinx:
+    out: '/tmp/sov-riscv32zdinx'
+    r: cr_build('tests/hello.sov', out, '--riscv32zdinx')
+    if r != 0 -> cr_bad('could not build the riscv32zdinx test binary')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if peek_byte(d, 0) = 127 -> if peek_byte(d, 1) = 69
+        if peek_byte(d, 4) = 1 -> if peek_byte(d, 18) = 243 -> if peek_byte(d, 19) = 0
+            if cr_file_has(out, 'rv32imac_zdinx') = 1 -> ok: 1
+    if ok = 1 -> cr_ok('target--riscv32zdinx')
+    if not -> cr_bad('target--riscv32zdinx')
+    return 0
+ck_bare_variants:
+    out: '/tmp/sov-rv32e'
+    r: cr_build('tests/hello.sov', out, '--riscv32e')
+    ok: 0
+    if r = 0 -> if cr_file_has(out, 'SOVREN-RISCV32E') = 1 -> ok: 1
+    if ok = 1 -> cr_ok('target--riscv32e')
+    if not -> cr_bad('target--riscv32e')
+    out: '/tmp/sov-t7m'
+    r: cr_build('tests/hello.sov', out, '--thumbv7m')
+    ok: 0
+    if r = 0 -> if cr_file_has(out, 'SOVREN-THUMBV7M') = 1 -> ok: 1
+    if ok = 1 -> cr_ok('target--thumbv7m')
+    if not -> cr_bad('target--thumbv7m')
+    out: '/tmp/sov-t7em'
+    r: cr_build('tests/hello.sov', out, '--thumbv7em')
+    ok: 0
+    if r = 0 -> if cr_file_has(out, 'SOVREN-THUMBV7EM') = 1 -> ok: 1
+    if ok = 1 -> cr_ok('target--thumbv7em')
+    if not -> cr_bad('target--thumbv7em')
+    out: '/tmp/sov-t6m'
+    r: cr_build('tests/hello.sov', out, '--thumbv6m')
+    ok: 0
+    if r = 0 -> if cr_file_has(out, 'SOVREN-THUMBV6M') = 1 -> ok: 1
+    if ok = 1 -> cr_ok('target--thumbv6m')
+    if not -> cr_bad('target--thumbv6m')
+    out: '/tmp/sov-t8m'
+    r: cr_build('tests/hello.sov', out, '--thumbv8m')
+    ok: 0
+    if r = 0 -> if cr_file_has(out, 'SOVREN-THUMBV8M') = 1 -> ok: 1
+    if ok = 1 -> cr_ok('target--thumbv8m')
+    if not -> cr_bad('target--thumbv8m')
+    return 0
+ck_m68k:
+    out: '/tmp/sov-m68k'
+    r: cr_build('tests/hello.sov', out, '--m68k')
+    if r != 0 -> cr_bad('could not build the m68k test binary')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if peek_byte(d, 0) = 127 -> if peek_byte(d, 1) = 69
+        if peek_byte(d, 5) = 2 -> ok: 1
+            if peek_byte(d, 18) != 0 -> ok: 0
+            if peek_byte(d, 19) != 4 -> ok: 0
+    if ok = 1 -> cr_ok('target--m68k')
+    if not -> cr_bad('target--m68k')
+    return 0
+ck_microblaze:
+    out: '/tmp/sov-microblaze'
+    r: cr_build('tests/hello.sov', out, '--microblaze')
+    if r != 0 -> cr_bad('could not build the microblaze test binary')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if peek_byte(d, 0) = 127 -> if peek_byte(d, 1) = 69
+        if peek_byte(d, 5) = 2 -> ok: 1
+            if peek_byte(d, 18) != 0 -> ok: 0
+            if peek_byte(d, 19) != 189 -> ok: 0
+    if ok = 1 -> cr_ok('target--microblaze')
+    if not -> cr_bad('target--microblaze')
+    return 0
+ck_openrisc:
+    out: '/tmp/sov-openrisc'
+    r: cr_build('tests/hello.sov', out, '--openrisc')
+    if r != 0 -> cr_bad('could not build the openrisc test binary')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if peek_byte(d, 0) = 127 -> if peek_byte(d, 1) = 69
+        if peek_byte(d, 5) = 2 -> ok: 1
+            if peek_byte(d, 18) != 0 -> ok: 0
+            if peek_byte(d, 19) != 92 -> ok: 0
+    if ok = 1 -> cr_ok('target--openrisc')
+    if not -> cr_bad('target--openrisc')
+    return 0
+ck_nios2:
+    out: '/tmp/sov-nios2'
+    r: cr_build('tests/hello.sov', out, '--nios2')
+    if r != 0 -> cr_bad('could not build the nios2 test binary')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if peek_byte(d, 0) = 127 -> if peek_byte(d, 1) = 69
+        if peek_byte(d, 5) = 1 -> ok: 1
+            if peek_byte(d, 18) != 113 -> ok: 0
+            if peek_byte(d, 19) != 0 -> ok: 0
+    if ok = 1 -> cr_ok('target--nios2')
+    if not -> cr_bad('target--nios2')
+    return 0
+ck_sh4:
+    out: '/tmp/sov-sh4'
+    r: cr_build('tests/hello.sov', out, '--sh4')
+    if r != 0 -> cr_bad('could not build the sh4 test binary')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if peek_byte(d, 0) = 127 -> if peek_byte(d, 1) = 69
+        if peek_byte(d, 5) = 2 -> ok: 1
+            if peek_byte(d, 18) != 0 -> ok: 0
+            if peek_byte(d, 19) != 42 -> ok: 0
+    if ok = 1 -> cr_ok('target--sh4')
+    if not -> cr_bad('target--sh4')
+    return 0
+ck_x86_64_v2:
+    out: '/tmp/sov-x86-64-v2'
+    r: cr_build('tests/hello.sov', out, '--x86-64-v2')
+    if r != 0 -> cr_bad('could not build the x86-64-v2 test binary')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if peek_byte(d, 0) = 127 -> if peek_byte(d, 1) = 69
+        if peek_byte(d, 4) = 2 -> if peek_byte(d, 5) = 1
+            if peek_byte(d, 18) = 62 -> ok: 1
+                if peek_byte(d, 19) != 0 -> ok: 0
+                if peek_byte(d, 536) != 3 -> ok: 0
+    if ok = 1 -> cr_ok('target--x86-64-v2')
+    if not -> cr_bad('target--x86-64-v2')
+    return 0
+ck_x86_64_v3:
+    out: '/tmp/sov-x86-64-v3'
+    r: cr_build('tests/hello.sov', out, '--x86-64-v3')
+    if r != 0 -> cr_bad('could not build the x86-64-v3 test binary')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if peek_byte(d, 0) = 127 -> if peek_byte(d, 1) = 69
+        if peek_byte(d, 4) = 2 -> if peek_byte(d, 5) = 1
+            if peek_byte(d, 18) = 62 -> ok: 1
+                if peek_byte(d, 19) != 0 -> ok: 0
+                if peek_byte(d, 536) != 5 -> ok: 0
+    if ok = 1 -> cr_ok('target--x86-64-v3')
+    if not -> cr_bad('target--x86-64-v3')
+    return 0
+ck_x86_64_v4:
+    out: '/tmp/sov-x86-64-v4'
+    r: cr_build('tests/hello.sov', out, '--x86-64-v4')
+    if r != 0 -> cr_bad('could not build the x86-64-v4 test binary')
+        return 0
+    d: file_read_all(out)
+    ok: 0
+    if peek_byte(d, 0) = 127 -> if peek_byte(d, 1) = 69
+        if peek_byte(d, 4) = 2 -> if peek_byte(d, 5) = 1
+            if peek_byte(d, 18) = 62 -> ok: 1
+                if peek_byte(d, 19) != 0 -> ok: 0
+                if peek_byte(d, 536) != 9 -> ok: 0
+    if ok = 1 -> cr_ok('target--x86-64-v4')
+    if not -> cr_bad('target--x86-64-v4')
+    return 0
+ck_fuzz:
+    r: cr_build('tests/fuzz_run.sov', '/tmp/sov-fuzz', '')
+    if r = 0 -> cr_bin('/tmp/sov-fuzz', 300)
+        if str_has(cr_out, 'fuzz ok') = 1 -> cr_ok('the fuzzer (in Sovren)')
+        if not -> cr_bad('the fuzzer (in Sovren)')
+    if not -> cr_bad('could not build tests/fuzz_run.sov')
+ck_selfhost:
+    r: cr_build('compilers/linux/compiler.sov', '/tmp/sov-g1', '')
+    if r != 0 -> cr_bad('self-host byte for byte')
+        return 0
+    a: _sov_alloc(32)
+    poke_i64(a, 0, '/tmp/sov-g1')
+    poke_i64(a, 8, 'compilers/linux/compiler.sov')
+    poke_i64(a, 16, '-o')
+    poke_i64(a, 24, '/tmp/sov-g2')
+    poke_i64(a, 32, 0)
+    cr_run('/tmp/sov-g1', a, 0, 300)
+    poke_i64(a, 0, '/tmp/sov-g2')
+    poke_i64(a, 24, '/tmp/sov-g3')
+    cr_run('/tmp/sov-g2', a, 0, 300)
+    if cr_same('compilers/linux/compiler', '/tmp/sov-g3') = 1 -> cr_ok('self-host byte for byte')
+    if not -> cr_bad('self-host byte for byte')
+cr_issov nm:
+    n: _sov_strlen(nm) ;; if n < 5 -> return 0
+    if peek_byte(nm, n - 4) = 46 -> if peek_byte(nm, n - 3) = 115
+            if peek_byte(nm, n - 2) = 111 -> if peek_byte(nm, n - 1) = 118
+                    return 1
+ck_lib_one nm tgt:
+    base: str_cut(nm, 0, _sov_strlen(nm) - 4)
+    src: str_cat('use ', base)
+    src: str_cat(src, "\nmain:\n    print 1\n")
+    file_write_all('/tmp/sov-L.sov', src)
+    r: cr_build('/tmp/sov-L.sov', '/tmp/sov-L.bin', tgt)
+    if r = 0 -> return 0
+    write_out('  FAIL ')
+    include inc/px01.sov 1056 4 (write_out base write_out write_out tgt write_out)
+    return 1
+ck_alllibs:
+    fd: sys_open('library', 65536)
+    if fd < 0 -> cr_bad('open library dir')
+        return 0
+    buf: _sov_alloc(65536)
+    include inc/px00.sov 119 4 (0 fail tot more 1)
+    as long as more = 1 -> n: syscall(217, fd, buf, 65536, 0, 0, 0)
+        if n <= 0 -> more: 0 ;; if not -> off: 0
+            as long as off < n -> reclen: peek_byte(buf, off + 16) + peek_byte(buf, off + 17) * 256
+                typ: peek_byte(buf, off + 18) ;; nm: buf + off + 19
+                if typ = 8 -> if cr_issov(nm) = 1
+                        tot: tot + 1
+                        if tot % 25 = 0 -> write_out('  built ')
+                            write_out(num_text(tot)) ;; write_out(" libraries so far\n")
+                        tq: tot % ns
+                        if tq = sh -> fail: fail + ck_lib_one(nm, '')
+                            fail: fail + ck_lib_one(nm, '--windows')
+                            fail: fail + ck_lib_one(nm, '--windows-arm64')
+                            fail: fail + ck_lib_one(nm, '--windows-dll')
+                            fail: fail + ck_lib_one(nm, '--linux-so')
+                            fail: fail + ck_lib_one(nm, '--linux-armv7')
+                            fail: fail + ck_lib_one(nm, '--linux-riscv64')
+                            fail: fail + ck_lib_one(nm, '--macos-dylib')
+                            fail: fail + ck_lib_one(nm, '--ios-framework')
+                            fail: fail + ck_lib_one(nm, '--ptx')
+                            fail: fail + ck_lib_one(nm, '--spirv')
+                            fail: fail + ck_lib_one(nm, '--mac')
+                            fail: fail + ck_lib_one(nm, '--android')
+                            fail: fail + ck_lib_one(nm, '--ios')
+                            fail: fail + ck_lib_one(nm, '--android-so')
+                off: off + reclen
+    sys_close(fd) ;; write_out(num_text(tot))
+    write_out(' libraries, ') ;; write_out(num_text(fail))
+    write_out(" build failures\n")
+    if fail = 0 -> cr_ok('every library on every target')
+    if not -> cr_bad('every library on every target')
+ck_nowarn:
+    names: _sov_alloc(128)
+    poke_i64(names, 0, 'linux')
+    poke_i64(names, 8, 'windows')
+    poke_i64(names, 16, 'windows/arm64')
+    poke_i64(names, 24, 'windows/dynamic-link-library')
+    poke_i64(names, 32, 'linux/armv7')
+    poke_i64(names, 40, 'linux/riscv64')
+    poke_i64(names, 48, 'linux/x86-64-shared-object')
+    poke_i64(names, 56, 'apple/macos')
+    poke_i64(names, 64, 'apple/macos-dynamic-library')
+    poke_i64(names, 72, 'apple/ios-framework')
+    poke_i64(names, 80, 'webassembly/webassembly-text')
+    poke_i64(names, 88, 'javascript')
+    poke_i64(names, 96, 'android')
+    poke_i64(names, 104, 'apple/ios')
+    poke_i64(names, 112, 0) ;; i: 0
+    as long as i < 14 -> d: peek_i64(names, i * 8)
+        src: str_cat(str_cat('compilers/', d), '/compiler.sov')
+        r: cr_build(src, '/tmp/sov-cw', '')
+        if r != 0 -> cr_bad(str_cat(d, ' builds clean'))
+        if not -> if str_has(cr_out, 'Warning') = 1
+                cr_bad(str_cat(d, ' builds clean'))
+            if not -> cr_ok(str_cat(d, ' builds clean'))
+        i: i + 1
+ck_longdouble:
+    gcc: cr_which('gcc')
+    if gcc = 0 -> cr_skip('long double (no gcc)')
+        return 0
+    c: "#include <stdio.h>\nstatic long double f(long double a, long double b){ return a*b + a/b; }\nint main(void){\n"
+    c: str_cat(c, "    long double x = 3.5L, y = 1.25L;\n")
+    c: str_cat(c, "    printf(\"%.10Lf\\n\", f(x, y));\n")
+    c: str_cat(c, "    printf(\"%.10Lf\\n\", x + y);\n")
+    c: str_cat(c, "    printf(\"%.10Lf\\n\", x * x * x);\n")
+    c: str_cat(c, "    return 0;\n}\n")
+    file_write_all('/tmp/sov-ld.c', c)
+    a: _sov_alloc(48) ;; poke_i64(a, 0, gcc)
+    poke_i64(a, 8, '-static')
+    poke_i64(a, 16, '-O1')
+    poke_i64(a, 24, '-o')
+    include inc/px00.sov 1879 4 (a ld a ld a a)
+    if cr_rc != 0 -> cr_skip('long double (gcc cannot build static)')
+        return 0
+    cr_bin('/tmp/sov-ld', 20)
+    nat: cr_out ;; a2: _sov_alloc(16)
+    poke_i64(a2, 0, '/tmp/sov-runc')
+    poke_i64(a2, 8, '/tmp/sov-ld')
+    poke_i64(a2, 16, 0)
+    cr_run('/tmp/sov-runc', a2, 0, 120)
+    if str_eq(nat, cr_out) = 1 -> cr_ok('long double on the emulated cpu')
+    if not -> cr_bad('long double on the emulated cpu')
+ck_exemac:
+    cr_build('tests/windows-run.sov', '/tmp/sov-wrun', '')
+    cr_build('tests/macos-run.sov', '/tmp/sov-mrun', '')
+    cr_build('tests/hello.sov', '/tmp/sov-h.exe', '--windows')
+    cr_build('tests/hello.sov', '/tmp/sov-h.mac', '--mac')
+    include inc/px00.sov 1311 5 (16 wrun sov h exe wrun 120)
+    w: cr_out
+    poke_i64(a, 0, '/tmp/sov-mrun')
+    poke_i64(a, 8, '/tmp/sov-h.mac')
+    cr_run('/tmp/sov-mrun', a, 0, 120)
+    m: cr_out
+    if str_has(w, 'Hello from Sovren') = 1 -> if str_has(m, 'Hello from Sovren') = 1
+            if str_eq(w, m) = 1 -> cr_ok('exe and Mac binary, same words, in Sovren')
+                return 0
+    cr_bad('exe and Mac binary, same words, in Sovren')
+include inc/px00.sov 1884 4 (ck_wincomp_emu x86 string)
+    src: cr_line(src, '    m: x86_new()')
+    src: cr_line(src, "    if x86_load(m, \"sovren.exe\") is 0")
+    src: cr_line(src, "        print \"cannot load sovren.exe\"")
+    src: cr_line(src, '        stop')
+    src: cr_line(src, "    x_set_cmdline(m, \"sovren.exe hello.sov -o /tmp/hello-emu.exe\")")
+    src: cr_line(src, '    x86_run_for(m, 500000000)')
+    src: cr_line:
+        '    write_out(x86_out(m))'
+        '    write_out(x86_err(m))'
+        '    print x86_reason(m)'
+    file_write_all('/tmp/sov-emub.sov', src)
+    r: cr_build('/tmp/sov-emub.sov', '/tmp/sov-emub', '')
+    if r != 0 -> cr_bad('windows compiler in the emulator')
+        return 0
+    cr_bin('/tmp/sov-emub', 400)
+    if str_has(cr_out, 'Wrote') = 0 -> cr_bad('windows compiler in the emulator')
+        return 0
+    if str_has(cr_out, 'done') = 0 -> cr_bad('windows compiler in the emulator')
+        return 0
+    if file_exists('/tmp/hello-emu.exe') = 0 -> cr_bad('windows compiler in the emulator (no exe)')
+        return 0
+    cr_build('tests/hello.sov', '/tmp/sov-hn.exe', '--windows')
+    if cr_same('/tmp/hello-emu.exe', '/tmp/sov-hn.exe') = 1 -> cr_ok('windows compiler in the emulator, byte for byte')
+    if not -> cr_bad('windows compiler in the emulator, byte for byte')
+    include inc/px00.sov 1311 5 (16 wrun hello emu exe wrun 120)
+    if str_has(cr_out, 'Hello from Sovren') = 1 -> cr_ok('the exe built inside the emulator runs')
+    if not -> cr_bad('the exe built inside the emulator runs')
+cr_le16 p i:
+    return peek_byte(p, i) + peek_byte(p, i + 1) * 256
+cr_le32 p i:
+    return peek_byte(p, i) + peek_byte(p, i + 1) * 256 + peek_byte(p, i + 2) * 65536 + peek_byte(p, i + 3) * 16777216
+cr_bmp_has b r g bl:
+    if b = 0 -> return 0 ;; po: cr_le32(b, 10)
+    w: cr_le32(b, 18) ;; h: cr_le32(b, 22)
+    bpp: cr_le16(b, 28) ;; if bpp != 24 -> if bpp != 32
+            return 0
+    bypp: bpp / 8 ;; rowsz: w * bypp
+    as long as rowsz % 4 != 0 -> rowsz: rowsz + 1 ;; up: 1
+    if h < 0 -> h: 0 - h
+        up: 0
+    y: 0 ;; as long as y < h -> x: 0
+        as long as x < w -> yy: y
+            if up = 1 -> yy: h - 1 - y ;; o: po + yy * rowsz + x * bypp
+            if peek_byte(b, o + 2) = r -> if peek_byte(b, o + 1) = g
+                    if peek_byte(b, o) = bl -> return 1
+            x: x + 1
+        y: y + 1
+cr_hex buf s:
+    n: str_len(s)
+    include inc/inc02.sov 1481 3
+    as long as i < n -> hi: cr_nib(peek_byte(s, i))
+        include inc/px01.sov 276 4 (cr_nib buf j j 1 i i 2)
+    return j
+cr_nib c:
+    if c >= 48 -> if c <= 57
+            return c - 48
+    if c >= 97 -> return c - 87 ;; if c >= 65 -> return c - 55
+cr_byteeq a b n:
+    include inc/px00.sov 320 4 (n a b)
+    return 1
+ck_crypto:
+    _sov_alloc(16):
+        include inc/px00.sov 6 4 (kb pb cb xb)
+    cr_hex(kb, '000102030405060708090a0b0c0d0e0f')
+    cr_hex(pb, '00112233445566778899aabbccddeeff')
+    rk: _sov_alloc(176) ;; ae_expand(kb, rk)
+    ae_enc_block(rk, pb, cb)
+    cr_hex(xb, '69c4e0d86a7b0430d8cdb78070b4c55a')
+    if cr_byteeq(cb, xb, 16) = 1 -> cr_ok('aes-128 matches the NIST vector')
+    if not -> cr_bad('aes-128 matches the NIST vector')
+    ae_dec_block(rk, cb, xb)
+    if cr_byteeq(xb, pb, 16) = 1 -> cr_ok('aes-128 decrypts its own ciphertext')
+    if not -> cr_bad('aes-128 decrypts its own ciphertext')
+    gk: _sov_alloc(16)
+    include inc/px01.sov 1396 4 (giv _sov_alloc 12 ga _sov_alloc 20 _sov_alloc 16 gp)
+        gc ;; gx
+    cr_hex(gk, '000102030405060708090a0b0c0d0e0f')
+    cr_hex(giv, '000102030405060708090a0b')
+    cr_hex(ga, 'feedfacedeadbeeffeedfacedeadbeefabaddad2')
+    cr_hex(gp, 'd9313225f88406e5a55909c5aff5269a')
+    gm_enc(gk, giv, ga, 20, gp, 16, gc)
+    cr_hex(gx, '4a5d95eb9e9ff1b1ee8b684f99565692')
+    if cr_byteeq(gc, gx, 16) = 1 -> cr_ok('gcm ciphertext matches the vector')
+    if not -> cr_bad('gcm ciphertext matches the vector')
+    cr_hex(gx, 'a66c4727f9c541175b33b673b0d32c7b')
+    if cr_byteeq(gm_tag, gx, 16) = 1 -> cr_ok('gcm tag matches the vector')
+    if not -> cr_bad('gcm tag matches the vector')
+    ps: _sov_alloc(48) ;; pd: _sov_alloc(64)
+    include inc/px00.sov 663 5 (po 32 48 ps 171 i 0)
+    as long as i < 64 -> poke_byte(pd, i, 205)
+        i: i + 1
+    tl_n: 12
+    tl_prf(po, ps, 48, 'PRF testvector', 14, pd, 64)
+    cr_hex(gx, '670b6682a396647c92e554f0')
+    if cr_byteeq(po, gx, 12) = 1 -> cr_ok('the PRF matches the RFC 5246 vector')
+    if not -> cr_bad('the PRF matches the RFC 5246 vector')
+    rb: _sov_alloc(64)
+    cr_hex(kb, '0104070a0d101316191c1f2225282b2e')
+    cr_hex(xb, '070b0d11')
+    cr_hex(pb, '02070c11161b20252a2f34393e43484d')
+    tl_seq_c: 1 ;; tl_rec_enc(rb, 23, pb, 16, kb, xb)
+    rl: tl_clen
+    cr_hex(cb, '1703030028000000000000000131be80774d7b3752af457288f889b2fadabe1291cc4c4315febd60a65a832050')
+    if rl = 45 -> if cr_byteeq(rb, cb, 45) = 1
+            cr_ok('the record layer matches the vector')
+        if not -> cr_bad('the record layer matches the vector')
+    if not -> cr_bad('the record layer matches the vector')
+    js: "{\"a\":1,\"b\":[10,20,{\"c\":\"x\"}],\"d\":\"hi\"}"
+    v: json_at_num(js, 'a')
+    if v = 1 -> cr_ok('json numbers by path')
+    if not -> cr_bad('json numbers by path')
+    v: json_len(js, 'b')
+    if v = 3 -> cr_ok('json array lengths by path')
+    if not -> cr_bad('json array lengths by path')
+    s: json_at(js, 'b[2].c')
+    if str_eq(s, 'x') = 1 -> cr_ok('json deep paths')
+    if not -> cr_bad('json deep paths')
+    _sov_alloc(32):
+        xa ;; xb
+        xo
+    cr_hex(xa, 'a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4')
+    cr_hex(xb, 'e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c')
+    x19(xo, xa, xb)
+    cr_hex(xb, 'c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552')
+    if cr_byteeq(xo, xb, 32) = 1 -> cr_ok('x25519 matches the RFC vector')
+    if not -> cr_bad('x25519 matches the RFC vector')
+    cr_hex(xa, '77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a')
+    cr_hex(xb, '5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb')
+    i: 0 ;; as long as i < 32 -> poke_byte(xo, i, 0)
+        i: i + 1
+    poke_byte(xo, 0, 9) ;; x19(xo, xa, xo)
+    cr_hex(xb, '8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a')
+    if cr_byteeq(xo, xb, 32) = 1 -> cr_ok('x25519 key agreement matches the RFC')
+    if not -> cr_bad('x25519 key agreement matches the RFC')
+ck_load p:
+    fd: sys_open(p, 0)
+    if fd < 0 -> return 0
+    buf: _sov_alloc(65536)
+    n: syscall(0, fd, buf, 65535, 0, 0, 0)
+    sys_close(fd)
+    return wasm_load(buf, n)
+
+ck_one nm fn a b c d want:
+    p: str_cat(str_cat('tests/wasm/', nm), '.wasm')
+    h: ck_load(p)
+    if h = 0 -> return 1
+    r: wasm_call(h, fn, a, b, c, d)
+    if r != want -> return 1
+    if wasm_trap(h) != 0 -> return 1
+    return 0
+
+ck_wasm:
+    bad: 0
+    bad: bad + ck_one('add', 'add', 2, 3, 0, 0, 5)
+    bad: bad + ck_one('add', 'add', 0 - 2, 3, 0, 0, 1)
+    bad: bad + ck_one('fib', 'fib', 10, 0, 0, 0, 55)
+    bad: bad + ck_one('fib', 'fib', 20, 0, 0, 0, 6765)
+    bad: bad + ck_one('ctrl', 'sum10', 0, 0, 0, 0, 55)
+    bad: bad + ck_one('ctrl', 'mx', 7, 9, 0, 0, 9)
+    bad: bad + ck_one('ctrl', 'sel', 1, 2, 5, 0, 1)
+    bad: bad + ck_one('ctrl', 'dvs', 0 - 7, 2, 0, 0, 0 - 3)
+    bad: bad + ck_one('ops', 'divu', 0 - 1, 16, 0, 0, 268435455)
+    bad: bad + ck_one('ops', 'remu', 0 - 1, 4096, 0, 0, 4095)
+    bad: bad + ck_one('ops', 'extu', 0 - 5, 0, 0, 0, 4294967291)
+    bad: bad + ck_one('ops', 'tee', 21, 0, 0, 0, 42)
+    bad: bad + ck_one('ops', 'drop1', 9, 8, 0, 0, 8)
+    bad: bad + ck_one('mem', 'st', 287454020, 0, 0, 0, 287454020)
+    bad: bad + ck_one('mem', 'st8', 300, 0, 0, 0, 44)
+    bad: bad + ck_one('mem', 'ld16', 0, 0, 0, 0, 4660)
+    bad: bad + ck_one('mem', 'grw', 2, 0, 0, 0, 1)
+    bad: bad + ck_one('mem', 'grw', 0 - 1, 0, 0, 0, 0 - 1)
+    if bad = 0 -> cr_ok('wasm interpreter battery')
+    if not -> cr_bad('wasm interpreter battery')
+    return 0
+
+ck_wasi:
+    h: ck_load('tests/wasm/hello.wasm')
+    if h = 0 -> cr_bad('wasi fd_write round')
+        return 0
+    dummy: wasm_call(h, '_start', 0, 0, 0, 0)
+    if wasm_trap(h) = 1 -> if wasm_exit_code(h) = 7 -> cr_ok('wasi fd_write round')
+    if not -> cr_bad('wasi fd_write round')
+    file_write_all('/tmp/sov-wasi-src.sov', "main:\n    print ''\n    return 7\n")
+    r: cr_build('/tmp/sov-wasi-src.sov', '/tmp/sov-wasi-gen.wasm', '--wasi')
+    if r != 0 -> cr_bad('wasi compiler target')
+        return 0
+    h2: ck_load('/tmp/sov-wasi-gen.wasm')
+    if h2 = 0 -> cr_bad('wasi compiler target')
+        return 0
+    dummy: wasm_call(h2, '_start', 0, 0, 0, 0)
+    if wasm_trap(h2) = 1 -> if wasm_exit_code(h2) = 7 -> cr_ok('wasi compiler target')
+    if not -> cr_bad('wasi compiler target')
+    file_write_all('/tmp/sov-wasi-subset.sov', "main:\n    x: 10 ;; y: 20\n    z: x + y ;; print z\n    if z > 15 -> print ''\n    if not -> print ''\n    print '' 2 times\n")
+    r: cr_build('/tmp/sov-wasi-subset.sov', '/tmp/sov-wasi-subset.wasm', '--wasi')
+    if r != 0 -> cr_bad('wasi compiler subset')
+        return 0
+    h3: ck_load('/tmp/sov-wasi-subset.wasm')
+    if h3 = 0 -> cr_bad('wasi compiler subset')
+        return 0
+    dummy: wasm_call(h3, '_start', 0, 0, 0, 0)
+    if wasm_trap(h3) = 0 -> cr_ok('wasi compiler subset')
+    if not -> cr_bad('wasi compiler subset')
+    file_write_all('/tmp/sov-wasi-loop.sov', "main:\n    x: 0\n    as long as x < 3 -> x: x + 1\n    return x\n")
+    r: cr_build('/tmp/sov-wasi-loop.sov', '/tmp/sov-wasi-loop.wasm', '--wasi')
+    if r != 0 -> cr_bad('wasi compiler loop')
+        return 0
+    h4: ck_load('/tmp/sov-wasi-loop.wasm')
+    if h4 = 0 -> cr_bad('wasi compiler loop')
+        return 0
+    dummy: wasm_call(h4, '_start', 0, 0, 0, 0)
+    if wasm_trap(h4) = 1 -> if wasm_exit_code(h4) = 3 -> cr_ok('wasi compiler loop')
+    if not -> cr_bad('wasi compiler loop')
+    return 0
+
+cr_atoi s:
+    v: 0 ;; n: str_len(s)
+    i: 0 ;; as long as i < n -> v: v * 10 + peek_byte(s, i) - 48
+        i: i + 1
+    return v
+main:
+    sh: 0 ;; ns: 1
+    ac: arg_count() ;; if ac > 1 -> sh: cr_atoi(as text arg_at(1))
+    if ac > 2 -> ns: cr_atoi(as text arg_at(2)) ;; ci: 0
+    include inc/px00.sov 107 6 (ck_all ck_arm_emu)
+    include inc/px00.sov 107 6 (ck_arm64 ck_ios)
+    include inc/px00.sov 107 6 (ck_x86ins ck_emu_driver)
+    include inc/px00.sov 107 6 (ck_cprog ck_fp)
+    include inc/px00.sov 107 6 (ck_windows_gui ck_win_hang)
+    include inc/px00.sov 107 6 (ck_win_imports ck_ww)
+    include inc/px00.sov 107 6 (ck_nodisp ck_telegram)
+    include inc/px00.sov 107 6 (ck_wine ck_editor)
+    include inc/px00.sov 107 6 (ck_examples ck_targets)
+    include inc/px00.sov 107 6 (ck_exemac ck_wincomp_emu)
+    include inc/px00.sov 107 6 (ck_selfhost ck_alllibs)
+    include inc/px00.sov 107 6 (ck_nowarn ck_longdouble)
+    include inc/px00.sov 107 6 (ck_fuzz ck_crypto)
+    include inc/px00.sov 107 6 (ck_apple ck_apple_none)
+    include inc/px00.sov 107 6 (ck_wasm ck_wasi)
+    write_out('[shard ') ;; write_out(num_text(sh))
+    write_out(' of ') ;; write_out(num_text(ns))
+    write_out('] ') ;; write_out(num_text(cr_pass))
+    write_out(' passed, ')
+    include inc/px00.sov 842 6 (cr_fail failed cr_skipn skipped cr_fail all checks)
+    write_out("some checks failed\n")
+    sys_exit(1)
+

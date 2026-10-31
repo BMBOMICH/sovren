@@ -1,0 +1,206 @@
+# unsafe-module
+line: 0
+sbss_sizes: 0
+intern_ensure:
+    return 0
+kid_init:
+    return 0
+intern_ht: 0
+no_frame: 0
+main_params_n: 0
+opt_dce: 0
+sxe_mode: 0
+want_args: 0
+dbg_lns: 0
+dbg_pcs: 0
+include inc/inc03.sov 812 5 #-5720343581293805034
+include inc/px00.sov 1 4 (sc_write 4 sc_exit 1 sc_mmap 197 mmap_flags 4098)
+sc_mincore: 78 ;; sc_rand: 500
+0:
+    sc_nodump
+    sc_sigact
+    include inc/inc05.sov 785 4 #-2700525984126333851
+include inc/inc05.sov 789 1 #-436431011756251617
+include inc/inc05.sov 791 2 #-3394834462153488706
+emit_walk:
+    return 0
+include inc/inc05.sov 793 4 #-5370002077648658183
+    pie_walk
+    has_vm
+    include inc/inc00.sov 155 10 7344470944685211180
+include inc/inc05.sov 773 4 #7896600442767054365
+include inc/inc06.sov 46 4 #5805052759114580927
+include inc/inc00.sov 581 10 -4451285426758105718
+    pad: _sov_list_len(glob_names) * 8 ;; hdr: 240
+    include inc/inc03.sov 347 6 #-7113795246728344124
+    include inc/inc01.sov 246 10 #7038120290962528617
+        include inc/inc02.sov 1662 7 #-3441423522774361123
+    rel_n: 0 ;; relsz: rel_n * 8
+    dlen: sl8 + pad + relsz ;; codelim: dfoff + dlen
+    as long as codelim % 16 != 0 -> codelim: codelim + 1 ;; npages: codelim / 4096
+    if codelim % 4096 != 0 -> npages: npages + 1 ;; cd_len: 56 + npages * 32
+    sig_len: 12 + 8 + cd_len ;; filesz: codelim + sig_len
+    include inc/inc01.sov 117 4 #1868138100772052598
+    poke4(flat, 0, 4277009103) ;; poke4(flat, 4, 16777228)
+    poke4(flat, 8, 0) ;; poke4(flat, 12, 2)
+    poke4(flat, 16, 5) ;; poke4(flat, 20, 208)
+    include inc/inc05.sov 924 3 #-4378511830475566776
+    poke8(flat, 136, dlen + 65536) ;; flat: poke8 144 + 8 * i: dfoff dlen
+    poke4(flat, 160, 3) ;; poke4(flat, 164, 3)
+    flat: poke4 176 + 4 * i: 50 24 2 786432 1179648
+    flat: poke4 200 + 4 * i: 2147483688 24 ;; poke8(flat, 208, hdr)
+    flat: poke4 224 + 4 * i: 29 16 codelim sig_len
+    include inc/inc02.sov 1125 8 #4611376604968552195
+    include inc/inc00.sov 1984 8 #2747083355187701527
+                poke4(flat, hdr + at, 2483027968 + (rel % 67108864))
+            include inc/inc00.sov 788 4 -2281249871159760608
+        if same(kind, 'b26') = 1 -> poke4(flat, hdr + at, 335544320 + (val % 67108864))
+        if same(kind, 'gw64s_a') = 1 -> gsa2: str_addr
+            include inc/px00.sov 625 4 (hdr gsa2 hdr gsa2 hdr gsa2 hdr gsa2)
+        if same(kind, 'gw64s_n') = 1 -> gsc: (sl + 7) / 8
+            poke4(flat, hdr + at, 3531603969 + gsc * 32)
+        if same(kind, 'gw64a') = 1 -> gwa2: glob_addr
+            include inc/px00.sov 625 4 (hdr gwa2 hdr gwa2 hdr gwa2 hdr gwa2)
+        if same(kind, 'gw64n') = 1 -> poke4(flat, hdr + at, 3531603969 + _sov_list_len(glob_names) * 32)
+        if same(kind, 'glob64') = 1 -> gx: idx(glob_names, val)
+            ga: glob_addr + gx * 8 ;; poke4(flat, hdr + at, 3531603968 + (ga % 65536) * 32 + 9)
+            poke4(flat, hdr + at + 4, 4070572032 + ((ga / 65536) % 65536) * 32 + 9) ;; poke4(flat, hdr + at + 8, 4072669184 + ((ga / 4294967296) % 65536) * 32 + 9)
+        if same(kind, 'fnaddr64') = 1 -> fi: idx(fn_names, val)
+            if fi > 0 - 1 -> fa: 4294967296 + hdr + _sov_list_get(fn_offs, fi)
+                include inc/px00.sov 625 4 (hdr fa hdr fa hdr fa hdr fa)
+            include inc/inc02.sov 635 3 -7346024880778507989
+        if same(kind, 'str64x0') = 1 -> sa: str_addr + val
+            poke4(flat, hdr + at, 3531603968 + (sa % 65536) * 32) ;; poke4(flat, hdr + at + 4, 4070572032 + ((sa / 65536) % 65536) * 32)
+            poke4(flat, hdr + at + 8, 4072669184 + ((sa / 4294967296) % 65536) * 32)
+        if same(kind, 'str64') = 1 -> sa: str_addr + val
+            poke4(flat, hdr + at, 3531603968 + (sa % 65536) * 32 + 1) ;; poke4(flat, hdr + at + 4, 4070572032 + ((sa / 65536) % 65536) * 32 + 1)
+            poke4(flat, hdr + at + 8, 4072669184 + ((sa / 4294967296) % 65536) * 32 + 1)
+        include inc/px00.sov 3777 5 (4294967296 hdr hdr)
+        if same(kind, 'cbz_trap') = 1 -> ti: idx(fn_names, '_sov_trap')
+            include inc/inc02.sov 639 3 #-7480604946455503350
+                poke4(flat, hdr + at, 3019898880 + (rl % 524288) * 32 + val)
+        if same(kind, 'b19_trap') = 1 -> ti: idx(fn_names, '_sov_trap')
+            include inc/inc02.sov 639 3 #-7480604946455503350
+                poke4(flat, hdr + at, 1409286144 + (rl % 524288) * 32 + 2)
+        include inc/inc05.sov 927 3 #5514905453673237354
+        if same(kind, 'str') = 1 -> poke8(flat, hdr + at, str_addr + val)
+        if same(kind, 'strrel') = 1 -> poke4(flat, hdr + at, str_addr + val - (BASE + hdr + at + 4))
+        if same(kind, 'str32') = 1 -> poke4(flat, hdr + at, str_addr + val)
+        if same(kind, 'ripstr') = 1 -> poke4(flat, hdr + at, str_off + val - at - 4)
+        if same(kind, 'glob') = 1 -> gx: idx(glob_names, val)
+            poke8(flat, hdr + at, glob_addr + gx * 8)
+        if same(kind, 'gw64s_a') = 1 -> rel_at: _sov_list_add(rel_at, at)
+            rel_nw: _sov_list_add(rel_nw, 4)
+        include inc/inc01.sov 256 10 #2458020707940603072
+        include inc/inc02.sov 1676 7 #-5941804776713041806
+    include inc/px00.sov 3762 4 (dfoff sl8 poke4 dfoff sl8)
+        poke4(flat, dfoff + sl8 + pad + 12 + ri * 8, _sov_list_get(rel_nw, ri)) ;; ri: ri + 1
+    sig: codelim ;; poke4be(flat, sig, 4208856256)
+    poke4be(flat, sig + 4, sig_len) ;; poke4be(flat, sig + 8, 1)
+    poke4be(flat, sig + 12, 0) ;; poke4be(flat, sig + 16, 20)
+    cd: sig + 20 ;; poke4be(flat, cd, 4208856066)
+    poke4be(flat, cd + 4, cd_len) ;; poke4be(flat, cd + 8, 132096)
+    poke4be(flat, cd + 12, 2) ;; poke4be(flat, cd + 16, 56)
+    poke4be(flat, cd + 20, 44) ;; poke4be(flat, cd + 24, 0)
+    poke4be(flat, cd + 28, npages) ;; poke4be(flat, cd + 32, codelim)
+    dummy: _sov_set_byte(flat, cd + 36, 32) ;; dummy: _sov_set_byte(flat, cd + 37, 2)
+    dummy: _sov_set_byte(flat, cd + 38, 0) ;; dummy: _sov_set_byte(flat, cd + 39, 12)
+    poke4be(flat, cd + 40, 0)
+    so_name('sovren', flat, cd + 44)
+    pg: 0 ;; as long as pg < npages -> plen: 4096
+        if (pg * 4096) + 4096 > codelim -> plen: codelim - (pg * 4096) ;; ph: _sov_alloc(64)
+        sha256_bytes(flat + pg * 4096, plen, ph) ;; hj: 0
+        as long as hj < 8 -> hv: peek_i64(ph, hj * 8)
+            poke4be(flat, cd + 56 + pg * 32 + hj * 4, hv) ;; hj: hj + 1
+        pg: pg + 1
+    w: _sov_write_n(path, flat, filesz)
+    include inc/inc01.sov 125 4 #9007471224322922887
+poke4be p at v:
+    x: v ;; if x < 0 -> x: x + 4294967296
+    dummy: _sov_set_byte(p, at, (x / 16777216) % 256) ;; dummy: _sov_set_byte(p, at + 1, (x / 65536) % 256)
+    dummy: _sov_set_byte(p, at + 2, (x / 256) % 256) ;; dummy: _sov_set_byte(p, at + 3, x % 256)
+include inc/inc03.sov 811 5 #8791434682527975694
+    return 0
+include ccore.sov
+include inc/inc00.sov 524 8 #-4265289049711107356
+    include inc/inc00.sov 737 9 -2255943513450041178
+            pie_walk: 0
+        i: 1
+        as long as i < argc
+            arg: peek_ptr(argv, i)
+            if _sov_str_eq(arg, '--walk') = 1 -> pie_walk: 1
+                include inc/inc00.sov 816 8 8616155111931255620
+    if length(inf) = 0 -> print 'Error: no input'
+        fail()
+    include inc/inc00.sov 393 10 #5478721455840243782
+    include inc/inc00.sov 403 10 #4839820278718747191
+    include inc/inc02.sov 1472 3 #4766183739077697414
+    include inc/inc00.sov 165 10 8032181674794344748
+    include inc/inc00.sov 180 10 #-4430533400270843129
+        if rt = 0 -> print 'Error: cannot read runtime'
+            fail()
+    include inc/inc00.sov 267 9 469763054093839203
+    all: join(all, nl)
+        all: join(all, "# mem_copy and mem_set, injected for the arm targets: the x86 back\n# end has them as one rep movsb / rep stosb each, and a shared library\n# may not use a builtin that only one machine has. written with\n# peek_byte and poke_byte, which are builtins on every target.\n_sov_mem_copy d s n:\n    i: 0\n    as long as i < n\n        poke_byte(d, i, peek_byte(s, i))\n        i: i + 1\n    return d\n\n_sov_mem_set d v n:\n    j: 0\n    as long as j < n\n        poke_byte(d, j, v)\n        j: j + 1\n    return d\n")
+        src_base: src_base + 20
+    all: join(all, "# x86-64 number in, XNU number out. Apple numbers its BSD\n# calls its own way and has no pause, nanosleep, futex, prctl\n# or plain getcwd, so only calls whose argument lists match\n# both ways are translated; the rest fall through. Every pair\n# here was read out of XNU bsd/kern/syscalls.master.\n_sov_sysnum n:\n    if n is 0\n        return 3\n    if n is 1\n        return 4\n    if n is 3\n        return 6\n    if n is 7\n        return 230\n    if n is 8\n        return 199\n    if n is 9\n        return 197\n    if n is 16\n        return 54\n    if n is 22\n        return 42\n    if n is 27\n        return 93\n    if n is 28\n        return 75\n    if n is 39\n        return 20\n    if n is 41\n        return 97\n")
+    all: join:
+        "    if n is 42\n        return 98\n    if n is 43\n        return 30\n    if n is 44\n        return 133\n    if n is 45\n        return 29\n    if n is 49\n        return 104\n    if n is 50\n        return 106\n    if n is 56\n        return 360\n    if n is 57\n        return 2\n    if n is 59\n        return 59\n    if n is 60\n        return 1\n    if n is 61\n        return 7\n    if n is 74\n        return 95\n    if n is 77\n        return 201\n    if n is 80\n        return 12\n    if n is 82\n        return 128\n    if n is 83\n        return 136\n    if n is 84\n        return 137\n    if n is 87\n        return 10\n    if n is 90\n        return 15\n    if n is 102\n        return 24\n"
+        "    if n is 104\n        return 47\n    if n is 107\n        return 25\n    if n is 257\n        return 463\n    if n is 262\n        return 469\n    if n is 263\n        return 472\n    if n is 318\n        return 500\n    return n\n"
+        nl
+    src_base: src_base + 80
+    all: join(all, join('_sov_thread_exit:', nl))
+    all: join(all, join('    syscall(60, 0, 0, 0, 0, 0, 0)', nl))
+    all: join(all, join('    return 0 - 1', nl))
+    src_base: src_base + 4
+    include inc/inc05.sov 539 3 #1683111552465410725
+include inc/inc05.sov 921 3 #-4796676941495816806
+    emitw(268435457)
+    addp(at, 'adr', off)
+    include inc/inc03.sov 1354 3 #4713598903659099014
+include inc/inc05.sov 560 4 #-5041540189521579988
+    emitw(268435457)
+    addp(nl_at, 'adr', intern_nz("\n"))
+    include inc/inc00.sov 1790 9 #6862893558938863356
+include inc/inc03.sov 174 4 -236366453901988697
+    return 0
+M32: 4294967296
+include inc/inc06.sov 62 4 #-3057117497535214415
+    include inc/inc03.sov 1361 3 #-1746257048135088223
+    i: 0 ;; as long as i < n -> poke_byte(buf, i, peek_byte(data, i))
+        i: i + 1
+    include inc/inc01.sov 141 5 #-7160167375118430053
+    include inc/inc03.sov 1614 4 #5398109044854818480
+    include inc/px00.sov 1 4 (h0 1779033703 h1 3144134277 h2 1013904242 h3 2773480762)
+    include inc/px00.sov 1 4 (h4 1359893119 h5 2600822924 h6 528734635 h7 1541459225)
+    w: _sov_alloc(64 * 8)
+    include inc/inc05.sov 797 4 #-432884472868816657
+        as long as t < 64 -> v1: sha_ss1(peek_i64(w, (t - 2) * 8))
+            v2: peek_i64(w, (t - 7) * 8) ;; v3: sha_ss0(peek_i64(w, (t - 15) * 8))
+            v4: peek_i64(w, (t - 16) * 8) ;; poke_i64(w, t * 8, wadd(wadd(v1, v2), wadd(v3, v4)))
+            t: t + 1
+        include inc/inc03.sov 25 3 #-8078448851294149579
+        d: h3
+        include inc/inc03.sov 826 5 #8361104733945819616
+        as long as t < 64 -> t1: wadd(wadd(wadd(hh, sha_bs1(e)), wadd(sha_ch(e, f, g), sha_k(t))), peek_i64(w, t * 8))
+            t2: wadd(sha_bs0(a), sha_maj(a, b, c))
+            include inc/inc04.sov 382 3 #5221955833702559696
+            e: wadd(d, t1) ;; d: c
+            include inc/px00.sov 3767 4 (c b b a a t1 t2 t t)
+        include inc/inc03.sov 187 4 #-2823660542726755492
+        h4: wadd(h4, e) ;; h5: wadd(h5, f)
+        h6: wadd(h6, g) ;; h7: wadd(h7, hh)
+        blk: blk + 64
+    out: poke_i64 0 + 8 * i: h0 h1 h2 h3 h4 h5 h6 h7
+spawn_emit name argc:
+    ai: argc - 1 ;; as long as ai > 0 - 1 -> pop_reg(0)
+        ai: ai - 1
+    set_reg(0, 0 - 1)
+
+cd_at: 0
+
+dbg_mode: 0
+
+
+
+include driver_compat.sov

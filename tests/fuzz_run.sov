@@ -1,0 +1,6 @@
+use fuzzlib
+main:
+    fz_seed: 987654321 ;; bad: fz_run(300)
+    if bad = 0 -> print 'fuzz ok'
+    if not -> print 'fuzz FAILED'
+        print bad

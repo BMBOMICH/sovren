@@ -1,0 +1,158 @@
+# unsafe-module
+intern_ensure:
+    return 0
+kid_init:
+    return 0
+intern_ht: 0
+no_frame: 0
+main_params_n: 0
+opt_dce: 0
+sxe_mode: 0
+want_args: 0
+dbg_lns: 0
+dbg_pcs: 0
+include inc/inc03.sov 816 5
+    include inc/inc05.sov 785 4
+include inc/inc05.sov 789 1
+include inc/inc05.sov 791 2
+HDR: 232
+include inc/inc05.sov 793 4
+pie_walk: 1
+0:
+    has_vm
+    include inc/inc00.sov 160 10
+rax_str s:
+    at: here() ;; movz_x(0, 0, 0)
+    movk_x(0, 0, 1)
+    addp(at, 'str64x0', intern(s))
+include inc/inc06.sov 46 4
+include inc/inc03.sov 1352 3
+emit_walk:
+    emitw(268435456) ;; set_reg(1, BASE + HDR)
+    emitw(3405840385)
+    include inc/px00.sov 427 5 (wz 3025893377 3506675715 2852193257 l1)
+    emitw(3531603972)
+    addp(l1, 'wlen16', 0)
+    l2: here() ;; emitw(4070572036)
+    addp(l2, 'wlen32', 0)
+    include inc/px00.sov 29 4 (emitw 2852324339 emitw 2852389876 emitw 3531604194 emitw 2852324320)
+    include inc/px00.sov 480 5 (emitw 2852389857 emitw 3531611208 sysc emitw 2852717537)
+    tt: here() ;; emitw(268435458)
+    addp(tt, 'tadr', 2)
+    emitw(4181721155) ;; emitw(2432704578)
+    wz3: here() ;; emitw(3025893379)
+    lp: here()
+    include inc/px00.sov 29 4 (emitw 4181721156 emitw 3107981381 emitw 2432712770 emitw 2332098692)
+    emitw(3531606538) ;; emitw(1795817663)
+    include inc/px00.sov 427 5 (be_q 1409286144 3531605258 1795817663 be_d)
+    emitw(1409286144) ;; emitw(3531603974)
+    emitw(3531603975) ;; acc: here()
+    emitw(3942973695) ;; bg_r: here()
+    include inc/inc03.sov 1606 4
+    include inc/px00.sov 29 4 (emitw 3544535306 emitw 2596872522 emitw 2332688582 emitw 2432697575)
+    b_acc: here() ;; emitw(335544320)
+    include inc/px00.sov 619 5 (fx 2332098758 3531603975 rw 3942973695)
+    bg_n: here()
+    include inc/inc03.sov 1606 4
+    include inc/px00.sov 29 4 (emitw 2596873418 emitw 3544202570 emitw 3544191243 emitw 3545595148)
+    include inc/px00.sov 29 4 (emitw 3547048332 emitw 3548113229 emitw 2852913512 emitw 2852978952)
+    emitw(3089594504) ;; emitw(2432697575)
+    b_rw: here() ;; emitw(335544320)
+    include inc/px00.sov 427 5 (qwd 4181721222 2332098758 4177526918 b_n1)
+    emitw(335544320)
+    include inc/px00.sov 427 5 (dwl 3107979398 2332098758 3103785094 nxt)
+    emitw(3506439267) ;; wnz: here()
+    emitw(889192451) ;; rst: here()
+    include inc/px00.sov 29 4 (emitw 2853372896 emitw 2853438433 emitw 3531604130 emitw 3531611208)
+    sysc() ;; fin: here()
+    emitw(335544320)
+    addp(fin, 'walk_jmp', 0)
+    put19(wz, fin - wz) ;; put19(wz3, rst - wz3)
+    put19(be_q, qwd - be_q) ;; put19(be_d, dwl - be_d)
+    put19(bg_r, fx - bg_r) ;; put19(bg_n, nxt - bg_n)
+    put26(b_acc, acc - b_acc) ;; put26(b_rw, rw - b_rw)
+    put26(b_n1, nxt - b_n1) ;; put19(wnz, lp - wnz)
+include inc/inc05.sov 918 3
+    include inc/inc03.sov 821 5
+    glob_off: gfoff + sl8 - HDR
+    include inc/inc01.sov 246 10
+        include inc/inc02.sov 1652 7
+    if pie_walk = 0 -> rel_n: 0 ;; relsz: 8 + rel_n * 16
+    filesz: gfoff + sl8 + pad + relsz
+    include inc/inc00.sov 1022 10
+    dummy: _sov_set_byte(flat, 6, 1) ;; et: 2
+    if pie_walk = 1 -> et: 3 ;; flat: poke2 16 + 2 * i: et 183
+    poke4(flat, 20, 1) ;; moff: start_off
+    if thin_main = 1 -> mi: idx(fn_names, 'main')
+        if mi > 0 - 1 -> moff: _sov_list_get(fn_offs, mi)
+    ent: BASE + HDR + moff ;; if pie_walk = 1 -> ent: BASE + HDR
+    flat: poke8 24 + 8 * i: ent 64 ;; flat: poke2 52 + 2 * i: 64 56 3
+    flat: poke4 64 + 4 * i: 1 5 ;; flat: poke8 80 + 8 * i: BASE BASE gfoff gfoff 4096
+    include inc/inc03.sov 1610 4
+    poke8(flat, 152, sl8 + pad + relsz) ;; poke8(flat, 160, sl8 + pad + relsz + 65536)
+    poke8(flat, 168, 4096) ;; flat: poke4 176 + 4 * i: 1685382481 6
+    poke8(flat, 224, 16)
+    include inc/inc02.sov 1659 7
+    include inc/inc05.sov 777 4
+        if same(kind, 'gw64s_a') = 1 -> gsa2: str_addr
+            include inc/px00.sov 625 4 (HDR gsa2 HDR gsa2 HDR gsa2 HDR gsa2)
+        if same(kind, 'gw64s_n') = 1 -> gsc: (sl + 7) / 8
+            poke4(flat, HDR + at, 3531603969 + gsc * 32)
+        if same(kind, 'gw64a') = 1 -> gwa2: glob_addr
+            include inc/px00.sov 625 4 (HDR gwa2 HDR gwa2 HDR gwa2 HDR gwa2)
+        if same(kind, 'gw64n') = 1 -> poke4(flat, HDR + at, 3531603969 + _sov_list_len(glob_names) * 32)
+        include inc/inc02.sov 1117 8
+        include inc/inc05.sov 912 3
+        include inc/px00.sov 3777 5 (BASE HDR HDR)
+        if same(kind, 'tadr') = 1 -> rel2: gfoff + sl8 + pad - (HDR + at)
+            if rel2 < 0 -> rel2: rel2 + 2097152
+            if rel2 >= 2097152 -> print 'Error: the pie table is out of adr range'
+                had_err: 1
+            poke4(flat, HDR + at, 268435456 + (rel2 % 4) * 536870912 + ((rel2 / 4) % 524288) * 32 + val)
+        if same(kind, 'walk_jmp') = 1 -> rl2: (moff - at) / 4
+            if rl2 < 0 -> rl2: rl2 + 67108864 ;; poke4(flat, HDR + at, 335544320 + (rl2 % 67108864))
+        if same(kind, 'wlen16') = 1 -> sp: (gfoff + 4095) / 4096 * 4096
+            poke4(flat, HDR + at, 3531603968 + (sp % 65536) * 32 + 4)
+        if same(kind, 'wlen32') = 1 -> sp2: (gfoff + 4095) / 4096 * 4096
+            poke4(flat, HDR + at, 4070572036 + ((sp2 / 65536) % 65536) * 32)
+        include inc/inc05.sov 645 5
+        if same(kind, 'gw64s_a') = 1 -> rel_at: _sov_list_add(rel_at, at)
+            rel_nw: _sov_list_add(rel_nw, 4)
+        if same(kind, 'strrel') = 1 -> poke4(flat, HDR + at, str_addr + val - (BASE + HDR + at + 4))
+            rel_nw: _sov_list_add(rel_nw, 4)
+        include inc/inc01.sov 256 10
+        include inc/inc02.sov 1666 7
+    if had_err = 1 -> return ;; tbl: gfoff + sl8 + pad
+    poke8(flat, tbl, rel_n) ;; ri: 0
+    as long as ri < rel_n -> poke8(flat, tbl + 8 + ri * 16, BASE + HDR + _sov_list_get(rel_at, ri))
+        poke4(flat, tbl + 8 + ri * 16 + 8, _sov_list_get(rel_nw, ri)) ;; poke4(flat, tbl + 8 + ri * 16 + 12, 0)
+        ri: ri + 1
+    w: _sov_write_n(path, flat, filesz)
+    include inc/inc01.sov 125 4
+include ccore.sov
+include inc/inc00.sov 524 8
+    include inc/inc00.sov 744 9
+            pie_walk: 0
+        include inc/inc00.sov 824 8
+    if length(inf) = 0 -> print 'Error: no input'
+        fail()
+    include inc/inc06.sov 86 3
+    include inc/inc05.sov 781 4
+    include inc/inc05.sov 539 3
+include inc/inc05.sov 921 3
+    emitw(268435456 + 1)
+    addp(at, 'adr', off)
+    include inc/inc03.sov 1358 3
+include inc/inc05.sov 560 4
+    emitw(268435456 + 1)
+    addp(nl_at, 'adr', intern_nz("\n"))
+    include inc/inc00.sov 1770 9
+include inc/inc06.sov 58 4
+
+cd_at: 0
+
+dbg_mode: 0
+
+
+
+include driver_compat.sov

@@ -1,0 +1,319 @@
+# unsafe-module
+line: 0
+sbss_sizes: 0
+include inc/inc05.sov 731 3 #-1691919415553959116
+    include inc/inc05.sov 799 4 #8945875800590900316
+    main_params_n
+    include inc/inc00.sov 816 8 #8616155111931255620
+    sxe_mode
+    dbg_mode
+include inc/inc05.sov 596 6 #-5997384458037059324
+    include inc/inc03.sov 1644 4 #-4588272139826781876
+include inc/inc01.sov 109 4 #1149329739756438359
+    include inc/px00.sov 6 4 (want_args used_sl used_eq used_pr)
+    include inc/px00.sov 6 4 (used_mn used_thr used_pi did_stos)
+use cx86
+include inc/px00.sov 915 4 (is_mac 1 is_rel 0)
+win_rare:
+    return 0
+include inc/inc01.sov 362 10 #-7898455827852219675
+    emit(201)
+include inc/inc04.sov 397 3 -8929785027387378793
+    if used_mn = 1 -> emit_macnum() ;; if used_thr = 1 -> emit_mac_thread()
+include inc/inc04.sov 385 3 -3231353509615907364
+    include inc/inc00.sov 1993 8 #5557642873191664905
+include inc/inc04.sov 388 3 -1931638425222024843
+    rax_mac(60) ;; sysc()
+spawn_arg ai:
+    return 0
+spawn_finish name:
+    rax_imm(0 - 1) ;; return 0
+include inc/inc02.sov 1160 8 #-4348948056715306183
+    include inc/inc00.sov 155 10 7344470944685211180
+sysc:
+    used_mn: 1
+    emit:
+        87 86 82 65 82 65 80 65 81
+    calln('_sov_macnum')
+    emit:
+        65 89 65 88 65 90 90 94 95 15 ;; 5
+include inc/px00.sov 3817 4 (90 49 192)
+            65 255 210 72 137 236 93
+        return
+    if same(name, 'thread_create') = 1 -> used_thr: 1
+        include inc/inc03.sov 27 3 -6111413735141388289
+        calln('_sov_mac_create')
+        return
+    if same(name, 'thread_wait') = 1 -> used_thr: 1
+        include inc/inc03.sov 27 3 -6111413735141388289
+        calln('_sov_mac_wait')
+        return
+    include inc/inc03.sov 372 6 8031328226059741792
+            184 1 0 0 2 15 5
+        return
+    include inc/inc03.sov 1359 3 #729232996910139288
+    if same(name, 'syscall') = 1 -> sy: argc
+        include inc/inc01.sov 366 10 #-10330115396650280
+        include inc/inc02.sov 1678 7 #888132749407061676
+    include inc/inc05.sov 378 6 #-7321339089863442222
+    if same(name, 'syscall') = 1
+        emit(65)
+        emit(89)
+        emit(65)
+        emit(88)
+        emit(65)
+        emit(90)
+        emit(65)
+        emit(91)
+        emit(90)
+        emit(94)
+        include inc/inc03.sov 837 5 #-5219646010673215260
+    include inc/inc05.sov 933 3 #6433954563616544243
+    include inc/inc06.sov 29 5 #4740712196980760815
+include inc/inc06.sov 70 4 #-273580697005956815
+    emit_sys_num(1) ;; emit_sys_do()
+    include inc/inc04.sov 400 3 -4583866504618053237
+include inc/inc04.sov 391 3 #-1071522439788333582
+        87 86 72 139 5
+    pw0: here() ;; emit4(0)
+    addp(pw0, 'grel', 'g_slide')
+    include inc/inc03.sov 348 6 6872459355120096871
+        72 41 194 116 102 72 137 211 73 184
+    emit8(4294967296)
+    emit:
+        73 1 216 76 137 199 72 190
+    include inc/px00.sov 68 4 (pwl emit8 pwl rel_l 0)
+        75 137 241 186
+    emit4(7)
+    include inc/inc04.sov 403 3 #3141058292930346795
+    include inc/inc01.sov 322 10 #-8339432016660432629
+        73 1 218 73 131 194 8 227 17 73 ;; 139 50 76 1 198 72 1 30 73 131
+        194 8 255 201 117 239 76 137 206 186
+    emit4(5)
+    include inc/inc04.sov 403 3 #3141058292930346795
+    emit:
+        94 95
+emit_start:
+    emit_pie_walk()
+    emit:
+        72 139 28 36 76 141 100 36 8 72 ;; 131 228 240 72 137 223 76 137 230
+    include inc/inc05.sov 734 3 #4367667321851608429
+    emit(233)
+    include inc/inc03.sov 1365 3 #2027213555049276576
+include inc/inc01.sov 406 10 #-1518159066166091176
+    include inc/inc03.sov 378 6 #2703107356127376567
+    emit_sys_num(1) ;; emit_sys_do()
+emit_canary_seed:
+    if idx(glob_names, 'g_canary') = 0 - 1 -> glob_names: _sov_list_add(glob_names, 'g_canary')
+    rax_mac(318)
+    include inc/inc02.sov 1144 8 #-5633723159163921503
+    sysc()
+emit_crash_handler:
+    include inc/inc05.sov 930 3 #-9168928478953058176
+        rax_mac(60) ;; sysc()
+        chi: chi + 1
+emit_crash_install:
+    emit:
+        106 0 106 0 106 0 72 184
+    include inc/inc05.sov 805 4 #219309415033405189
+            72 137 230 72 49 210
+        rax_mac(13) ;; sysc()
+        csi: csi + 1
+    emit:
+        72 131 196 32
+emit_nodump:
+    emit:
+        49 192 80 80 72 137 230
+    rdi_imm(4) ;; emit_sys_num(160)
+    emit_sys_do()
+    include inc/px00.sov 939 6 (72 129 196 emit4 16)
+include inc/inc05.sov 936 3 #-9068610127027398969
+        include inc/px00.sov 29 4 (emit 190 emit4 4096 emit 186 emit4 3)
+        include inc/px00.sov 2807 5 (rax_mac 74 sysc hw_out)
+        include inc/inc05.sov 939 3 #-2330622443131107746
+            hw_out
+            hw_cap
+            hp_sk
+    include inc/inc05.sov 471 7 #8387475097025959651
+    include inc/inc03.sov 1628 4 #-707685689103518672
+    sw_head: here() ;; emit(190)
+    emit4(4096)
+    include inc/px00.sov 2807 5 (emit_sys_num 27 emit_sys_do sw_done)
+    include inc/inc05.sov 940 3 #594188466447876340
+        sw_done
+        sw_cap
+    emit:
+        76 137 199 72 129 199
+    include inc/inc03.sov 194 4 4999386408128607067
+    up_head: here()
+    include inc/inc03.sov 1632 4 #-6084938528726897304
+    rax_mac(74)
+    include inc/inc03.sov 1368 3 #-7201112822143367699
+    up_done: jnz()
+    include inc/inc05.sov 945 3 #-8080282133096280284
+        up_done
+        up_cap
+    include inc/inc02.sov 698 6 -4512927442117130906
+include inc/px00.sov 383 4 (emit_mac_thread _sov_mac_create)
+        85 72 137 229 83 72 137 243 72 129 ;; 235 128 0 4 0 72 184
+    tfn: here() ;; emit8(0)
+    addp(tfn, 'fnaddr', '_sov_thread_entry_param')
+    emit:
+        72 137 199 72 137 222 72 137 218 72 ;; 129 194 128 0 4 0 73 49 210 65
+        184 0 0 0 5 72 184 104 1 0 ;; 2 0 0 0 0 15 5 91 93 195
+    fn_names: _sov_list_add(fn_names, '_sov_mac_wait')
+    fn_offs: _sov_list_add(fn_offs, here())
+    emit:
+        72 139 7 72 131 248 1 116 4 243 ;; 144 235 243 49 192 195
+include inc/px00.sov 383 4 (emit_macnum _sov_macnum)
+        131 248 0 117 6 184 3 0 0 2 ;; 195 131 248 1 117 6 184 4 0 0
+        2 195 131 248 2 117 6 184 5 0 ;; 0 2 195 131 248 3 117 6 184 6
+        0 0 2 195 131 248 7 117 6 184 ;; 230 0 0 2 195 131 248 8 117 6
+        184 199 0 0 2 195 131 248 9 117 ;; 6 184 197 0 0 2 195 131 248 11
+        117 6 184 73 0 0 2 195 131 248 ;; 13 117 6 184 46 0 0 2 195 131
+        248 16 117 6 184 54 0 0 2 195 ;; 131 248 22 117 6 184 42 0 0 2
+        195 131 248 28 117 6 184 186 0 0 ;; 2 195 131 248 33 117 6 184 90 0
+        0 2 195 131 248 35 117 6 184 48 ;; 0 0 2 195 131 248 39 117 6 184
+        20 0 0 2 195 131 248 41 117 6 ;; 184 97 0 0 2 195 131 248 42 117
+        6 184 98 0 0 2 195 131 248 43 ;; 117 6 184 99 0 0 2 195 131 248
+        44 117 6 184 102 0 0 2 195 131 ;; 248 45 117 6 184 103 0 0 2 195
+        131 248 49 117 6 184 104 0 0 2 ;; 195 131 248 50 117 6 184 106 0 0
+        2 195 131 248 57 117 6 184 2 0 ;; 0 2 195 131 248 59 117 6 184 59
+        0 0 2 195 131 248 60 117 6 184 ;; 1 0 0 2 195 131 248 61 117 6
+        184 7 0 0 2 195 131 248 62 117 ;; 6 184 37 0 0 2 195 131 248 79
+        117 6 184 132 0 0 2 195 131 248 ;; 80 117 6 184 12 0 0 2 195 131
+        248 82 117 6 184 13 0 0 2 195 ;; 131 248 83 117 6 184 186 0 0 2
+        195 131 248 84 117 6 184 36 0 0 ;; 2 195 131 248 87 117 6 184 10 0
+        0 2 195 131 248 90 117 6 184 15 ;; 0 0 2 195 131 248 102 117 6 184
+        24 0 0 2 195 131 248 104 117 6 ;; 184 47 0 0 2 195 131 248 107 117
+        6 184 25 0 0 2 195 131 248 108 ;; 117 6 184 43 0 0 2 195 131 248
+        144 117 6 184 65 0 0 2 195 131 ;; 248 217 117 6 184 128 0 0 2 195
+        131 248 218 117 6 184 116 0 0 2 ;; 195 131 248 231 117 6 184 1 0 0
+        2 195 131 248 260 117 6 184 18 0 ;; 0 2 195 131 248 318 117 6 184 27
+        1 0 2 195 195 61 157 0 0 0 ;; 117 6 184 0 0 0 2 195 61 217
+        0 0 0 117 6 184 88 1 0 2 ;; 195 61 228 0 0 0 117 6 184 116
+        0 0 2 195 61 1 1 0 0 117 ;; 6 184 5 0 0 2 195 61 62 1
+        0 0 117 6 184 244 1 0 2 195 ;; 13 0 0 0 2 195
+include inc/inc05.sov 737 3 #-4726971434384018708
+        include inc/inc02.sov 1468 3 #-1224308169520225226
+        used_mn
+        used_thr
+        used_tr
+        include inc/inc00.sov 1825 5 #-6061215563166268004
+    include inc/inc06.sov 1 10 #-3982814894772135598
+    include inc/inc05.sov 168 7 #8125333796970439937
+        emit_macnum() ;; used_mn: 0
+        include inc/inc00.sov 1855 5 #-2825381713849337096
+        if look(source, 'thread_create') > 0 - 1 -> emit_mac_thread()
+        thin_main: 0
+    if not -> if thin_main = 0
+            emit_start()
+        if thin_main = 1 -> emit_pie_walk()
+            emit(233) ;; tjmp: here()
+            emit4(0)
+            addp(tjmp, 'rel', 'main')
+    include inc/inc06.sov 66 4 #-6478880026795323177
+                    include inc/inc02.sov 786 9 #7331580170876604154
+                        49 255
+                    emit_sys_num(60) ;; emit_sys_do()
+                include inc/inc05.sov 564 4 #-5651991974552305317
+                    include inc/inc05.sov 807 4 -5608982464049000155
+                            include inc/inc03.sov 847 5 #1695358879022055420
+                        include inc/inc02.sov 1575 5 #2154401122927750559
+                    include inc/inc05.sov 740 3 #-5689480045353752056
+                        include inc/inc03.sov 1631 4 #2110117093600275601
+                    include inc/inc01.sov 469 10 #-2074042705501462518
+        fi: fi + 1
+    include inc/inc02.sov 1590 5 #-4632989196125247276
+    stub_diet()
+    include inc/inc03.sov 1378 3 #8778773010070269076
+include inc/inc02.sov 1152 8 #-4848636169958939547
+        if sd_at2 >= 45 -> sd_k: _sov_list_get(patch_kind, sd_i)
+            include inc/inc03.sov 360 6 -8395641134750749255
+        sd_i: sd_i + 1
+    include inc/px00.sov 2801 5 (45 19)
+    include inc/inc01.sov 336 10 #-3974435340239839327
+            sd_nl: _sov_list_add(sd_nl, _sov_list_get(patch_line, sd_i))
+        if not -> if sd_at >= 45
+                include inc/inc03.sov 1635 4 #4498237909619056026
+        sd_i: sd_i + 1
+    include inc/inc01.sov 346 10 #-8063112908862837293
+    include inc/inc03.sov 832 5 #-6789207935546007512
+include inc/inc00.sov 581 10 -4451285426758105718
+    pad: _sov_list_len(glob_names) * 8 ;; hdr: 200
+    include inc/inc03.sov 347 6 #-7113795246728344124
+    pad: _sov_list_len(glob_names) * 8 ;; rel_n: 0
+    rel_at: _sov_list_new() ;; rc_i: 0
+    include inc/inc02.sov 777 9 #4963061575089282717
+    filesz: dfoff + sl8 + pad + relsz
+    include inc/inc01.sov 117 4 #1868138100772052598
+    poke4(flat, 0, 4277009103) ;; poke4(flat, 4, 16777223)
+    poke4(flat, 8, 3) ;; poke4(flat, 12, 2)
+    poke4(flat, 16, 3) ;; poke4(flat, 20, 168)
+    include inc/inc05.sov 924 3 #-4378511830475566776
+    poke8(flat, 136, sl8 + pad + relsz + 65536) ;; poke8(flat, 144, dfoff)
+    poke8(flat, 152, sl8 + pad + relsz) ;; flat: poke4 160 + 4 * i: 3 3
+    moff: 0 ;; flat: poke4 176 + 4 * i: 2147483688 24
+    poke8(flat, 184, hdr + moff)
+    include inc/inc02.sov 1125 8 #4611376604968552195
+    include inc/inc01.sov 121 4 #8747806796949112003
+        include inc/inc05.sov 927 3 #5514905453673237354
+        if same(kind, 'fnaddr') = 1 -> fi: idx(fn_names, val)
+            if fi > 0 - 1 -> poke8(flat, hdr + at, 4294967296 + hdr + _sov_list_get(fn_offs, fi))
+            include inc/inc02.sov 635 3 -7346024880778507989
+        if same(kind, 'str') = 1 -> poke8(flat, hdr + at, str_addr + val)
+        if same(kind, 'str32') = 1 -> poke4(flat, hdr + at, str_addr + val)
+        if same(kind, 'ripstr') = 1 -> poke4(flat, hdr + at, str_off + val - at - 4)
+        if same(kind, 'grel') = 1 -> gx: idx(glob_names, val)
+            poke4(flat, hdr + at, glob_off + gx * 8 - at - 4)
+        if same(kind, 'gwstr_a') = 1 -> poke8(flat, hdr + at, str_addr)
+        include inc/px00.sov 2813 5 (hdr hdr hdr hdr)
+        if same(kind, 'rel_a') = 1 -> poke8(flat, hdr + at, 4294967296 + hdr + glob_off + pad)
+        if same(kind, 'rel_n') = 1 -> poke4(flat, hdr + at, rel_n)
+        if same(kind, 'rel_l') = 1 -> poke8(flat, hdr + at, dfoff)
+        if same(kind, 'fnaddr') = 1 -> rel_at: _sov_list_add(rel_at, at)
+        if same(kind, 'strrel') = 1 -> poke4(flat, hdr + at, str_addr + val - (4294967296 + hdr + at + 4))
+        if same(kind, 'str') = 1 -> rel_at: _sov_list_add(rel_at, at)
+        if same(kind, 'glob') = 1 -> rel_at: _sov_list_add(rel_at, at)
+        if same(kind, 'gwstr_a') = 1 -> rel_at: _sov_list_add(rel_at, at)
+        if same(kind, 'gwipe_a') = 1 -> rel_at: _sov_list_add(rel_at, at)
+        if same(kind, 'sbss') = 1 -> rel_at: _sov_list_add(rel_at, at)
+        i: i + 1
+    include inc/px00.sov 3762 4 (hdr glob_off poke8 hdr glob_off)
+        ri: ri + 1
+    gsx: idx(glob_names, 'g_slide')
+    if gsx > 0 - 1 -> poke8(flat, hdr + glob_off + gsx * 8, 4294967296 + hdr + glob_off + gsx * 8)
+    include inc/inc05.sov 813 4 #-666558126143818877
+include inc/inc00.sov 524 8 #-4265289049711107356
+    include inc/inc00.sov 737 9 -2255943513450041178
+            pie_walk: 0
+        i: 1
+        as long as i < argc
+            arg: peek_ptr(argv, i)
+            if _sov_str_eq(arg, '--walk') = 1 -> pie_walk: 1
+                include inc/inc00.sov 816 8 8616155111931255620
+    if length(inf) = 0 -> print 'Error: no input'
+        fail()
+    include inc/inc00.sov 393 10 #5478721455840243782
+    include inc/inc00.sov 403 10 #4839820278718747191
+    include inc/inc02.sov 1472 3 #4766183739077697414
+    include inc/inc00.sov 165 10 8032181674794344748
+    include inc/inc00.sov 180 10 #-4430533400270843129
+        include inc/inc04.sov 406 3 -1627212166997961298
+            'syscall(257, 0 - 100, path, flags, 420, 0, 0)' -> 'syscall(2, path, flags, 420, 0, 0)'
+            'syscall(56, e, top, 12032, 0, 0, 0)' -> 'thread_create(e, top)'
+            include inc/inc03.sov 1652 4 #2023669517407579429
+    include inc/inc05.sov 743 3 #-7061093441417070074
+        all: join(all, join('    syscall(60, 0, 0, 0, 0, 0, 0)', nl))
+        all: join(all, join('    return 0 - 1', nl))
+        src_base: src_base + 4
+    include inc/inc05.sov 539 3 #1683111552465410725
+
+blank:
+    dbg_pcs
+    dbg_lns
+main_start: 0 - 1
+
+
+
+include driver_compat.sov

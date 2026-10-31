@@ -1,0 +1,115 @@
+# sp.sov — Track 1 single-pass front-end foundation.
+#
+# One linear scan over the immutable spliced buffer, producing:
+#   sp_ar  — line descriptor arena, 4 x i64 per line:
+#            [+0]  byte offset of line start (points into the source buffer)
+#            [+8]  line length in bytes (excluding \n)
+#            [+16] indent (low i32) | flags (high i32: bit0 = comment line)
+#            [+24] absolute offset of first non-space byte (0-1 when blank)
+#   sp_n   — descriptor count
+#
+# Interner: 16-byte entries [name ptr][hash32|len32], open-addressed, dense
+# stable integer IDs; names are copied ONCE, every later compare is an ID
+# compare. Hash is djb2-56 local to this module (matches no other table).
+#
+# No per-line allocation: the arena grows by doubling.
+
+sp_ar: 0
+sp_cap: 0
+sp_n: 0
+sp_src: 0
+
+sp_grow need:
+    sp_cap: 1024
+    as long as sp_cap < need -> sp_cap: sp_cap * 2
+    sp_ar: _sov_heap_alloc(sp_cap * 32)
+    return 0
+
+sp_lines s:
+    sp_src: s
+    n: length(s)
+    if sp_cap is 0 -> sp_grow(n / 16 + 64)
+    cnt: 0
+    i: 0
+    as long as i < n
+        ls: i
+        as long as i < n -> if peek_byte(s, i) is not 10
+            i: i + 1
+        ll: i - ls
+        k: 0
+        as long as k < ll -> if peek_byte(s, ls + k) is 32
+            k: k + 1
+        fl: 0
+        if k < ll -> if peek_byte(s, ls + k) is 35 -> fl: 1
+        poke_i64(sp_ar, cnt * 32 + 0, ls)
+        poke_i64(sp_ar, cnt * 32 + 8, ll)
+        poke_i64(sp_ar, cnt * 32 + 16, band(k, 4294967295) + fl * 4294967296)
+        if k < ll
+            poke_i64(sp_ar, cnt * 32 + 24, ls + k)
+        if k is ll
+            poke_i64(sp_ar, cnt * 32 + 24, 0 - 1)
+        cnt: cnt + 1
+        i: i + 1
+    sp_n: cnt
+    return cnt
+
+sp_hash s:
+    h: 0
+    i: 0
+    n: length(s)
+    as long as i < n
+        h: bxor(h * 33, peek_byte(s, i))
+        i: i + 1
+    return band(h, 72057594037927935)
+
+sp_ht: 0
+sp_ht_cap: 0
+sp_ent: 0
+sp_ent_n: 0
+sp_ent_cap: 0
+
+sp_iinit cap:
+    sp_ht_cap: cap
+    sp_ht: _sov_heap_alloc(cap * 8)
+    z: 0
+    as long as z < cap
+        poke_i64(sp_ht, z * 8, 0 - 1)
+        z: z + 1
+    sp_ent_cap: cap
+    sp_ent: _sov_heap_alloc(cap * 16)
+    sp_ent_n: 0
+    return 0
+
+sp_intern s off n:
+    if sp_ht_cap is 0 -> sp_iinit(1024)
+    ns: _sov_substring(s, off, off + n)
+    hv: sp_hash(ns)
+    slot: band(hv, sp_ht_cap - 1)
+    as long as 1
+        e: peek_i64(sp_ht, slot * 8)
+        if e is 0 - 1
+            if sp_ent_n >= sp_ent_cap -> print 'Error: sp interner full'
+                fail()
+            en: sp_ent_n
+            poke_i64(sp_ent, en * 16, ns)
+            poke_i64(sp_ent, en * 16 + 8, band(bshr(hv, 24), 4294967295) * 4294967296 + n)
+            poke_i64(sp_ht, slot * 8, en)
+            sp_ent_n: en + 1
+            return en
+        es: peek_i64(sp_ent, e * 16)
+        if _sov_str_eq(es, ns) is 1 -> return e
+        slot: band(slot + 1, sp_ht_cap - 1)
+    return 0 - 1
+
+sp_wc b:
+    if b > 47 -> if b < 58 -> return 1
+    if b > 64 -> if b < 91 -> return 1
+    if b is 95 -> return 1
+    if b > 96 -> if b < 123 -> return 1
+    return 0
+
+sp_ident s off:
+    n: 0
+    as long as sp_wc(peek_byte(s, off + n)) is 1
+        n: n + 1
+    return n

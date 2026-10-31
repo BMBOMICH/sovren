@@ -1,0 +1,9 @@
+use runtime
+main:
+    a: load_file("/etc/hostname")
+    x: length(a)
+    i: 0
+    as long as i < 30000
+        x: x - (x / 7) + i
+        i: i + 1
+    print x

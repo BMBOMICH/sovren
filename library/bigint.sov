@@ -1,0 +1,209 @@
+# SECURITY SCOPE (F-22): this library is for PUBLIC operations only
+# (e.g. RSA encryption with small public exponents, bi_modpow17).
+# Arithmetic here is variable-time; it must NEVER hold or compute
+# with a private exponent or other long-term secret. For secret
+# scalar math use the dedicated constant-time modules (x25519,
+# ed25519, constant.sov ct_* helpers).
+use vec
+use string
+use num
+BI_BASE: 10000
+bi_zero:
+    v: vec_new(4)
+    return vec_push(v, 0)
+bi_from n:
+    v: vec_new(4)
+    x: n
+    if x < 0 -> x: 0 - x
+    if x is 0 -> return vec_push(v, 0)
+    as long as x > 0
+        v: vec_push(v, x % BI_BASE)
+        x: x / BI_BASE
+    return v
+bi_len a:
+    return vec_len(a)
+bi_digit a i:
+    if i >= vec_len(a) -> return 0
+    return vec_get(a, i)
+bi_trim a:
+    n: vec_len(a)
+    as long as n > 1
+        if vec_get(a, n - 1) is 0
+            poke_i64(a, 0, n - 1)
+            n: n - 1
+        if not -> n: 1
+    return a
+bi_add a b:
+    r: vec_new(8)
+    carry: 0
+    n: bi_len(a)
+    if bi_len(b) > n -> n: bi_len(b)
+    i: 0
+    as long as i < n
+        s: bi_digit(a, i) + bi_digit(b, i) + carry
+        r: vec_push(r, s % BI_BASE)
+        carry: s / BI_BASE
+        i: i + 1
+    if carry > 0 -> r: vec_push(r, carry)
+    return bi_trim(r)
+bi_mul_small a k:
+    r: vec_new(8)
+    carry: 0
+    i: 0
+    as long as i < bi_len(a)
+        p: bi_digit(a, i) * k + carry
+        r: vec_push(r, p % BI_BASE)
+        carry: p / BI_BASE
+        i: i + 1
+    as long as carry > 0
+        r: vec_push(r, carry % BI_BASE)
+        carry: carry / BI_BASE
+    return bi_trim(r)
+bi_mul a b:
+    r: vec_new(8)
+    tot: bi_len(a) + bi_len(b)
+    i: 0
+    as long as i < tot
+        r: vec_push(r, 0)
+        i: i + 1
+    i: 0
+    as long as i < bi_len(a)
+        carry: 0
+        j: 0
+        as long as j < bi_len(b)
+            cur: vec_get(r, i + j) + bi_digit(a, i) * bi_digit(b, j) + carry
+            vec_set(r, i + j, cur % BI_BASE)
+            carry: cur / BI_BASE
+            j: j + 1
+        k: i + bi_len(b)
+        as long as carry > 0
+            cur: vec_get(r, k) + carry
+            vec_set(r, k, cur % BI_BASE)
+            carry: cur / BI_BASE
+            k: k + 1
+        i: i + 1
+    return bi_trim(r)
+bi_cmp a b:
+    if bi_len(a) > bi_len(b) -> return 1
+    if bi_len(a) < bi_len(b) -> return 0 - 1
+    i: bi_len(a) - 1
+    as long as i >= 0
+        if bi_digit(a, i) > bi_digit(b, i) -> return 1
+        if bi_digit(a, i) < bi_digit(b, i) -> return 0 - 1
+        i: i - 1
+bi_pad4 n:
+    out: _sov_alloc(8)
+    v: n
+    i: 3
+    as long as i >= 0
+        poke_byte(out, i, 48 + v % 10)
+        v: v / 10
+        i: i - 1
+    poke_byte(out, 4, 0)
+    return as text out
+bi_text a:
+    n: bi_len(a)
+    s: num_text(vec_get(a, n - 1))
+    i: n - 2
+    as long as i >= 0
+        s: str_cat(s, bi_pad4(vec_get(a, i)))
+        i: i - 1
+    return as text s
+bi_fact n:
+    r: bi_from(1)
+    i: 2
+    as long as i <= n
+        r: bi_mul_small(r, i)
+        i: i + 1
+    return r
+bi_pow2 n:
+    r: bi_from(1)
+    i: 0
+    as long as i < n
+        r: bi_mul_small(r, 2)
+        i: i + 1
+    return r
+bi_sub a b:
+    r: vec_new(8)
+    borrow: 0
+    i: 0
+    as long as i < bi_len(a)
+        d: bi_digit(a, i) - bi_digit(b, i) - borrow
+        if d < 0
+            d: d + 10000
+            borrow: 1
+        if not -> borrow: 0
+        r: vec_push(r, d)
+        i: i + 1
+    return bi_trim(r)
+bi_mod a m:
+    r: bi_zero()
+    i: bi_len(a) - 1
+    as long as i >= 0
+        r: bi_mul_small(r, 10000)
+        s: vec_get(r, 0) + bi_digit(a, i)
+        vec_set(r, 0, s % 10000)
+        if s >= 10000
+            j: 1
+            as long as j < bi_len(r)
+                s2: vec_get(r, j) + 1
+                vec_set(r, j, s2 % 10000)
+                if s2 < 10000 -> j: bi_len(r)
+                j: j + 1
+        lo: 0
+        hi: 10000
+        as long as lo + 1 < hi
+            mid: (lo + hi) / 2
+            t: bi_mul_small(m, mid)
+            if bi_cmp(t, r) <= 0 -> lo: mid
+            if not -> hi: mid
+        t: bi_mul_small(m, lo)
+        r: bi_sub(r, t)
+        i: i - 1
+    return bi_trim(r)
+bi_modpow17 b e m:
+    r: bi_from(1)
+    k: 0
+    as long as k < 17
+        if e % 2 is 1 -> r: bi_mod(bi_mul(r, b), m)
+        e: e / 2
+        if k < 16 -> b: bi_mod(bi_mul(b, b), m)
+        k: k + 1
+    return r
+bi_from_bytes p n:
+    v: bi_zero()
+    i: 0
+    as long as i < n
+        v: bi_mul_small(v, 256)
+        s: vec_get(v, 0) + peek_byte(p, i)
+        vec_set(v, 0, s % 10000)
+        if s >= 10000
+            j: 1
+            as long as j < bi_len(v)
+                s2: vec_get(v, j) + 1
+                vec_set(v, j, s2 % 10000)
+                if s2 < 10000 -> j: bi_len(v)
+                j: j + 1
+        i: i + 1
+    return bi_trim(v)
+bi_to_bytes a p n:
+    v: vec_new(8)
+    i: 0
+    as long as i < bi_len(a)
+        v: vec_push(v, bi_digit(a, i))
+        i: i + 1
+    i: 0
+    as long as i < n
+        poke_byte(p, i, 0)
+        i: i + 1
+    i: n - 1
+    as long as i >= 0
+        carry: 0
+        j: bi_len(v) - 1
+        as long as j >= 0
+            cur: vec_get(v, j) + carry * 10000
+            vec_set(v, j, cur / 256)
+            carry: cur % 256
+            j: j - 1
+        poke_byte(p, i, carry)
+        i: i - 1

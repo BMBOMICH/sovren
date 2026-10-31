@@ -1,0 +1,8 @@
+main:
+    xs: _sov_list_new()
+    i: 0
+    as long as i < 5 -> xs: _sov_list_add(xs, i * i)
+        i: i + 1
+    print _sov_list_len(xs)
+    print _sov_list_get(xs, 4)
+    print _sov_list_get(xs, 0) + _sov_list_get(xs, 1)

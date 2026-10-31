@@ -1,0 +1,1481 @@
+f0: x_and(im, 3)
+f1: x_and(x_shr64(im, 2), 3)
+f2: x_and(x_shr64(im, 4), 3)
+f3: x_and(x_shr64(im, 6), 3)
+poke_i64(m, 920, x_mask(a, 4))
+poke_i64(m, 928, x_mask(x_shr64(a, 32), 4))
+poke_i64(m, 936, x_mask(b, 4))
+poke_i64(m, 944, x_mask(x_shr64(b, 32), 4))
+v0: x_vpermq_pick(m, f0)
+v1: x_vpermq_pick(m, f1)
+v2: x_vpermq_pick(m, f2)
+v3: x_vpermq_pick(m, f3)
+a: x_xrm_lo(m)
+b: x_xrm_hi(m)
+c: x_xrm_ylo(m)
+d: x_xrm_yhi(m)
+if k3 = X_F_INF -> if cs = ps
+        return x_bits_of(ps, 2047, 0)
+    return X_QNAN
+return x_bits_of(ps, 2047, 0)
+if na != nb -> if nr != na
+        o: 1
+poke_i64(m, 160, o)
+af: 0
+if na = nb -> if nr != na
+        o: 1
+poke_i64(m, 160, o)
+af: 0
+p: x_modrm(m, p, rex, 0)
+v: x_mask(x_rm_get(m, size), size)
+r: x_bits(size)
+cf: 1
+klo: x_xrm_lo(m)
+khi: x_xrm_hi(m)
+x_ashift(m, n, 0)
+x_asubs(m, n, 0)
+klo: x_xrm_lo(m)
+khi: x_xrm_hi(m)
+x_ashift(m, n, 1)
+x_asubs(m, n, 1)
+sg: 0
+if sa != sb -> sg: 1
+if ka = X_F_NAN -> return X_QNAN
+if kb = X_F_NAN -> return X_QNAN
+if by >= 16 -> return x_xset(m, n, 0, 0)
+lo: x_xlo(m, n)
+hi: x_xhi(m, n)
+if by = 0 -> return 0
+zm_store_res(v)
+if v != 0 -> zm_branch(1)
+if not -> zm_branch(0)
+return 0
+opf: _sov_heap_alloc(16)
+poke_i64(opf, 0, 0 - 1)
+poke_i64(opf, 8, 0 - 1)
+r: sys_pipe(opf)
+poke_raw8(dmar + 72, 0, 1)
+poke_raw8(dmar + 73, 0, 8)
+dmar + 78: poke_raw8 i, 0: 2 0
+checksum_fix(dmar, 80, 9)
+# unsafe-module
+use ktest_a
+main:
+    sinit()
+b: 0
+as long as b < 4 -> poke_byte(WK + i * 4 + b, 0, bxor(peek_byte(WK + (i - 8) * 4 + b, 0), peek_byte(TP + b, 0)))
+    b: b + 1
+i: i + 1
+scmp a b:
+    i: 0
+    as long as 1 = 1 -> ca: peek_byte(a, i)
+        cb: peek_byte(b, i)
+st16n(ui + 2, dport)
+st16n(ui + 4, 8 + paylen)
+st16n(ui + 6, 0)
+return 14 + tot
+poke_raw8(RXDES + ri * 16 + 12, 0, 0)
+mmio: peek_raw64(MMIO_STATE, 0)
+w32(mmio + 10264, ri)
+poke_raw64(RXI_STATE, 0, band(ri + 1, 31))
+sha512_blk:
+    i: 0
+    as long as i < 16 -> poke_raw64(W + i * 8, 0, load_be64(BLK + i * 8))
+        i: i + 1
+z_clear p n:
+    i: 0
+    as long as i < n -> poke_byte(p + i, 0, 0)
+        i: i + 1
+v: v + peek_byte(p + o + 1, 0) * 256
+v: v + peek_byte(p + o + 2, 0) * 65536
+v: v + peek_byte(p + o + 3, 0) * 16777216
+return v
+off: dir_find(name)
+if off = 0 -> return 0 - 1
+start: peek_raw64(off + 48, 0)
+len: peek_raw64(off + 56, 0)
+i: 0
+as long as i != 2 -> atomic_store(JRN + (i * 16) + 0, 0)
+    atomic_store(JRN + (i * 16) + 8, 0)
+    i: i + 1
+spawn_cd dir argv secs:
+    pid: sys_fork()
+    if pid = 0 -> sys_chdir(dir)
+        nfd: sys_open('/dev/null', 1)
+ev_handle q:
+    t: ev_t(q)
+    x: ev_x(q)
+    y: ev_y(q)
+if nx3 < 0 -> nx3: 0
+if ny3 < 30 -> ny3: 30
+if nx3 > 1024 - WW - 4 -> nx3: 1024 - WW - 4
+if ny3 > 768 - WH - 36 -> ny3: 768 - WH - 36
+ev_drain()
+ok: 1
+v1: peek_raw32(0 + (10 * 1024 + 10) * 4 + peek_raw64(FB_, 0), 0)
+if v1 != FOGCOL -> ok: 0
+cb: peek_byte(b, i)
+if ca != cb -> return 0
+if ca = 0 -> return 1
+i: i + 1
+wait_ib:
+    as long as 1 = 1 -> if band(port_in8(100), 2) = 0
+            leave
+wait_ob:
+as long as i < 64 -> s1: bxor(bxor(rotr(e, 6), rotr(e, 11)), rotr(e, 25))
+    ch: bxor(band(e, f), band(bxor(e, 4294967295), g))
+    t1: h + s1 + ch + peek_raw64(K + i * 8, 0) + peek_raw64(W + i * 8, 0)
+    s0: bxor(bxor(rotr(a, 2), rotr(a, 13)), rotr(a, 22))
+poke_byte(MSG + 96, 0, 128)
+i: 97
+as long as i < 120 -> poke_byte(MSG + i, 0, 0)
+    i: i + 1
+if peek_byte(RESP + p, 0) = 67 -> if peek_byte(RESP + p + 1, 0) = 111
+        if peek_byte(RESP + p + 2, 0) = 110 -> if peek_byte(RESP + p + 3, 0) = 116
+                if peek_byte(RESP + p + 4, 0) = 101 -> if peek_byte(RESP + p + 5, 0) = 110
+                        if peek_byte(RESP + p + 6, 0) = 116 -> if peek_byte(RESP + p + 7, 0) = 45
+memset0 base len:
+    i: 0
+    as long as i < len -> poke_byte(base, i, 0)
+        i: i + 1
+ioa: 4273995776
+poke_raw32(ioa, 0, 0)
+ioapic_id: band(bshr(peek_raw32(ioa + 16, 0), 24), 255)
+poke_raw32(ioa, 0, 1)
+port_out8(33, 4)
+port_out8(161, 2)
+port_out8(33, 1)
+port_out8(161, 1)
+port_out8(ATA_COUNT, 1)
+port_out8(ATA_LBA0, band(lba, 255))
+port_out8(ATA_LBA1, band(bshr(lba, 8), 255))
+port_out8(ATA_LBA2, band(bshr(lba, 16), 255))
+if ata_wait_ready() = 0 -> return 0 - 5
+if atomic_load(ATA_IRQ_ACTIVE) = 1 -> if ata_irq_wait() != 1
+        return 0 - 5
+    if band(atomic_load(ATA_IRQ_STATUS), 33) != 0 -> return 0 - 5
+if device < 1 -> return 0
+blocks: kblk_device_blocks(COMMON_BLOCK_REGISTRY, COMMON_BLOCK_REGISTRY_CAPACITY, device)
+if lba < 0 -> return 0
+if lba >= blocks -> return 0
+snum(result)
+sputs(' expected ')
+snum(status)
+sputs("\n")
+if seglen = 1 -> if peek_byte(path, segstart) = 46
+        return 0
+if seglen = 2 -> if peek_byte(path, segstart) = 46
+        if peek_byte(path, segstart + 1) = 46 -> return 0
+if peek_raw64(FS_MOUNTED, 0) != 1 -> return 0 - 19
+if vfs_path_valid(path) != 1 -> return 0 - 22
+db: peek_raw64(DIRBUF, 0)
+if dir_read(db) != 0 -> return 0 - 5
+ri: 0
+as long as ri < reloc_len -> rec: image + reloc_off + ri
+    target: peek_raw64(rec, 0)
+    addend: peek_raw64(rec + 8, 0)
+if length < 32 -> return 0 - 8
+if length > EXTERNAL_SXE_LIMIT -> return 0 - 27
+sectors: (length + 511) / 512
+i: 0
+kind: band(raw, 6)
+if kind = 6 -> return 0
+if kind = 4 -> if index >= 5
+        return 0
+if result = 1 -> if kio_req_transferred(HDA_STREAM_REQUEST) < 1
+        result: 0
+if result = 1 -> if kio_dma_map_state(HDA_DMA_MAP) != KIO_DMA_FREE
+        result: 0
+slot: band(slot_endpoint, 255)
+dci: band(bshr(slot_endpoint, 8), 255)
+if slot < 1 -> return 0
+if dci < 2 -> return 0
+opcode: 40
+direction: 1
+if write_operation = 1 -> opcode: 42
+    direction: 0
+blocks: lba_blocks / 4294967296
+lba: lba_blocks % 4294967296
+if blocks < 1 -> return 0
+if blocks > 6 -> return 0
+backend: kblk_device_backend(XHCI_BLOCK_REGISTRY, XHCI_BLOCK_REGISTRY_CAPACITY, device)
+block_size: kblk_device_block_size(XHCI_BLOCK_REGISTRY, XHCI_BLOCK_REGISTRY_CAPACITY, device)
+request: XHCI_BLOCK_REQUESTS + (event_index % XHCI_BLOCK_REQUEST_COUNT) * KBLK_STRIDE
+if kblk_init(request, backend) != 1 -> return 0
+if peek_raw64(XHCI_PERSIST_KEEP, 0) != 1 -> return 0
+device: peek_raw64(XHCI_BLOCK_DEVICE_ID, 0)
+if kblk_device_state(XHCI_BLOCK_REGISTRY, XHCI_BLOCK_REGISTRY_CAPACITY, device) != KBLK_DEVICE_ONLINE -> return 0
+event_index: peek_raw64(XHCI_PERSIST_EVENT_INDEX, 0)
+doorbell: peek_raw64(XHCI_CONTEXT + 8, 0)
+event: peek_raw64(XHCI_CONTEXT + 40, 0)
+buffer: peek_raw64(XHCI_CONTEXT + 88, 0)
+slot: peek_raw64(XHCI_PERSIST_SLOT, 0)
+bdf: pci_find_class(12, 3, 48)
+if xhci_irq_route(bdf) != 1 -> return 0
+if xhci_irq_controller_enable() != 1 -> xhci_irq_disable()
+    return 0
+dofs: bshr(rd16(th + 12), 12) * 4
+iplen: rd16(pk + 16)
+plen: iplen - ihl - dofs
+rxseq: rd32n(th + 4)
+offense: 0
+as long as offense < 3 -> if e1000_dma_fault_once(IOMMU_FAULT_RECORD) != 1
+        return 0
+    offense: offense + 1
+base: netsk_slot(fd)
+if base = 0 -> return 0 - 9
+if peek_raw64(base + 8, 0) != 2 -> return 0 - 9
+if len < 1 -> return 0 - 22
+other: mp_runq_pop()
+if other < 0 -> poke_raw64(frame + 112, 0, 0 - 11)
+    pop_all()
+    iretq()
+poke_raw64(top - 16, 0, top)
+poke_raw64(top - 8, 0, 16)
+pop_all()
+iretq()
+poke_raw64(UTSS + 4, 0, peek_raw64(MP_NEXT_TOP, 0))
+write_cr3(peek_raw64(MP_NEXT_ROOT, 0))
+mp_context_drop()
+as long as 1 = 1 -> hlt()
+as long as slot < USER_VMA_CAPACITY -> record: USER_VMA_RECORDS + slot * USER_VMA_STRIDE
+    flags: peek_raw64(record + 16, 0)
+    if band(flags, needed) = needed -> base: peek_raw64(record, 0)
+        finish: base + peek_raw64(record + 8, 0)
+finish: address + length - 1
+if finish < address -> return 0
+first: address - address % 4096
+last: finish - finish % 4096
+wait_ib()
+port_out8(100, 32)
+wait_ob()
+cb: port_in8(96)
+memcpy dst src n:
+    i: 0
+    as long as i != n -> poke_raw64(dst + (i * 8), 0, peek_raw64(src + (i * 8), 0))
+        i: i + 1
+if atomic_load(N1_FREE) > 0 -> atomic_add(N1_FREE, 0 - 1)
+    atomic_add(REMOTE, 1)
+    return 1
+return 0 - 1
+i: 0
+as long as i < 4 -> if peek_raw64(PA + i * 32 + 24, 0) = 1
+        b: peek_raw64(PA + i * 32, 0)
+        l: peek_raw64(PA + i * 32 + 8, 0)
+as long as i < 64 -> s1: bxor(bxor(rotr32(e, 6), rotr32(e, 11)), rotr32(e, 25))
+    ch: bxor(band(e, f), band(bxor(e, 4294967295), g))
+    t1: h + s1 + ch + peek_raw64(K32 + i*8, 0) + peek_raw64(W + i*8, 0)
+    s0: bxor(bxor(rotr32(a, 2), rotr32(a, 13)), rotr32(a, 22))
+poke_byte(EMPH + 28, 0, 120)
+poke_byte(EMPH + 29, 0, 82)
+poke_byte(EMPH + 30, 0, 184)
+poke_byte(EMPH + 31, 0, 85)
+# unsafe-module
+NCPU: 4
+use ktest_e
+RES: 0
+as long as 1 = 1 -> if band(port_in8(1021), 32) != 0
+        leave
+port_out8(1016, c)
+i: i + 1
+as long as j < ctx_n -> poke_byte(INFOB, 4 + lbl_n + j, peek_byte(ctx, j))
+    j: j + 1
+hkdf_expand(secret, INFOB, info_n, length, out)
+return 1
+SHFB: poke_byte 0 + i: 2 0 0 118
+mem_copy(SHFB + 4, SHB, 118)
+mem_copy(TRHS, CHB, 178)
+mem_copy(TRHS + 178, SHFB, 122)
+# unsafe-module
+SC: 8388608
+use ktest_e
+RES: 0
+snum(ent)
+sc(10)
+atomic_store(SD_ENT, ent)
+atomic_store(APDONE, 0)
+as long as 1 = 1 -> sti()
+    hlt()
+    cli()
+    cur: peek_raw64(TICK, 0)
+k: 0
+as long as k < 64 -> 0:
+        ca
+        cb
+poke_raw64(A_ + 1 * 8, 0, 112)
+poke_raw64(A_ + 2 * 8, 0, 112)
+poke_raw64(A_ + 3 * 8, 0, 108)
+poke_raw64(A_ + 4 * 8, 0, 101)
+if band(b1, 192) != 128 -> poke_raw64(LASTERR + (0) * 8, 0, 3)
+    return 0
+if band(b2, 192) != 128 -> poke_raw64(LASTERR + (0) * 8, 0, 3)
+    return 0
+m: x86_new()
+if x86_load(m, p) = 0 -> write_out('cannot read ')
+    print p
+    sys_exit(2)
+src: cr_line('', 'use sha256')
+src: cr_line:
+    'main:'
+    "    print sha256_hex(\"abc\")"
+if not -> k: k + 1
+    ts: _sov_heap_alloc(16)
+    ts: poke_i64 0 + 8 * i: 0 100000000
+    sys_nanosleep(ts)
+src: cr_line(src, '    if w is 0')
+src: cr_line(src, "        print \"nodisplay\"")
+src: cr_line(src, '        stop')
+src: cr_line(src, '    i: 0')
+src: cr_line('', 'use list')
+src: cr_line(src, 'main:')
+src: cr_line(src, '    l: list_new()')
+src: cr_line(src, '    l: list_add(l, 1)')
+t_vpermq()
+t_vpsllvd()
+t_vpblendd()
+t_vpbroadcastd()
+set_reg(8, sc_exit)
+sysc()
+return
+if not -> if starts(s, "\x00__removed_repeat ") = 1
+        cflush_all()
+        tmp: cut(s, 7, length(s))
+storev(inn)
+rs: list_idx(locals, inn)
+cs: list_idx(locals, cn)
+_sov_print(ev)
+print err_line
+had_err: 1
+_sov_print(s)
+print err_line
+had_err: 1
+_sov_print(s)
+print err_line
+had_err: 1
+set_reg(0, 1)
+set_reg(8, sc_exit)
+sysc()
+set_reg(0, 0)
+set_reg(8, sc_exit)
+sysc()
+if not -> isfib: fiblike(nm, ps, peek_i64(bodies, 16 + fi * 8))
+    if isfib = 0 -> prolog()
+        copyargs(_sov_list_len(ps))
+i: 1
+as long as i < argc -> arg: peek_ptr(argv, i)
+    if _sov_str_eq(arg, '--bare') = 1 -> bare_mode: 1
+movz_x(1, 0, 0)
+movk_x(1, 0, 1)
+movk_x(1, 0, 2)
+movk_x(0, 0, 3)
+addp(aat, 'fnaddr64', name)
+calln('_sov_thread_spawn')
+can_used
+patch_val
+patch_line
+fw_on
+fw_done
+fw_pos
+sha_ss1 x:
+    return wxor(wxor(rotr(x, 17), rotr(x, 19)), shr(x, 10))
+sha_k i:
+hh: g
+g: f
+f: e
+plat_canary:
+    if can_used = 1 -> emit_canary_fail()
+leave_reload:
+canary_die:
+    emit(191)
+    emit4(101)
+emit_pie_walk:
+    if list_idx(glob_names, 'g_slide') = 0 - 1 -> glob_names: _sov_list_add(glob_names, 'g_slide')
+    emit:
+emit(184)
+emit4(10)
+sysc()
+try_sbss var rhs:
+    return 0
+plat_used:
+emit:
+    72 131 196 32 91
+ret()
+emit(184)
+emit4(33554506)
+sysc_raw()
+if rt = 0 -> print 'Error: cannot read runtime'
+    fail()
+rt: repl:
+emit:
+    106 60 88
+sysc()
+emit:
+    106 1 88
+sysc()
+emit4(0 - 1176)
+emit:
+    72 184
+noff: name_off
+ni: 0
+as long as ni < nimp -> s: peek_i64(imp_used, 16 + ni * 8)
+0:
+    exlo
+    exhi
+if t = 1 -> off: peek_i64(d, o + 8)
+    va: peek_i64(d, o + 16)
+    fsz: peek_i64(d, o + 32)
+arm_set(m, rd, arm_rz(m, rm))
+arm_set_pc(m, nx)
+return 1
+arm_set(m, 0, 0)
+arm_set_pc(m, nx)
+return 1
+0:
+    v
+    i
+as long as i >= 0 -> poke_byte(out, i, 48 + v % 10)
+    v: v / 10
+    i: i - 1
+0:
+    borrow
+    i
+fd: file_open_read(path)
+if fd < 0 -> return 0 - 1
+n: sys_seek(fd, 0, 2)
+dummy: bounds_ok("byte", i, n)
+if i < 0 -> return 0
+if i >= n -> return 0
+use:
+    fixed
+    mem
+0:
+    v
+    got
+more: 1
+as long as more = 1 -> cl_skip()
+    b: cl_peek()
+emit n:
+    x: band(n, 255)
+    # neg-fix dead after band (band always 0-255); removed
+if not -> dummy: _sov_set_byte(r, j, b)
+    j: j + 1
+    i: i + 1
+if not -> dummy: _sov_set_byte(r, j, b)
+    j: j + 1
+    i: i + 1
+if g > 0 - 1 -> store_glob(name)
+    return
+store_loc(slot(name))
+drop_str name:
+    di: list_idx(str_vars, name)
+    if di > 0 - 1 -> str_vars: _sov_list_set(str_vars, di, "")
+if c = _sov_byte_at(a, 0) = 1 -> f: i
+if not -> if c = _sov_byte_at(b, 0) = 1
+        f: i
+if ins = 0 -> if sg_match(text, i, " := ") = 1
+        return i
+i: i + 1
+ends_times s:
+    if length(s) < 6 -> return 0
+    if sg_match(s, length(s) - 6, " times") = 1 -> return 1
+do_print_one(what)
+inc_var("__pt_i")
+jb: jmp()
+expr(Lq)
+push_rax()
+expr(Rq)
+if starts(Lq, "\"") = 1 -> expr(Rq)
+    push_rax()
+    expr(Lq)
+test_rax()
+setcc("eq")
+return 0
+expr(R)
+mov_rcx_rax()
+pop_rax()
+ex_depth: ex_depth - 1
+xor_rax()
+return 0
+t: expr_body(e0)
+ex_depth: ex_depth - 1
+return t
+xor_rax()
+patch(d)
+return 0
+name: strip(cut(e, 0, lp))
+is_spawn: 0
+if starts(name, "spawn ") = 1 -> name: strip(cut(name, 6, length(name)))
+vn: e
+loadv(vn)
+if list_idx(str_vars, vn) > 0 - 1 -> return 1
+im_names: _sov_list_add(im_names, strip(cut(rest, 0, t)))
+im_skip: 1
+s: rest
+if _sov_str_eq(s, "private") = 1 -> fw_on: 1
+    return
+if starts(s, "wipe ") = 1 -> expr(strip(cut(s, 5, length(s))))
+if fw_on = 1 -> canary_check_a64()
+    frame_wipe_a64()
+    return
+if _sov_byte_at(line, i) = 32 -> c: c + 1
+if not -> return c
+i: i + 1
+if not -> if _sov_str_eq(k, "forever") = 1
+        st: peek_i64(bs, 16 + last * 8)
+        at: jmp()
+if not -> if _sov_str_eq(k, "repeat") = 1
+        rs: peek_i64(br, 16 + last * 8)
+        load_loc(rs)
+store_loc(rs)
+st: peek_i64(bs, 16 + last * 8)
+at: jmp()
+try_alloc_imm var rhs:
+    if starts(rhs, "_sov_heap_alloc(") = 0 -> return 0
+    if _sov_str_eq(var, skip_al) = 1 -> return 1
+one: strip(cut(p, start, n))
+if length(one) > 0 -> lst: _sov_list_add(lst, one)
+return lst
+if ok = 0 -> return blank
+if hits < 3 -> return blank
+return an
+if used = 0 -> wbuf: _sov_list_add(wbuf, "Warning: never used")
+    wbuf: _sov_list_add(wbuf, nm)
+    wbuf: _sov_list_add(wbuf, sg_numt(peek_i64(task_lns, 16 + ui * 8)))
+at: here()
+emitw(1409286146)
+addp(at, "b19_trap", 0)
+if cspl <= 0 -> pm: fop(e, "%")
+    if pm > 0 -> cspl: pm
+        cvop: 32
+emit_strlen:
+    fn_names: _sov_list_add(fn_names, "_sov_strlen")
+    fn_offs: _sov_list_add(fn_offs, here())
+emit_streq:
+    fn_names: _sov_list_add(fn_names, "_sov_str_eq")
+    fn_offs: _sov_list_add(fn_offs, here())
+emit_alloc_mark:
+    fn_names: _sov_list_add(fn_names, "alloc_mark")
+    fn_offs: _sov_list_add(fn_offs, here())
+if not -> if starts(s, "except") = 1
+        last: _sov_list_len(bk) - 1
+        if last > 0 - 1 -> if _sov_str_eq(peek_i64(bk, 16 + last * 8), "try") = 1
+w: join(w, letter(ln, k))
+k: k + 1
+e: k
+res: join(res, join(alias, join("__", w)))
+j: e
+d: 1
+err_where:
+    if length(src_name) > 0 -> _sov_print(src_name)
+    print err_line
+n: _sov_strlen(s)
+o: _sov_heap_alloc(n + 1)
+i: 0
+0:
+    w
+    i
+i: 0
+n: _sov_list_len(ls)
+as long as i < n -> l: peek_i64(ls, 16 + i * 8)
+0:
+    top
+    i
+0:
+    acc
+    i
+use:
+    sys
+    mem
+y: peek_byte(b, i)
+if x < y -> return 0 - 1
+if x > y -> return 1
+if not -> poke_byte(o, j, c)
+    j: j + 1
+i: i + 1
+emit:
+    rexx(h)
+    1
+loadv(src)
+sl: list_idx(locals, dest)
+if sl = 0
+emit:
+    72 153
+idiv_reg(sl)
+emit:
+    72 137 216
+mov_rdi_rax()
+rs: reg_slot(var)
+if rs > 0 - 1 -> cflush(var)
+    expr(other)
+add_rax_mem(sl6)
+drop_str(var)
+return
+stmt_leave_op()
+ret()
+return
+at: here()
+emit4(0)
+addp(at, "rel", "_sov_trap")
+emit8(v)
+cmp_rax_rcx()
+return 0
+0:
+    dl_sh
+    dl_ri
+emit:
+    12 + nd * 64
+    192 + (i2 + 3) * 8 + bs + 3
+sn: 11 + sl
+if sl = 0 -> sn: 3
+rex: 72
+emit:
+    rx
+    141
+mov_rdi_rax()
+emit(185)
+emit4(kv)
+emit_name_or_imm(lim)
+storev(iv)
+return
+align32()
+lp: here()
+emit:
+rx: 72
+if d > 7 -> rx: rx + 4
+if i > 7 -> rx: rx + 2
+expr(le)
+push_rax()
+expr(re)
+if starts(le, "\"") = 1 -> expr(re)
+    push_rax()
+    expr(le)
+c1: look(inn, ",")
+if c1 < 0 -> return 0
+g2: strip(cut(inn, 0, c1))
+l2: strip(cut(inn, 0, pp))
+r2: strip(cut(inn, pp + 3, length(inn)))
+if name_ok(l2) = 1 -> if is_imm(r2) = 1
+cflush(L)
+emit_lea_rax(sl2, vv)
+return 0
+expr(L)
+push_rax()
+expr(R)
+if starts(L, "\"") = 1 -> expr(R)
+    push_rax()
+    expr(L)
+emit:
+    72 131 240 1
+return 0
+emit:
+    72 137 194
+chk_mem(8)
+body: "{\"content\":"
+body: str_cat:
+    web_quote(words)
+_sov_heap_alloc(80):
+    x
+    y
+num
+time
+list
+t: file_read_all(path)
+out: list_new()
+if t = 0 -> return out
+0:
+    p
+    f
+if fd < 0 -> return 0
+n: sys_seek(fd, 0, 2)
+sys_seek(fd, 0, 0)
+string
+num
+file
+out: _sov_heap_alloc(n * 2 + 1)
+i: 0
+as long as i < n -> b: peek_byte(p, i)
+i: i + 1
+as long as i < n -> cc: peek_byte(s, i)
+    if cc = 34 -> i: json_skip_string(s, i)
+depth: depth - 1
+i: i + 1
+if depth = 0 -> return i
+c: 0
+as long as i < n -> i: json_skip(s, i)
+    cc: peek_byte(s, i)
+if kacpi_dmar_valid(table, maximum) != 1 -> return 0 - 1
+length: peek_raw32(table + 4, 0)
+count: 0
+if record = 0 -> return 0
+if index < 0 -> return 0
+if kacpi_dmar_valid(table, maximum) != 1 -> return 0
+if block_size < 512 -> return 0
+if block_size > 65536 -> return 0
+if band(block_size, block_size - 1) != 0 -> return 0
+if peek_raw64(p + 72, 0) < 1 -> return 0
+queue: peek_raw64(p + 80, 0)
+if kio_queue_remove(queue, request) != 1 -> return 0
+poke_raw64(p + 72, 0, peek_raw64(p + 72, 0) - 1)
+request + 136: poke_raw64 i * 8, 0: 0 0
+return 1
+deadline: peek_raw64(request + 56, 0)
+if deadline = 0 -> return 0
+if now < deadline -> return 0
+poke_raw64(p + 64, 0, peek_raw64(p + 64, 0) - 1)
+request + 136: poke_raw64 i * 8, 0: 0 0
+return 1
+if found = 0 -> kdefer_unlock(queue)
+    return 0
+generation: peek_raw64(found, 0)
+if bitmap = 0 -> return 0
+offset: frame / 8
+mask: bshl(1, frame % 8)
+as long as rollback < frame -> poke_byte(pins, rollback, peek_byte(pins, rollback) - 1)
+    rollback: rollback + 1
+return 0
+0:
+    count
+    slot
+poke_raw64(request + 40, 0, 0)
+poke_raw64(request + 48, 0, 0)
+poke_raw64(request + 56, 0, deadline)
+poke_raw64(request + 88, 0, KIO_CANCEL_NONE)
+poke_raw64(request + 8, 0, KIO_REQ_QUEUED)
+return 1
+if transferred < 0 -> return 0
+if transferred > peek_raw64(request + 32, 0) -> return 0
+poke_raw64(request + 40, 0, transferred)
+if state != KIO_DMA_MAPPED -> if state != KIO_DMA_COMPLETE
+        return 0
+if peek_raw64(mapping + 16, 0) != owner -> return 0
+pt: pt_entry - pt_entry % KIOMMU_PAGE_SIZE
+if kiommu_pool_owns(pool, pt) = 0 -> return 0
+leaf: pt + pt_index * 8
+poke_raw64(entry, 0, 0)
+poke_raw64(entry + 8, 0, 0)
+return 1
+if policies = 0 -> return 0
+if capacity < 1 -> return 0
+if capacity > 256 -> return 0
+0:
+    active
+    slot
+if table = 0 -> return 0
+if capacity < 1 -> return 0
+if capacity > KIRQ_MAX_VECTORS -> return 0
+atomic_store(entry + 32, 0)
+atomic_store(entry + 40, 0)
+atomic_store(entry + 48, 0)
+if kirq_valid(table, capacity) != 1 -> return 0
+if owner < 1 -> return 0
+if source < 0 -> return 0
+# unsafe
+port_out8(1017, 0)
+# unsafe
+if started = 1 -> sc(q + 48)
+v: v % d
+d: d / 10
+if descriptor = 0 -> return 0
+if total < 9 -> return 0
+if total > 65535 -> return 0
+if peek_raw8(descriptor, 0) != 9 -> return 0
+if peek_raw8(descriptor + 1, 0) != 2 -> return 0
+if peek_raw16(descriptor + 2, 0) != total -> return 0
+in_address: address
+in_packet: packet
+in_interval: interval
+if lim > pos -> lim: pos
+d: 1
+as long as d <= lim -> if peek_byte(p, pos - d) = peek_byte(p, pos)
+0:
+    items
+    groups
+poke_byte(out, o, peek_byte(p, pos))
+o: o + 1
+pos: pos + 1
+if bad = 1 -> return ""
+poke_byte(out, o, 0)
+return as text out
+use:
+    string
+    store
+p: str_find(line, "|")
+if p < 0 -> return line
+return str_cut(line, 0, p)
+c: shr(h0, 26)
+h0: wand(h0, 67108863)
+h1: h1 + c
+fds: _sov_heap_alloc(16)
+sys_pipe(fds)
+pid: sys_fork()
+out: ""
+buf: _sov_heap_alloc(4096)
+more: 1
+use:
+    string
+    sys
+j: 0
+as long as _sov_byte_at(p, j) != 0 -> poke_byte(p, j, 0)
+    j: j + 1
+if number = SOVSYS_CLOSE -> return 1
+if number = SOVSYS_SECCOMP_DENY -> return 1
+if number = SOVSYS_DROP_CAPABILITY -> return 1
+if number = SOVSYS_FILE_LIST -> return 1
+if number = SOVSYS_FILE_MKDIR -> return 1
+if number = SOVSYS_FILE_UNLINK -> return 1
+if number = SOVSYS_NET_CLOSE -> return 0
+if number = SOVSYS_SYSLOG_APPEND -> return 0
+if number = SOVSYS_SYSLOG_READ -> return 0
+if number = SOVSYS_SERVICE_RECV -> return 1
+if number = SOVSYS_SERVICE_UNREGISTER -> return -1
+if number = SOVSYS_PROCESS_SELF -> return -1
+if number = SOVSYS_FORK -> return 0
+if number = SOVSYS_PROCESS_SPAWN -> return 0
+if number = SOVSYS_OPEN -> return 32
+if number = SOVSYS_NET_CLOSE -> return 0
+if number = SOVSYS_SYSLOG_APPEND -> return 96
+if number = SOVSYS_SYSLOG_READ -> return 96
+s: struct_slot(lay, name)
+if s < 0 -> return 0
+off: s * 8
+_sov_heap_alloc(160):
+    tr_slow_ms
+    tr_slow_n
+u: str_cat(u, as text peek_i64(t, 0))
+u: str_cat(u, "/")
+return as text str_cat(u, method)
+body: "{\"chat_id\":"
+body: str_cat:
+    num_text(chat)
+",\"text\":"
+web_quote(words)
+"}"
+buf: peek_i64(t, 8)
+len: peek_i64(t, 16)
+pos: peek_i64(t, 24)
+" -o "
+out
+" 2>&1"
+if tr_skipped(name) = 1 -> tr_skip: tr_skip + 1
+    return 1
+dummy: tr_stop(name)
+sock
+string
+sys
+poke_byte(aad, 8, typ)
+poke_byte(aad, 9, 3)
+poke_byte(aad, 10, 3)
+0:
+    tl_seq_c
+    tl_seq_s
+mb: _sov_heap_alloc(272)
+eb: _sov_heap_alloc(8)
+hs: _sov_heap_alloc(20000)
+as long as i < 32 -> poke_byte(rcrs, i, i * 7 % 256)
+    i: i + 1
+poke_byte(b9, 0, 9)
+n: str_len(req)
+sq: 1
+i: 0
+i: 0
+as long as i < 32 -> poke_byte(ch, 2 + i, peek_byte(rcrs, i))
+    i: i + 1
+poke_byte(rec, 0, 22)
+poke_byte(rec, 1, 3)
+poke_byte(rec, 2, 3)
+i: 0
+as long as i < 32 -> poke_byte(rcrs, 32 + i, peek_byte(sh, 2 + i))
+    i: i + 1
+cbody: tl_rb + 4
+clen: peek_byte(cbody, 3) * 65536 + peek_byte(cbody, 4) * 256 + peek_byte(cbody, 5)
+cert: cbody + 6
+r: tl_recv(fd)
+if r != 0 -> return 0
+if tl_rtype != 20 -> return 0
+ms: ctx + 128
+hh: _sov_heap_alloc(36)
+tl10_hh(hs, hlen, hh)
+if pid < 0 -> pipe_close(fds)
+    return blank
+sys_close(wfd)
+buf: _sov_heap_alloc(cap + 1)
+n: 0
+going: 1
+argv: poke_i64 0 + 8 * i: path arg 0
+syscall(59, path, argv, 0, 0, 0, 0)
+sys_exit(127)
+w: _sov_heap_alloc(16)
+w: poke_i64 0 + 8 * i: 0 0
+r: sys_ioctl(1, 21523, w)
+0:
+    p
+    k
+key: _sov_heap_alloc(32)
+pbkdf2_sha256(password, _sov_strlen(password), salt, 16, iters, 32, key)
+ctb: _sov_heap_alloc(n)
+n: str_len(s)
+if n >= width -> return as text s
+out: _sov_heap_alloc(width + 1)
+if b = 69 -> return 1
+if b = 70 -> return 1
+if b = 71 -> return 1
+sz: peek_i64(m, 888)
+if sz = 0 -> sz: 4
+if sz = 1 -> sz: 8
+keep: x_sub(x_xlo(m, n), x_mask(x_xlo(m, n), 4))
+x_xset(m, n, x_add(keep, x_d2f(m, r)), x_xhi(m, n))
+return x_go(m, q)
+if pre = 3 -> return x_pshufhw(m, q + 1, n, by)
+if pre = 2 -> return x_pshuflw(m, q + 1, n, by)
+return x_pshufd(m, q + 1, n, by)
+_v1: x_xhi(m, t)
+x_xset(m, t, x_shl64(_v0, by), x_shl64(_v1, by))
+return x_go(m, q + 1)
+_v1: x_xhi(m, t)
+x_xset(m, t, x_shr64(_v0, by), x_shr64(_v1, by))
+return x_go(m, q + 1)
+v1: x_xrm_lo(m)
+v2: x_xhi(m, n)
+v3: x_xrm_hi(m)
+x_set_zs(m, r, size)
+c: 0
+if size = 8 -> if cin = 1
+if v = peek_i64(m, 320) -> poke_i64(m, 168, X_EXITED)
+    return 0
+return x_go(m, v)
+x_unpack(m, v)
+k: x_up_kind(m)
+sg: x_up_sign(m)
+x_rm_set(m, size, r)
+x_set_zs(m, r, size)
+poke_i64(m, 152, cf)
+r: x_mask(v, size)
+c: x_cf(m)
+i: 0
+_v1: x_xrm_lo(m)
+x_xset(m, n, _v0, _v1)
+return x_go(m, q)
+ah: x_xhi(m, n)
+bl: x_xrm_lo(m)
+bh: x_xrm_hi(m)
+op: x_r8(m, p)
+q2: x_modrm(m, p + 1, rex, 0)
+n2: x_md_reg(m)
+if i < 8 -> lo: x_or(lo, x_shl64(b, i * 8))
+if not -> hi: x_or(hi, x_shl64(b, (i - 8) * 8))
+i: i + 1
+if sat = 1 -> if k > 32767
+        k: 32767
+    if k < 0 - 32768 -> k: 0 - 32768
+if not -> lane: x_and(im, 3)
+    t: x_xlo(m, n)
+    if lane >= 2 -> t: x_xhi(m, n)
+s: x_i2d(m, 0)
+if x_and(x_shr64(im, 4), 1) = 1 -> s: x_fadd(m, s, p0)
+if x_and(x_shr64(im, 5), 1) = 1 -> s: x_fadd(m, s, p1)
+if not -> if ff % 2 = 1
+        up: 1
+if up = 1 -> ff: ff + 1
+0:
+    hi
+    lo
+if sys_getrandom(rb, 8) = 8 -> v: peek_i64(rb, 0)
+    if v < 0 -> v: 0 - v
+    slide: (v - (v / 512) * 512) * 4096
+lo: lo + slide
+poke_i64(m, 216, lo)
+x_rebase(m)
+ZM_HALT: 2
+ZM_PC: ZM_OPC
+return 0
+0:
+    words
+    i
+if wa != 0 -> if words < pmax
+        poke_byte(ZM_M, p + 2 + words * 4, wa / 256)
+        poke_byte(ZM_M, p + 3 + words * 4, wa % 256)
+if not -> write_out('FAIL ')
+    print as text name
+    write_out(' got ')
+use suite
+main:
+    tr_use('./sovren')
+write_out('ok   ')
+write_out(name)
+write_out("\n")
+write_out('  exit ')
+write_out(num_text(code))
+write_out("\n")
+vf_exit(m, at)
+arm_run_for(m, 500000)
+return arm_code(m)
+queue: _sov_heap_alloc(KIO_QUEUE_STRIDE)
+slots: _sov_heap_alloc(16)
+if kio_queue_init(queue, slots, 2) != 1 -> bad('queue init')
+sub_bytes()
+shift_rows()
+add_round_key(14)
+use ktest_e
+RES: 0
+CACHE: 8388608
+atomic_store(CACHE + (i * 24) + 8, 0)
+atomic_store(CACHE + (i * 24) + 16, 0)
+i: i + 1
+ata_write lba:
+    wait_rdy()
+    port_out8(DRV, 224)
+ata_read lba:
+    wait_rdy()
+    port_out8(DRV, 224)
+i: 0
+as long as i < 512 -> poke_byte(BUF + i, 0, 0)
+    i: i + 1
+idx: RES
+if idx = 0 - 1 -> RES: 0
+    return 0
+st_hv c:
+    if c >= 97 -> return c - 87
+    return c - 48
+0:
+    found
+    i
+0:
+    over
+    kk
+# unsafe-module
+use ktest_c
+DUMP: 8388608
+pci_w32 bdf reg v:
+    port_out32(3320, bor(bor(2147483648, bdf), band(reg, 252)))
+    port_out32(3324, v)
+wait_rx_enable:
+    cli()
+    poke_raw64(WAIT_TICKS, 0, 0)
+WAIT_PTR: poke_byte 0 + i: 15 2
+poke_raw64(WAIT_PTR + 2, 0, WAIT_IDT)
+lidt(WAIT_PTR)
+st16(TXDES + 8, l)
+TXDES + 10: poke_raw8 i, 0: 0 11 0 0
+st16(TXDES + 14, 0)
+w32(mmio + 10248, 512)
+w32(mmio + 10256, 0)
+w32(mmio + 10264, 31)
+0:
+    gotmac
+    att
+rx_done()
+if gotmac = 1 -> leave
+att: att + 1
+0:
+    gotip
+    att
+rx_done()
+if gotip = 1 -> leave
+att: att + 1
+# unsafe-module
+use ktest_c
+FE: 8388608
+i: 0
+as long as i < 64 -> poke_byte(MDIG + i, 0, peek_byte(HOUT + i, 0))
+    i: i + 1
+poke_raw64(sp() + 128, 0, 24)
+poke_raw64(sp() + 144, 0, KSTK)
+poke_raw64(sp() + 152, 0, 16)
+io_prep lba:
+    wait_rdy()
+    port_out8(DRV, 240)
+poke_byte(dst + i * 2, 0, band(w, 255))
+poke_byte(dst + i * 2 + 1, 0, band(bshr(w, 8), 255))
+i: i + 1
+at_read(4, GD)
+at_read(5, BB)
+at_read(6, IB)
+sputs("dividing by zero...\n")
+zz: 0
+q: 7 / zz
+i: 0
+as long as i != MAXV -> s: peek_raw64(PT + ((pid * MAXV + i) * 24), 0)
+    e: peek_raw64(PT + ((pid * MAXV + i) * 24), 8)
+0:
+    seen
+    i
+t0: now_secs()
+as long as 1 = 1 -> r: syscall(61, pid, st, 1, 0, 0, 0)
+    if r = pid -> return peek_i64(st, 0)
+ts: _sov_heap_alloc(16)
+ts: poke_i64 0 + 8 * i: 0 100000000
+sys_nanosleep(ts)
+spawn argv secs:
+    pid: sys_fork()
+    if pid = 0 -> nfd: sys_open('/dev/null', 1)
+img: str_cat(ARTD, str_cat('/', str_cat(name, '.img')))
+dsk: str_cat(ARTD, str_cat('/', str_cat(name, '-disk.img')))
+log: str_cat(ARTD, str_cat('/', str_cat(name, '.log')))
+if ev_hit(x, y, wx2, wy2, WW - 24, 26) = 1 -> poke_raw64(DRAG, 0, w)
+    poke_raw64(DRAGDX, 0, x - wx2)
+    poke_raw64(DRAGDY, 0, y - wy2)
+fill_rect(24, 52, 44, 58, SBCOL)
+damage_note()
+present_flip()
+damage_note()
+present_flip()
+ok: 1
+K: 8388608
+H: 8389120
+W: 8389184
+i: 0
+as long as i < 16 -> poke_raw64(W + i*8, 0, load_be32(MSG + bo + i*4))
+    i: i + 1
+sha256_init()
+sha256_block(0)
+sha256_block(64)
+snum(nh)
+sc(10)
+if count > IOMMU_RMRR_CAPACITY -> return 0
+index: 0
+as long as index < count -> record: IOMMU_RMRR_RECORDS + index * KACPI_RMRR_STRIDE
+dma_unpin_range_unlocked(address, length)
+dma_pin_release()
+return 0
+result: kernel_dma_sync_for_cpu_unlocked(mapping, transferred)
+dma_pin_release()
+return result
+d: IDT + vec * 16
+poke_byte(d, 0, band(handler, 255))
+poke_byte(d, 1, band(bshr(handler, 8), 255))
+if kirq_drain_pending(table, KERNEL_IRQ_CAPACITY, vector, generation, ATA_IRQ_OWNER, 16) < 0 -> return 0
+if kirq_pending(table, KERNEL_IRQ_CAPACITY, vector) != 0 -> return 0
+return 1
+port_out8(161, 255)
+poke_raw32(4276092928 + 848, 0, 65536)
+ioa: 4273995776
+port_out8(32, 17)
+port_out8(160, 17)
+port_out8(33, 32)
+if peek_raw64(IOMMU_IR_ACTIVE, 0) = 1 -> ioa: 4273995776
+    poke_raw32(ioa, 0, 16 + ATA_IRQ_LINE * 2)
+    poke_raw32(ioa + 16, 0, bor(peek_raw32(ioa + 16, 0), 65536))
+if buf = 0 -> return 0 - 22
+if peek_raw64(ATA_CAPACITY, 0) > 0 -> if lba >= peek_raw64(ATA_CAPACITY, 0)
+        return 0 - 22
+if kblk_device_pending(COMMON_BLOCK_REGISTRY, COMMON_BLOCK_REGISTRY_CAPACITY, device) != 0 -> return 0
+if kblk_device_inflight(COMMON_BLOCK_REGISTRY, COMMON_BLOCK_REGISTRY_CAPACITY, device) != 0 -> return 0
+return 1
+owner: kblk_device_backend(COMMON_BLOCK_REGISTRY, COMMON_BLOCK_REGISTRY_CAPACITY, device)
+generation: kblk_device_generation(COMMON_BLOCK_REGISTRY, COMMON_BLOCK_REGISTRY_CAPACITY, device)
+if kblk_init(request, owner) != 1 -> return 0
+base: lba - lba % 8
+slot: pcache_ensure(base)
+if slot < 0 -> return slot
+if lba < FS_DATA_LBA -> return 0 - 74
+if lba >= FS_DATA_LBA + FS_EXTENT_COUNT * 8 -> return 0 - 74
+if (lba - FS_DATA_LBA) % 8 != 0 -> return 0 - 74
+db: peek_raw64(DIRBUF, 0)
+data: peek_raw64(DATABUF, 0)
+if dir_read(db) != 0 -> return 0 - 5
+0:
+    off
+    sector
+if out = 0 -> return 0 - 22
+db: peek_raw64(DIRBUF, 0)
+if dir_read(db) != 0 -> return 0 - 5
+if backend != 1 -> if vfs_switch_backend(1) != 0
+        return 0 - 5
+return r
+reloc_off
+reloc_len
+si
+rec: pci_find_record(bdf)
+if rec = 0 -> return 0
+lifecycle: rec + 96
+row: 0
+as long as row < 2 -> column: 0
+    as long as column < 4 -> target: framebuffer + ((53 + row) * 640 + 102 + column) * 4
+mmio: pci_mmio_base(bdf, 0)
+if mmio = 0 -> return 0
+pci_w32(bdf, 4, bor(pci_r32(bdf, 4), 6))
+snum(peek_raw64(HDA_RING_DETAIL, 0))
+sputs("\n")
+return 0
+root_port: band(port_info, 65535)
+port_speed: band(bshr(port_info, 16), 255)
+in_address: peek_raw64(XHCI_USB_INFO + 16, 0)
+csw: buffer + 3584
+cleared: _sov_mem_set(csw, 0, 13)
+in_key: slot + bshl(in_dci, 8)
+device: peek_raw64(XHCI_BLOCK_DEVICE_ID, 0)
+generation: peek_raw64(XHCI_BLOCK_DEVICE_GENERATION, 0)
+if device < 1 -> return 0
+class_in
+transfer_ring
+device_context
+0:
+    hs
+    att
+rx_done()
+if hs = 1 -> leave
+att: att + 1
+tx_descriptor_device: kio_dma_device_address(NET_TXD_DMA_MAP)
+w32(mmio + 14340, tx_descriptor_device / 4294967296)
+w32(mmio + 14336, band(tx_descriptor_device, 4294967295))
+if buf < USER_DATA_VA -> return 0 - 14
+if buf > USER_DATA_VA + 4096 - len -> return 0 - 14
+netsk_load(base)
+table: peek_raw64(KERNEL_IRQ_TABLE_PTR, 0)
+vector: peek_raw64(NVME_IRQ_VECTOR_STATE, 0)
+generation: peek_raw64(NVME_IRQ_GENERATION, 0)
+kernel_dma_unmap(NVME_DMA_MAP0, PCI_DRIVER_NVME)
+kernel_dma_unmap(NVME_DMA_MAP1, PCI_DRIVER_NVME)
+return 0
+table: peek_raw64(KERNEL_IRQ_TABLE_PTR, 0)
+vector: peek_raw64(AHCI_IRQ_VECTOR_STATE, 0)
+generation: peek_raw64(AHCI_IRQ_GENERATION, 0)
+if peek_raw64(target_record + 24, 0) != actor -> return 0 - 1
+if peek_raw64(target_record + PROCESS_CREDENTIAL_ID, 0) != peek_raw64(actor_record + PROCESS_CREDENTIAL_ID, 0) -> return 0 - 1
+if peek_raw64(target_record + PROCESS_NAMESPACE_ID, 0) != peek_raw64(actor_record + PROCESS_NAMESPACE_ID, 0) -> return 0 - 1
+frame: sp()
+ctx: peek_raw64(MP_CTX + cur * 8, 0)
+mem_copy(ctx, frame, 120)
+poke_raw64(MP_NEXT_CTX, 0, peek_raw64(MP_CTX + next * 8, 0))
+poke_raw64(MP_NEXT_ROOT, 0, peek_raw64(MP_ROOTS + next * 8, 0))
+poke_raw64(MP_NEXT_TOP, 0, peek_raw64(MP_KTOP + next * 8, 0))
+cli()
+port_out8(33, 255)
+write_cr3(peek_raw64(MP_KERNEL_CR3, 0))
+if timeout < 1 -> poke_raw64(frame + 112, 0, 0 - 11)
+    pop_all()
+    iretq()
+current_record: process_record(peek_raw64(PROCESS_CURRENT, 0))
+if current_record != 0 -> if peek_raw64(current_record + PROCESS_REVOKED_TOKEN, 0) = token
+        poke_raw64(current_record + PROCESS_REVOKED_TOKEN, 0, 0)
+cur: peek_raw64(MP_CUR, 0)
+resume_ctx: peek_raw64(MP_CTX + cur * 8, 0)
+resume_top: peek_raw64(MP_KTOP + cur * 8, 0)
+if base < USER_ANON_BASE -> return 0
+if base > USER_ANON_LIMIT - length -> return 0
+finish: base + length
+slot: token % 256
+generation: token / 256
+if slot < 0 -> return 0
+0:
+    removed
+    slot
+filebuf: peek_raw64(FSBUF, 0)
+length: vfs_read('INTEGRATED.BIN', filebuf, 512)
+if length < 0 -> return length
+log: peek_raw64(USER_AUDIT_PTR, 0)
+count: peek_raw64(USER_AUDIT_COUNT, 0)
+if log = 0 -> return 0
+syscall_result(frame, 0)
+pop_all()
+iretq()
+write_cr3(read_cr3())
+if address <= USER_ANON_BASE -> if address + rounded > USER_ANON_BASE
+        poke_raw64(USER_DEMAND_PHYS, 0, 0)
+syscall_result(frame, 0 - 22)
+pop_all()
+iretq()
+if signal_record = 0 -> syscall_result(frame, 0 - 3)
+    pop_all()
+    iretq()
+syscall_result(frame, 0 - 95)
+pop_all()
+iretq()
+if length > SERVICE_MESSAGE_MAX -> syscall_result(frame, 0 - 90)
+    pop_all()
+    iretq()
+syscall_result(frame, 0 - 11)
+pop_all()
+iretq()
+poke_raw64(IOMMU_IR_ACTIVE, 0, 0)
+mem_zero(IOMMU_UNIT_IR_TABLES, IOMMU_UNIT_CAPACITY * 8)
+mem_zero(IOMMU_UNIT_QI_QUEUES, IOMMU_UNIT_CAPACITY * 8)
+if peek_raw64(IOMMU_IR_ACTIVE, 0) = 0 -> return 1
+lease: dmar_ir_lease(owner)
+if lease = 0 -> return 0
+if peek_raw64(IOMMU_RUNTIME_ACTIVE, 0) = 0 -> return 1
+owner_record: dmar_owner_record(owner)
+if owner_record = 0 -> return 0
+cur: t
+got: 1
+k: 16
+atomic_add(SMPS_TLB_ACK, 1)
+pop_all()
+iretq()
+base: rdmsr(27)
+wrmsr(27, bor(base, 2048))
+poke_raw32(SMPS_APIC + 240, 0, 256 + 31)
+as long as 1 = 1 -> lock(LOCKC)
+    h: peek_raw64(HEADC, 0)
+    t: peek_raw64(TAILC, 0)
+k: k + 1
+poke_byte(p3, k, 32)
+k: k + 1
+cli()
+ok: 1
+wait_ib()
+wait_ib()
+port_out8(100, 96)
+wait_ib()
+if found = 0 -> sputs("no NIC\n")
+    as long as 1 = 1 -> hlt()
+bdf: d * 2048
+rotr32 x n:
+    return bor(bshr(x, n), bshl(x, 32 - n))
+load_be32 base:
+i: 0
+as long as i < 16 -> poke_raw64(W + i*8, 0, load_be32(MSG + i*4))
+    i: i + 1
+sha256_init()
+sha256_block()
+sha256_blockat(64)
+use ktest_e
+RES: 0
+FDT: 8388608
+IDT: 2097152
+dd: IDT + 32 * 16
+hoff: fn_addr('timer_ih')
+n: aadd(av, n, temp_doc)
+aend(av, n)
+spawn(av, 30)
+ag: str_cat(ARTD, '/appgen')
+compile_host(str_cat(KERNS, '/../tools/appgen.sov'), ag)
+if file_size(ag) < 1 -> return 0
+n3: aadd(av3, n3, 'q35')
+n3: aadd(av3, n3, '-device')
+n3: aadd(av3, n3, 'intel-iommu,intremap=on,eim=off')
+IDT: 2097152
+d: IDT + 128 * 16
+hoff: fn_addr('trap_h')
+LIG: poke_byte 0 + i: 161 49 27 91 98 149 210 17 142 63 0 160 201 105 114 59
+ih: peek_raw64(IH_AT, 0)
+hp: peek_raw64(bs + 152, 0)
+sputs('ipi init/sipi to apic id ')
+snum(id)
+sc(10)
+main:
+    sinit()
+    sputs("SOVREN SOCK\n")
+if PRESENT = 0 -> return 0
+if sector >= CAP -> return 0
+i: 0
+0:
+    i
+    cpn
+lidt(PTR)
+port_out8(33, 254)
+sti()
+i: 0
+as long as 1 = 1 -> ch: peek_byte(s, i)
+    if ch = 0 -> leave
+0:
+    w
+    k
+if ca = 0 -> if cb = 0
+        leave
+k: k + 1
+main:
+    sinit()
+    cli()
+cur: cs
+idx: 0
+as long as cur < ce -> if idx = k
+der_next(cur)
+cur: peek_raw64(DER_E, 0)
+idx: idx + 1
+write_out('skip ')
+write_out(name)
+write_out("\n")
+# unsafe-module
+main:
+    arr: _sov_heap_alloc(8000)
+main:
+    arr: _sov_heap_alloc(8000)
+    r: 1
+use sys
+g: 0
+lf:
+i: 1
+j: 2
+k: 3
+use sys
+b: 0
+work:
+use sys
+b: 0
+w:
+main:
+    b: _sov_heap_alloc(640)
+    print w()
+if peek_raw64(a, r * 8) < peek_raw64(a, (r + 1) * 8) -> r: r + 1
+print r
+print peek_raw64(a, r * 8)
+if peek_raw64(b, k * 8) > peek_raw64(b, (k + 1) * 8) -> k: k + 1
+print k
+print peek_raw64(b, k * 8)
+if peek_raw64(c, x * 8) < peek_raw64(c, (x + 1) * 8) -> x: x - 1
+print x
+print peek_raw64(c, x * 8)
+g: _sov_heap_alloc(128)
+g: poke_i64:
+    0 -> 5
+use sys
+main:
+    a: 7
+r: 3
+if peek_raw64(a, r * 8) < peek_raw64(a, (r + 1) * 8) -> r: r + 1
+print r
+r: 2
+if peek_raw64(a, r * 8) > peek_raw64(a, (r + 1) * 8) -> r: r + 1
+print r
+r: 1
+if peek_raw64(a, r * 8) < peek_raw64(a, (r + 2) * 8) -> r: r + 1
+print r
+r: 1
+if peek_raw64(a, r * 8) < peek_raw64(c, (r + 1) * 8) -> r: r + 1
+print r
+t: 100
+if peek_raw64(a, r * 8) < peek_raw64(a, (r + 1) * 8) -> t: r + 1
+print t
+nat: cr_out
+args: _sov_heap_alloc(16)
+poke_i64(args, 0, '/tmp/sov-runc')
+src: cr_line('', 'use win')
+src: cr_line(src, 'use time')
+src: cr_line(src, 'main:')
+m: new_at()
+x_xset(m, 1, 578437695752307201, 1157159078456920585)
+x_xset(m, 3, 65, 0)
+m: new_at()
+x_xset(m, 1, 0, 0)
+x_xset(m, 3, 4638707617267449856, 0 - 4584664417439842304)
+m: new_at()
+x_xset(m, 1, 4607182418800017408, 4616189618054758400)
+x_xset(m, 3, 4598175219545276416, 4602678819172646912)
+m: new_at()
+x_xset(m, 1, 4674736414296899584, 4688247213183205376)
+x_xset(m, 3, 0, 0)
+m: new_at()
+x_xset(m, 1, 72623859790382856, 1230066625199609624)
+x_xset(m, 3, 0, 0)
+m: new_at()
+x_xset(m, 1, 0, 0)
+x_xset(m, 3, 651345242494996240, 72623859790382856)
+m: new_at()
+x_xset(m, 1, 0, 0)
+x_xset(m, 3, 4612811918334230528, 0 - 4613937818241073152)
+m: new_at()
+x_xset(m, 1, 32640, 0)
+x_xset(m, 2, 192, 0)
+m: new_at()
+x_xset(m, 1, 37529424236817, 0)
+x_xset(m, 2, 4369, 0)
+khi: x_r64(m, X_AT + 4104 + round * 16)
+x_xset(m, 6, klo, khi)
+m: poke_i64 360 + 16 * i: 1 6
+m: new_at()
+x_xset(m, 1, 579005069656919567, 283686952306183)
+x_yset(m, 1, 579005069656919567, 283686952306183)
+as long as j < n -> u: peek_i64(lns, 16 + j * 8)
+    if str_starts(u, "# ") = 0 -> s2: str_find(u, ' ')
+        if s2 > 0 - 1 -> p2: str_num(str_cut(u, 0, s2))

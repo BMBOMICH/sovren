@@ -1,0 +1,192 @@
+use winx11
+use time
+use mem
+use num
+use string
+GAME_KEYS: 256
+game_new width height title:
+    w: win_open(width, height, title)
+    if w is 0 -> return 0
+    g: mem_new(128)
+    i: 0
+    as long as i < 128
+        poke_byte(g, i, 0)
+        i: i + 1
+    poke_i64(g, 0, w)
+    poke_i64(g, 8, 1)
+    poke_i64(g, 16, 0)
+    poke_i64(g, 24, 16)
+    poke_i64(g, 40, mem_new(GAME_KEYS))
+    k: peek_i64(g, 40)
+    i: 0
+    as long as i < GAME_KEYS
+        poke_byte(k, i, 0)
+        i: i + 1
+    poke_i64(g, 80, width)
+    poke_i64(g, 88, height)
+    poke_i64(g, 32, time_ms())
+    return g
+game_ok g:
+    if g is 0 -> return 0
+    return 1
+game_win g:
+    return peek_i64(g, 0)
+game_width g:
+    return peek_i64(g, 80)
+game_height g:
+    return peek_i64(g, 88)
+game_speed g fps:
+    if fps < 1 -> fps: 1
+    poke_i64(g, 24, 1000 / fps)
+game_running g:
+    if peek_i64(g, 8) is 0 -> return 0
+    if win_alive(peek_i64(g, 0)) is 0
+        poke_i64(g, 8, 0)
+        return 0
+    return 1
+game_stop g:
+    poke_i64(g, 8, 0)
+game_frame g:
+    return peek_i64(g, 16)
+game_step g:
+    w: peek_i64(g, 0)
+    poke_i64(g, 72, 0)
+    n: 0
+    as long as n < 64
+        if win_pending(w) is 0 -> n: 64
+        if not
+            ev: win_wait(w)
+            game_take(g, w, ev)
+            n: n + 1
+    now: time_ms()
+    want: peek_i64(g, 32) + peek_i64(g, 24)
+    if now < want -> sleep_ms(want - now)
+    poke_i64(g, 32, time_ms())
+    poke_i64(g, 16, peek_i64(g, 16) + 1)
+game_take g w ev:
+    if ev is WIN_CLOSE
+        poke_i64(g, 8, 0)
+        return 0
+    if ev is WIN_KEY
+        c: win_key(w)
+        if c < GAME_KEYS -> poke_byte(peek_i64(g, 40), c, 1)
+        poke_i64(g, 72, c)
+        return 0
+    if ev is WIN_KEYUP
+        c: win_key(w)
+        if c < GAME_KEYS -> poke_byte(peek_i64(g, 40), c, 0)
+        return 0
+    if ev is WIN_CLICK
+        poke_i64(g, 64, win_button(w))
+        poke_i64(g, 48, win_x(w))
+        poke_i64(g, 56, win_y(w))
+        return 0
+    if ev is WIN_UNCLICK
+        poke_i64(g, 64, 0)
+        return 0
+    if ev is WIN_MOVE
+        poke_i64(g, 48, win_x(w))
+        poke_i64(g, 56, win_y(w))
+        return 0
+game_held g c:
+    if c < 0 -> return 0
+    if c >= GAME_KEYS -> return 0
+    return peek_byte(peek_i64(g, 40), c)
+game_key g:
+    return peek_i64(g, 72)
+game_mouse_x g:
+    return peek_i64(g, 48)
+game_mouse_y g:
+    return peek_i64(g, 56)
+game_mouse_down g:
+    if peek_i64(g, 64) is 0 -> return 0
+    return 1
+game_clear g rgb:
+    w: peek_i64(g, 0)
+    return win_fill(w, 0, 0, peek_i64(g, 80), peek_i64(g, 88), rgb)
+game_rect g x y width height rgb:
+    return win_fill(peek_i64(g, 0), x, y, width, height, rgb)
+game_box g x y width height rgb:
+    return win_box(peek_i64(g, 0), x, y, width, height, rgb)
+game_circle g x y r rgb:
+    return win_circle(peek_i64(g, 0), x, y, r, rgb)
+game_line g x0 y0 x1 y1 rgb:
+    return win_line(peek_i64(g, 0), x0, y0, x1, y1, rgb)
+game_text g x y words rgb:
+    return win_text(peek_i64(g, 0), x, y, words, rgb)
+game_dot g x y rgb:
+    return win_dot(peek_i64(g, 0), x, y, rgb)
+game_show g:
+    return win_flush(peek_i64(g, 0))
+game_shut g:
+    if g is 0 -> return 0
+    win_shut(peek_i64(g, 0))
+    return 0
+SP_SLOT: 64
+sprite_new x y width height rgb:
+    s: mem_new(SP_SLOT)
+    poke_i64(s, 0, x)
+    poke_i64(s, 8, y)
+    poke_i64(s, 16, 0)
+    poke_i64(s, 24, 0)
+    poke_i64(s, 32, width)
+    poke_i64(s, 40, height)
+    poke_i64(s, 48, rgb)
+    poke_i64(s, 56, 1)
+    return s
+sprite_x s:
+    return peek_i64(s, 0)
+sprite_y s:
+    return peek_i64(s, 8)
+sprite_put s x y:
+    poke_i64(s, 0, x)
+    poke_i64(s, 8, y)
+sprite_speed s dx dy:
+    poke_i64(s, 16, dx)
+    poke_i64(s, 24, dy)
+sprite_move s:
+    poke_i64(s, 0, peek_i64(s, 0) + peek_i64(s, 16))
+    poke_i64(s, 8, peek_i64(s, 8) + peek_i64(s, 24))
+sprite_alive s:
+    return peek_i64(s, 56)
+sprite_kill s:
+    poke_i64(s, 56, 0)
+sprite_draw g s:
+    if peek_i64(s, 56) is 0 -> return 0
+    return game_rect(g, peek_i64(s, 0), peek_i64(s, 8), peek_i64(s, 32), peek_i64(s, 40), peek_i64(s, 48))
+sprite_bounce g s:
+    x: peek_i64(s, 0)
+    y: peek_i64(s, 8)
+    w: peek_i64(s, 32)
+    h: peek_i64(s, 40)
+    if x < 0
+        poke_i64(s, 0, 0)
+        poke_i64(s, 16, 0 - peek_i64(s, 16))
+    if y < 0
+        poke_i64(s, 8, 0)
+        poke_i64(s, 24, 0 - peek_i64(s, 24))
+    if x + w > game_width(g)
+        poke_i64(s, 0, game_width(g) - w)
+        poke_i64(s, 16, 0 - peek_i64(s, 16))
+    if y + h > game_height(g)
+        poke_i64(s, 8, game_height(g) - h)
+        poke_i64(s, 24, 0 - peek_i64(s, 24))
+sprite_clamp g s:
+    if peek_i64(s, 0) < 0 -> poke_i64(s, 0, 0)
+    if peek_i64(s, 8) < 0 -> poke_i64(s, 8, 0)
+    if peek_i64(s, 0) + peek_i64(s, 32) > game_width(g) -> poke_i64(s, 0, game_width(g) - peek_i64(s, 32))
+    if peek_i64(s, 8) + peek_i64(s, 40) > game_height(g) -> poke_i64(s, 8, game_height(g) - peek_i64(s, 40))
+sprite_hit a b:
+    if peek_i64(a, 56) is 0 -> return 0
+    if peek_i64(b, 56) is 0 -> return 0
+    if peek_i64(a, 0) + peek_i64(a, 32) < peek_i64(b, 0) -> return 0
+    if peek_i64(b, 0) + peek_i64(b, 32) < peek_i64(a, 0) -> return 0
+    if peek_i64(a, 8) + peek_i64(a, 40) < peek_i64(b, 8) -> return 0
+    if peek_i64(b, 8) + peek_i64(b, 40) < peek_i64(a, 8) -> return 0
+    return 1
+sprite_at s x y:
+    if x < peek_i64(s, 0) -> return 0
+    if y < peek_i64(s, 8) -> return 0
+    if x > peek_i64(s, 0) + peek_i64(s, 32) -> return 0
+    if y > peek_i64(s, 8) + peek_i64(s, 40) -> return 0
+    return 1

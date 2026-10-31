@@ -1,0 +1,18 @@
+use string
+main:
+    buf: _sov_heap_alloc(16777216)
+    i: 0
+    as long as i < 16777216
+        poke_byte(buf, i, i % 251)
+        i: i + 1
+    rep: 0
+    acc: 0
+    as long as rep < 8
+        h: 0 - 3750763034362895579
+        i2: 0
+        as long as i2 < 16777216
+            h: wrap_mul(bxor(h, peek_byte(buf, i2)), 1099511628211)
+            i2: i2 + 1
+        acc: wrap_add(acc, h)
+        rep: rep + 1
+    print acc

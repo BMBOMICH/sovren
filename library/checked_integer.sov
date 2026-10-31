@@ -1,0 +1,46 @@
+# Checked-i64 runtime helpers and C/Node/TypeScript preambles.
+tp_preamble:
+    if tp_js = 0
+        tp_emit("#include <stdint.h>\n#include <stdio.h>\n#include <stdlib.h>\n")
+        if tp_unsafe = 1
+            tp_emit("#define SV_UNSAFE 1\n")
+        if not
+            tp_emit("#define SV_UNSAFE 0\n")
+        tp_emit("static void sv_trap(void){puts(\"trap\");exit(1);}\n")
+        tp_emit("static int64_t sv_add(int64_t a,int64_t b){if(!SV_UNSAFE&&((b>0&&a>INT64_MAX-b)||(b<0&&a<INT64_MIN-b)))sv_trap();return (int64_t)((uint64_t)a+(uint64_t)b);}\n")
+        tp_emit("static int64_t sv_sub(int64_t a,int64_t b){if(!SV_UNSAFE&&((b>0&&a<INT64_MIN+b)||(b<0&&a>INT64_MAX+b)))sv_trap();return (int64_t)((uint64_t)a-(uint64_t)b);}\n")
+        tp_emit("static int64_t sv_mul(int64_t a,int64_t b){if(!SV_UNSAFE&&((a>0&&((b>0&&a>INT64_MAX/b)||(b<0&&b<INT64_MIN/a)))||(a<0&&((b>0&&a<INT64_MIN/b)||(b<0&&a<INT64_MAX/b)))))sv_trap();return (int64_t)((uint64_t)a*(uint64_t)b);}\n")
+        tp_emit("static int64_t sv_div(int64_t a,int64_t b){if(!b||(a==INT64_MIN&&b==-1))sv_trap();return a/b;}\n")
+        tp_emit("static int64_t sv_mod(int64_t a,int64_t b){if(!b||(a==INT64_MIN&&b==-1))sv_trap();return a%b;}\n")
+        j: 0
+        as long as j < _sov_list_len(tp_funcs)
+            tp_signature(_sov_list_get(tp_funcs, j))
+            tp_emit(";\n")
+            j: j + 1
+    if not
+        if tp_ts = 1
+            tp_emit("declare const process: {argv: string[];exit:(code:number)=>never};\n")
+        if tp_ts = 1
+            tp_emit("export {};\n")
+            tp_emit("function sv_trap():never{console.log(\"trap\");process.exit(1);throw new Error(\"unreachable\");}\n")
+            tp_emit("function sv_checked(x:bigint):bigint{")
+        if not
+            tp_emit("function sv_trap(){console.log(\"trap\");process.exit(1);}\n")
+            tp_emit("function sv_checked(x){")
+        if tp_unsafe = 0
+            tp_emit("if(x < -9223372036854775808n || x > 9223372036854775807n)sv_trap();")
+        tp_emit("return BigInt.asIntN(64,x); }\n")
+        annotation: ""
+        if tp_ts = 1
+            annotation: ":bigint"
+        tp_emit(str_join3("function sv_add(a", annotation, ",b"))
+        tp_emit(str_join3(annotation, "){return sv_checked(a+b);}\n", ""))
+        tp_emit(str_join3("function sv_sub(a", annotation, ",b"))
+        tp_emit(str_join3(annotation, "){return sv_checked(a-b);}\n", ""))
+        tp_emit(str_join3("function sv_mul(a", annotation, ",b"))
+        tp_emit(str_join3(annotation, "){return sv_checked(a*b);}\n", ""))
+        tp_emit(str_join3("function sv_div(a", annotation, ",b"))
+        tp_emit(str_join3(annotation, "){if(b===0n||(a===-9223372036854775808n&&b===-1n))sv_trap();return sv_checked(a/b);}\n", ""))
+        tp_emit(str_join3("function sv_mod(a", annotation, ",b"))
+        tp_emit(str_join3(annotation, "){if(b===0n||(a===-9223372036854775808n&&b===-1n))sv_trap();return sv_checked(a%b);}\n", ""))
+    return 0

@@ -1,0 +1,10 @@
+use bit32
+ct_eq a b n:
+    acc: 0
+    i: 0
+    as long as i < n
+        c: peek_byte(a, i)
+        d: peek_byte(b, i)
+        acc: wor(acc, wxor(c, d))
+        i: i + 1
+    if acc is 0 -> return 1

@@ -1,0 +1,33 @@
+# termkit-demo - terminal widget drawing demo
+main:
+    print 'termkit demo'
+    print box(3, 5)
+    print label('name', 'value')
+    print 0
+
+box w h:
+    r: ''
+    i: 0
+    as long as i < h
+        r: sappend(r, '+')
+        j: 0
+        as long as j < w
+            r: sappend(r, '-')
+            j: j + 1
+        r: sappend(r, '+')
+        i: i + 1
+    return r
+
+label nm v:
+    return sappend(sappend(nm, '='), v)
+
+sappend s c:
+    n: _sov_strlen(s)
+    out: _sov_alloc(n + 2)
+    k: 0
+    as long as k < n
+        dummy: poke_byte(out, k, peek_byte(s, k))
+        k: k + 1
+    dummy: poke_byte(out, n, peek_byte(c, 0))
+    dummy: poke_byte(out, n + 1, 0)
+    return out

@@ -1,0 +1,63 @@
+# spanhash — prints the digest of a source span: spanhash <path> <from> <count>
+# Algorithm must stay identical to inc_span_hash in compilers/shared/cx86.sov:
+# h = 7; for each line in [from-1, from-1+count): h = bxor(h * 16777619, nhash(line))
+use:
+    arg
+    num
+    sys
+    bit32
+main:
+    if arg_count() < 4 -> sys_exit(2)
+    p: arg_at(1)
+    from: _sov_atoi(arg_at(2))
+    nlin: _sov_atoi(arg_at(3))
+    n: sh_size(p)
+    if n < 0 -> sys_exit(3)
+    b: _sov_alloc(n + 16)
+    fd: sys_open(p, 0)
+    got: sys_read(fd, b, n)
+    sys_close(fd)
+    if got < 0 -> got: 0
+    poke_byte(b, got, 0)
+    h: 7
+    i: 0
+    li: 0
+    l2: from - 1 + nlin
+    go2: 1
+    as long as go2 = 1
+        m1: 1 - band(i / got, 1)
+        m2: 1 - band(li / (l2 + 1), 1)
+        go2: m1 * m2
+        if go2 = 1
+            e: i
+            fnd: 0
+            g4: 1
+            as long as g4 = 1
+                st: fnd + band(e / got, 1)
+                g4: 1 - band(st, 1)
+                if g4 = 1
+                    if peek_byte(b, e) = 10 -> fnd: 1
+                    if not -> e: e + 1
+            ln: e
+            if li >= from - 1
+                h: bxor(h * 16777619, sh_linehash(b, i, ln))
+            if ln < got -> i: ln + 1
+            if not -> i: ln
+            li: li + 1
+    print h
+    sys_exit(0)
+sh_linehash b a e:
+    h: 7
+    j: a
+    as long as j < e
+        c: peek_byte(b, j)
+        if c = 10 -> c: 0
+        h: bxor(h * 16777619, c)
+        j: j + 1
+    return h
+sh_size path:
+    fd: sys_open(path, 0)
+    if fd < 0 -> return 0 - 1
+    n: sys_seek(fd, 0, 2)
+    sys_close(fd)
+    return n

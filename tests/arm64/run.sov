@@ -1,0 +1,12 @@
+use arm
+main:
+    m: arm_new()
+    if arm_load(m, '/tmp/sov-arm.bin') = 0 -> print 'cannot read /tmp/sov-arm.bin'
+        stop
+    why: arm_run(m) ;; write_out(arm_out(m))
+    if why = 2 -> print ''
+        write_out('stopped on an instruction this emulator does not know: ') ;; print arm_bad(m)
+        stop
+    if why = 3 -> print ''
+        print 'stopped: it ran too long'
+        stop

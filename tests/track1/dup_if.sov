@@ -1,0 +1,12 @@
+# track1 trap cell: several `if` dispatchers on one physical line (after `;;`)
+# exercising per-line descriptor state under 1.1/1.2 interning. Pinned bytes.
+
+main:
+    a: 3 ;; b: 4
+    if a is 3 -> print 'd1' ;; if b is 4 -> print 'd2'
+    if a is 3 -> if b > 2 -> print 'nested' ;; if a > 10 -> print 'never'
+    r: 0
+    if a > 0 -> r: 1 ;; if not -> r: 9
+    if b > 0 -> r: r + 10 ;; if a + b is 7 -> r: r + 100
+    if a + b > 15 -> print 'big' ;; if not -> print 'small'
+    print r

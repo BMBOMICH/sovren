@@ -1,0 +1,116 @@
+use sha256
+use constant
+use string
+use bit32
+use mem
+hmac_block key klen b:
+    _hmac9608d1_i: 0
+    as long as _hmac9608d1_i < 64
+        poke_byte(b, _hmac9608d1_i, 0)
+        _hmac9608d1_i: _hmac9608d1_i + 1
+    if klen > 64
+        _hmac9608d1_h: _sov_alloc(64)
+        sha256_bytes(key, klen, _hmac9608d1_h)
+        _hmac9608d1_i: 0
+        as long as _hmac9608d1_i < 8
+            _hmac9608d1_v: peek_i64(_hmac9608d1_h, _hmac9608d1_i * 8)
+            poke_byte(b, _hmac9608d1_i * 4, wand(shr(_hmac9608d1_v, 24), 255))
+            poke_byte(b, _hmac9608d1_i * 4 + 1, wand(shr(_hmac9608d1_v, 16), 255))
+            poke_byte(b, _hmac9608d1_i * 4 + 2, wand(shr(_hmac9608d1_v, 8), 255))
+            poke_byte(b, _hmac9608d1_i * 4 + 3, wand(_hmac9608d1_v, 255))
+            _hmac9608d1_i: _hmac9608d1_i + 1
+    if not -> mem_copy(b, key, klen)
+    poke_byte(b, 64, 0)
+hmac_sha256 key msg:
+    _hmac55612e_kb: _sov_alloc(65)
+    hmac_block(key, _sov_strlen(key), _hmac55612e_kb)
+    _hmac55612e_ipad: _sov_alloc(64 + _sov_strlen(msg) + 1)
+    _hmac55612e_i: 0
+    as long as _hmac55612e_i < 64
+        poke_byte(_hmac55612e_ipad, _hmac55612e_i, wxor(peek_byte(_hmac55612e_kb, _hmac55612e_i), 54))
+        _hmac55612e_i: _hmac55612e_i + 1
+    _hmac55612e_m: _sov_strlen(msg)
+    _hmac55612e_i: 0
+    as long as _hmac55612e_i < _hmac55612e_m
+        poke_byte(_hmac55612e_ipad, 64 + _hmac55612e_i, peek_byte(msg, _hmac55612e_i))
+        _hmac55612e_i: _hmac55612e_i + 1
+    _hmac55612e_ib: _sov_heap_alloc(64)
+    sha256_bytes(_hmac55612e_ipad, 64 + _hmac55612e_m, _hmac55612e_ib)
+    _hmac55612e_ob: _sov_heap_alloc(32)
+    _hmac55612e_i: 0
+    as long as _hmac55612e_i < 8
+        _hmac55612e_v: peek_i64(_hmac55612e_ib, _hmac55612e_i * 8)
+        poke_byte(_hmac55612e_ob, _hmac55612e_i * 4, wand(shr(_hmac55612e_v, 24), 255))
+        poke_byte(_hmac55612e_ob, _hmac55612e_i * 4 + 1, wand(shr(_hmac55612e_v, 16), 255))
+        poke_byte(_hmac55612e_ob, _hmac55612e_i * 4 + 2, wand(shr(_hmac55612e_v, 8), 255))
+        poke_byte(_hmac55612e_ob, _hmac55612e_i * 4 + 3, wand(_hmac55612e_v, 255))
+        _hmac55612e_i: _hmac55612e_i + 1
+    _hmac55612e_opad: _sov_heap_alloc(96 + 1)
+    _hmac55612e_i: 0
+    as long as _hmac55612e_i < 64
+        poke_byte(_hmac55612e_opad, _hmac55612e_i, wxor(peek_byte(_hmac55612e_kb, _hmac55612e_i), 92))
+        _hmac55612e_i: _hmac55612e_i + 1
+    _hmac55612e_i: 0
+    as long as _hmac55612e_i < 32
+        poke_byte(_hmac55612e_opad, 64 + _hmac55612e_i, peek_byte(_hmac55612e_ob, _hmac55612e_i))
+        _hmac55612e_i: _hmac55612e_i + 1
+    _hmac55612e_ob2: _sov_heap_alloc(64)
+    sha256_bytes(_hmac55612e_opad, 96, _hmac55612e_ob2)
+    _hmac55612e_out: _sov_heap_alloc(72)
+    _hmac55612e_i: 0
+    as long as _hmac55612e_i < 8
+        _hmac55612e_v: peek_i64(_hmac55612e_ob2, _hmac55612e_i * 8)
+        _hmac55612e_j: 0
+        as long as _hmac55612e_j < 8
+            _hmac55612e_sh: 28 - _hmac55612e_j * 4
+            poke_byte(_hmac55612e_out, _hmac55612e_i * 8 + _hmac55612e_j, sha_hexd(wand(shr(_hmac55612e_v, _hmac55612e_sh), 15)))
+            _hmac55612e_j: _hmac55612e_j + 1
+        _hmac55612e_i: _hmac55612e_i + 1
+    poke_byte(_hmac55612e_out, 64, 0)
+    return as text _hmac55612e_out
+hmac_raw key klen msg mlen out:
+    _hmacd877b5_kb: _sov_alloc(65)
+    hmac_block(key, klen, _hmacd877b5_kb)
+    _hmacd877b5_ipad: _sov_alloc(64 + mlen + 1)
+    _hmacd877b5_i: 0
+    as long as _hmacd877b5_i < 64
+        poke_byte(_hmacd877b5_ipad, _hmacd877b5_i, wxor(peek_byte(_hmacd877b5_kb, _hmacd877b5_i), 54))
+        _hmacd877b5_i: _hmacd877b5_i + 1
+    _hmacd877b5_i: 0
+    as long as _hmacd877b5_i < mlen
+        poke_byte(_hmacd877b5_ipad, 64 + _hmacd877b5_i, peek_byte(msg, _hmacd877b5_i))
+        _hmacd877b5_i: _hmacd877b5_i + 1
+    _hmacd877b5_ib: _sov_heap_alloc(64)
+    sha256_bytes(_hmacd877b5_ipad, 64 + mlen, _hmacd877b5_ib)
+    _hmacd877b5_ob: _sov_heap_alloc(32)
+    _hmacd877b5_i: 0
+    as long as _hmacd877b5_i < 8
+        _hmacd877b5_v: peek_i64(_hmacd877b5_ib, _hmacd877b5_i * 8)
+        poke_byte(_hmacd877b5_ob, _hmacd877b5_i * 4, wand(shr(_hmacd877b5_v, 24), 255))
+        poke_byte(_hmacd877b5_ob, _hmacd877b5_i * 4 + 1, wand(shr(_hmacd877b5_v, 16), 255))
+        poke_byte(_hmacd877b5_ob, _hmacd877b5_i * 4 + 2, wand(shr(_hmacd877b5_v, 8), 255))
+        poke_byte(_hmacd877b5_ob, _hmacd877b5_i * 4 + 3, wand(_hmacd877b5_v, 255))
+        _hmacd877b5_i: _hmacd877b5_i + 1
+    _hmacd877b5_opad: _sov_heap_alloc(96 + 1)
+    _hmacd877b5_i: 0
+    as long as _hmacd877b5_i < 64
+        poke_byte(_hmacd877b5_opad, _hmacd877b5_i, wxor(peek_byte(_hmacd877b5_kb, _hmacd877b5_i), 92))
+        _hmacd877b5_i: _hmacd877b5_i + 1
+    _hmacd877b5_i: 0
+    as long as _hmacd877b5_i < 32
+        poke_byte(_hmacd877b5_opad, 64 + _hmacd877b5_i, peek_byte(_hmacd877b5_ob, _hmacd877b5_i))
+        _hmacd877b5_i: _hmacd877b5_i + 1
+    _hmacd877b5_ob2: _sov_alloc(64)
+    sha256_bytes(_hmacd877b5_opad, 96, _hmacd877b5_ob2)
+    _hmacd877b5_i: 0
+    as long as _hmacd877b5_i < 8
+        _hmacd877b5_v: peek_i64(_hmacd877b5_ob2, _hmacd877b5_i * 8)
+        poke_byte(out, _hmacd877b5_i * 4, wand(shr(_hmacd877b5_v, 24), 255))
+        poke_byte(out, _hmacd877b5_i * 4 + 1, wand(shr(_hmacd877b5_v, 16), 255))
+        poke_byte(out, _hmacd877b5_i * 4 + 2, wand(shr(_hmacd877b5_v, 8), 255))
+        poke_byte(out, _hmacd877b5_i * 4 + 3, wand(_hmacd877b5_v, 255))
+        _hmacd877b5_i: _hmacd877b5_i + 1
+hmac_verify key klen msg mlen want:
+    _hmac749b91_have: _sov_alloc(32)
+    hmac_raw(key, klen, msg, mlen, _hmac749b91_have)
+    return ct_eq(want, _hmac749b91_have, 32)

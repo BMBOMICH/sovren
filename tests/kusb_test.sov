@@ -1,0 +1,79 @@
+# unsafe-module
+use kusb
+bad m:
+    print m
+    badn: badn + 1
+main:
+    include inc/px00.sov 2767 6 (hid hid hid hid 25 hid hid)
+    hid + 7: poke_raw8 i, 0: 128 50 9 4 ;; hid + 12: poke_raw8 i, 0: 0 1 3 1 1
+    hid + 18: poke_raw8 i, 0: 7 5 129 3 ;; poke_raw16(hid + 22, 0, 8)
+    poke_raw8(hid + 24, 0, 10)
+    if kusb_configuration_classes(hid, 25) != KUSB_CLASS_HID -> bad('valid HID')
+    include inc/px00.sov 2767 6 (storage storage storage storage 32 storage storage)
+    storage + 7: poke_raw8 i, 0: 128 50 9 4 ;; storage + 13: poke_raw8 i, 0: 2 8 6 80
+    storage + 18: poke_raw8 i, 0: 7 5 2 2 ;; poke_raw16(storage + 22, 0, 64)
+    storage + 25: poke_raw8 i, 0: 7 5 129 2 ;; poke_raw16(storage + 29, 0, 64)
+    info: _sov_alloc(64)
+    if kusb_configuration_parse(storage, 32, info) != KUSB_CLASS_STORAGE -> bad('valid storage')
+    if peek_raw64(info + 8, 0) != 1 -> bad('configuration value')
+    if peek_raw64(info + 16, 0) != 129 -> bad('storage IN address')
+    if peek_raw64(info + 24, 0) != 2 -> bad('storage OUT address')
+    if peek_raw64(info + 32, 0) != 64 -> bad('storage IN packet')
+    if peek_raw64(info + 40, 0) != 64 -> bad('storage OUT packet')
+    if kusb_interface_token(hid, 25, 3) != 1 -> bad('HID interface token')
+    poke_raw8(storage + 11, 0, 3)
+    if kusb_interface_token(storage, 32, 8) != 4 -> bad('storage interface token')
+    if kusb_interface_token(storage, 32, 3) != 0 -> bad('missing interface token')
+    if kusb_setup_mass_reset(4) != 12884967201 -> bad('mass reset setup')
+    if kusb_setup_mass_reset(0) != 0 -> bad('mass reset interface')
+    if kusb_setup_clear_halt(2) != 8589934850 -> bad('clear OUT halt setup')
+    if kusb_setup_clear_halt(129) != 554050781442 -> bad('clear IN halt setup')
+    if kusb_setup_clear_halt(128) != 0 -> bad('endpoint zero halt')
+    if kusb_setup_clear_halt(18) != 0 -> bad('reserved endpoint bits')
+    poke_raw8(storage + 11, 0, 0) ;; poke_raw16(hid + 2, 0, 24)
+    if kusb_configuration_parse(hid, 25, info) != 0 -> bad('total mismatch')
+    if peek_raw64(info, 0) != 0 -> bad('malformed output not cleared')
+    if peek_raw64(info + 16, 0) != 0 -> bad('malformed endpoints not cleared')
+    poke_raw16(hid + 2, 0, 25) ;; poke_raw8(hid + 18, 0, 0)
+    if kusb_configuration_classes(hid, 25) != 0 -> bad('zero item length')
+    hid + 18: poke_raw8 i * 3, 0: 7 2
+    if kusb_configuration_classes(hid, 25) != 0 -> bad('HID bulk endpoint')
+    poke_raw8(hid + 21, 0, 3) ;; poke_raw8(hid + 20, 0, 128)
+    if kusb_configuration_classes(hid, 25) != 0 -> bad('endpoint zero')
+    poke_raw8(hid + 20, 0, 129) ;; poke_raw8(hid + 4, 0, 2)
+    if kusb_configuration_classes(hid, 25) != 0 -> bad('interface count')
+    poke_raw8(hid + 4, 0, 1) ;; poke_raw16(hid + 2, 0, 26)
+    poke_raw8(hid + 25, 0, 1)
+    if kusb_configuration_classes(hid, 26) != 0 -> bad('truncated item')
+    bot: _sov_alloc(64) ;; poke_raw8(bot + 15, 0, 18)
+    if kusb_bot_cbw(bot, 77, 36, 1, 6) != 1 -> bad('BOT CBW')
+    if peek_raw32(bot, 0) != 1128420181 -> bad('BOT CBW signature')
+    if peek_raw32(bot + 4, 0) != 77 -> bad('BOT CBW tag')
+    if peek_raw8(bot + 12, 0) != 128 -> bad('BOT CBW direction')
+    if peek_raw8(bot + 15, 0) != 18 -> bad('BOT CDB overwritten')
+    csw: bot + 32 ;; poke_raw32(csw, 0, 1396855637)
+    csw + 4: poke_raw32 i * 4, 0: 77 0 ;; poke_raw8(csw + 12, 0, 0)
+    if kusb_bot_csw(csw, 77, 36) != 1 -> bad('BOT CSW success')
+    poke_raw32(csw + 8, 0, 36) ;; poke_raw8(csw + 12, 0, 1)
+    if kusb_bot_csw(csw, 77, 36) != 2 -> bad('BOT CSW command failure')
+    poke_raw32(csw + 8, 0, 37)
+    if kusb_bot_csw(csw, 77, 36) != 0 -> bad('BOT CSW bad residue')
+    poke_raw32(csw + 8, 0, 0) ;; poke_raw8(csw + 12, 0, 2)
+    if kusb_bot_csw(csw, 77, 36) != 0 -> bad('BOT CSW phase error')
+    sense: _sov_alloc(18) ;; poke_raw8(sense, 0, 112)
+    sense + 2: poke_raw8 i * 10, 0: 5 33
+    if kusb_scsi_sense_matches(sense, 18, 5, 33) != 1 -> bad('SCSI sense')
+    if kusb_scsi_sense_action(sense, 18, 0) != KUSB_SCSI_FAIL -> bad('illegal request policy')
+    sense + 2: poke_raw8 i * 10, 0: 2 58
+    if kusb_scsi_sense_action(sense, 18, 0) != KUSB_SCSI_NO_MEDIA -> bad('no media policy')
+    sense + 12: poke_raw8 i, 0: 4 1
+    if kusb_scsi_sense_action(sense, 18, 0) != KUSB_SCSI_RETRY -> bad('becoming ready policy')
+    if kusb_scsi_sense_action(sense, 18, 3) != KUSB_SCSI_RESET -> bad('ready retry budget')
+    poke_raw8(sense + 2, 0, 6)
+    if kusb_scsi_sense_action(sense, 18, 0) != KUSB_SCSI_MEDIA_CHANGED -> bad('unit attention policy')
+    sense + 2: poke_raw8 i * 10, 0: 5 32
+    if kusb_scsi_sense_matches(sense, 18, 5, 33) != 0 -> bad('SCSI wrong sense')
+    be: _sov_alloc(4) ;; poke_raw8(be, 0, 18)
+    be + 1: poke_raw8 i, 0: 52 86 120
+    if kusb_be32(be) != 305419896 -> bad('big endian word')
+    print 'kusb OK'

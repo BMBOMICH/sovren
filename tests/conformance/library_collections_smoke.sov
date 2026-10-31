@@ -1,0 +1,47 @@
+use:
+    vec
+    deque
+    queue
+    array
+    set
+    map
+    dict
+    hash
+main:
+    v: vec_new(8)
+    v: vec_push(v, 42)
+    v: vec_push(v, 43)
+    print vec_get(v, 0)
+    print vec_len(v)
+    d: dq_new()
+    d: dq_push_back(d, 7)
+    d: dq_push_back(d, 8)
+    print dq_front(d)
+    print dq_back(d)
+    pf: dq_pop_front(d)
+    print pf
+    print dq_front(d)
+    q: queue_new()
+    q: queue_put(q, 5)
+    q: queue_put(q, 6)
+    print queue_len(q)
+    print queue_get(q)
+    a: arr_new(4)
+    a: arr_fill(a, 9)
+    a: arr_set(a, 2, 3)
+    print arr_sum(a)
+    s: set_new()
+    s: set_add(s, 1)
+    s: set_add(s, 1)
+    s: set_add(s, 2)
+    print set_len(s)
+    print set_has(s, 2)
+    m: map_new()
+    m: map_set(m, 'ten', 99)
+    print map_get(m, 'ten')
+    print map_has(m, 'eleven')
+    dd: dict_new()
+    dd: dict_set(dd, 'age', 300)
+    print dict_get(dd, 'age')
+    print hash_text('abc')
+    print hash_text('abc')

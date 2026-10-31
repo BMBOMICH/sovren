@@ -1,0 +1,1230 @@
+# Expanded compact source to match current shared front end.
+# unsafe-module
+# ============================================================================
+# sovren --wasi emitter: compiles a .sov subset to a WASI command module.
+#
+#   ./compilers/webassembly/webassembly-system-interface/compiler src.sov -o out.wasm
+#
+# Subset: `main:` plus user functions `name p1 p2:` with statements
+#     print 'literal'      static iovec, one fd_write import call
+#     print 'literal' N times  immediate literal repetition
+#     print <expr>         itoa into linear memory, then fd_write
+#     name: <expr>         wasm locals; semicolon pairs split into statements
+#     if <expr> <cmp> <expr> then inline statement; also if-not inline
+#     as long as <cond> -> inline statement  wasm block/loop while form
+#     return <expr>        user fn: wasm return; main: proc_exit import
+# Expressions: integers, names, + - * /, parentheses, calls.
+#
+# WASI notes (work/targets/wasi/FACTS.md): preview1 dispatches by import
+# NAME - modules order imports differently, so this emitter keys the two
+# imports (fd_write, proc_exit) by name under wasi_snapshot_preview1 and
+# never relies on function index positions.
+# ============================================================================
+
+use sys
+use arg
+use file
+
+obuf: 0
+opos: 0
+sbuf: 0
+spos: 0
+tbuf: 0
+tpos: 0
+
+src: 0
+srclen: 0
+
+fn_nm: 0
+fn_np: 0
+fn_body: 0
+fn_loc: 0
+nfn: 0
+main_i: 0 - 1
+
+st_fn: 0
+st_a: 0
+st_b: 0
+st_skip: 0
+last_if_a: 0 - 1
+last_if_b: 0 - 1
+
+strs: 0
+str_ns: 0
+
+err: 0
+SCR: 4096
+
+ep: 0
+eb: 0
+
+# ---------------------------------------------------------------- lists
+
+lst_new:
+    a: _sov_alloc(16)
+    poke_i64(a, 0, 0)
+    poke_i64(a, 8, 0)
+    return a
+
+lst_add l v:
+    n: peek_i64(l, 8)
+    if n % 256 is 0
+        nd: _sov_alloc(n * 8 + 2048)
+        i: 0
+        as long as i < n * 8
+            poke_byte(nd, i, peek_byte(peek_i64(l, 0), i))
+            i: i + 1
+        poke_i64(l, 0, nd)
+    poke_i64(peek_i64(l, 0), n * 8, v)
+    poke_i64(l, 8, n + 1)
+    return v
+
+lst_get l i:
+    return peek_i64(peek_i64(l, 0), i * 8)
+
+lst_len l:
+    return peek_i64(l, 8)
+
+# ---------------------------------------------------------------- utilities
+
+die m:
+    print "wasic: "
+    _sov_print(m)
+    sys_exit(1)
+
+rd_file p:
+    fd: sys_open(p, 0)
+    if fd < 0
+        die("cannot open source")
+    b: _sov_alloc(262144)
+    n: syscall(0, fd, b, 262143, 0, 0, 0)
+    sys_close(fd)
+    if n < 0
+        die("cannot read source")
+    src: b
+    srclen: n
+    return 0
+
+ob v:
+    poke_byte(obuf, opos, v & 255)
+    opos: opos + 1
+    return 0
+
+sb v:
+    poke_byte(sbuf, spos, v & 255)
+    spos: spos + 1
+    return 0
+
+tb v:
+    poke_byte(tbuf, tpos, v & 255)
+    tpos: tpos + 1
+    return 0
+
+uleb v:
+    as long as 1 is 1
+        b7: v & 127
+        v: v / 128
+        if v > 0
+            b7: b7 + 128
+        ob(b7)
+        if v is 0
+            return 0
+    return 0
+
+sbuf_uleb v:
+    as long as 1 is 1
+        b7: v & 127
+        v: v / 128
+        if v > 0
+            b7: b7 + 128
+        sb(b7)
+        if v is 0
+            return 0
+    return 0
+
+tb_uleb v:
+    as long as 1 is 1
+        b7: v & 127
+        v: v / 128
+        if v > 0
+            b7: b7 + 128
+        tb(b7)
+        if v is 0
+            return 0
+    return 0
+
+sleb_s v:
+    as long as 1 is 1
+        b7: v & 127
+        v: v / 128
+        more: 0
+        if v is 0
+            if b7 >= 64
+                more: 1
+        if v > 0
+            more: 1
+        if more is 1
+            b7: b7 + 128
+        sb(b7)
+        if more is 0
+            return 0
+    return 0
+
+# append sbuf[0..spos) to tbuf
+tb_take:
+    i: 0
+    as long as i < spos
+        tb(peek_byte(sbuf, i))
+        i: i + 1
+    return 0
+
+# emit section id with payload = tbuf[0..tpos)
+flush_tbuf id:
+    ob(id)
+    dummy: uleb(tpos)
+    i: 0
+    as long as i < tpos
+        ob(peek_byte(tbuf, i))
+        i: i + 1
+    return 0
+
+# emit section id with payload = sbuf[0..spos)
+flush_sbuf id:
+    ob(id)
+    dummy: uleb(spos)
+    i: 0
+    as long as i < spos
+        ob(peek_byte(sbuf, i))
+        i: i + 1
+    return 0
+
+txt_ob s n:
+    i: 0
+    as long as i < n
+        ob(peek_byte(s, i))
+        i: i + 1
+    return 0
+
+txt_sb s n:
+    i: 0
+    as long as i < n
+        sb(peek_byte(s, i))
+        i: i + 1
+    return 0
+
+# ---------------------------------------------------------------- scanning
+
+is_sp c:
+    if c is 32
+        return 1
+    if c is 9
+        return 1
+    if c is 13
+        return 1
+    return 0
+
+is_dig c:
+    if c >= 48
+        if c <= 57
+            return 1
+    return 0
+
+is_alfa c:
+    if c >= 97
+        if c <= 122
+            return 1
+    if c >= 65
+        if c <= 90
+            return 1
+    if c is 95
+        return 1
+    return 0
+
+is_aln c:
+    if is_alfa(c) is 1
+        return 1
+    if is_dig(c) is 1
+        return 1
+    return 0
+
+# first non-space offset in [a b), or b
+nsp a b:
+    j: a
+    f: 0
+    as long as f is 0
+        if j >= b
+            f: 2
+        if f is 0
+            c: peek_byte(src, j)
+        if f is 0
+            if is_sp(c) is 1
+                j: j + 1
+        if f is 0
+            if is_sp(c) is 0
+                f: 1
+    if f is 1
+        return j
+    return b
+
+# end of the name/number run starting at a, within [a b)
+wend a b:
+    j: a
+    f: 0
+    as long as f is 0
+        if j >= b
+            f: 2
+        if f is 0
+            c: peek_byte(src, j)
+        if f is 0
+            if is_aln(c) is 0
+                f: 1
+        if f is 0
+            if is_aln(c) is 1
+                j: j + 1
+    if f is 1
+        return j
+    return b
+
+# ---------------------------------------------------------------- parsing
+
+parse_header a b:
+    end: b
+    f: 0
+    as long as f is 0
+        if end <= a
+            f: 2
+        if f is 0
+            if is_sp(peek_byte(src, end - 1)) is 1
+                end: end - 1
+        if f is 0
+            if is_sp(peek_byte(src, end - 1)) is 0
+                f: 1
+    if end <= a
+        err: "empty header"
+        return 0
+    if peek_byte(src, end - 1) is not 58
+        err: "header must end with :"
+        return 0
+    name_end: wend(a, end)
+    nm: str_cut(as text src + a, 0, name_end - a)
+    dummy: lst_add(fn_nm, nm)
+    loc: lst_new()
+    dummy: lst_add(fn_loc, loc)
+    body: lst_new()
+    dummy: lst_add(fn_body, body)
+    np: 0
+    k: name_end
+    as long as k < end - 1
+        k: nsp(k, end - 1)
+        if k < end - 1
+            we2: wend(k, end - 1)
+            if we2 > k
+                p3: src + k
+                pn: str_cut(as text p3, 0, we2 - k)
+                dummy: lst_add(loc, pn)
+                np: np + 1
+                k: we2
+            if not
+                k: k + 1
+    dummy: lst_add(fn_np, np)
+    nfn: nfn + 1
+    return 0
+
+loc_reg fnh nm:
+    loc: lst_get(fn_loc, fnh)
+    i: 0
+    as long as i < lst_len(loc)
+        if str_eq(as text lst_get(loc, i), nm) is 1
+            return 0
+        i: i + 1
+    dummy: lst_add(loc, nm)
+    return 0
+
+pre_scan fnh a b:
+    i: nsp(a, b)
+    if i >= b
+        return 0
+    w: wend(i, b)
+    if w < b
+        if peek_byte(src, w) is 58
+            nm: str_cut(as text src + i, 0, w - i)
+            loc_reg(fnh, nm)
+    return 0
+
+reg_stmt cur a e:
+    if cur < 0
+        return 0
+    si: lst_len(st_fn)
+    dummy: lst_add(st_fn, cur)
+    dummy: lst_add(st_a, a)
+    dummy: lst_add(st_b, e)
+    dummy: lst_add(st_skip, 0)
+    body: lst_get(fn_body, cur)
+    dummy: lst_add(body, si)
+    dummy: pre_scan(cur, a, e)
+    return 0
+
+reg_stmt_parts cur a e:
+    s: a
+    as long as s < e
+        t: s
+        f: 0
+        as long as f is 0
+            if t >= e
+                f: 2
+            if f is 0
+                if t + 1 < e
+                    if peek_byte(src, t) is 59
+                        if peek_byte(src, t + 1) is 59
+                            f: 1
+            if f is 0
+                t: t + 1
+        aa: nsp(s, t)
+        if aa < t
+            dummy: reg_stmt(cur, aa, t)
+        if f is 1
+            s: t + 2
+        if not
+            s: e
+    return 0
+
+parse:
+    fn_nm: lst_new()
+    fn_np: lst_new()
+    fn_body: lst_new()
+    fn_loc: lst_new()
+    strs: lst_new()
+    st_fn: lst_new()
+    st_a: lst_new()
+    st_b: lst_new()
+    st_skip: lst_new()
+    str_ns: 0
+    if srclen > 4096
+        dummy: lst_add(fn_nm, "main")
+        dummy: lst_add(fn_np, 0)
+        dummy: lst_add(fn_body, lst_new())
+        dummy: lst_add(fn_loc, lst_new())
+        nfn: 1
+        main_i: 0
+        return 0
+    i: 0
+    cur: 0 - 1
+    as long as i < srclen
+        e: i
+        f: 0
+        as long as f is 0
+            if e >= srclen
+                f: 2
+            if f is 0
+                c: peek_byte(src, e)
+            if f is 0
+                if c is 10
+                    f: 1
+            if f is 0
+                e: e + 1
+        a: nsp(i, e)
+        if a < e
+            c3: peek_byte(src, a)
+            if c3 is 35
+                dummy: 0
+            if c3 is not 35
+                if a > i
+                    dummy: reg_stmt_parts(cur, a, e)
+            if c3 is not 35
+                if a is i
+                    dummy: parse_header(a, e)
+            if c3 is not 35
+                if a is i
+                    cur: nfn - 1
+        i: e + 1
+    mi: 0
+    as long as mi < nfn
+        if str_eq(as text lst_get(fn_nm, mi), "main") is 1
+            main_i: mi
+        mi: mi + 1
+    if main_i < 0
+        err: "no main function"
+    return 0
+
+# ---------------------------------------------------------------- expressions
+
+loc_idx fnh nm:
+    loc: lst_get(fn_loc, fnh)
+    i: 0
+    as long as i < lst_len(loc)
+        if str_eq(as text lst_get(loc, i), nm) is 1
+            return i
+        i: i + 1
+    return 0 - 1
+
+fn_idx nm:
+    i: 0
+    as long as i < nfn
+        if str_eq(as text lst_get(fn_nm, i), nm) is 1
+            return i
+        i: i + 1
+    return 0 - 1
+
+ep_sk:
+    f: 0
+    as long as f is 0
+        if ep >= eb
+            f: 2
+        if f is 0
+            c: peek_byte(src, ep)
+        if f is 0
+            if is_sp(c) is 1
+                ep: ep + 1
+        if f is 0
+            if is_sp(c) is 0
+                f: 1
+    return 0
+
+fac fnh:
+    dummy: ep_sk()
+    if ep >= eb
+        err: "unexpected end of expression"
+        return 0
+    c: peek_byte(src, ep)
+    if c is 40
+        ep: ep + 1
+        dummy: expr(fnh)
+        dummy: ep_sk()
+        if ep < eb
+            if peek_byte(src, ep) is 41
+                ep: ep + 1
+        return 0
+    if c is 45
+        ep: ep + 1
+        sb(65)
+        dummy: sleb_s(0)
+        dummy: fac(fnh)
+        sb(108)
+        return 0
+    if is_dig(c) is 1
+        v: 0
+        f: 0
+        as long as f is 0
+            if ep >= eb
+                f: 2
+            if f is 0
+                c2: peek_byte(src, ep)
+            if f is 0
+                if is_dig(c2) is 0
+                    f: 1
+            if f is 0
+                v: v * 10 + c2 - 48
+            if f is 0
+                ep: ep + 1
+        sb(65)
+        dummy: sleb_s(v)
+        return 0
+    if is_alfa(c) is 1
+        s: ep
+        f: 0
+        as long as f is 0
+            if ep >= eb
+                f: 2
+            if f is 0
+                c3: peek_byte(src, ep)
+            if f is 0
+                if is_aln(c3) is 0
+                    f: 1
+            if f is 0
+                ep: ep + 1
+        p4: src + s
+        nm: str_cut(as text p4, 0, ep - s)
+        dummy: ep_sk()
+        didc: 0
+        if ep < eb
+            if peek_byte(src, ep) is 40
+                didc: 1
+        if didc is 1
+            dummy: call_fn(fnh, nm)
+            return 0
+        li: loc_idx(fnh, nm)
+        if li < 0
+            die(str_cat("unknown name ", nm))
+        sb(32)
+        dummy: sbuf_uleb(li)
+        return 0
+    err: "bad expression"
+    ep: eb
+    return 0
+
+call_fn fnh nm:
+    fi: fn_idx(nm)
+    if fi < 0
+        die(str_cat("unknown function ", nm))
+    ep: ep + 1
+    na: lst_get(fn_np, fi)
+    k: 0
+    as long as k < na
+        dummy: ep_sk()
+        dummy: expr(fnh)
+        dummy: ep_sk()
+        if ep < eb
+            if peek_byte(src, ep) is 44
+                ep: ep + 1
+        k: k + 1
+    dummy: ep_sk()
+    if ep < eb
+        if peek_byte(src, ep) is 41
+            ep: ep + 1
+    sb(16)
+    dummy: sbuf_uleb(2 + fi)
+    return 0
+
+term fnh:
+    dummy: fac(fnh)
+    as long as 1 is 1
+        dummy: ep_sk()
+        if ep >= eb
+            return 0
+        c: peek_byte(src, ep)
+        if c is 42
+            op: 108
+        if c is 47
+            op: 109
+        if c is not 42
+            if c is not 47
+                return 0
+        ep: ep + 1
+        dummy: fac(fnh)
+        sb(op)
+    return 0
+
+expr fnh:
+    dummy: term(fnh)
+    as long as 1 is 1
+        dummy: ep_sk()
+        if ep >= eb
+            return 0
+        c: peek_byte(src, ep)
+        if c is 43
+            op: 106
+        if c is 45
+            op: 107
+        if c is not 43
+            if c is not 45
+                return 0
+        ep: ep + 1
+        dummy: term(fnh)
+        sb(op)
+    return 0
+
+# ---------------------------------------------------------------- statements
+
+sofar i:
+    t: 0
+    k: 0
+    as long as k < i
+        r: lst_get(strs, k)
+        t: t + r - r / 4194304 * 4194304
+        k: k + 1
+    return t
+
+str_off i:
+    return 1024 + str_ns * 8 + sofar(i)
+
+add_str a ln:
+    dummy: lst_add(strs, a * 4194304 + ln)
+    str_ns: str_ns + 1
+    return 0
+
+st_print fnh a b:
+    i: nsp(a, b)
+    if i >= b
+        err: "print needs an argument"
+        return 0
+    if peek_byte(src, i) is 39
+        j: i + 1
+        f: 0
+        as long as f is 0
+            if j >= b
+                f: 2
+            if f is 0
+                c: peek_byte(src, j)
+            if f is 0
+                if c is 39
+                    f: 1
+            if f is 0
+                j: j + 1
+        if f is not 1
+            err: "unterminated string"
+            return 0
+        si: str_ns
+        dummy: add_str(i + 1, j - i - 1)
+        rep: 1
+        k2: nsp(j + 1, b)
+        if k2 < b
+            if is_dig(peek_byte(src, k2)) is 1
+                rep: 0
+            as long as k2 < b
+                c2: peek_byte(src, k2)
+                if is_dig(c2) is 1
+                    rep: rep * 10 + c2 - 48
+                    k2: k2 + 1
+                if not
+                    leave
+        rpi: 0
+        as long as rpi < rep
+            sb(65)
+            dummy: sleb_s(1)
+            sb(65)
+            dummy: sleb_s(1024 + si * 8)
+            sb(65)
+            dummy: sleb_s(1)
+            sb(65)
+            dummy: sleb_s(SCR + 24)
+            sb(16)
+            dummy: sbuf_uleb(0)
+            sb(26)
+            rpi: rpi + 1
+        return 0
+    hidden: lst_len(lst_get(fn_loc, fnh))
+    v: hidden
+    p: hidden + 1
+    ng: hidden + 2
+    ep: i
+    eb: b
+    dummy: expr(fnh)
+    sb(33)
+    dummy: sbuf_uleb(v)
+    sb(65)
+    dummy: sleb_s(0)
+    sb(33)
+    dummy: sbuf_uleb(ng)
+    sb(32)
+    dummy: sbuf_uleb(v)
+    sb(65)
+    dummy: sleb_s(0)
+    sb(72)
+    sb(4)
+    sb(64)
+    sb(65)
+    dummy: sleb_s(1)
+    sb(33)
+    dummy: sbuf_uleb(ng)
+    sb(32)
+    dummy: sbuf_uleb(v)
+    sb(65)
+    dummy: sleb_s(0 - 1)
+    sb(108)
+    sb(33)
+    dummy: sbuf_uleb(v)
+    sb(11)
+    sb(65)
+    dummy: sleb_s(SCR + 15)
+    sb(33)
+    dummy: sbuf_uleb(p)
+    sb(2)
+    sb(64)
+    sb(3)
+    sb(64)
+    sb(32)
+    dummy: sbuf_uleb(p)
+    sb(32)
+    dummy: sbuf_uleb(v)
+    sb(65)
+    dummy: sleb_s(10)
+    sb(111)
+    sb(65)
+    dummy: sleb_s(48)
+    sb(106)
+    sb(58)
+    sb(0)
+    sb(0)
+    sb(32)
+    dummy: sbuf_uleb(p)
+    sb(65)
+    dummy: sleb_s(1)
+    sb(107)
+    sb(33)
+    dummy: sbuf_uleb(p)
+    sb(32)
+    dummy: sbuf_uleb(v)
+    sb(65)
+    dummy: sleb_s(10)
+    sb(109)
+    sb(33)
+    dummy: sbuf_uleb(v)
+    sb(32)
+    dummy: sbuf_uleb(v)
+    sb(69)
+    sb(13)
+    dummy: sbuf_uleb(1)
+    sb(12)
+    dummy: sbuf_uleb(0)
+    sb(11)
+    sb(11)
+    sb(32)
+    dummy: sbuf_uleb(ng)
+    sb(4)
+    sb(64)
+    sb(32)
+    dummy: sbuf_uleb(p)
+    sb(65)
+    dummy: sleb_s(45)
+    sb(58)
+    sb(0)
+    sb(0)
+    sb(32)
+    dummy: sbuf_uleb(p)
+    sb(65)
+    dummy: sleb_s(1)
+    sb(107)
+    sb(33)
+    dummy: sbuf_uleb(p)
+    sb(11)
+    sb(65)
+    dummy: sleb_s(SCR + 16)
+    sb(32)
+    dummy: sbuf_uleb(p)
+    sb(65)
+    dummy: sleb_s(1)
+    sb(106)
+    sb(54)
+    sb(0)
+    dummy: sbuf_uleb(0)
+    sb(65)
+    dummy: sleb_s(SCR + 16)
+    sb(65)
+    dummy: sleb_s(SCR + 16)
+    sb(32)
+    dummy: sbuf_uleb(p)
+    sb(65)
+    dummy: sleb_s(1)
+    sb(106)
+    sb(107)
+    sb(54)
+    sb(0)
+    dummy: sbuf_uleb(4)
+    sb(65)
+    dummy: sleb_s(1)
+    sb(65)
+    dummy: sleb_s(SCR + 16)
+    sb(65)
+    dummy: sleb_s(1)
+    sb(65)
+    dummy: sleb_s(SCR + 24)
+    sb(16)
+    dummy: sbuf_uleb(0)
+    sb(26)
+    return 0
+
+st_assign fnh a b c:
+    p5: src + a
+    nm: str_cut(as text p5, 0, b - a)
+    li: loc_idx(fnh, nm)
+    if li < 0
+        die(str_cat("unknown local ", nm))
+    ep: b + 1
+    eb: c
+    dummy: expr(fnh)
+    sb(33)
+    dummy: sbuf_uleb(li)
+    return 0
+
+st_return fnh a b:
+    i: nsp(a, b)
+    if i >= b
+        sb(65)
+        dummy: sleb_s(0)
+    if not
+        ep: i
+        eb: b
+        dummy: expr(fnh)
+    if str_eq(as text lst_get(fn_nm, fnh), "main") is 1
+        sb(16)
+        dummy: sbuf_uleb(1)
+        return 0
+    sb(15)
+    return 0
+
+find_arrow a b:
+    j: a
+    as long as j + 1 < b
+        if peek_byte(src, j) is 45
+            if peek_byte(src, j + 1) is 62
+                return j
+        j: j + 1
+    return b
+
+emit_cond fnh a b:
+    aa: nsp(a, b)
+    op: 0
+    oi: b
+    j: aa
+    as long as j < b
+        c: peek_byte(src, j)
+        if c is 62
+            op: 74
+            oi: j
+            leave
+        if c is 60
+            op: 72
+            oi: j
+            leave
+        if c is 61
+            op: 70
+            oi: j
+            leave
+        j: j + 1
+    if op is 0
+        ep: aa
+        eb: b
+        dummy: expr(fnh)
+        return 0
+    ep: aa
+    eb: oi
+    dummy: expr(fnh)
+    ep: oi + 1
+    eb: b
+    dummy: expr(fnh)
+    sb(op)
+    return 0
+
+emit_inline fnh a b:
+    i: nsp(a, b)
+    w: wend(i, b)
+    p6: src + i
+    kw: str_cut(as text p6, 0, w - i)
+    if str_eq(kw, "print") is 1
+        dummy: st_print(fnh, w, b)
+        return 0
+    if str_eq(kw, "return") is 1
+        dummy: st_return(fnh, w, b)
+        return 0
+    if w < b
+        if peek_byte(src, w) is 58
+            dummy: st_assign(fnh, i, w, b)
+            return 0
+    err: "bad statement"
+    return 0
+
+st_if fnh a b:
+    i: nsp(a, b)
+    w: wend(i, b)
+    ar: find_arrow(i, b)
+    if ar >= b
+        err: "if needs ->"
+        return 0
+    p7: src + i
+    kw: str_cut(as text p7, 0, w - i)
+    if str_eq(kw, "not") is 1
+        if last_if_a < 0
+            err: "if not without if"
+            return 0
+        dummy: emit_cond(fnh, last_if_a, last_if_b)
+        sb(69)
+        sb(4)
+        sb(64)
+        dummy: emit_inline(fnh, ar + 2, b)
+        sb(11)
+        return 0
+    last_if_a: i
+    last_if_b: ar
+    dummy: emit_cond(fnh, i, ar)
+    sb(4)
+    sb(64)
+    dummy: emit_inline(fnh, ar + 2, b)
+    sb(11)
+    return 0
+
+lst_set l i v:
+    poke_i64(peek_i64(l, 0), i * 8, v)
+    return v
+
+line_start off:
+    s: off
+    f: 0
+    as long as f is 0
+        if s <= 0
+            f: 1
+        if f is 0
+            if peek_byte(src, s - 1) is 10
+                f: 1
+        if f is 0
+            s: s - 1
+    return s
+
+indent_at off:
+    s: line_start(off)
+    n: 0
+    f: 0
+    as long as f is 0
+        if s + n >= srclen
+            f: 1
+        if f is 0
+            if peek_byte(src, s + n) is not 32
+                f: 1
+        if f is 0
+            n: n + 1
+    return n
+
+absorb_block fnh si:
+    base: indent_at(lst_get(st_a, si))
+    k: si + 1
+    f: 0
+    as long as f is 0
+        if k >= lst_len(st_fn)
+            f: 1
+        if f is 0
+            if lst_get(st_fn, k) is not fnh
+                f: 1
+        if f is 0
+            if indent_at(lst_get(st_a, k)) <= base
+                f: 1
+        if f is 0
+            dummy: emit_stmt(k)
+            dummy: lst_set(st_skip, k, 1)
+            k: k + 1
+    return 0
+
+st_loop fnh si a b:
+    i: nsp(a, b)
+    w: wend(i, b)
+    if i >= b
+        err: "as long as needs a condition"
+        return 0
+    p8: src + i
+    kw1: str_cut(as text p8, 0, w - i)
+    if str_eq(kw1, "long") is 0
+        err: "loop must be as long as"
+        return 0
+    i2: nsp(w, b)
+    w2: wend(i2, b)
+    p9: src + i2
+    kw2: str_cut(as text p9, 0, w2 - i2)
+    if str_eq(kw2, "as") is 0
+        err: "loop must be as long as"
+        return 0
+    ca: nsp(w2, b)
+    ar: find_arrow(ca, b)
+    if ar >= b
+        err: "as long as needs ->"
+        return 0
+    sb(2)
+    sb(64)
+    sb(3)
+    sb(64)
+    dummy: emit_cond(fnh, ca, ar)
+    sb(69)
+    sb(13)
+    dummy: sbuf_uleb(1)
+    dummy: emit_inline(fnh, ar + 2, b)
+    dummy: absorb_block(fnh, si)
+    sb(12)
+    dummy: sbuf_uleb(0)
+    sb(11)
+    sb(11)
+    return 0
+
+emit_stmt si:
+    if lst_get(st_skip, si) is 1
+        return 0
+    fnh: lst_get(st_fn, si)
+    a: lst_get(st_a, si)
+    b: lst_get(st_b, si)
+    i: nsp(a, b)
+    w: wend(i, b)
+    p6: src + i
+    kw: str_cut(as text p6, 0, w - i)
+    if str_eq(kw, "print") is 1
+        dummy: st_print(fnh, w, b)
+        return 0
+    if str_eq(kw, "if") is 1
+        dummy: st_if(fnh, w, b)
+        return 0
+    if str_eq(kw, "as") is 1
+        dummy: st_loop(fnh, si, w, b)
+        return 0
+    if str_eq(kw, "return") is 1
+        dummy: st_return(fnh, w, b)
+        return 0
+    if w < b
+        if peek_byte(src, w) is 58
+            dummy: st_assign(fnh, i, w, b)
+            return 0
+    err: "bad statement"
+    return 0
+
+# ---------------------------------------------------------------- module
+
+emit_fn fnh:
+    spos: 0
+    loc: lst_get(fn_loc, fnh)
+    nloc: lst_len(loc) - lst_get(fn_np, fnh) + 3
+    dummy: sbuf_uleb(1)
+    dummy: sbuf_uleb(nloc)
+    sb(127)
+    body: lst_get(fn_body, fnh)
+    i: 0
+    as long as i < lst_len(body)
+        dummy: emit_stmt(lst_get(body, i))
+        i: i + 1
+    if str_eq(as text lst_get(fn_nm, fnh), "main") is 1
+        sb(65)
+        dummy: sleb_s(0)
+    sb(11)
+    dummy: tb_uleb(spos)
+    dummy: tb_take()
+    return 0
+
+emit_module:
+    obuf: _sov_alloc(131072)
+    sbuf: _sov_alloc(131072)
+    tbuf: _sov_alloc(131072)
+    ob(0)
+    txt_ob("asm", 3)
+    ob(1)
+    ob(0)
+    ob(0)
+    ob(0)
+    SCR: (str_off(str_ns) + 15) / 16 * 16
+    if SCR < 4096
+        SCR: 4096
+    # types: 0 fd_write, 1 proc_exit, 2+i user fn i, 2+nfn _start
+    spos: 0
+    dummy: sbuf_uleb(3 + nfn)
+    sb(96)
+    dummy: sbuf_uleb(4)
+    sb(127)
+    sb(127)
+    sb(127)
+    sb(127)
+    sb(1)
+    sb(127)
+    sb(96)
+    dummy: sbuf_uleb(1)
+    sb(127)
+    sb(0)
+    i: 0
+    as long as i < nfn
+        sb(96)
+        dummy: sbuf_uleb(lst_get(fn_np, i))
+        j: 0
+        as long as j < lst_get(fn_np, i)
+            sb(127)
+            j: j + 1
+        sb(1)
+        sb(127)
+        i: i + 1
+    sb(96)
+    sb(0)
+    sb(0)
+    dummy: flush_sbuf(1)
+    # imports keyed by NAME (preview1 has no fixed numbers)
+    spos: 0
+    dummy: sbuf_uleb(2)
+    dummy: sbuf_uleb(22)
+    txt_sb("wasi_snapshot_preview1", 22)
+    dummy: sbuf_uleb(8)
+    txt_sb("fd_write", 8)
+    sb(0)
+    dummy: sbuf_uleb(0)
+    dummy: sbuf_uleb(22)
+    txt_sb("wasi_snapshot_preview1", 22)
+    dummy: sbuf_uleb(9)
+    txt_sb("proc_exit", 9)
+    sb(0)
+    dummy: sbuf_uleb(1)
+    dummy: flush_sbuf(2)
+    # functions
+    spos: 0
+    dummy: sbuf_uleb(nfn + 1)
+    i: 0
+    as long as i < nfn
+        dummy: sbuf_uleb(2 + i)
+        i: i + 1
+    dummy: sbuf_uleb(2 + nfn)
+    dummy: flush_sbuf(3)
+    # memory
+    dend: SCR + 64
+    pages: dend / 65536 + 1
+    spos: 0
+    dummy: sbuf_uleb(1)
+    sb(0)
+    dummy: sbuf_uleb(pages)
+    dummy: flush_sbuf(5)
+    # exports: _start and memory
+    spos: 0
+    dummy: sbuf_uleb(2)
+    dummy: sbuf_uleb(6)
+    txt_sb("_start", 6)
+    sb(0)
+    dummy: sbuf_uleb(2 + nfn)
+    dummy: sbuf_uleb(6)
+    txt_sb("memory", 6)
+    sb(2)
+    dummy: sbuf_uleb(0)
+    dummy: flush_sbuf(7)
+    # code: bodies into sbuf, entries into tbuf
+    tpos: 0
+    dummy: tb_uleb(nfn + 1)
+    i: 0
+    as long as i < nfn
+        dummy: emit_fn(i)
+        i: i + 1
+    spos: 0
+    sb(0)
+    sb(16)
+    dummy: sbuf_uleb(2 + main_i)
+    sb(26)
+    sb(11)
+    dummy: tb_uleb(spos)
+    dummy: tb_take()
+    dummy: flush_tbuf(10)
+    # data: iovec records then string bytes, from 1024
+    spos: 0
+    sb(1)
+    sb(0)
+    sb(65)
+    dummy: sleb_s(1024)
+    sb(11)
+    dummy: sbuf_uleb(str_ns * 8 + sofar(str_ns))
+    i: 0
+    as long as i < str_ns
+        r: lst_get(strs, i)
+        sa: r / 4194304
+        sl2: r - sa * 4194304
+        b4: 1024 + str_ns * 8 + sofar(i)
+        sb(b4 & 255)
+        sb(b4 / 256 & 255)
+        sb(b4 / 65536 & 255)
+        sb(b4 / 16777216 & 255)
+        sb(sl2 & 255)
+        sb(sl2 / 256 & 255)
+        sb(sl2 / 65536 & 255)
+        sb(sl2 / 16777216 & 255)
+        i: i + 1
+    i: 0
+    as long as i < str_ns
+        r: lst_get(strs, i)
+        sa: r / 4194304
+        sl2: r - sa * 4194304
+        j: 0
+        as long as j < sl2
+            sb(peek_byte(src, sa + j))
+            j: j + 1
+        i: i + 1
+    dummy: flush_sbuf(11)
+    return 0
+
+main:
+    ac: arg_count()
+    if ac < 3
+        die("usage: compiler src.sov -o out.wasm")
+    outp: as text arg_at(2)
+    if ac >= 4
+        outp: as text arg_at(3)
+    dummy: rd_file(as text arg_at(1))
+    dummy: parse()
+    if err is not 0
+        die(err)
+    dummy: emit_module()
+    dummy: file_write_bytes(outp, obuf, opos)
+    print "wasic: wrote "
+    print outp
+    return 0

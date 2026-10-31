@@ -1,0 +1,5859 @@
+# pad line so main is not first
+# unsafe-module
+pop_rax:
+    emit(88)
+pop_rcx:
+    emit(89)
+popblk:
+    cp_gen: cp_gen + 1
+    last: _sov_list_len(bk) - 1
+    k: peek_i64(bk, 16 + last * 8)
+    kid: intern_kid(k)
+    if kid is kid_while
+        st: peek_i64(bs, 16 + last * 8)
+        thread_tail(here())
+        wcond: peek_i64(bw, 16 + last * 8)
+        tt: here()
+        zb: fuse_cmp(wcond, 0)
+        if zb is 0 - 1
+            expr(wcond)
+            test_rax()
+            zb: jnz()
+        put(zb, st - (zb + 4))
+        zt: peek_i64(bj, 16 + last * 8)
+        if zb < 0
+            print "PN2062"
+        put(zt, tt - (zt + 4))
+        lx: peek_i64(bx, 16 + last * 8)
+        lxi: 0
+        as long as lxi < _sov_list_len(lx)
+            patch(peek_i64(lx, 16 + lxi * 8))
+            lxi: lxi + 1
+        if zt < 0
+            print "PN2063"
+    if not
+        if kid is kid_forever
+            st: peek_i64(bs, 16 + last * 8)
+            at: jmp()
+            put(at, st - (at + 4))
+            lx: peek_i64(bx, 16 + last * 8)
+            lxi: 0
+            as long as lxi < _sov_list_len(lx)
+                patch(peek_i64(lx, 16 + lxi * 8))
+                lxi: lxi + 1
+            if at < 0
+                print "PN2065"
+        if not
+            if kid is kid_repeat
+                rs: peek_i64(br, 16 + last * 8)
+                load_loc(rs)
+                emit3(72, 255, 192)
+                store_loc(rs)
+                st: peek_i64(bs, 16 + last * 8)
+                at: jmp()
+                put(at, st - (at + 4))
+                bz2: peek_i64(bj, 16 + last * 8)
+                if bz2 > 0 - 1
+                    patch(bz2)
+                lx: peek_i64(bx, 16 + last * 8)
+                lxi: 0
+                lxi_ln: _sov_list_len(lx)
+                as long as lxi < lxi_ln
+                    patch(peek_i64(lx, 16 + lxi * 8))
+                    lxi: lxi + 1
+            if not
+                if kid is kid_try
+                    tb2: peek_i64(bs, 16 + last * 8)
+                    if tb2 is 0
+                        print "Error: try needs an except"
+                        had_err: 1
+                    if not
+                        patch(tb2)
+                if not
+                    if kid is kid_except
+                        skipme: 0
+                    if not
+                        z: peek_i64(bj, 16 + last * 8)
+                        if z > 0 - 1
+                            patch(z)
+                    je: peek_i64(be, 16 + last * 8)
+                    ji: 0
+                ji_ln: _sov_list_len(je)
+                as long as ji < ji_ln
+                    if kid is not kid_try
+                        if kid is not kid_except
+                            sk_pos: _sov_list_add(sk_pos, peek_i64(je, 16 + ji * 8))
+                            sk_to: _sov_list_add(sk_to, here())
+                    patch(peek_i64(je, 16 + ji * 8))
+                    ji: ji + 1
+    poke_i64(bk, 8, last)
+    poke_i64(bi, 8, last)
+    poke_i64(bj, 8, last)
+    poke_i64(bs, 8, last)
+    poke_i64(be, 8, last)
+    poke_i64(br, 8, last)
+    poke_i64(bx, 8, last)
+    poke_i64(bw, 8, last)
+    br_depth: br_depth - 1
+print_const arg:
+    v: 0
+    ok: 0
+    if is_imm(arg) is 1
+        v: num_of(arg)
+        ok: 1
+    if ok is 0
+        if peek_byte(arg, 0) is 45
+            if length(arg) > 1
+                tail: cut(arg, 1, length(arg))
+                    if is_imm(tail) is 1
+                        v: 0 - num_of(tail)
+                            ok: 1
+    if ok is 0
+        if length(fib_nm) > 0
+            mark: join(fib_nm, "(")
+            if _sov_starts_with(arg, mark) is 1
+                if peek_byte(arg, length(arg) - 1) is 41 is 1
+                    inn: strip(cut(arg, length(mark), length(arg) - 1))
+                    if is_imm(inn) is 1
+                        fv: num_of(inn)
+                        if fv < 2
+                            v: fv
+                            ok: 1
+                        if fv < 93
+                            v: fib_of(fv)
+                            ok: 1
+    if ok is 0
+        if plain_name(arg) is 1
+            ci: cn_lookup(arg)
+            if ci > 0 - 1
+                if peek_i64(cemt, 16 + ci * 8) is 0
+                    v: peek_i64(cvls, 16 + ci * 8)
+                    ok: 1
+    if ok is 0
+        if _sov_starts_with(arg, "const(") is 1
+            if length(arg) > 7
+                if peek_byte(arg, length(arg) - 1) is 41 is 1
+                    if ceval(cut(arg, 6, length(arg) - 1)) is 1
+                        v: cval
+                        ok: 1
+    if ok is 0
+        return 0
+    emit_write_lit(dec_txt(v))
+    return 1
+pu_find_use t st lim:
+    # index of the 'u' of the next line at/after st whose first
+    # non-whitespace bytes are `use` + (space | ':'), or -1.  Written
+    # plainly here for other backends; on x86 try_native_body plants
+    # emit_nt_pu_find (same semantics) over this body.
+    i: st
+    as long as i < lim
+        j: i
+        ws: 1
+        as long as ws is 1
+            if j >= lim
+                ws: 0
+            if ws is 1
+                b: peek_byte(t, j)
+                if b is 32
+                    j: j + 1
+                if not
+                    if b is 9
+                        j: j + 1
+                    if not
+                        if b is 13
+                            j: j + 1
+                        if not
+                            ws: 0
+        if j + 3 < lim
+            if peek_byte(t, j) is 117
+                if peek_byte(t, j + 1) is 115
+                    if peek_byte(t, j + 2) is 101
+                        b3: peek_byte(t, j + 3)
+                        if b3 is 32
+                            return j
+                        if b3 is 58
+                            return j
+        e: cfind1n(t, i, lim, 10)
+        if e < 0
+            return 0 - 1
+        i: e + 1
+    return 0 - 1
+
+pu_nl t a b:
+    # newline count in t[a, b) -- SWAR exact mask + bit-clear popcount.
+    # (borrow-free form; (x-0x0101)&~x would false-count byte 11 after 10.)
+    c: 0
+    i: a
+    nbc: 72340172838076673 * 10
+    as long as i + 8 <= b
+        q: peek_i64(t, i)
+        xq: bxor(q, nbc)
+        m: band(bxor(bor(band(xq, 9187201950435737471) + 9187201950435737471, xq), 0 - 1), 0 - 9187201950435737472)
+        as long as m is not 0
+            c: c + 1
+            m: band(m, m - 1)
+        i: i + 8
+    as long as i < b
+        if peek_byte(t, i) is 10
+            c: c + 1
+        i: i + 1
+    return c
+
+pull_uses pu_src:
+    pu_n: length(pu_src)
+    pu_i: 0
+    pu_ln: 0
+    ch: _sov_list_new()
+    tot: 0
+    as long as pu_i < pu_n
+        pu_up: pu_find_use(pu_src, pu_i, pu_n)
+        pu_hit: 0
+        pu_e: pu_n
+        if pu_up < 0
+            pu_i: pu_n
+        if pu_up >= 0
+            pu_ln: pu_ln + pu_nl(pu_src, pu_i, pu_up)
+            pu_j: pu_up
+            pu_e: cfind1n(pu_src, pu_j, pu_n, 10)
+            if pu_e < 0
+                pu_e: pu_n
+            pu_hit: 1
+            if peek_byte(pu_src, pu_j + 3) is 58
+                pu_hit: 2
+        if pu_hit is 2
+            pu_bi: pu_e + 1
+            pu_bind: 0
+            pu_bk: pu_j
+            pu_bkw: 1
+            as long as pu_bkw is 1
+                if pu_bk <= 0
+                    pu_bkw: 0
+                if pu_bkw is 1
+                    bb: peek_byte(pu_src, pu_bk - 1)
+                    if bb is 32
+                        pu_bk: pu_bk - 1
+                        pu_bind: pu_bind + 1
+                    if not
+                        if bb is 9
+                            pu_bk: pu_bk - 1
+                            pu_bind: pu_bind + 1
+                        if not
+                            if bb is 13
+                                pu_bk: pu_bk - 1
+                                pu_bind: pu_bind + 1
+                            if not
+                                pu_bkw: 0
+            pu_bgo: 1
+            as long as pu_bgo is 1
+                if pu_bi >= pu_n
+                    pu_bgo: 0
+                if pu_bgo is 1
+                    pu_bj: pu_bi
+                    pu_bws: 1
+                    as long as pu_bws is 1
+                        if pu_bj >= pu_n
+                            pu_bws: 0
+                        if pu_bj < pu_n
+                            if peek_byte(pu_src, pu_bj) is 32
+                                pu_bj: pu_bj + 1
+                            if not
+                                if peek_byte(pu_src, pu_bj) is 9
+                                    pu_bj: pu_bj + 1
+                                if not
+                                    pu_bws: 0
+                    pu_be: cfind1n(pu_src, pu_bj, pu_n, 10)
+                    if pu_be < 0
+                        pu_be: pu_n
+                    if pu_bj is pu_be
+                        pu_bgo: 0
+                    if pu_bgo is 1
+                        if pu_bj - pu_bi <= pu_bind
+                            pu_bgo: 0
+                    if pu_bgo is 1
+                        err_line: pu_ln + 1
+                        pu_tail: strip(cut(pu_src, pu_bj, pu_be))
+                        pu_sp: look(pu_tail, " as ")
+                        pu_chunk: blank
+                        if pu_sp > 0 - 1
+                            pu_chunk: take_use(strip(cut(pu_tail, 0, pu_sp)), strip(cut(pu_tail, pu_sp + 4, length(pu_tail))))
+                        if pu_sp < 0
+                            pu_chunk: take_use(pu_tail, "")
+                        ch: _sov_list_add(ch, pu_chunk)
+                        tot: tot + length(pu_chunk)
+                        pu_ln: pu_ln + 1
+                    if pu_bgo is 1
+                        pu_bi: pu_be + 1
+            pu_i: pu_bi - 1
+            pu_e: pu_i
+        if pu_hit is 1
+            err_line: pu_ln + 1
+            pu_line: strip(cut(pu_src, pu_j, pu_e))
+            pu_tail: strip(cut(pu_line, 4, length(pu_line)))
+            pu_sp: look(pu_tail, " as ")
+            pu_chunk: blank
+            if pu_sp > 0 - 1
+                pu_chunk: take_use(strip(cut(pu_tail, 0, pu_sp)), strip(cut(pu_tail, pu_sp + 4, length(pu_tail))))
+            if pu_sp < 0
+                pu_chunk: take_use(pu_tail, "")
+            ch: _sov_list_add(ch, pu_chunk)
+            tot: tot + length(pu_chunk)
+        pu_i: pu_e + 1
+        pu_ln: pu_ln + 1
+    if tot is 0
+        return blank
+    buf: _sov_heap_alloc(tot + 1)
+    w: 0
+    ci: 0
+    cn: _sov_list_len(ch)
+    as long as ci < cn
+        s: peek_i64(ch, 16 + ci * 8)
+        kl: length(s)
+        dummy: _sov_mem_copy(buf + w, s, kl)
+        w: w + kl
+        ci: ci + 1
+    dummy: poke_byte(buf, w, 0)
+    return buf
+pure_mul_atom t:
+    if plain_name(t) is 0
+        return 0
+    if is_imm(t) is 1
+        return 0
+    if homereg(t) < 0
+        return 0
+    return 1
+pure_mul_term t:
+    p1: look(t, " * ")
+    if p1 < 0
+        return 0
+    l: strip(cut(t, 0, p1))
+    r: strip(cut(t, p1 + 3, length(t)))
+    if look(l, " ") > 0 - 1
+        return 0
+    if pure_mul_atom(l) is 0
+        return 0
+    p2: look(r, " * ")
+    if p2 < 0
+        if look(r, " ") > 0 - 1
+            return 0
+        return pure_mul_atom(r)
+    l2: strip(cut(r, 0, p2))
+    r2: strip(cut(r, p2 + 3, length(r)))
+    if look(r2, " ") > 0 - 1
+        return 0
+    if pure_mul_atom(l2) is 0
+        return 0
+    return pure_mul_atom(r2)
+push_rax:
+    emit(80)
+    push_live: 1
+put at n:
+    # Walk br_id backwards: the forward version kept overwriting lf/lt on every
+    # match and so kept the *last* one; the first match seen from the end is that
+    # same entry, and it is normally the one this put is resolving, added to the
+    # list a few emissions ago.
+    lf: 0
+    lt: at
+    li: _sov_list_len(br_id)
+    as long as li > 0
+        li: li - 1
+        if peek_i64(br_id, 16 + li * 8) is at
+            if peek_i64(br_st, 16 + li * 8) is not 4
+                lf: peek_i64(br_st, 16 + li * 8)
+                lt: peek_i64(br_at, 16 + li * 8)
+                li: 0
+    if lf is 1
+        if at < 0
+            return 0
+        v: n + at - lt
+        if v < 0
+            v: v + 4294967296
+        i: 0
+        as long as i < 4
+            dummy: ocset(lt + i, v % 256)
+            v: v / 256
+            i: i + 1
+        return 0
+    if lf is 2
+        if at < 0
+            return 0
+        v: n + at - lt + 4
+        if v < 0
+            v: v + 256
+        dummy: ocset(lt - 1, v % 256)
+        return 0
+    if lf is 3
+        if at < 0
+            return 0
+        v: n + at - lt + 3
+        if v < 0
+            v: v + 256
+        dummy: ocset(lt, v % 256)
+        return 0
+    if br_relax(lt, n + at - lt) is 1
+        return 0
+    if at < 0
+        return 0
+    v: n + at - lt
+    if v < 0
+        v: v + 4294967296
+    i: 0
+    as long as i < 4
+        dummy: ocset(lt + i, v % 256)
+        v: v / 256
+        i: i + 1
+raw_scaled e:
+    if length(e) < 5
+        return 0 - 1
+    if sg_match(e, length(e) - 4, " * 8") is 0
+        return 0 - 1
+    head: strip(cut(e, 0, length(e) - 4))
+    if length(head) is 0
+        return 0 - 1
+    if peek_byte(head, 0) is 40 is 1
+        if peek_byte(head, length(head) - 1) is 41 is 0
+            return 0 - 1
+        inn: strip(cut(head, 1, length(head) - 1))
+        pp: look(inn, " + ")
+        sg: 1
+        if pp < 0
+            pp: look(inn, " - ")
+            sg: 0 - 1
+        if pp < 0
+            return 0 - 1
+        l2: strip(cut(inn, 0, pp))
+        r2: strip(cut(inn, pp + 3, length(inn)))
+        if name_ok(l2) is 0
+            return 0 - 1
+        if is_imm(r2) is 0
+            return 0 - 1
+        sl: reg_slot(l2)
+        if sl < 0
+            return 0 - 1
+        kk: sg * num_of(r2) * 8
+        if kk > 127
+            return 0 - 1
+        if kk < 0 - 128
+            return 0 - 1
+        cflush(l2)
+        return sl * 4096 + kk + 128
+    if look(head, " + ") > 0 - 1
+        return 0 - 1
+    if name_ok(head) is 0
+        return 0 - 1
+    sl: reg_slot(head)
+    if sl < 0
+        return 0 - 1
+    cflush(head)
+    return sl * 4096 + 128
+rax_imm n:
+    if n is 0
+        emit2(49, 192)
+        return
+    if n > 0 - 1
+        if n < 4294967296
+            emit(184)
+            emit4(n)
+            return
+    emit2(72, 184)
+    emit8(n)
+rcx_imm n:
+    if n is 0
+        emit2(49, 201)
+        return
+    if n > 0 - 1
+        if n < 4294967296
+            emit(185)
+            emit4(n)
+            return
+    emit2(72, 185)
+    emit8(n)
+rax_str s:
+    emit3(72, 141, 5)
+    at: here()
+    emit4(0)
+    addp(at, "strrel", par_intern(s))
+rdi_imm n:
+    if n > 0 - 1
+        if n < 128
+            emit(106)
+            emit(n)
+            emit(95)
+            return
+        if n < 4294967296
+            emit(191)
+            emit4(n)
+            return
+    emit2(72, 191)
+    emit8(n)
+reg_slot name:
+    sl: lsh_find_s(name)
+    if sl > 0 - 1
+        if sl < 5
+            return sl
+    return 0 - 1
+repl text old new:
+    if _sov_find_text(text, old) < 0
+        return text
+    return repl_do(text, old, new)
+repl_do text old new:
+    n: length(text)
+    o: length(old)
+    gn: length(new)
+    if o > 0
+        if cfind1(text, 34) < 0
+            hits: 0
+            p: 0
+            as long as p + o <= n
+                if sg_match(text, p, old) is 1
+                    hits: hits + 1
+                    p: p + o
+                if not
+                    p: p + 1
+            r: _sov_heap_alloc(n + hits * gn + 8)
+            p: 0
+            j: 0
+            as long as p < n
+                m: 0
+                if p + o <= n
+                    if sg_match(text, p, old) is 1
+                        m: 1
+                if m is 1
+                    k: 0
+                    as long as k + 8 <= gn
+                        dummy: poke_i64(r, j, peek_i64(new, k))
+                        j: j + 8
+                        k: k + 8
+                    as long as k < gn
+                        dummy: poke_byte(r, j, peek_byte(new, k))
+                        j: j + 1
+                        k: k + 1
+                    p: p + o
+                if not
+                    dummy: poke_byte(r, j, peek_byte(text, p))
+                    j: j + 1
+                    p: p + 1
+            dummy: poke_byte(r, j, 0)
+            return r
+    r: _sov_heap_alloc(n + gn + 8)
+    p: 0
+    j: 0
+    ins: 0
+    as long as p < n
+        b: peek_byte(text, p)
+        if ins is 1
+            if b is 92
+                poke_byte(r, j, b)
+                j: j + 1
+                p: p + 1
+                if p < n
+                    poke_byte(r, j, peek_byte(text, p))
+                    j: j + 1
+                    p: p + 1
+            if not
+                poke_byte(r, j, b)
+                j: j + 1
+                p: p + 1
+                if b is 34
+                    ins: 0
+        if not
+            if b is 34
+                ins: 1
+                poke_byte(r, j, b)
+                j: j + 1
+                p: p + 1
+            if not
+                rp_m: 0
+                if p + o <= n
+                    rp_m: 1
+                rp_k: 0
+                as long as rp_k < o
+                    if rp_m is 1
+                        if peek_byte(text, p + rp_k) is peek_byte(old, rp_k)
+                            dummy: 0
+                        if not
+                            rp_m: 0
+                    rp_k: rp_k + 1
+                if rp_m is 1
+                    k: 0
+                    as long as k < gn
+                        poke_byte(r, j, peek_byte(new, k))
+                        j: j + 1
+                        k: k + 1
+                    p: p + o
+                if rp_m is 0
+                    poke_byte(r, j, b)
+                    j: j + 1
+                    p: p + 1
+    poke_byte(r, j, 0)
+    return r
+restores:
+    
+    if fn_save_n > 4
+        emit3(76, 139, 125)
+        emit(216)
+    if fn_save_n > 3
+        emit3(76, 139, 117)
+        emit(224)
+    if fn_save_n > 2
+        emit3(76, 139, 109)
+        emit(232)
+    if fn_save_n > 1
+        emit3(76, 139, 101)
+        emit(240)
+    if fn_save_n > 0
+        emit2(72, 139)
+        emit(93)
+        emit(248)
+ret:
+    emit(195)
+rexx h:
+    if h > 7
+        return 74
+    return 72
+same a b:
+    return _sov_str_eq(a, b)
+scaled_rdx e:
+    if sg_match(e, length(e) - 4, " * 8") is 0
+        return 0
+    head: strip(cut(e, 0, length(e) - 4))
+    if length(head) is 0
+        return 0
+    if peek_byte(head, 0) is 40 is 1
+        if peek_byte(head, length(head) - 1) is 41 is 1
+            inn: strip(cut(head, 1, length(head) - 1))
+            pp: look(inn, " + ")
+            sg: 1
+            if pp < 0
+                pp: look(inn, " - ")
+                sg: 0 - 1
+            if pp < 0
+                return 0
+            l2: strip(cut(inn, 0, pp))
+            r2: strip(cut(inn, pp + 3, length(inn)))
+            if name_ok(l2) is 1
+                if is_imm(r2) is 1
+                    loadv_rdx(l2)
+                    kk: sg * num_of(r2)
+                    if kk is not 0
+                        emit3(72, 131, 194)
+                        emit(kk % 256)
+                    return 1
+            return 0
+    if look(head, " + ") > 0 - 1
+        return 0
+    if name_ok(head) is 1
+        loadv_rdx(head)
+        return 1
+scaled_rsi e:
+    if sg_match(e, length(e) - 4, " * 8") is 0
+        return 0
+    head: strip(cut(e, 0, length(e) - 4))
+    if length(head) is 0
+        return 0
+    if peek_byte(head, 0) is 40 is 1
+        if peek_byte(head, length(head) - 1) is 41 is 1
+            inn: strip(cut(head, 1, length(head) - 1))
+            pp: look(inn, " + ")
+            sg: 1
+            if pp < 0
+                pp: look(inn, " - ")
+                sg: 0 - 1
+            if pp < 0
+                return 0
+            l2: strip(cut(inn, 0, pp))
+            r2: strip(cut(inn, pp + 3, length(inn)))
+            if name_ok(l2) is 1
+                if is_imm(r2) is 1
+                    loadv_rsi(l2)
+                    kk: sg * num_of(r2)
+                    if kk is not 0
+                        emit3(72, 131, 198)
+                        emit(kk % 256)
+                    return 1
+            return 0
+    if look(head, " + ") > 0 - 1
+        p: look(head, " + ")
+        l: strip(cut(head, 0, p))
+        r: strip(cut(head, p + 3, length(head)))
+        if is_imm(l) is 1
+            if name_ok(r) is 1
+                return 0
+
+        if is_imm(r) is 1
+            if name_ok(l) is 1
+                return 0
+        return 0
+    if name_ok(head) is 1
+        loadv_rsi(head)
+        return 1
+sc_disp e:
+    if sg_match(e, length(e) - 4, " * 8") is 0
+        return 0 - 1
+    head: strip(cut(e, 0, length(e) - 4))
+    if length(head) is 0
+        return 0 - 1
+    if peek_byte(head, 0) is 40 is 1
+        return 0 - 1
+    p: look(head, " + ")
+    if p < 0
+        return 0 - 1
+    l: strip(cut(head, 0, p))
+    r: strip(cut(head, p + 3, length(head)))
+    if length(l) is 0
+        return 0 - 1
+    if length(r) is 0
+        return 0 - 1
+    dv: 0 - 1
+    if is_imm(l) is 1
+        if name_ok(r) is 1
+            if is_imm(r) is 0
+                sc_dx: r
+                dv: num_of(l)
+    if is_imm(r) is 1
+        if name_ok(l) is 1
+            if is_imm(l) is 0
+                sc_dx: l
+                dv: num_of(r)
+    return dv
+scaled_shape e:
+    if sg_match(e, length(e) - 4, " * 8") is 0
+        return 0
+    head: strip(cut(e, 0, length(e) - 4))
+    if length(head) is 0
+        return 0
+    if peek_byte(head, 0) is 40 is 1
+        if peek_byte(head, length(head) - 1) is 41 is 1
+            return 1
+        return 0
+    if look(head, " + ") > 0 - 1
+        return 0
+    if plain_name(head) is 1
+        if is_imm(head) is 0
+            return 1
+sel_emit kind nm ix:
+    if kind is 0
+        loadv(nm)
+        return 0
+    loadv_rdi(nm)
+    if scaled_rsi(ix) is 1
+        emit_peek_rax()
+tw_x: blank
+sel_val t:
+    if plain_name(t) is 1
+        if is_imm(t) is 0
+            return 0
+    if _sov_starts_with(t, "peek_raw64(") is 1
+        t: join("peek_i64(", cut(t, 11, length(t)))
+    if pkpeek(t) is 1
+        if scaled_shape(pk_x) is 1
+            return 1
+    return 0 - 1
+setcc op:
+    return setcc_k(intern_kid(op))
+
+setcc_k oid:
+    if oid is kid_opeq
+        emit(15)
+        emit(148)
+        emit(192)
+    if oid is kid_opne
+        emit(15)
+        emit(149)
+        emit(192)
+    if oid is kid_oplt
+        emit(15)
+        emit(156)
+        emit(192)
+    if oid is kid_opgt
+        emit(15)
+        emit(159)
+        emit(192)
+    if oid is kid_ople
+        emit(15)
+        emit(158)
+        emit(192)
+    if oid is kid_opge
+        emit(15)
+        emit(157)
+        emit(192)
+    emit(72)
+    emit(15)
+    emit(182)
+    emit(192)
+sibx h:
+    return 199 + (h % 8) * 8
+skip_body lines start bind:
+    j: start
+    n: _sov_list_len(lines)
+    as long as j < n
+        raw: _sov_list_get(lines, j)
+        s: strip(raw)
+        if length(s) is 0
+            j: j + 1
+        if not
+            if peek_byte(s, 0) is 35
+                j: j + 1
+            if not
+                if nind(raw) > bind
+                    j: j + 1
+                if not
+                    return j
+    return j
+slot name:
+    i: lsh_find_s(name)
+    if i > 0 - 1
+        return i
+    d6: lsh_add(name)
+    return _sov_list_len(locals) - 1
+sq_square:
+    if sq_acc is 1
+        if sq_first is 1
+            loadv(sq_name)
+            emit(72)
+            emit(15)
+            emit(175)
+            emit(192)
+            return 0
+        hh: homereg(sq_name)
+        if hh > 0 - 1
+            emit_mov_rcx_h(hh)
+            emit(72)
+            emit(15)
+            emit(175)
+            emit(201)
+            emit(72)
+            emit(1)
+            emit(200)
+            return 0
+        print "Error: sum-of-squares register folding failed"
+        err_where()
+        had_err: 1
+        return 0
+    loadv(sq_name)
+    emit(72)
+    emit(15)
+    emit(175)
+    emit(192)
+    if sq_first is 1
+        emit(72)
+        emit(137)
+        emit(193)
+        return 0
+    emit(72)
+    emit(1)
+    emit(193)
+    return 0
+imul_rax_reg_imm sl v:
+    emit(op_rex_b(sl))
+    if v > 0 - 129
+        if v < 128
+            emit(107)
+            emit(192 + op_low3(sl))
+            emit(band(v, 255))
+            return
+    emit(105)
+    emit(192 + op_low3(sl))
+    emit4(v)
+
+fold_bin oid a b:
+    fold_ok: 0
+    if oid is kid_opadd
+        r: wrap_add(a, b)
+        if band(bxor(a, r), bxor(b, r)) >= 0
+            fold_ok: 1
+            return r
+        return 0
+    if oid is kid_opsub
+        r: wrap_sub(a, b)
+        if band(bxor(a, b), bxor(a, r)) >= 0
+            fold_ok: 1
+            return r
+        return 0
+    if oid is kid_opmul
+        aa: a
+        if aa < 0
+            aa: 0 - aa
+        bb: b
+        if bb < 0
+            bb: 0 - bb
+        if aa < 3037000500
+            if bb < 3037000500
+                fold_ok: 1
+                return wrap_mul(a, b)
+        return 0
+    if oid is kid_opdiv
+        if b is 0
+            return 0
+        if b is 0 - 1
+            if a is 0 - 9223372036854775807 - 1
+                return 0
+        fold_ok: 1
+        return a / b
+    if oid is kid_opmod
+        if b is 0
+            return 0
+        if b is 0 - 1
+            if a is 0 - 9223372036854775807 - 1
+                return 0
+        fold_ok: 1
+        return a % b
+    if oid is kid_opband
+        fold_ok: 1
+        return band(a, b)
+    if oid is kid_opbor
+        fold_ok: 1
+        return bor(a, b)
+    if oid is kid_opbxor
+        fold_ok: 1
+        return bxor(a, b)
+    if oid is kid_opbshl
+        fold_ok: 1
+        return bshl(a, band(b, 63))
+    if oid is kid_opbshr
+        fold_ok: 1
+        return bshr(a, band(b, 63))
+    if oid is kid_opbsar
+        fold_ok: 1
+        return bsar(a, band(b, 63))
+    if oid is kid_opwadd
+        fold_ok: 1
+        return wrap_add(a, b)
+    if oid is kid_opwsub
+        fold_ok: 1
+        return wrap_sub(a, b)
+    if oid is kid_opwmul
+        fold_ok: 1
+        return wrap_mul(a, b)
+    return 0
+
+bin L R op:
+    return bin_n(L, length(L), R, length(R), op)
+
+bin_n L Ln R Rn op:
+    return bin_k(L, Ln, R, Rn, intern_kid(op))
+
+bin_k L Ln R Rn oid:
+    as long as Ln > 0
+        bn_bb: peek_byte(L, 0)
+        if bn_bb is 32 or bn_bb is 9 or bn_bb is 10 or bn_bb is 13
+            L: L + 1
+            Ln: Ln - 1
+        if not
+            leave
+    as long as Ln > 0
+        bn_bb: peek_byte(L, Ln - 1)
+        if bn_bb is 32 or bn_bb is 9 or bn_bb is 10 or bn_bb is 13
+            Ln: Ln - 1
+        if not
+            leave
+    as long as Rn > 0
+        bn_bb: peek_byte(R, 0)
+        if bn_bb is 32 or bn_bb is 9 or bn_bb is 10 or bn_bb is 13
+            R: R + 1
+            Rn: Rn - 1
+        if not
+            leave
+    as long as Rn > 0
+        bn_bb: peek_byte(R, Rn - 1)
+        if bn_bb is 32 or bn_bb is 9 or bn_bb is 10 or bn_bb is 13
+            Rn: Rn - 1
+        if not
+            leave
+    Limm: is_imm_n(L, Ln)
+    Rimm: is_imm_n(R, Rn)
+    Lb0: 0
+    if Ln > 0
+        Lb0: peek_byte(L, 0)
+    Rb0: 0
+    if Rn > 0
+        Rb0: peek_byte(R, 0)
+    if Limm is 1
+        if Rimm is 1
+            fv: fold_bin(oid, num_of_n(L, Ln), num_of_n(R, Rn))
+            if fold_ok is 1
+                rax_imm(fv)
+                return 0
+    if oid is kid_opadd
+        if opt_peep is 1
+            if Rimm is 1
+                if plain_name_n(L, Ln) is 1
+                    sl2: reg_slot(span_str(L, Ln))
+                    if sl2 > 0 - 1
+                        vv: num_of_n(R, Rn)
+                        if vv < 128
+                            if vv > 0
+                                cflush(span_str(L, Ln))
+                                emit_lea_rax(sl2, vv)
+                                return 0
+    if oid is kid_opsub
+        if opt_peep is 1
+            if Rimm is 1
+                if plain_name_n(L, Ln) is 1
+                    sl2: reg_slot(span_str(L, Ln))
+                    if sl2 > 0 - 1
+                        vv: 0 - num_of_n(R, Rn)
+                        if vv > 0 - 128
+                            if vv < 0
+                                cflush(span_str(L, Ln))
+                                emit_lea_rax(sl2, vv)
+                                return 0
+    if oid is kid_opmul
+        if opt_peep is 1
+            if Rimm is 1
+                if plain_name_n(L, Ln) is 1
+                    sl2: reg_slot(span_str(L, Ln))
+                    if sl2 > 0 - 1
+                        vv: num_of_n(R, Rn)
+                        if vv < 2147483648
+                            if vv > 0 - 2147483649
+                                cflush(span_str(L, Ln))
+                                imul_rax_reg_imm(sl2, vv)
+                                chk_ov()
+                                return 0
+            if Limm is 1
+                if plain_name_n(R, Rn) is 1
+                    sl2: reg_slot(span_str(R, Rn))
+                    if sl2 > 0 - 1
+                        vv: num_of_n(L, Ln)
+                        if vv < 2147483648
+                            if vv > 0 - 2147483649
+                                cflush(span_str(R, Rn))
+                                imul_rax_reg_imm(sl2, vv)
+                                chk_ov()
+                                return 0
+    if oid is kid_opwmul
+        if opt_peep is 1
+            if Rimm is 1
+                if plain_name_n(L, Ln) is 1
+                    sl2: reg_slot(span_str(L, Ln))
+                    if sl2 > 0 - 1
+                        vv: num_of_n(R, Rn)
+                        if vv < 2147483648
+                            if vv > 0 - 2147483649
+                                cflush(span_str(L, Ln))
+                                imul_rax_reg_imm(sl2, vv)
+                                return 0
+            if Limm is 1
+                if plain_name_n(R, Rn) is 1
+                    sl2: reg_slot(span_str(R, Rn))
+                    if sl2 > 0 - 1
+                        vv: num_of_n(L, Ln)
+                        if vv < 2147483648
+                            if vv > 0 - 2147483649
+                                cflush(span_str(R, Rn))
+                                imul_rax_reg_imm(sl2, vv)
+                                return 0
+    if has_vm is 1
+        if oid is kid_opsub
+            if pkpeek_n(L, Ln) is 1
+                lg: pk_g
+                lx: pk_x
+                if pkpeek_n(R, Rn) is 1
+                    if _sov_str_eq(pk_g, lg) is 1
+                        hr: peek_home(pk_x)
+                        if hr < 0
+                            scaled_rdx(pk_x)
+                            hr: 2
+                        loadv_rdi(lg)
+                        hl: peek_home(lx)
+                        if hl < 0
+                            scaled_rsi(lx)
+                            hl: 6
+                        peek_rax_h(hl)
+                        fold_rax_h(43, hr)
+                        return 0
+        if oid is kid_opadd
+            if pkpeek_n(L, Ln) is 1
+                lg: pk_g
+                lx: pk_x
+                if pkpeek_n(R, Rn) is 1
+                    if _sov_str_eq(pk_g, lg) is 1
+                        hr: peek_home(pk_x)
+                        if hr < 0
+                            scaled_rdx(pk_x)
+                            hr: 2
+                        loadv_rdi(lg)
+                        hl: peek_home(lx)
+                        if hl < 0
+                            scaled_rsi(lx)
+                            hl: 6
+                        peek_rax_h(hl)
+                        fold_rax_h(3, hr)
+                        return 0
+    if oid is kid_opeq
+        if Rb0 is 34
+            expr_span(L, Ln)
+            push_rax()
+            expr_span(R, Rn)
+            mov_rsi_rax()
+            pop_rax()
+            mov_rdi_rax()
+            calln("_sov_txt_eq")
+            return 0
+        if Lb0 is 34
+            expr_span(R, Rn)
+            push_rax()
+            expr_span(L, Ln)
+            mov_rsi_rax()
+            pop_rax()
+            mov_rdi_rax()
+            calln("_sov_txt_eq")
+            return 0
+    if oid is kid_opne
+        if Rb0 is 34
+            expr_span(L, Ln)
+            push_rax()
+            expr_span(R, Rn)
+            mov_rsi_rax()
+            pop_rax()
+            mov_rdi_rax()
+            calln("_sov_txt_eq")
+            emit(72)
+            emit(131)
+            emit(240)
+            emit(1)
+            return 0
+        if Lb0 is 34
+            expr_span(R, Rn)
+            push_rax()
+            expr_span(L, Ln)
+            mov_rsi_rax()
+            pop_rax()
+            mov_rdi_rax()
+            calln("_sov_txt_eq")
+            emit(72)
+            emit(131)
+            emit(240)
+            emit(1)
+            return 0
+    if has_vm is 1
+        if oid is kid_opadd
+            if parse_sq_n(R, Rn) is 1
+                rt: sq_name
+                Lsq: span_str(L, Ln)
+                if look(Lsq, " + ") > 0 - 1
+                    q: fop2(Lsq, "+", "-")
+                    if q > 0 - 1
+                        if peek_byte(Lsq, q) is 43 is 1
+                            la: strip(cut(Lsq, 0, q))
+                            ra: strip(cut(Lsq, q + 1, length(Lsq)))
+                            if parse_sq(ra) is 1
+                                ran: sq_name
+                                if parse_sq(la) is 1
+                                    la9: sq_name
+                                    sq9: 0
+                                    if reg_slot(rt) > 0 - 1
+                                        if reg_slot(ran) > 0 - 1
+                                            if reg_slot(la9) > 0 - 1
+                                                sq9: 1
+                                    if sq9 is 1
+                                        cflush(rt)
+                                        cflush(ran)
+                                        cflush(la9)
+                                        sq_acc: 1
+                                    sq_first: 1
+                                    sq_name: rt
+                                    sq_square()
+                                    sq_first: 0
+                                    sq_name: ran
+                                    sq_square()
+                                    parse_sq(la)
+                                    sq_square()
+                                    if sq9 is 0
+                                        mov_rax_rcx()
+                                    sq_acc: 0
+                                    return 0
+                if not
+                    if parse_sq(Lsq) is 1
+                        lat: sq_name
+                        sq9: 0
+                        if reg_slot(rt) > 0 - 1
+                            if reg_slot(lat) > 0 - 1
+                                sq9: 1
+                        if sq9 is 1
+                            cflush(rt)
+                            cflush(lat)
+                            sq_acc: 1
+                        sq_first: 1
+                        sq_name: rt
+                        sq_square()
+                        sq_first: 0
+                        sq_name: lat
+                        sq_square()
+                        if sq9 is 0
+                            mov_rax_rcx()
+                        sq_acc: 0
+                        return 0
+    if Rimm is 0
+        if Limm is 0
+            if digitb(Rb0) is 0
+                if digitb(Lb0) is 0
+                    if plain_name_n(R, Rn) is 1
+                        if plain_name_n(L, Ln) is 1
+                            if oid is kid_opmul
+                                if span_eq(L, Ln, R, Rn) is 1
+                                    loadv(span_str(L, Ln))
+                                    emit(72)
+                                    emit(15)
+                                    emit(175)
+                                    emit(192)
+                                    chk_ov()
+                                    return 0
+                            brs: bin_rslot(span_str(R, Rn))
+                            if brs > 0 - 1
+                                if bin_rslot(span_str(L, Ln)) > 0 - 1
+                                    cflush(span_str(R, Rn))
+                                    loadv(span_str(L, Ln))
+                                    bin_regop_k(oid, brs)
+                                    return 0
+                            loadv_rcx(span_str(R, Rn))
+                            loadv(span_str(L, Ln))
+                            emit_op_k(oid)
+                            return 0
+    if Rimm is 0
+        if digitb(Rb0) is 0
+            if plain_name_n(R, Rn) is 1
+                br2: bin_rslot(span_str(R, Rn))
+                if br2 > 0 - 1
+                    cflush(span_str(R, Rn))
+                    expr_span(L, Ln)
+                    bin_regop_k(oid, br2)
+                    return 0
+    if Rimm is 0
+        if digitb(Rb0) is 0
+            if plain_name_n(R, Rn) is 1
+                if bin_mem_ok_k(oid, span_str(R, Rn)) is 1
+                    cflush(span_str(R, Rn))
+                    expr_span(L, Ln)
+                    bin_memop_k(oid, span_str(R, Rn))
+                    return 0
+    bc: 0
+    if oid is kid_opadd
+        bc: 1
+    if oid is kid_opmul
+        bc: 1
+    if oid is kid_opband
+        bc: 1
+    if oid is kid_opbor
+        bc: 1
+    if oid is kid_opbxor
+        bc: 1
+    if oid is kid_opwadd
+        bc: 1
+    if oid is kid_opwmul
+        bc: 1
+    if oid is kid_opeq
+        bc: 1
+    if oid is kid_opne
+        bc: 1
+    if bc is 1
+        if Limm is 0
+            if digitb(Lb0) is 0
+                if plain_name_n(L, Ln) is 1
+                    bl2: bin_rslot(span_str(L, Ln))
+                    if bl2 > 0 - 1
+                        cflush(span_str(L, Ln))
+                        expr_span(R, Rn)
+                        bin_regop_k(oid, bl2)
+                        return 0
+                    if bin_mem_ok_k(oid, span_str(L, Ln)) is 1
+                        cflush(span_str(L, Ln))
+                        expr_span(R, Rn)
+                        bin_memop_k(oid, span_str(L, Ln))
+                        return 0
+    # a plain local that lives in the frame (bin_rslot already took the ones in
+    # registers) is a one-instruction load.  Do the left side first and then
+    # load %rcx directly: emitting `push %rax; ...; mov %rax,%rcx; pop %rax`
+    # around it was pure overhead.  (Pass 8 tried the reverse order - %rcx
+    # loaded before expr_span(L, Ln) - and expr_span(L, Ln) clobbered it.)
+    expr_span(L, Ln)
+    push_rax()
+    if oid is kid_opadd
+        if Rimm is 1
+            pop_rax()
+            if arith_imm("add", num_of_n(R, Rn)) is 0
+                chk_ov()
+                return
+            push_rax()
+    if oid is kid_opsub
+        if Rimm is 1
+            pop_rax()
+            if arith_imm("sub", num_of_n(R, Rn)) is 0
+                chk_ov()
+                return
+            push_rax()
+    if oid is kid_opmul
+        if Rimm is 1
+            pop_rax()
+            if arith_imm("mul", num_of_n(R, Rn)) is 0
+                chk_ov()
+                return
+            push_rax()
+    if oid is kid_opdiv
+        if Rimm is 1
+            pop_rax()
+            if arith_imm("div", num_of_n(R, Rn)) is 0
+                return
+            push_rax()
+    if oid is kid_opmod
+        if Rimm is 1
+            pop_rax()
+            if arith_imm("mod", num_of_n(R, Rn)) is 0
+                return
+            push_rax()
+    if oid is kid_opband
+        if Rimm is 1
+            pop_rax()
+            if arith_imm("band", num_of_n(R, Rn)) is 0
+                return
+            rcx_imm(num_of_n(R, Rn))
+            emit_op("band")
+            return
+    if oid is kid_opbor
+        if Rimm is 1
+            pop_rax()
+            if arith_imm("bor", num_of_n(R, Rn)) is 0
+                return
+            rcx_imm(num_of_n(R, Rn))
+            emit_op("bor")
+            return
+    if oid is kid_opbxor
+        if Rimm is 1
+            pop_rax()
+            if arith_imm("bxor", num_of_n(R, Rn)) is 0
+                return
+            rcx_imm(num_of_n(R, Rn))
+            emit_op("bxor")
+            return
+    if oid is kid_opbshl
+        if Rimm is 1
+            pop_rax()
+            if arith_imm("bshl", num_of_n(R, Rn)) is 0
+                return
+            rcx_imm(num_of_n(R, Rn))
+            emit_op("bshl")
+            return
+    if oid is kid_opbshr
+        if Rimm is 1
+            pop_rax()
+            if arith_imm("bshr", num_of_n(R, Rn)) is 0
+                return
+            rcx_imm(num_of_n(R, Rn))
+            emit_op("bshr")
+            return
+    if oid is kid_opbsar
+        if Rimm is 1
+            pop_rax()
+            if arith_imm("bsar", num_of_n(R, Rn)) is 0
+                return
+            rcx_imm(num_of_n(R, Rn))
+            emit_op("bsar")
+            return
+    if oid is kid_opwadd
+        if Rimm is 1
+            pop_rax()
+            if arith_imm("add", num_of_n(R, Rn)) is 0
+                return
+            rcx_imm(num_of_n(R, Rn))
+            emit_op("wadd")
+            return
+    if oid is kid_opwsub
+        if Rimm is 1
+            pop_rax()
+            if arith_imm("sub", num_of_n(R, Rn)) is 0
+                return
+            rcx_imm(num_of_n(R, Rn))
+            emit_op("wsub")
+            return
+    if oid is kid_opwmul
+        if Rimm is 1
+            pop_rax()
+            if arith_imm("wmul", num_of_n(R, Rn)) is 0
+                return
+            rcx_imm(num_of_n(R, Rn))
+            emit_op("wmul")
+            return
+    expr_span(R, Rn)
+    mov_rcx_rax()
+    pop_rax()
+    emit_op_k(oid)
+starts t p:
+    return _sov_starts_with(t, p)
+store_loc slot:
+    if slot is 0
+        emit(72)
+        emit(137)
+        emit(195)
+        return
+    if slot is 1
+        emit(73)
+        emit(137)
+        emit(196)
+        return
+    if slot is 2
+        emit(73)
+        emit(137)
+        emit(197)
+        return
+    if slot is 3
+        emit(73)
+        emit(137)
+        emit(198)
+        return
+    if slot is 4
+        emit(73)
+        emit(137)
+        emit(199)
+        return
+    if slot is 5
+        if leaf8 is 1
+            emit(73)
+            emit(137)
+            emit(192)
+            return
+    if slot is 6
+        if leaf8 is 1
+            emit(73)
+            emit(137)
+            emit(193)
+            return
+    if slot is 7
+        if leaf8 is 1
+            emit(73)
+            emit(137)
+            emit(194)
+            return
+    if slot is 8
+        if leaf8 is 1
+            emit(73)
+            emit(137)
+            emit(195)
+            return
+    emit(72)
+    emit(137)
+    emit(133)
+    emit4(loc_off(slot))
+store_rdx_h h:
+    emit(rexx(h))
+    emit(137)
+    emit(20)
+    emit(sibx(h))
+    return 0
+sq_name: blank
+sq_first: 0
+sq_acc: 0
+storev name:
+    dhf_s: plog_str(4, name)
+    ci: cn_lookup(name)
+    if ci > 0 - 1
+        cemt: _sov_list_set(cemt, ci, 1)
+    i: lsh_find_s(name)
+    if i > 0 - 1
+        store_loc(i)
+        return
+    g: gn_lookup(name)
+    if g > 0 - 1
+        store_glob(name)
+        return
+    store_loc(slot(name))
+strip t:
+    if t is 0
+        return blank
+    return _sov_trim(t)
+emit_nt_cx_info:
+    # rdi = line -> rax = marks, bit-for-bit the Sovren cx_info.
+    # rbx=l r12=n r13=r r14=lead r15=i.  Out-of-line peeks at
+    # i+1..i+4 read the same flat-buffer bytes as the body does.
+    emit(83)
+    emit2(65, 84)
+    emit2(65, 85)
+    emit2(65, 86)
+    emit2(65, 87)
+    emit3(72, 137, 251)
+    emit(69)
+    emit(49)
+    emit(237)
+    emit(77)
+    emit(49)
+    emit(219)
+    emit(69)
+    emit(49)
+    emit(228)
+    cxsl: here()
+    emit(66)
+    emit(15)
+    emit(182)
+    emit(20)
+    emit(35)
+    emit2(132, 210)
+    cxsd: jz()
+    emit3(73, 255, 196)
+    emit(233)
+    emit4(cxsl - (here() + 4))
+    patch(cxsd)
+    emit3(76, 137, 225)
+    emit3(72, 255, 201)
+    cxel: here()
+    emit3(72, 131, 249)
+    emit(0)
+    cxee: jl()
+    emit(15)
+    emit(182)
+    emit(20)
+    emit(11)
+    emit3(128, 250, 33)
+    cxeb: jae()
+    emit3(72, 255, 201)
+    emit(233)
+    emit4(cxel - (here() + 4))
+    patch(cxeb)
+    emit3(128, 250, 58)
+    cxen: jne()
+    emit(69)
+    emit(131)
+    emit(205)
+    emit(1)
+    patch(cxen)
+    patch(cxee)
+    emit(69)
+    emit(49)
+    emit(246)
+    cxll: here()
+    emit3(77, 57, 230)
+    cxld: jae()
+    emit(66)
+    emit(15)
+    emit(182)
+    emit(20)
+    emit(51)
+    emit3(128, 250, 33)
+    cxld2: jae()
+    emit3(73, 255, 198)
+    emit(233)
+    emit4(cxll - (here() + 4))
+    patch(cxld)
+    patch(cxld2)
+    emit3(77, 57, 230)
+    cxg6: jae()
+    emit(66)
+    emit(15)
+    emit(182)
+    emit(20)
+    emit(51)
+    emit3(128, 234, 48)
+    emit3(128, 250, 10)
+    cxg6b: jae()
+    emit(69)
+    emit(131)
+    emit(205)
+    emit(64)
+    patch(cxg6b)
+    patch(cxg6)
+    emit(69)
+    emit(49)
+    emit(255)
+    cxml: here()
+    emit3(77, 57, 231)
+    cxmx: jae()
+    emit(66)
+    emit(15)
+    emit(182)
+    emit(20)
+    emit(59)
+    emit3(128, 250, 58)
+    cxn58: jne()
+    emit(66)
+    emit(15)
+    emit(182)
+    emit(116)
+    emit(59)
+    emit(1)
+    emit(64)
+    emit(128)
+    emit(254)
+    emit(32)
+    cxn58b: jne()
+    emit(69)
+    emit(247)
+    emit(197)
+    emit4(4)
+    cx58f: jz()
+    emit(69)
+    emit(131)
+    emit(205)
+    emit(8)
+    cx58e: jmp()
+    patch(cx58f)
+    emit(69)
+    emit(131)
+    emit(205)
+    emit(4)
+    patch(cx58e)
+    patch(cxn58b)
+    patch(cxn58)
+    emit3(128, 250, 61)
+    cxn61: jne()
+    emit3(77, 57, 254)
+    cx61a: jb()
+    cx61s: jmp()
+    patch(cx61a)
+    emit(66)
+    emit(15)
+    emit(182)
+    emit(116)
+    emit(59)
+    emit(255)
+    emit(64)
+    emit(128)
+    emit(254)
+    emit(32)
+    cx61b: jne()
+    emit(66)
+    emit(15)
+    emit(182)
+    emit(116)
+    emit(59)
+    emit(1)
+    emit(64)
+    emit(128)
+    emit(254)
+    emit(32)
+    cx61c: jne()
+    emit(69)
+    emit(131)
+    emit(205)
+    emit(2)
+    patch(cx61b)
+    patch(cx61c)
+    patch(cx61s)
+    patch(cxn61)
+    emit3(128, 250, 33)
+    cxn33: jne()
+    emit3(77, 133, 255)
+    cx33z: jz()
+    emit(66)
+    emit(15)
+    emit(182)
+    emit(116)
+    emit(59)
+    emit(255)
+    emit(64)
+    emit(128)
+    emit(254)
+    emit(32)
+    cx33a: jne()
+    emit(66)
+    emit(15)
+    emit(182)
+    emit(116)
+    emit(59)
+    emit(1)
+    emit(64)
+    emit(128)
+    emit(254)
+    emit(61)
+    cx33b: jne()
+    emit(66)
+    emit(15)
+    emit(182)
+    emit(116)
+    emit(59)
+    emit(2)
+    emit(64)
+    emit(128)
+    emit(254)
+    emit(32)
+    cx33c: jne()
+    emit(69)
+    emit(131)
+    emit(205)
+    emit(16)
+    patch(cx33a)
+    patch(cx33b)
+    patch(cx33c)
+    patch(cx33z)
+    patch(cxn33)
+    emit3(128, 250, 105)
+    cxn105: jne()
+    emit3(77, 133, 255)
+    cx105z: jz()
+    emit(66)
+    emit(15)
+    emit(182)
+    emit(116)
+    emit(59)
+    emit(255)
+    emit(64)
+    emit(128)
+    emit(254)
+    emit(32)
+    cx105a: jne()
+    emit(66)
+    emit(15)
+    emit(182)
+    emit(116)
+    emit(59)
+    emit(1)
+    emit(64)
+    emit(128)
+    emit(254)
+    emit(115)
+    cx105b: jne()
+    emit(66)
+    emit(15)
+    emit(182)
+    emit(116)
+    emit(59)
+    emit(2)
+    emit(64)
+    emit(128)
+    emit(254)
+    emit(110)
+    cx105c: jne()
+    emit(66)
+    emit(15)
+    emit(182)
+    emit(116)
+    emit(59)
+    emit(3)
+    emit(64)
+    emit(128)
+    emit(254)
+    emit(116)
+    cx105d: jne()
+    emit(66)
+    emit(15)
+    emit(182)
+    emit(116)
+    emit(59)
+    emit(4)
+    emit(64)
+    emit(128)
+    emit(254)
+    emit(32)
+    cx105e: jne()
+    emit(69)
+    emit(131)
+    emit(205)
+    emit(32)
+    patch(cx105a)
+    patch(cx105b)
+    patch(cx105c)
+    patch(cx105d)
+    patch(cx105e)
+    patch(cx105z)
+    patch(cxn105)
+    emit3(73, 255, 199)
+    emit(233)
+    emit4(cxml - (here() + 4))
+    patch(cxmx)
+    emit3(76, 137, 232)
+    emit2(65, 95)
+    emit2(65, 94)
+    emit2(65, 93)
+    emit2(65, 92)
+    emit(91)
+    leave()
+    ret()
+    return 1
+
+strip_span t:
+    # transient strip for line buffers: when only leading spaces need
+    # trimming (the common shape), return t+indent into the same
+    # NUL-terminated line instead of allocating a trimmed copy.
+    # Result is read-only and lives exactly as long as the line.
+    if t is 0
+        return blank
+    a: 0
+    as long as peek_byte(t, a) is 32
+        a: a + 1
+    if peek_byte(t, a) is 9
+        return strip(t)
+    s: t + a
+    n: length(s)
+    if n is 0
+        return s
+    if peek_byte(s, n - 1) < 33
+        return strip(t)
+    return s
+sub_into dest src:
+    sd: reg_slot(src)
+    if sd > 0 - 1
+        dd: reg_slot(dest)
+        if dd > 0 - 1
+            cflush(dest)
+            cflush(src)
+            emit_addsub_slot(dd, sd, 1)
+            return
+    loadv(src)
+    sl: lsh_find_s(dest)
+    if sl is 0
+        emit(72)
+        emit(41)
+        emit(195)
+        return
+    if sl is 1
+        emit(73)
+        emit(41)
+        emit(196)
+        return
+    if sl is 2
+        emit(73)
+        emit(41)
+        emit(197)
+        return
+    if sl is 3
+        emit(73)
+        emit(41)
+        emit(198)
+        return
+    if sl is 4
+        emit(73)
+        emit(41)
+        emit(199)
+        return
+    mov_rcx_rax()
+    loadv(dest)
+    sub_rax_rcx()
+    storev(dest)
+sub_rax_rcx:
+    emit(72)
+    emit(41)
+    emit(200)
+sub_rax_reg sl:
+    emit(op_rex_r(sl))
+    emit(41)
+    emit(192 + op_low3(sl) * 8)
+sub_rax_slot sl:
+    if sl is 0
+        emit(72)
+        emit(41)
+        emit(195)
+        return 0
+    if sl is 1
+        emit(73)
+        emit(41)
+        emit(196)
+        return 0
+    if sl is 2
+        emit(73)
+        emit(41)
+        emit(197)
+        return 0
+    if sl is 3
+        emit(73)
+        emit(41)
+        emit(198)
+        return 0
+    if sl is 4
+        emit(73)
+        emit(41)
+        emit(199)
+        return 0
+    return 0 - 1
+swap_op op:
+    oid: intern_kid(op)
+    if oid is kid_oplt
+        return "gt"
+    if oid is kid_opgt
+        return "lt"
+    if oid is kid_ople
+        return "ge"
+    if oid is kid_opge
+        return "le"
+    return op
+take_use name alias:
+    mark: join(" ", join(name, " "))
+    if look(used_libs, mark) > 0 - 1
+        return blank
+    used_libs: join(used_libs, mark)
+    chunk: use_one(name)
+    if chunk is 0
+        print "Error: cannot read library"
+        _sov_print(name)
+        err_where()
+        had_err: 1
+        return blank
+    if length(alias) > 0
+        alias_pairs: join(alias_pairs, join("|", alias))
+        chunk: alias_chunk(chunk, alias)
+    return chunk
+
+first_wid s:
+    # skip leading whitespace, then return word_id at that position
+    wgo: 1
+    as long as wgo is 1
+        wb: peek_byte(s, 0)
+        if wb < 33
+            if wb is 0
+                return 0
+            s: s + 1
+        if not
+            wgo: 0
+    return word_id(s)
+
+word_id_at s o:
+    wgo: 1
+    as long as wgo is 1
+        wb: peek_byte(s, o)
+        if wb < 33
+            if wb is 0
+                return 0
+            o: o + 1
+        if not
+            wgo: 0
+    return word_id(s + o)
+wordchar b:
+    if b is 95
+        return 1
+    if b > 47
+        if b < 58
+            return 1
+    if b > 64
+        if b < 91
+            return 1
+    if b > 96
+        if b < 123
+            return 1
+ren_word old nw text:
+    out: blank
+    i: 0
+    n: length(text)
+    q: 0
+    ol: length(old)
+    as long as i < n
+        d: 0
+        b: peek_byte(text, i)
+        if q is 1
+            out: join(out, letter(text, i))
+            if b is 34
+                q: 0
+            d: 1
+        if q is 2
+            out: join(out, letter(text, i))
+            if b is 96
+                q: 0
+            d: 1
+        if d is 0
+            if b is 34
+                q: 1
+                out: join(out, letter(text, i))
+                i: i + 1
+                d: 1
+            if d is 0
+                if b is 96
+                    q: 2
+                    out: join(out, letter(text, i))
+                    i: i + 1
+                    d: 1
+        if d is 0
+            pb: 32
+            if i > 0
+                pb: peek_byte(text, i - 1)
+            if wordchar(pb) is 0
+                m: 0
+                if i + ol <= n
+                    if sg_match(text, i, old) is 1
+                        ab: 32
+                        if i + ol < n
+                            ab: peek_byte(text, i + ol)
+                        if wordchar(ab) is 0
+                            m: 1
+                if m is 1
+                    out: join(out, nw)
+                    i: i + ol
+                    d: 1
+        if d is 0
+            out: join(out, letter(text, i))
+            i: i + 1
+    return out
+topdefs t:
+    lst: _sov_list_new()
+    lns: lines_of(t)
+    i: 0
+    n: _sov_list_len(lns)
+    as long as i < n
+        l: _sov_list_get(lns, i)
+        if length(l) > 0
+            b0: peek_byte(l, 0)
+            if b0 is not 35
+                if b0 is not 32
+                    if b0 is not 9
+                        j: 0
+                        w: blank
+                        td_ln: length(l)
+                        as long as j < td_ln
+                            if wordchar(peek_byte(l, j)) is 1
+                                w: join(w, letter(l, j))
+                                j: j + 1
+                            if wordchar(peek_byte(l, j)) is 0
+                                j: td_ln
+                        cpos: look(l, ":")
+                        if cpos > 0
+                            if length(w) > 0
+                                lst: _sov_list_add(lst, w)
+        i: i + 1
+    return lst
+alias_chunk chunk alias:
+    ac_names: topdefs(chunk)
+    i: 0
+    n: _sov_list_len(ac_names)
+    as long as i < n
+        nm: _sov_list_get(ac_names, i)
+        chunk: ren_word(nm, join(alias, join("__", nm)), chunk)
+        i: i + 1
+    return chunk
+lines_join lst:
+    total: 0
+    i: 0
+    n: _sov_list_len(lst)
+    as long as i < n
+        total: total + length(_sov_list_get(lst, i)) + 1
+        i: i + 1
+    buf: _sov_heap_alloc(total + 1)
+    pos: 0
+    i: 0
+    as long as i < n
+        ln: _sov_list_get(lst, i)
+        k: 0
+        lnlen: length(ln)
+        as long as k < lnlen
+            dset: _sov_set_byte(buf, pos, peek_byte(ln, k))
+            pos: pos + 1
+            k: k + 1
+        dset: _sov_set_byte(buf, pos, 10)
+        pos: pos + 1
+        i: i + 1
+    dset: _sov_set_byte(buf, pos, 0)
+    return buf
+qualify text alias:
+    lns: lines_of(text)
+    n: _sov_list_len(lns)
+    bt: 0
+    acc: _sov_list_new()
+    i: 0
+    as long as i < n
+        ln: _sov_list_get(lns, i)
+        m: length(ln)
+        al: length(alias)
+        res: blank
+        j: 0
+        q: 0
+        as long as j < m
+            d: 0
+            b: peek_byte(ln, j)
+            if bt is 1
+                if b is 96
+                    bt: 0
+                res: join(res, letter(ln, j))
+                j: j + 1
+                d: 1
+            if d is 0
+                if b is 96
+                    bt: 1
+                    res: join(res, letter(ln, j))
+                    j: j + 1
+                    d: 1
+                if d is 0
+                    if q is 1
+                        if b is 34
+                            q: 0
+                        res: join(res, letter(ln, j))
+                        j: j + 1
+                        d: 1
+                    if d is 0
+                        if b is 34
+                            q: 1
+                            res: join(res, letter(ln, j))
+                            j: j + 1
+                            d: 1
+            if d is 0
+                pb: 32
+                if j > 0
+                    pb: peek_byte(ln, j - 1)
+                if wordchar(pb) is 0
+                    m2: 0
+                    if j + al + 1 < m
+                        if sg_match(ln, j, alias) is 1
+                            if peek_byte(ln, j + al) is 46
+                                if wordchar(peek_byte(ln, j + al + 1)) is 1
+                                    m2: 1
+                    if m2 is 1
+                        k: j + al + 1
+                        w: blank
+                        e: k
+                        as long as k < m
+                            if wordchar(peek_byte(ln, k)) is 1
+                                w: join(w, letter(ln, k))
+                                k: k + 1
+                                e: k
+                            if wordchar(peek_byte(ln, k)) is 0
+                                k: m
+                        res: join(res, join(alias, join("__", w)))
+                        j: e
+                        d: 1
+            if d is 0
+                res: join(res, letter(ln, j))
+                j: j + 1
+        acc: _sov_list_add(acc, res)
+        i: i + 1
+    return lines_join(acc)
+apply_aliases src:
+    if length(alias_pairs) is 0
+        return src
+    i: 0
+    n: length(alias_pairs)
+    cur: blank
+    as long as i < n
+        if peek_byte(alias_pairs, i) is 124 is 1
+            if length(cur) > 0
+                src: qualify(src, cur)
+                cur: blank
+        if not
+            cur: join(cur, letter(alias_pairs, i))
+        i: i + 1
+    if length(cur) > 0
+        src: qualify(src, cur)
+    return src
+test_rax:
+    emit(72)
+    emit(133)
+    emit(192)
+thread_tail st:
+    wi: 0
+    wi_ln: _sov_list_len(sk_pos)
+    as long as wi < wi_ln
+        wp: peek_i64(sk_pos, 16 + wi * 8)
+        if _sov_list_get(sk_to, wi) is here()
+            if wp > st
+                if ocget(wp - 1) is 233
+                    put(wp, st - (wp + 4))
+        wi: wi + 1
+    sk_pos: _sov_list_new()
+    sk_to: _sov_list_new()
+tidy_path s:
+    r: unquote(s)
+    n: length(r)
+    if n > 2
+        if peek_byte(r, 1) is 58
+            r: cut(r, 2, n)
+            n: n - 2
+    o: _sov_heap_alloc(n + 1)
+    i: 0
+    as long as i < n
+        b: peek_byte(r, i)
+        if b is 92
+            b: 47
+        dummy: poke_byte(o, i, b)
+        i: i + 1
+    dummy: poke_byte(o, n, 0)
+    return as text o
+tname line:
+    s: strip(line)
+    if is_task_hdr(s) is 1
+        s: strip(cut(s, 0, length(s) - 1))
+        if _sov_starts_with(s, "task ") is 1
+            s: strip(cut(s, 5, length(s)))
+        wp: look(s, " with ")
+        if wp > 0 - 1
+            return repl(strip(cut(s, 0, wp)), " ", "_")
+        sp: look(s, " ")
+        if sp > 0 - 1
+            return strip(cut(s, 0, sp))
+        return s
+    rest: strip(cut(line, 5, length(line)))
+    wp: look(rest, " with ")
+    if wp > 0 - 1
+        return repl(strip(cut(rest, 0, wp)), " ", "_")
+    sp: look(rest, " ")
+    if sp > 0 - 1
+        return repl(strip(cut(rest, 0, sp)), " ", "_")
+    return repl(rest, " ", "_")
+try_count_while cond blines lines li:
+    if _sov_list_len(blines) is not 3
+        return 0
+    c0: strip(cops(cond))
+    p: look(c0, " < ")
+    if p < 0
+        return 0
+    iv: repl(strip(cut(c0, 0, p)), " ", "_")
+    lim0: strip(cut(c0, p + 3, length(c0)))
+    lim: repl(lim0, " ", "_")
+    if plain_name(iv) is 0
+        return 0
+    l1: strip(_sov_list_get(blines, 0))
+    l2: strip(_sov_list_get(blines, 1))
+    l3: strip(_sov_list_get(blines, 2))
+    inc_r: join(iv, ": ")
+    inc_b: join(iv, " + 1")
+    if _sov_str_eq(l3, join(inc_r, inc_b)) is 0
+        return 0
+    if _sov_starts_with(l1, "if peek_byte(") is 0
+        return 0
+    if sg_match(l1, length(l1) - 6, ") is 1") is 0
+        return 0
+    inn: cut(l1, 13, length(l1) - 6)
+    c1: look(inn, ",")
+    if c1 < 0
+        return 0
+    base: repl(strip(cut(inn, 0, c1)), " ", "_")
+    idx2: repl(strip(cut(inn, c1 + 1, length(inn))), " ", "_")
+    if _sov_str_eq(idx2, iv) is 0
+        return 0
+    if plain_name(base) is 0
+        return 0
+    tc2: look(l2, ": ")
+    if tc2 < 0
+        return 0
+    cn: repl(strip(cut(l2, 0, tc2)), " ", "_")
+    if _sov_str_eq(l2, join(cn, join(": ", join(cn, " + 1")))) is 0
+        return 0
+    if plain_name(cn) is 0
+        return 0
+    jj: li - 1
+    as long as jj >= 0
+        pl: strip(_sov_list_get(lines, jj))
+        if length(pl) > 0
+            if peek_byte(pl, 0) is not 35
+                if _sov_str_eq(pl, join(iv, ": 0")) is 0
+                    return 0
+                jj: jj - 1
+                as long as jj >= 0
+                    pl2: strip(_sov_list_get(lines, jj))
+                    if length(pl2) > 0
+                        if peek_byte(pl2, 0) is not 35
+                            if _sov_str_eq(pl2, join(cn, ": 0")) is 0
+                                return 0
+                            jj: 0 - 1
+                jj: 0 - 2
+        jj: jj - 1
+    cflush_all()
+    loadv(base)
+    mov_rdi_rax()
+    if is_imm(lim) is 1
+        rax_imm(num_of(lim))
+    if not
+        expr(lim0)
+    mov_rsi_rax()
+    chk_mem(1)
+    lv: 0
+    if is_imm(lim) is 1
+        lv: num_of(lim)
+    if lv is 0
+        lv: lim_source_const(lines, li, lim)
+    sse: 0
+    if lv > 15
+        if lv % 16 is 0
+            sse: 1
+    if sse is 1
+        rax_imm(72340172838076673)
+        emit(102)
+        emit(72)
+        emit(15)
+        emit(110)
+        emit(200)
+        emit(102)
+        emit(15)
+        emit(108)
+        emit(201)
+        emit(102)
+        emit(15)
+        emit(239)
+        emit(237)
+        emit(102)
+        emit(15)
+        emit(239)
+        emit(255)
+        emit(72)
+        emit(137)
+        emit(241)
+        align32()
+        st3: here()
+        emit(243)
+        emit(15)
+        emit(111)
+        emit(7)
+        emit(102)
+        emit(15)
+        emit(116)
+        emit(193)
+        emit(102)
+        emit(15)
+        emit(246)
+        emit(197)
+        emit(102)
+        emit(15)
+        emit(212)
+        emit(248)
+        emit(72)
+        emit(131)
+        emit(199)
+        emit(16)
+        emit(72)
+        emit(131)
+        emit(233)
+        emit(16)
+        jb3: jne()
+        put(jb3, st3 - (jb3 + 4))
+        if jb3 < 0
+            print "PN2475"
+        emit(102)
+        emit(72)
+        emit(15)
+        emit(126)
+        emit(250)
+        emit(102)
+        emit(15)
+        emit(112)
+        emit(255)
+        emit(14)
+        emit(102)
+        emit(72)
+        emit(15)
+        emit(126)
+        emit(249)
+        emit(72)
+        emit(1)
+        emit(202)
+        emit(72)
+        emit(137)
+        emit(208)
+        emit(72)
+        emit(199)
+        emit(193)
+        emit(255)
+        emit(0)
+        emit(0)
+        emit(0)
+        emit(49)
+        emit(210)
+        emit(72)
+        emit(247)
+        emit(241)
+    if not
+        emit(72)
+        emit(137)
+        emit(241)
+        xor_rax()
+        align32()
+        stc2: here()
+        emit(128)
+        emit(63)
+        emit(1)
+        emit(15)
+        emit(148)
+        emit(194)
+        emit(15)
+        emit(182)
+        emit(210)
+        emit(72)
+        emit(1)
+        emit(208)
+        emit(72)
+        emit(131)
+        emit(199)
+        emit(1)
+        emit(72)
+        emit(131)
+        emit(233)
+        emit(1)
+        jb2: jne()
+        put(jb2, stc2 - (jb2 + 4))
+        if jb2 < 0
+            print "PN2485"
+    storev(cn)
+    emit(72)
+    emit(137)
+    emit(240)
+    storev(iv)
+    return 1
+try_tail_call line:
+    # self tail-call: "return F(a, b, ...)" with F the current function.
+    # arguments (imm/plain-name only, no side effects) are staged through
+    # scratch registers into the parameter homes, then control jumps back
+    # to the top of the body (tco_entry).  The frame, saved registers and
+    # stack depth are untouched, so the eventual real return restores the
+    # original caller's state.  Bail when a try/except frame is open (its
+    # handler chain would leak), in canary mode, or in the entry function.
+    if fw_on is 1
+        return 0
+    if in_entry_now is 1
+        return 0
+    if tco_entry is 0
+        return 0
+    tci9: 0
+    as long as peek_byte(line, tci9) is 32
+        tci9: tci9 + 1
+    if peek_byte(line, tci9) is not 114
+        return 0
+    if peek_byte(line, tci9 + 1) is not 101
+        return 0
+    if peek_byte(line, tci9 + 2) is not 116
+        return 0
+    if peek_byte(line, tci9 + 3) is not 117
+        return 0
+    if peek_byte(line, tci9 + 4) is not 114
+        return 0
+    if peek_byte(line, tci9 + 5) is not 110
+        return 0
+    if peek_byte(line, tci9 + 6) is not 32
+        return 0
+    tcln: length(line)
+    if peek_byte(line, tcln - 1) is not 41
+        return 0
+    tclp: cfind1(line, 40)
+    if tclp < tci9 + 8
+        return 0
+    tcns: tci9 + 7
+    as long as peek_byte(line, tcns) is 32
+        tcns: tcns + 1
+    tcne: tclp
+    tcd9: 1
+    as long as tcd9 is 1
+        if tcne <= tcns
+            tcd9: 0
+        if tcd9 is 1
+            if peek_byte(line, tcne - 1) is 32
+                tcne: tcne - 1
+            if not
+                tcd9: 0
+    tcnl: length(tco_nm)
+    tcok: 0
+    if tcne - tcns is tcnl
+        tcok: 1
+        tck9: 0
+        as long as tck9 < tcnl
+            tcb1: peek_byte(line, tcns + tck9)
+            tcb2: peek_byte(tco_nm, tck9)
+            if tcb1 is 32
+                tcb1: 95
+            if tcb2 is 32
+                tcb2: 95
+            if tcb1 is not tcb2
+                tcok: 0
+            tck9: tck9 + 1
+    if tcok is 0
+        return 0
+    tca: split_args(cut(line, tclp + 1, tcln - 1), _sov_list_new())
+    tcac: _sov_list_len(tca)
+    tcpc: _sov_list_len(tco_ps)
+    if tcac is not tcpc
+        return 0
+    if tcac > 4
+        return 0
+    if tcac is 0
+        return 0
+    tcai: 0
+    as long as tcai < tcac
+        tcag: repl(strip(peek_i64(tca, 16 + tcai * 8)), " ", "_")
+        dummy: _sov_list_set(tca, tcai, tcag)
+        if is_imm(tcag) is 0
+            if plain_name(tcag) is 0
+                return 0
+        tcai: tcai + 1
+    tcbi: 0
+    as long as tcbi < _sov_list_len(bk)
+        tckk: peek_i64(bk, 16 + tcbi * 8)
+        if tckk is kid_try
+            return 0
+        if tckk is kid_except
+            return 0
+        tcbi: tcbi + 1
+    cflush_all()
+    tc_sc: 0
+
+    tcai: 0
+    as long as tcai < tcac
+        tcag: peek_i64(tca, 16 + tcai * 8)
+        tc_pn: repl(peek_i64(tco_ps, 16 + tcai * 8), " ", "_")
+        tc_isparm: 0
+        tc_pj: 0
+        as long as tc_pj < tcpc
+            if _sov_str_eq(tcag, repl(peek_i64(tco_ps, 16 + tc_pj * 8), " ", "_")) is 1
+                tc_isparm: 1
+            tc_pj: tc_pj + 1
+        if tc_isparm is 1
+            if _sov_str_eq(tcag, tc_pn) is 0
+                loadv(tcag)
+                if tc_sc is 0
+                    emit3(73, 137, 194)
+                if tc_sc is 1
+                    emit3(73, 137, 195)
+                if tc_sc is 2
+                    emit3(72, 137, 193)
+                if tc_sc is 3
+                    emit3(72, 137, 198)
+                dummy: _sov_list_set(tca, tcai, 0 - 100 - tc_sc)
+                tc_sc: tc_sc + 1
+        tcai: tcai + 1
+    tcai: 0
+    as long as tcai < tcac
+        tcag: peek_i64(tca, 16 + tcai * 8)
+        tc_pn: repl(peek_i64(tco_ps, 16 + tcai * 8), " ", "_")
+        if tcag < 0
+            tcsc2: 0 - 100 - tcag
+            if tcsc2 is 0
+                emit3(76, 137, 208)
+            if tcsc2 is 1
+                emit3(76, 137, 216)
+            if tcsc2 is 2
+                emit3(72, 137, 200)
+            if tcsc2 is 3
+                emit3(72, 137, 240)
+            storev(tc_pn)
+        if not
+            if _sov_str_eq(tcag, tc_pn) is 0
+                if is_imm(tcag) is 1
+                    rax_imm(num_of(tcag))
+                if not
+                    loadv(tcag)
+                storev(tc_pn)
+        tcai: tcai + 1
+    emit(233)
+    tjb: here()
+    emit4(0)
+    put(tjb, tco_entry - (tjb + 4))
+    return 1
+
+fdx_idxoff s want:
+    # constant offset in an `iv * 8`-shaped index (spaces already mapped
+    # to _), or -1 when the shape is anything else.
+    if _sov_str_eq(s, want) is 1 -> return 0
+    p: look(s, "_+_")
+    if p < 0 -> return 0 - 1
+    lf: cut(s, 0, p)
+    rt: cut(s, p + 3, length(s))
+    if _sov_str_eq(rt, want) is 1
+        if is_imm(lf) is 1 -> return num_of(lf)
+    if _sov_str_eq(lf, want) is 1
+        if is_imm(rt) is 1 -> return num_of(rt)
+    return 0 - 1
+
+try_fp_dot cond blines lines li:
+    # bit-exact FP reduction loop: iv from 0 while iv < lim with body
+    #   S: f64_add(S, f64_mul(peek_i64(A, iv * 8), peek_i64(B, iv * 8)))
+    #   iv: iv + 1
+    # accumulator lives in xmm2, pointers r8/r9, counter r11, bound r10.
+    if has_vm is 0
+        return 0
+    if leaf8 is 1
+        return 0
+    if _sov_list_len(blines) is not 2
+        return 0
+    c0: strip(cops(cond))
+    p: look(c0, " < ")
+    if p < 0
+        return 0
+    iv: repl(strip(cut(c0, 0, p)), " ", "_")
+    lim0: strip(cut(c0, p + 3, length(c0)))
+    lim: repl(lim0, " ", "_")
+    if plain_name(iv) is 0
+        return 0
+    ivsl: lsh_find_s(iv)
+    if ivsl < 0
+        return 0
+    limn: 0
+    if is_imm(lim) is 0
+        if plain_name(lim) is 0
+            return 0
+        limn: 1
+    l1: strip(_sov_list_get(blines, 0))
+    l2: strip(_sov_list_get(blines, 1))
+    if _sov_str_eq(l2, join(iv, join(": ", join(iv, " + 1")))) is 0
+        return 0
+    tc: look(l1, ": ")
+    if tc < 1
+        return 0
+    snm: repl(strip(cut(l1, 0, tc)), " ", "_")
+    if plain_name(snm) is 0
+        return 0
+    rhs: strip(cut(l1, tc + 2, length(l1)))
+    if _sov_starts_with(rhs, "f64_add(") is 0
+        return 0
+    if peek_byte(rhs, length(rhs) - 1) is not 41
+        return 0
+    al: split_args(cut(rhs, 8, length(rhs) - 1), _sov_list_new())
+    if _sov_list_len(al) is not 2
+        return 0
+    g0: repl(strip(peek_i64(al, 16)), " ", "_")
+    g1: repl(strip(peek_i64(al, 24)), " ", "_")
+    mm: blank
+    if _sov_str_eq(g0, snm) is 1
+        mm: strip(peek_i64(al, 24))
+    if _sov_str_eq(g1, snm) is 1
+        mm: strip(peek_i64(al, 16))
+    if length(mm) < 10
+        return 0
+    if _sov_starts_with(mm, "f64_mul(") is 0
+        return 0
+    if peek_byte(mm, length(mm) - 1) is not 41
+        return 0
+    ml: split_args(cut(mm, 8, length(mm) - 1), _sov_list_new())
+    if _sov_list_len(ml) is not 2
+        return 0
+    pka: strip(peek_i64(ml, 16))
+    pkb: strip(peek_i64(ml, 24))
+    if _sov_starts_with(pka, "peek_i64(") is 0
+        return 0
+    if _sov_starts_with(pkb, "peek_i64(") is 0
+        return 0
+    ka: split_args(cut(pka, 9, length(pka) - 1), _sov_list_new())
+    kb: split_args(cut(pkb, 9, length(pkb) - 1), _sov_list_new())
+    if _sov_list_len(ka) is not 2
+        return 0
+    if _sov_list_len(kb) is not 2
+        return 0
+    anm: repl(strip(peek_i64(ka, 16)), " ", "_")
+    bnm: repl(strip(peek_i64(kb, 16)), " ", "_")
+    aidx: repl(strip(peek_i64(ka, 24)), " ", "_")
+    bidx: repl(strip(peek_i64(kb, 24)), " ", "_")
+    want_idx: join(iv, "_*_8")
+    # index may carry a constant header offset (Sovren arrays keep data
+    # at +16): accept `iv * 8`, `C + iv * 8`, `iv * 8 + C`; the offsets
+    # fold into the base pointers once, outside the loop.
+    fdx_ca: fdx_idxoff(aidx, want_idx)
+    fdx_cb: fdx_idxoff(bidx, want_idx)
+    if fdx_ca < 0
+        return 0
+    if fdx_cb < 0
+        return 0
+    if plain_name(anm) is 0
+        return 0
+    if plain_name(bnm) is 0
+        return 0
+    if _sov_str_eq(snm, iv) is 1
+        return 0
+    if _sov_str_eq(anm, iv) is 1
+        return 0
+    if _sov_str_eq(bnm, iv) is 1
+        return 0
+    if _sov_str_eq(snm, anm) is 1
+        return 0
+    if _sov_str_eq(snm, bnm) is 1
+        return 0
+    if limn is 1
+        if _sov_str_eq(lim, snm) is 1
+            return 0
+        if _sov_str_eq(lim, iv) is 1
+            return 0
+        if _sov_str_eq(lim, anm) is 1
+            return 0
+        if _sov_str_eq(lim, bnm) is 1
+            return 0
+    wind: sg_ind(_sov_list_get(lines, li))
+    jj: li - 1
+    got0: 0
+    seen: 0
+    as long as jj >= 0
+        if got0 is 0
+            rw: _sov_list_get(lines, jj)
+            pl: strip(rw)
+            if length(pl) > 0
+                if peek_byte(pl, 0) is not 35
+                    if sg_ind(rw) is not wind
+                        jj: 0 - 1
+                    if not
+                        seen: seen + 1
+                        if seen > 4
+                            jj: 0 - 1
+                        if not
+                            if _sov_str_eq(pl, join(iv, ": 0")) is 1
+                                got0: 1
+                            if not
+                                if _sov_starts_with(pl, join(iv, ": ")) is 1
+                                    jj: 0 - 1
+        jj: jj - 1
+    if got0 is 0
+        return 0
+    cflush_all()
+    loadv(anm)
+    emit3(73, 137, 192)
+    if fdx_ca > 0
+        emit3(73, 129, 192)
+        emit4(fdx_ca)
+    loadv(bnm)
+    emit3(73, 137, 193)
+    if fdx_cb > 0
+        emit3(73, 129, 193)
+        emit4(fdx_cb)
+    loadv(snm)
+    emit(102)
+    emit(72)
+    emit(15)
+    emit(110)
+    emit(208)
+    if limn is 1
+        loadv(lim)
+    if not
+        rax_imm(num_of(lim))
+    emit3(73, 137, 194)
+    emit3(77, 133, 210)
+    fdx_dsk: jle()
+    emit3(69, 49, 219)
+    fdx_ok: 0 - 1
+    if opt_fastfp is 1
+        # --fast-fp: reassociate into 4 accumulator chains (xmm3/4/5 plus
+        # xmm2 which starts from S); bits may differ from the ordered sum.
+        emit(102)
+        emit(15)
+        emit(239)
+        emit(219)
+        emit(102)
+        emit(15)
+        emit(239)
+        emit(228)
+        emit(102)
+        emit(15)
+        emit(239)
+        emit(237)
+        emit3(76, 137, 210)
+        emit(72)
+        emit(131)
+        emit(234)
+        emit(3)
+        align32()
+        fdx_h4: here()
+        fdx_k: 0
+        as long as fdx_k < 4
+            emit(242)
+            emit(67)
+            emit(15)
+            emit(16)
+            if fdx_k is 0
+                emit(4)
+                emit(216)
+            if not
+                emit(68)
+                emit(216)
+                emit(fdx_k * 8)
+            emit(242)
+            emit(67)
+            emit(15)
+            emit(89)
+            if fdx_k is 0
+                emit(4)
+                emit(217)
+            if not
+                emit(68)
+                emit(217)
+                emit(fdx_k * 8)
+            emit(242)
+            emit(15)
+            emit(88)
+            if fdx_k is 0
+                emit(216)
+            if fdx_k is 1
+                emit(224)
+            if fdx_k is 2
+                emit(232)
+            if fdx_k is 3
+                emit(208)
+            fdx_k: fdx_k + 1
+        emit(73)
+        emit(131)
+        emit(195)
+        emit(4)
+        emit3(73, 57, 211)
+        emit(15)
+        emit(140)
+        fdx_b4: here()
+        emit4(0)
+        put(fdx_b4, fdx_h4 - (fdx_b4 + 4))
+        # scalar tail into xmm2, then pairwise fold of the side chains
+        fdx_ht: here()
+        emit3(77, 57, 211)
+        fdx_je: jae()
+        emit(242)
+        emit(67)
+        emit(15)
+        emit(16)
+        emit(4)
+        emit(216)
+        emit(242)
+        emit(67)
+        emit(15)
+        emit(89)
+        emit(4)
+        emit(217)
+        emit(242)
+        emit(15)
+        emit(88)
+        emit(208)
+        emit3(73, 255, 195)
+        emit(233)
+        fdx_bb: here()
+        emit4(0)
+        put(fdx_bb, fdx_ht - (fdx_bb + 4))
+        patch(fdx_je)
+        emit(242)
+        emit(15)
+        emit(88)
+        emit(211)
+        emit(242)
+        emit(15)
+        emit(88)
+        emit(229)
+        emit(242)
+        emit(15)
+        emit(88)
+        emit(212)
+    if not
+        # speculative raw run first: spec-ordered plain mulsd/addsd
+        # (unrolled 4x, one serial chain in xmm2).  Every divergence
+        # between raw SSE and the library spec (NaN payload choice,
+        # SNaN quieting, generated-NaN bits) requires a NaN to appear
+        # in some product or partial sum -- and a NaN, once in the
+        # accumulator, never leaves.  So one comisd on the final sum
+        # decides: ordered => the raw walk was step-for-step the spec
+        # walk; unordered => rerun from the untouched memory sum with
+        # the canonicalizing loop below.  rcx = lim - 3 (group guard).
+        emit3(76, 137, 209)
+        emit3(72, 131, 233)
+        emit(3)
+        align32()
+        fdx_rh: here()
+        emit3(73, 57, 203)
+        fdx_rt: jae()
+        fdx_k2: 0
+        as long as fdx_k2 < 4
+            fdx_rg: fdx_k2
+            if fdx_k2 > 1
+                fdx_rg: fdx_k2 + 1
+            emit(242)
+            emit(67)
+            emit(15)
+            emit(16)
+            if fdx_k2 is 0
+                emit(4)
+                emit(216)
+            if not
+                emit(68 + fdx_rg * 8)
+                emit(216)
+                emit(fdx_k2 * 8)
+            emit(242)
+            emit(67)
+            emit(15)
+            emit(89)
+            if fdx_k2 is 0
+                emit(4)
+                emit(217)
+            if not
+                emit(68 + fdx_rg * 8)
+                emit(217)
+                emit(fdx_k2 * 8)
+            fdx_k2: fdx_k2 + 1
+        emit(242)
+        emit(15)
+        emit(88)
+        emit(208)
+        emit(242)
+        emit(15)
+        emit(88)
+        emit(209)
+        emit(242)
+        emit(15)
+        emit(88)
+        emit(211)
+        emit(242)
+        emit(15)
+        emit(88)
+        emit(212)
+        emit(73)
+        emit(131)
+        emit(195)
+        emit(4)
+        emit(233)
+        fdx_rb: here()
+        emit4(0)
+        put(fdx_rb, fdx_rh - (fdx_rb + 4))
+        patch(fdx_rt)
+        fdx_th: here()
+        emit3(77, 57, 211)
+        fdx_te: jae()
+        emit(242)
+        emit(67)
+        emit(15)
+        emit(16)
+        emit(4)
+        emit(216)
+        emit(242)
+        emit(67)
+        emit(15)
+        emit(89)
+        emit(4)
+        emit(217)
+        emit(242)
+        emit(15)
+        emit(88)
+        emit(208)
+        emit3(73, 255, 195)
+        emit(233)
+        fdx_tb: here()
+        emit4(0)
+        put(fdx_tb, fdx_th - (fdx_tb + 4))
+        patch(fdx_te)
+        emit3(102, 15, 47)
+        emit(210)
+        fdx_ok: jnp()
+        loadv(snm)
+        emit(102)
+        emit(72)
+        emit(15)
+        emit(110)
+        emit(208)
+        emit3(69, 49, 219)
+        # spec-ordered accumulation with the f64 library's NaN
+        # canonicalization applied to both the product and the sum
+        # (comisd+jnp fast paths; integer fixup reloads operand bits).
+        fdx_hd: here()
+        emit(242)
+        emit(67)
+        emit(15)
+        emit(16)
+        emit(4)
+        emit(216)
+        emit(242)
+        emit(67)
+        emit(15)
+        emit(89)
+        emit(4)
+        emit(217)
+        emit3(102, 15, 47)
+        emit(192)
+        fdx_o1: jnp()
+        emit3(75, 139, 60)
+        emit(216)
+        emit3(75, 139, 52)
+        emit(217)
+        emit_f64_canon_slow()
+        emit3(102, 72, 15)
+        emit(110)
+        emit(192)
+        patch(fdx_o1)
+        emit3(15, 40, 202)
+        emit(242)
+        emit(15)
+        emit(88)
+        emit(208)
+        emit3(102, 15, 47)
+        emit(210)
+        fdx_o2: jnp()
+        emit3(102, 72, 15)
+        emit(126)
+        emit(207)
+        emit3(102, 72, 15)
+        emit(126)
+        emit(198)
+        emit_f64_canon_slow()
+        emit3(102, 72, 15)
+        emit(110)
+        emit(208)
+        patch(fdx_o2)
+        emit3(73, 255, 195)
+        emit3(77, 57, 211)
+        emit(15)
+        emit(140)
+        fdx_bk: here()
+        emit4(0)
+        put(fdx_bk, fdx_hd - (fdx_bk + 4))
+    if fdx_ok > 0 - 1
+        patch(fdx_ok)
+    emit(102)
+    emit(72)
+    emit(15)
+    emit(126)
+    emit(208)
+    storev(snm)
+    emit3(76, 137, 216)
+    storev(iv)
+    fdx_ejx: jmp()
+    patch(fdx_dsk)
+    patch(fdx_ejx)
+    return 1
+
+licm_out: 0
+licm_sln: 0
+licm_bad: 0
+licm_reads: 0
+
+licm_in set nm:
+    n: _sov_list_len(set)
+    i: 0
+    as long as i < n
+        if same(peek_i64(set, 16 + i * 8), nm) is 1
+            return 1
+        i: i + 1
+    return 0
+
+licm_add set nm:
+    if licm_in(set, nm) is 0
+        set: _sov_list_add(set, nm)
+    return set
+
+licm_pure nm:
+    if licm_udef(nm) is 1
+        return 0
+    if same(nm, "peek_i64") is 1
+        return 1
+    if same(nm, "peek_byte") is 1
+        return 1
+    if same(nm, "peek_u8") is 1
+        return 1
+    if same(nm, "peek_i32") is 1
+        return 1
+    if same(nm, "f64_add") is 1
+        return 1
+    if same(nm, "f64_mul") is 1
+        return 1
+    if same(nm, "f64_sub") is 1
+        return 1
+    if same(nm, "f64_div") is 1
+        return 1
+    if same(nm, "f64_sqrt") is 1
+        return 1
+    if same(nm, "f64_from_i64") is 1
+        return 1
+    if same(nm, "f64_to_i64") is 1
+        return 1
+    if same(nm, "f64_cmp") is 1
+        return 1
+    if same(nm, "f64_from_frac") is 1
+        return 1
+    if same(nm, "_sov_list_get") is 1
+        return 1
+    if same(nm, "_sov_list_len") is 1
+        return 1
+    if same(nm, "band") is 1
+        return 1
+    if same(nm, "bor") is 1
+        return 1
+    if same(nm, "bxor") is 1
+        return 1
+    if same(nm, "shl") is 1
+        return 1
+    if same(nm, "shr") is 1
+        return 1
+    return 0
+
+licm_scan_expr e:
+    # collect identifier reads into licm_reads; set licm_bad on any
+    # non-whitelisted call or string literal.
+    n: length(e)
+    i: 0
+    as long as i < n
+        b: peek_byte(e, i)
+        if b is 34
+            licm_bad: 1
+            return
+        idc: 0
+        if b > 64
+            if b < 91
+                idc: 1
+        if b > 96
+            if b < 123
+                idc: 1
+        if b is 95
+            idc: 1
+        if idc is 1
+            j: i + 1
+            dn: 0
+            as long as dn is 0
+                if j >= n
+                    dn: 1
+                if not
+                    c: peek_byte(e, j)
+                    okc: 0
+                    if c > 64
+                        if c < 91
+                            okc: 1
+                    if c > 96
+                        if c < 123
+                            okc: 1
+                    if c > 47
+                        if c < 58
+                            okc: 1
+                    if c is 95
+                        okc: 1
+                    if okc is 1
+                        j: j + 1
+                    if not
+                        dn: 1
+            nm: cut(e, i, j)
+            if j < n
+                if peek_byte(e, j) is 40
+                    if licm_pure(nm) is 0
+                        licm_bad: 1
+                        return
+                    i: j
+                if not
+                    licm_reads: licm_add(licm_reads, nm)
+                    i: j
+            if not
+                licm_reads: licm_add(licm_reads, nm)
+                i: j
+        if not
+            i: i + 1
+
+licm_lhs s:
+    # stripped assignment LHS name, or "" when not a plain `name: expr`.
+    p: look(s, ":")
+    if p < 1
+        return ""
+    if peek_byte(s, p + 1) is not 32
+        return ""
+    nm: cut(s, 0, p)
+    if plain_name(nm) is 0
+        return ""
+    if is_imm(nm) is 1
+        return ""
+    return nm
+
+licm_whdr s:
+    # condition offset (>0) when s (stripped) is a while header, else 0.
+    if look(s, "as long as ") is 0
+        return 11
+    if look(s, "while ") is 0
+        return 6
+    if look(s, "do while ") is 0
+        return 9
+    return 0
+
+licm_one ls sln:
+    # Find one hoistable (init-run + invariant inner loop) inside an
+    # outer while; on success set licm_out/licm_sln and return 1.
+    n: _sov_list_len(ls)
+    k: 0
+    as long as k < n
+        lk: peek_i64(ls, 16 + k * 8)
+        spd: 0
+        fb: peek_byte(lk, 0)
+        as long as fb is 32
+            spd: spd + 1
+            fb: peek_byte(lk, spd)
+        wok: 0
+        ls_ok: 0
+        if fb is 97
+            ls_ok: 1
+        if fb is 119
+            ls_ok: 1
+        if fb is 100
+            ls_ok: 1
+        if ls_ok is 1
+            sk: strip_span(lk)
+            wok: licm_whdr(sk)
+        if wok > 0
+            ocond: cut(sk, wok, length(sk))
+            oi: indent_of(lk)
+            # outer body extent
+            b1: k + 1
+            dn: 0
+            as long as dn is 0
+                if b1 >= n
+                    dn: 1
+                if not
+                    if indent_of(peek_i64(ls, 16 + b1 * 8)) > oi
+                        b1: b1 + 1
+                    if not
+                        dn: 1
+            if b1 > k + 2
+                lbi: indent_of(peek_i64(ls, 16 + (k + 1) * 8))
+                # find inner header at body-base indent
+                h: 0 - 1
+                coff: 0
+                j: k + 1
+                as long as j < b1
+                    lj: peek_i64(ls, 16 + j * 8)
+                    if indent_of(lj) is lbi
+                        fb2: peek_byte(lj, lbi)
+                        w: 0
+                        if fb2 is 97
+                            w: licm_whdr(strip_span(lj))
+                        if fb2 is 119
+                            w: licm_whdr(strip_span(lj))
+                        if fb2 is 100
+                            w: licm_whdr(strip_span(lj))
+                        if w > 0
+                            h: j
+                            coff: w
+                            j: b1
+                    j: j + 1
+                if h > k + 1
+                    # inner body extent
+                    e: h + 1
+                    dn: 0
+                    as long as dn is 0
+                        if e >= b1
+                            dn: 1
+                        if not
+                            if indent_of(peek_i64(ls, 16 + e * 8)) > lbi
+                                e: e + 1
+                            if not
+                                dn: 1
+                    good: 0
+                    if e > h + 1
+                        if e < b1
+                            good: licm_check(ls, k, ocond, h, coff, e, b1)
+                    if good is 1
+                        # splice: [0..k) + guard-if + [k+1..e) + [k] +
+                        #          [e..n)   (stmt_lns moved in parallel)
+                        gsp: ""
+                        i: 0
+                        as long as i < oi
+                            gsp: str_cat(gsp, " ")
+                            i: i + 1
+                        gl: str_cat(gsp, str_cat("if ", ocond))
+                        nl: _sov_list_new()
+                        ns: _sov_list_new()
+                        i: 0
+                        as long as i < k
+                            nl: _sov_list_add(nl, peek_i64(ls, 16 + i * 8))
+                            ns: _sov_list_add(ns, peek_i64(sln, 16 + i * 8))
+                            i: i + 1
+                        nl: _sov_list_add(nl, gl)
+                        ns: _sov_list_add(ns, peek_i64(sln, 16 + k * 8))
+                        i: k + 1
+                        as long as i < e
+                            nl: _sov_list_add(nl, peek_i64(ls, 16 + i * 8))
+                            ns: _sov_list_add(ns, peek_i64(sln, 16 + i * 8))
+                            i: i + 1
+                        nl: _sov_list_add(nl, lk)
+                        ns: _sov_list_add(ns, peek_i64(sln, 16 + k * 8))
+                        i: e
+                        as long as i < n
+                            nl: _sov_list_add(nl, peek_i64(ls, 16 + i * 8))
+                            ns: _sov_list_add(ns, peek_i64(sln, 16 + i * 8))
+                            i: i + 1
+                        licm_out: nl
+                        licm_sln: ns
+                        return 1
+        k: k + 1
+    return 0
+
+licm_check ls k ocond h coff e b1:
+    # conservatism core. ls body region (k+1..b1): pre (k+1..h),
+    # inner (h..e), post (e..b1) -- all straight-line plain assigns,
+    # pure calls only, no stores, defs/uses disjoint as required.
+    lbi: indent_of(peek_i64(ls, 16 + (k + 1) * 8))
+    licm_bad: 0
+    pre_vars: _sov_list_new()
+    ina: _sov_list_new()
+    posta: _sov_list_new()
+    hlhs: _sov_list_new()
+    hexpr: _sov_list_new()
+    # outer cond: no calls at all
+    if look(ocond, "(") > 0 - 1
+        return 0
+    licm_reads: _sov_list_new()
+    dummy: licm_scan_expr(ocond)
+    oreads: licm_reads
+    if licm_bad is 1
+        return 0
+    # pass 1: shapes + assigned sets; record pre statements
+    i: k + 1
+    as long as i < h
+        li_t: peek_i64(ls, 16 + i * 8)
+        s: strip_span(li_t)
+        if length(s) is 0
+            return 0
+        if peek_byte(s, 0) is 35
+            return 0
+        if indent_of(li_t) is not lbi
+            return 0
+        nm: licm_lhs(s)
+        if length(nm) is 0
+            return 0
+        pre_vars: licm_add(pre_vars, nm)
+        hlhs: _sov_list_add(hlhs, nm)
+        hexpr: _sov_list_add(hexpr, cut(s, look(s, ":") + 2, length(s)))
+        i: i + 1
+    sh: strip_span(peek_i64(ls, 16 + h * 8))
+    icond: cut(sh, coff, length(sh))
+    i: h + 1
+    if i < e
+        ii: indent_of(peek_i64(ls, 16 + i * 8))
+    as long as i < e
+        li_t: peek_i64(ls, 16 + i * 8)
+        s: strip_span(li_t)
+        if length(s) is 0
+            return 0
+        if peek_byte(s, 0) is 35
+            return 0
+        if indent_of(li_t) is not ii
+            return 0
+        nm: licm_lhs(s)
+        if length(nm) is 0
+            return 0
+        ina: licm_add(ina, nm)
+        i: i + 1
+    licm_reads: _sov_list_new()
+    i: e
+    as long as i < b1
+        li_t: peek_i64(ls, 16 + i * 8)
+        s: strip_span(li_t)
+        if length(s) is 0
+            return 0
+        if peek_byte(s, 0) is 35
+            return 0
+        if indent_of(li_t) is not lbi
+            return 0
+        nm: licm_lhs(s)
+        if length(nm) is 0
+            return 0
+        posta: licm_add(posta, nm)
+        dummy: licm_scan_expr(cut(s, look(s, ":") + 2, length(s)))
+        if licm_bad is 1
+            return 0
+        i: i + 1
+    # every inner-assigned name must be re-initialized in pre
+    i: 0
+    as long as i < _sov_list_len(ina)
+        if licm_in(pre_vars, peek_i64(ina, 16 + i * 8)) is 0
+            return 0
+        i: i + 1
+    # post must not assign any hoisted-region name
+    i: 0
+    as long as i < _sov_list_len(posta)
+        nm: peek_i64(posta, 16 + i * 8)
+        if licm_in(pre_vars, nm) is 1
+            return 0
+        i: i + 1
+    # outer cond must not read any hoisted-region name
+    i: 0
+    as long as i < _sov_list_len(oreads)
+        nm: peek_i64(oreads, 16 + i * 8)
+        if licm_in(pre_vars, nm) is 1
+            return 0
+        i: i + 1
+    # pass 2: ordered reads in pre.  A read of a hoisted-region name
+    # before its defining statement is a cross-iteration input: bail.
+    # Reads of names assigned in post are also iteration-varying: bail.
+    defd: _sov_list_new()
+    licm_reads: _sov_list_new()
+    i: 0
+    as long as i < _sov_list_len(hexpr)
+        b4: _sov_list_len(licm_reads)
+        dummy: licm_scan_expr(peek_i64(hexpr, 16 + i * 8))
+        if licm_bad is 1
+            return 0
+        j: b4
+        as long as j < _sov_list_len(licm_reads)
+            nm: peek_i64(licm_reads, 16 + j * 8)
+            if licm_in(posta, nm) is 1
+                return 0
+            if licm_in(pre_vars, nm) is 1
+                if licm_in(defd, nm) is 0
+                    return 0
+            j: j + 1
+        defd: licm_add(defd, peek_i64(hlhs, 16 + i * 8))
+        i: i + 1
+    # inner cond + body reads: may use any pre-defined name, never posta
+    dummy: licm_scan_expr(icond)
+    if licm_bad is 1
+        return 0
+    i: h + 1
+    as long as i < e
+        s: strip_span(peek_i64(ls, 16 + i * 8))
+        dummy: licm_scan_expr(cut(s, look(s, ":") + 2, length(s)))
+        if licm_bad is 1
+            return 0
+        i: i + 1
+    i: 0
+    as long as i < _sov_list_len(licm_reads)
+        nm: peek_i64(licm_reads, 16 + i * 8)
+        if licm_in(posta, nm) is 1
+            return 0
+        i: i + 1
+    return 1
+
+licm2_found: 0
+licm2_text: 0
+licm2_pos: 0
+licm2_at: 0
+licm2_rhs: 0
+licm2_A: 0
+licm2_reads: 0
+
+licm_udef nm:
+    # 1 when nm is a task defined in the user's own source (so a
+    # whitelisted library name may have been redefined with effects).
+    ui: nm_lookup(nm)
+    if ui < 0
+        return 0
+    return peek_i64(task_user, 16 + ui * 8)
+
+licm_pure2 nm:
+    if licm_pure(nm) is 1
+        return 1
+    if licm_udef(nm) is 1
+        return 0
+    if same(nm, "str_find") is 1
+        return 1
+    if same(nm, "str_len") is 1
+        return 1
+    if same(nm, "str_eq") is 1
+        return 1
+    if same(nm, "str_starts") is 1
+        return 1
+    if same(nm, "str_ends") is 1
+        return 1
+    if same(nm, "_sov_find_text") is 1
+        return 1
+    if same(nm, "_sov_strlen") is 1
+        return 1
+    if same(nm, "_sov_str_eq") is 1
+        return 1
+    if same(nm, "_sov_starts_with") is 1
+        return 1
+    if same(nm, "length") is 1
+        return 1
+    return 0
+
+licm2_match e p:
+    # index of the close paren matching the '(' at p (quote-aware), -1.
+    n: length(e)
+    d: 0
+    i: p
+    as long as i < n
+        b: peek_byte(e, i)
+        if b is 34
+            i: i + 1
+            dn: 0
+            as long as dn is 0
+                if i >= n
+                    dn: 1
+                if not
+                    c: peek_byte(e, i)
+                    if c is 92
+                        i: i + 2
+                    if not
+                        if c is 34
+                            i: i + 1
+                            dn: 1
+                        if not
+                            i: i + 1
+        if not
+            if b is 40
+                d: d + 1
+                i: i + 1
+            if not
+                if b is 41
+                    d: d - 1
+                    if d is 0
+                        return i
+                    i: i + 1
+                if not
+                    i: i + 1
+    return 0 - 1
+
+licm2_argreads e:
+    # collect identifier reads in e into licm2_reads (quote-aware);
+    # licm_bad on any non-pure callee.
+    n: length(e)
+    i: 0
+    as long as i < n
+        b: peek_byte(e, i)
+        if b is 34
+            i: i + 1
+            dn: 0
+            as long as dn is 0
+                if i >= n
+                    dn: 1
+                if not
+                    c: peek_byte(e, i)
+                    if c is 92
+                        i: i + 2
+                    if not
+                        if c is 34
+                            i: i + 1
+                            dn: 1
+                        if not
+                            i: i + 1
+        if not
+            idc: 0
+            if b > 64
+                if b < 91
+                    idc: 1
+            if b > 96
+                if b < 123
+                    idc: 1
+            if b is 95
+                idc: 1
+            if idc is 1
+                j: i + 1
+                dn: 0
+                as long as dn is 0
+                    if j >= n
+                        dn: 1
+                    if not
+                        c: peek_byte(e, j)
+                        okc: 0
+                        if c > 64
+                            if c < 91
+                                okc: 1
+                        if c > 96
+                            if c < 123
+                                okc: 1
+                        if c > 47
+                            if c < 58
+                                okc: 1
+                        if c is 95
+                            okc: 1
+                        if okc is 1
+                            j: j + 1
+                        if not
+                            dn: 1
+                nm: cut(e, i, j)
+                if j < n
+                    if peek_byte(e, j) is 40
+                        if licm_pure2(nm) is 0
+                            licm_bad: 1
+                            return
+                        i: j
+                    if not
+                        licm2_reads: licm_add(licm2_reads, nm)
+                        i: j
+                if not
+                    licm2_reads: licm_add(licm2_reads, nm)
+                    i: j
+            if not
+                i: i + 1
+
+licm2_scan e:
+    # quote-aware scan of one RHS: licm_bad on any non-pure callee;
+    # record the first pure call whose subtree reads avoid licm2_A.
+    n: length(e)
+    i: 0
+    as long as i < n
+        b: peek_byte(e, i)
+        if b is 34
+            i: i + 1
+            dn: 0
+            as long as dn is 0
+                if i >= n
+                    dn: 1
+                if not
+                    c: peek_byte(e, i)
+                    if c is 92
+                        i: i + 2
+                    if not
+                        if c is 34
+                            i: i + 1
+                            dn: 1
+                        if not
+                            i: i + 1
+        if not
+            idc: 0
+            if b > 64
+                if b < 91
+                    idc: 1
+            if b > 96
+                if b < 123
+                    idc: 1
+            if b is 95
+                idc: 1
+            if idc is 1
+                j: i + 1
+                dn: 0
+                as long as dn is 0
+                    if j >= n
+                        dn: 1
+                    if not
+                        c: peek_byte(e, j)
+                        okc: 0
+                        if c > 64
+                            if c < 91
+                                okc: 1
+                        if c > 96
+                            if c < 123
+                                okc: 1
+                        if c > 47
+                            if c < 58
+                                okc: 1
+                        if c is 95
+                            okc: 1
+                        if okc is 1
+                            j: j + 1
+                        if not
+                            dn: 1
+                nm: cut(e, i, j)
+                if j < n
+                    if peek_byte(e, j) is 40
+                        if licm_pure2(nm) is 0
+                            licm_bad: 1
+                            return
+                        if licm2_found is 0
+                            m: licm2_match(e, j)
+                            if m > 0 - 1
+                                licm2_reads: _sov_list_new()
+                                dummy: licm2_argreads(cut(e, j + 1, m))
+                                if licm_bad is 1
+                                    return
+                                bad2: 0
+                                q: 0
+                                as long as q < _sov_list_len(licm2_reads)
+                                    if licm_in(licm2_A, peek_i64(licm2_reads, 16 + q * 8)) is 1
+                                        bad2: 1
+                                    q: q + 1
+                                if bad2 is 0
+                                    licm2_found: 1
+                                    licm2_pos: i
+                                    licm2_text: cut(e, i, m + 1)
+                        i: j
+                    if not
+                        i: j
+                if not
+                    i: j
+            if not
+                i: i + 1
+
+licm2_check ls k ocond b1:
+    # straight-line body, pure calls only; sets licm2_at/pos/text.
+    lbi: indent_of(peek_i64(ls, 16 + (k + 1) * 8))
+    licm_bad: 0
+    if look(ocond, "(") > 0 - 1
+        return 0
+    licm2_A: _sov_list_new()
+    hidx: _sov_list_new()
+    hrhs: _sov_list_new()
+    i: k + 1
+    as long as i < b1
+        li_t: peek_i64(ls, 16 + i * 8)
+        s: strip_span(li_t)
+        if length(s) is 0
+            return 0
+        if peek_byte(s, 0) is 35
+            return 0
+        if indent_of(li_t) is not lbi
+            return 0
+        spc: 0
+        as long as peek_byte(li_t, spc) is 32
+            spc: spc + 1
+        if peek_byte(li_t, spc) is 9
+            return 0
+        nm: licm_lhs(s)
+        if length(nm) is 0
+            return 0
+        licm2_A: licm_add(licm2_A, nm)
+        hidx: _sov_list_add(hidx, i)
+        hrhs: _sov_list_add(hrhs, cut(s, look(s, ":") + 2, length(s)))
+        i: i + 1
+    licm2_found: 0
+    licm2_at: 0 - 1
+    i: 0
+    as long as i < _sov_list_len(hrhs)
+        dummy: licm2_scan(peek_i64(hrhs, 16 + i * 8))
+        if licm_bad is 1
+            return 0
+        if licm2_found is 1
+            if licm2_at < 0
+                licm2_at: peek_i64(hidx, 16 + i * 8)
+        i: i + 1
+    if licm2_found is 0
+        return 0
+    return 1
+
+licm2_fresh ls:
+    tmp: "licm_t"
+    n: _sov_list_len(ls)
+    try: 0
+    as long as try < 40
+        seen: 0
+        i: 0
+        as long as i < n
+            if look(peek_i64(ls, 16 + i * 8), tmp) > 0 - 1
+                seen: 1
+                i: n
+            i: i + 1
+        if seen is 0
+            return tmp
+        tmp: str_cat(tmp, "t")
+        try: try + 1
+    return ""
+
+licm2_one ls sln:
+    # hoist one invariant pure call out of an outer while.
+    n: _sov_list_len(ls)
+    k: 0
+    as long as k < n
+        lk: peek_i64(ls, 16 + k * 8)
+        spd: 0
+        fb: peek_byte(lk, 0)
+        as long as fb is 32
+            spd: spd + 1
+            fb: peek_byte(lk, spd)
+        wok: 0
+        ls_ok: 0
+        if fb is 97
+            ls_ok: 1
+        if fb is 119
+            ls_ok: 1
+        if fb is 100
+            ls_ok: 1
+        if ls_ok is 1
+            sk: strip_span(lk)
+            wok: licm_whdr(sk)
+        if wok > 0
+            ocond: cut(sk, wok, length(sk))
+            oi: indent_of(lk)
+            b1: k + 1
+            dn: 0
+            as long as dn is 0
+                if b1 >= n
+                    dn: 1
+                if not
+                    if indent_of(peek_i64(ls, 16 + b1 * 8)) > oi
+                        b1: b1 + 1
+                    if not
+                        dn: 1
+            if b1 > k + 1
+                if licm2_check(ls, k, ocond, b1) is 1
+                    tmp: licm2_fresh(ls)
+                    if length(tmp) > 0
+                        lbi: indent_of(peek_i64(ls, 16 + (k + 1) * 8))
+                        gsp: ""
+                        i: 0
+                        as long as i < oi
+                            gsp: str_cat(gsp, " ")
+                            i: i + 1
+                        gl: str_cat(gsp, str_cat("if ", ocond))
+                        hsp: ""
+                        i: 0
+                        as long as i < lbi
+                            hsp: str_cat(hsp, " ")
+                            i: i + 1
+                        hl: str_cat(hsp, str_cat(tmp, str_cat(": ", licm2_text)))
+                        # rewrite the containing statement positionally
+                        orig: peek_i64(ls, 16 + licm2_at * 8)
+                        px: 0
+                        as long as peek_byte(orig, px) is 32
+                            px: px + 1
+                        s: strip(orig)
+                        cp: look(s, ":") + 2 + licm2_pos
+                        ns1: str_cat(cut(s, 0, cp), str_cat(tmp, cut(s, cp + length(licm2_text), length(s))))
+                        modl: str_cat(cut(orig, 0, px), ns1)
+                        nl: _sov_list_new()
+                        ns: _sov_list_new()
+                        i: 0
+                        as long as i < k
+                            nl: _sov_list_add(nl, peek_i64(ls, 16 + i * 8))
+                            ns: _sov_list_add(ns, peek_i64(sln, 16 + i * 8))
+                            i: i + 1
+                        nl: _sov_list_add(nl, gl)
+                        ns: _sov_list_add(ns, peek_i64(sln, 16 + k * 8))
+                        nl: _sov_list_add(nl, hl)
+                        ns: _sov_list_add(ns, peek_i64(sln, 16 + licm2_at * 8))
+                        i: k
+                        as long as i < n
+                            if i is licm2_at
+                                nl: _sov_list_add(nl, modl)
+                            if not
+                                nl: _sov_list_add(nl, peek_i64(ls, 16 + i * 8))
+                            ns: _sov_list_add(ns, peek_i64(sln, 16 + i * 8))
+                            i: i + 1
+                        licm_out: nl
+                        licm_sln: ns
+                        return 1
+        k: k + 1
+    return 0
+
+inl2_names: 0
+fold_ok: 0
+inl2_params: 0
+inl2_bodies: 0
+inl2_gh: 0
+inl2_gcap: 0
+inl2_out: 0
+inl2_sln: 0
+inl2_reads: 0
+inl2_cl: 0
+inl2_cn: 0
+inl2_okm: 0
+inl2_okb: 0
+inl2_cnci: 1000000000
+inl2_mapf: 0
+inl2_mapt: 0
+inl2_ret: 0
+inl2_bad: 0
+
+inl2_idc b:
+    r: 0
+    if b > 64
+        if b < 91
+            r: 1
+    if b > 96
+        if b < 123
+            r: 1
+    if b is 95
+        r: 1
+    return r
+
+inl2_idc2 b:
+    r: inl2_idc(b)
+    if b > 47
+        if b < 58
+            r: 1
+    return r
+
+inl2_wop nm:
+    if _sov_str_eq(nm, "is") is 1
+        return 1
+    if _sov_str_eq(nm, "and") is 1
+        return 1
+    if _sov_str_eq(nm, "or") is 1
+        return 1
+    if _sov_str_eq(nm, "not") is 1
+        return 1
+    if _sov_str_eq(nm, "of") is 1
+        return 1
+    if _sov_str_eq(nm, "length") is 1
+        return 1
+    return 0
+
+inl2_purecall nm:
+    if _sov_str_eq(nm, "band") is 1
+        return 1
+    if _sov_str_eq(nm, "bor") is 1
+        return 1
+    if _sov_str_eq(nm, "bxor") is 1
+        return 1
+    if _sov_str_eq(nm, "bshl") is 1
+        return 1
+    if _sov_str_eq(nm, "bshr") is 1
+        return 1
+    if _sov_str_eq(nm, "bsar") is 1
+        return 1
+    if _sov_str_eq(nm, "bnot") is 1
+        return 1
+    if _sov_str_eq(nm, "wrap_add") is 1
+        return 1
+    if _sov_str_eq(nm, "wrap_sub") is 1
+        return 1
+    if _sov_str_eq(nm, "wrap_mul") is 1
+        return 1
+    if _sov_str_eq(nm, "peek_byte") is 1
+        return 1
+    if _sov_str_eq(nm, "peek_i64") is 1
+        return 1
+    if _sov_str_eq(nm, "peek_u8") is 1
+        return 1
+    if _sov_str_eq(nm, "char_at") is 1
+        return 1
+    if _sov_str_eq(nm, "_sov_strlen") is 1
+        return 1
+    if _sov_str_eq(nm, "_sov_str_eq") is 1
+        return 1
+    if _sov_str_eq(nm, "_sov_list_len") is 1
+        return 1
+    if _sov_str_eq(nm, "_sov_list_get") is 1
+        return 1
+    if _sov_str_eq(nm, "_sov_find_text") is 1
+        return 1
+    return 0
+
+inl2_scanreads e:
+    # collect value-identifier reads into inl2_reads (deduped via
+    # licm_add); any call or string literal sets inl2_bad.
+    n: length(e)
+    i: 0
+    as long as i < n
+        b: peek_byte(e, i)
+        if b is 34
+            inl2_bad: 1
+            return
+        if inl2_idc(b) is 1
+            j: i + 1
+            go: 1
+            as long as go is 1
+                if j >= n
+                    go: 0
+                if not
+                    if inl2_idc2(peek_byte(e, j)) is 1
+                        j: j + 1
+                    if not
+                        go: 0
+            nm: cut(e, i, j)
+            if j < n
+                if peek_byte(e, j) is 40
+                    if inl2_purecall(nm) is 0
+                        inl2_bad: 1
+                        return
+                    i: j
+                    nm: ""
+            if length(nm) > 0
+                inl2_reads: licm_add(inl2_reads, nm)
+            i: j
+        if not
+            i: i + 1
+
+inl2_rename e:
+    # word-substitute value identifiers via inl2_mapf -> inl2_mapt.
+    out: ""
+    n: length(e)
+    i: 0
+    as long as i < n
+        b: peek_byte(e, i)
+        if inl2_idc(b) is 1
+            j: i + 1
+            go: 1
+            as long as go is 1
+                if j >= n
+                    go: 0
+                if not
+                    if inl2_idc2(peek_byte(e, j)) is 1
+                        j: j + 1
+                    if not
+                        go: 0
+            nm: cut(e, i, j)
+            rep: nm
+            mi: 0
+            mgo: 1
+            as long as mgo is 1
+                if mi >= _sov_list_len(inl2_mapf)
+                    mgo: 0
+                if not
+                    if _sov_str_eq(peek_i64(inl2_mapf, 16 + mi * 8), nm) is 1
+                        rep: peek_i64(inl2_mapt, 16 + mi * 8)
+                        mgo: 0
+                    if not
+                        mi: mi + 1
+            out: str_cat(out, rep)
+            i: j
+        if not
+            out: str_cat(out, cut(e, i, i + 1))
+            i: i + 1
+    return out
+
+inl2_body_ok cb cps:
+    # pure straight-line callee? sets inl2_cl (params+locals),
+    # inl2_ret; validates reads against caller capture + globals.
+    nl: _sov_list_len(cb)
+    if nl < 1
+        return 0
+    if nl > 12
+        return 0
+    inl2_cl: _sov_list_new()
+    qi: 0
+    as long as qi < _sov_list_len(cps)
+        inl2_cl: licm_add(inl2_cl, peek_i64(cps, 16 + qi * 8))
+        qi: qi + 1
+    inl2_reads: _sov_list_new()
+    inl2_bad: 0
+    inif: 0
+    exprs: _sov_list_new()
+    k: 0
+    as long as k < nl
+        ln: peek_i64(cb, 16 + k * 8)
+        if cfind1(ln, 9) > 0 - 1
+            return 0
+        if cfind1(ln, 34) > 0 - 1
+            return 0
+        s: strip(ln)
+        if length(s) is 0
+            return 0
+        if peek_byte(s, 0) is 35
+            return 0
+        if k is nl - 1
+            if look(s, "return ") is not 0
+                return 0
+            inl2_ret: strip(cut(s, 7, length(s)))
+            if length(inl2_ret) is 0
+                return 0
+            exprs: _sov_list_add(exprs, inl2_ret)
+        if not
+            if look(s, "return") is 0
+                return 0
+            sp2: 0
+            as long as peek_byte(ln, sp2) is 32
+                sp2: sp2 + 1
+            nm: licm_lhs(s)
+            if length(nm) is 0
+                if sp2 is not 4
+                    return 0
+                if starts(s, "if ") is 0
+                    return 0
+                if _sov_str_eq(s, "if not") is 1
+                    return 0
+                exprs: _sov_list_add(exprs, cut(s, 3, length(s)))
+                inif: 1
+                nm: ""
+            if length(nm) > 0
+                if sp2 is 4
+                    inif: 0
+                if not
+                    if sp2 is not 8
+                        return 0
+                    if inif is 0
+                        return 0
+            if length(nm) > 0
+                if set_has(inl2_gh, inl2_gcap, nm) is 1
+                    return 0
+                inl2_cl: licm_add(inl2_cl, nm)
+                exprs: _sov_list_add(exprs, cut(s, look(s, ":") + 2, length(s)))
+        k: k + 1
+    k: 0
+    as long as k < _sov_list_len(exprs)
+        dummy: inl2_scanreads(peek_i64(exprs, 16 + k * 8))
+        if inl2_bad is 1
+            return 0
+        k: k + 1
+    ri: 0
+    as long as ri < _sov_list_len(inl2_reads)
+        rn: peek_i64(inl2_reads, 16 + ri * 8)
+        ok: 0
+        if licm_in(inl2_cl, rn) is 1
+            ok: 1
+        if inl2_wop(rn) is 1
+            ok: 1
+        if ok is 0
+            if set_has(inl2_gh, inl2_gcap, rn) is 1
+                if licm_in(inl2_cn, rn) is 0
+                    ok: 1
+        if ok is 0
+            return 0
+        ri: ri + 1
+    return 1
+
+inl2_callfind rhs:
+    # find the unique call in rhs. Returns b0 (>=0) or -1; sets
+    # globals inl2_cnm (name), inl2_cb1 (close-paren index).
+    n: length(rhs)
+    i: 0
+    found: 0
+    fb0: 0 - 1
+    as long as i < n
+        b: peek_byte(rhs, i)
+        if inl2_idc(b) is 1
+            j: i + 1
+            go: 1
+            as long as go is 1
+                if j >= n
+                    go: 0
+                if not
+                    if inl2_idc2(peek_byte(rhs, j)) is 1
+                        j: j + 1
+                    if not
+                        go: 0
+            iscl: 0
+            if j < n
+                if peek_byte(rhs, j) is 40
+                    iscl: 1
+            if iscl is 1
+                found: found + 1
+                if found > 1
+                    return 0 - 1
+                fb0: i
+                inl2_cnm: cut(rhs, i, j)
+                d: 1
+                q: j + 1
+                qp: 1
+                inw: 0 - 1
+                as long as qp is 1
+                    if q >= n
+                        qp: 0
+                    if not
+                        cb2: peek_byte(rhs, q)
+                        if cb2 is 40
+                            d: d + 1
+                        if cb2 is 41
+                            d: d - 1
+                            if d is 0
+                                inw: q
+                                qp: 0
+                        q: q + 1
+                if inw < 0
+                    return 0 - 1
+                inl2_cb1: inw
+                i: inw + 1
+            if not
+                i: j
+        if not
+            i: i + 1
+    return fb0
+
+inl2_cnm: 0
+inl2_cb1: 0
+
+inl2_one ls sln ci:
+    # inline the first eligible site; success sets inl2_out/inl2_sln.
+    n: _sov_list_len(ls)
+    k: 0
+    as long as k < n
+        lk: peek_i64(ls, 16 + k * 8)
+        s: strip_span(lk)
+        fire: 0
+        if _sov_find_text(s, "(") < 0
+            s: ""
+        nsp: 0
+        as long as peek_byte(lk, nsp) is 32
+            nsp: nsp + 1
+        if nsp >= 4
+            if peek_byte(lk, nsp) is not 32
+                if peek_byte(lk, nsp) is not 0
+                            dst: licm_lhs(s)
+                            kind: 0
+                            pre: ""
+                            rhs: ""
+                            if length(dst) > 0
+                                p: look(s, ":")
+                                rhs: strip(cut(s, p + 2, length(s)))
+                            if length(dst) is 0
+                                if starts(s, "return ") is 1
+                                    kind: 1
+                                    pre: "return "
+                                    rhs: strip(cut(s, 7, length(s)))
+                            if length(dst) is 0
+                                if kind is 0
+                                    if starts(s, "if ") is 1
+                                        kind: 2
+                                        pre: "if "
+                                        rhs: strip(cut(s, 3, length(s)))
+                            if length(rhs) > 0
+                                if cfind1(rhs, 34) > 0 - 1
+                                    rhs: ""
+                                if length(rhs) > 0
+                                    b0: inl2_callfind(rhs)
+                                    if b0 > 0 - 1
+                                        idx: nm_lookup(inl2_cnm)
+                                        if idx > 0 - 1
+                                            if idx is not ci
+                                                if peek_i64(task_user, 16 + idx * 8) is 1
+                                                    fire: 1
+        if fire is 1
+            if inl2_cnci is not ci
+                dummy: inl2_mkcn(ls, ci)
+                inl2_cnci: ci
+            cps: peek_i64(inl2_params, 16 + idx * 8)
+            cb: peek_i64(inl2_bodies, 16 + idx * 8)
+            lp: look(cut(rhs, b0, length(rhs)), "(") + b0
+            argtxt: cut(rhs, lp + 1, inl2_cb1)
+            argl: _sov_list_new()
+            argl: split_args(argtxt, argl)
+            argo: 1
+            if _sov_list_len(argl) is not _sov_list_len(cps)
+                argo: 0
+            ai: 0
+            as long as ai < _sov_list_len(argl)
+                av: strip(peek_i64(argl, 16 + ai * 8))
+                if is_imm(av) is 0
+                    if plain_name(av) is 0
+                        argo: 0
+                ai: ai + 1
+            if argo is 1
+                bok: 0
+                if _sov_list_len(inl2_okm) > idx
+                    if peek_i64(inl2_okb, 16 + idx * 8) is cb
+                        if peek_i64(inl2_okm, 16 + idx * 8) is not 9
+                            bok: peek_i64(inl2_okm, 16 + idx * 8)
+                if bok is 0
+                    bok: inl2_body_ok(cb, cps)
+                    if _sov_list_len(inl2_okm) > idx
+                        dummy: _sov_list_set(inl2_okm, idx, bok)
+                        dummy: _sov_list_set(inl2_okb, idx, cb)
+                if bok is 1
+                    dummy: inl2_body_ok(cb, cps)
+                    ind: cut(lk, 0, nsp)
+                    base: "zzln"
+                    btry: 0
+                    bseen: 1
+                    as long as bseen is 1
+                        bseen: 0
+                        i2bi: 0
+                        as long as i2bi < n
+                            if look(peek_i64(ls, 16 + i2bi * 8), base) > 0 - 1
+                                bseen: 1
+                            i2bi: i2bi + 1
+                        i2bi: 0
+                        as long as i2bi < _sov_list_len(cb)
+                            if look(peek_i64(cb, 16 + i2bi * 8), base) > 0 - 1
+                                bseen: 1
+                            i2bi: i2bi + 1
+                        if bseen is 1
+                            base: str_cat(base, "t")
+                            btry: btry + 1
+                            if btry > 40
+                                return 0
+                    inl2_mapf: _sov_list_new()
+                    inl2_mapt: _sov_list_new()
+                    gen: _sov_list_new()
+                    ai: 0
+                    as long as ai < _sov_list_len(cps)
+                        pn: peek_i64(cps, 16 + ai * 8)
+                        inl2_mapf: _sov_list_add(inl2_mapf, pn)
+                        inl2_mapt: _sov_list_add(inl2_mapt, strip(peek_i64(argl, 16 + ai * 8)))
+                        ai: ai + 1
+                    li2: 0
+                    as long as li2 < _sov_list_len(inl2_cl)
+                        cnm: peek_i64(inl2_cl, 16 + li2 * 8)
+                        if licm_in(inl2_mapf, cnm) is 0
+                            tn: str_cat(base, "_")
+                            tn: str_cat(tn, cnm)
+                            inl2_mapf: _sov_list_add(inl2_mapf, cnm)
+                            inl2_mapt: _sov_list_add(inl2_mapt, tn)
+                        li2: li2 + 1
+                    cbl: _sov_list_len(cb)
+                    i2bi: 0
+                    as long as i2bi < cbl - 1
+                        rl2: peek_i64(cb, 16 + i2bi * 8)
+                        sp3: 0
+                        as long as peek_byte(rl2, sp3) is 32
+                            sp3: sp3 + 1
+                        ex2: ""
+                        if sp3 > 4
+                            ex2: cut(rl2, 4, sp3)
+                        gen: _sov_list_add(gen, str_cat(ind, str_cat(ex2, inl2_rename(strip(rl2)))))
+                        i2bi: i2bi + 1
+                    rre: inl2_rename(inl2_ret)
+                    nrhs: rre
+                    if b0 > 0
+                        nrhs: str_cat(cut(rhs, 0, b0), "(")
+                        nrhs: str_cat(nrhs, rre)
+                        nrhs: str_cat(nrhs, ")")
+                        nrhs: str_cat(nrhs, cut(rhs, inl2_cb1 + 1, length(rhs)))
+                    if not
+                        if inl2_cb1 < length(rhs) - 1
+                            nrhs: str_cat("(", rre)
+                            nrhs: str_cat(nrhs, ")")
+                            nrhs: str_cat(nrhs, cut(rhs, inl2_cb1 + 1, length(rhs)))
+                    if kind is 0
+                        gl: str_cat(ind, dst)
+                        gl: str_cat(gl, ": ")
+                    if not
+                        gl: str_cat(ind, pre)
+                    gl: str_cat(gl, nrhs)
+                    gen: _sov_list_add(gen, gl)
+                    nl2: _sov_list_new()
+                    ns2: _sov_list_new()
+                    w: 0
+                    as long as w < k
+                        nl2: _sov_list_add(nl2, peek_i64(ls, 16 + w * 8))
+                        ns2: _sov_list_add(ns2, peek_i64(sln, 16 + w * 8))
+                        w: w + 1
+                    kln: peek_i64(sln, 16 + k * 8)
+                    w: 0
+                    as long as w < _sov_list_len(gen)
+                        nl2: _sov_list_add(nl2, peek_i64(gen, 16 + w * 8))
+                        ns2: _sov_list_add(ns2, kln)
+                        w: w + 1
+                    w: k + 1
+                    as long as w < n
+                        nl2: _sov_list_add(nl2, peek_i64(ls, 16 + w * 8))
+                        ns2: _sov_list_add(ns2, peek_i64(sln, 16 + w * 8))
+                        w: w + 1
+                    inl2_out: nl2
+                    inl2_sln: ns2
+                    return 1
+        k: k + 1
+    return 0
+
+inl2_mkcn lines ci:
+    inl2_cn: _sov_list_new()
+    cp: peek_i64(inl2_params, 16 + ci * 8)
+    qi: 0
+    as long as qi < _sov_list_len(cp)
+        inl2_cn: licm_add(inl2_cn, peek_i64(cp, 16 + qi * 8))
+        qi: qi + 1
+    k: 0
+    as long as k < _sov_list_len(lines)
+        nm: licm_lhs(strip_span(peek_i64(lines, 16 + k * 8)))
+        if length(nm) > 0
+            inl2_cn: licm_add(inl2_cn, nm)
+        k: k + 1
+inl2_scan lines sln ci:
+    if inl2_okm is 0
+        inl2_okm: _sov_list_new()
+        inl2_okb: _sov_list_new()
+        mi: 0
+        as long as mi < _sov_list_len(inl2_bodies)
+            inl2_okm: _sov_list_add(inl2_okm, 9)
+            inl2_okb: _sov_list_add(inl2_okb, 0)
+            mi: mi + 1
+    cur: lines
+    cs: sln
+    ch: 0
+    pass: 0
+    as long as pass < 32
+        if inl2_one(cur, cs, ci) is 1
+            cur: inl2_out
+            cs: inl2_sln
+            ch: 1
+        if not
+            pass: 32
+        pass: pass + 1
+    if ch is 1
+        inl2_out: cur
+        inl2_sln: cs
+    return ch
+licm_scan lines:
+    # repeated single hoists (max 16) until fixpoint.
+    if stmt_lns is 0
+        return 0
+    # Both hoisters open with the same header hunt (first non-blank
+    # byte in {a,w,d} + licm_whdr); a body with no loop header makes
+    # each of them walk every line for nothing, so settle it once.
+    lh_any: 0
+    lh_n: _sov_list_len(lines)
+    lh_k: 0
+    as long as lh_k < lh_n
+        if lh_any is 0
+            lh_lk: peek_i64(lines, 16 + lh_k * 8)
+            lh_sp: 0
+            lh_fb: peek_byte(lh_lk, 0)
+            as long as lh_fb is 32
+                lh_sp: lh_sp + 1
+                lh_fb: peek_byte(lh_lk, lh_sp)
+            if lh_fb is 97
+                if licm_whdr(strip_span(lh_lk)) > 0
+                    lh_any: 1
+            if lh_fb is 119
+                if licm_whdr(strip_span(lh_lk)) > 0
+                    lh_any: 1
+            if lh_fb is 100
+                if licm_whdr(strip_span(lh_lk)) > 0
+                    lh_any: 1
+        lh_k: lh_k + 1
+    if lh_any is 0
+        return 0
+    cur: lines
+    cs: stmt_lns
+    ch: 0
+    it: 0
+    as long as it < 16
+        did: 0
+        if licm_one(cur, cs) is 1
+            cur: licm_out
+            cs: licm_sln
+            ch: 1
+            did: 1
+        if did is 0
+            if licm2_one(cur, cs) is 1
+                cur: licm_out
+                cs: licm_sln
+                ch: 1
+                did: 1
+        if did is 0
+            it: 16
+        it: it + 1
+    if ch is 1
+        licm_out: cur
+        licm_sln: cs
+        return 1
+    return 0
+
+try_peekscan_while cond blines lines li:
+    # partition-scan loop (Hoare quicksort inner walks):
+    #   as long as peek_i64(V, C + i * 8) OP P
+    #       i: i + 1        (or i - 1)
+    # with OP in < <= > >=.  One cmp against [r8+r11*8] per step
+    # (V+ C in r8, i in r11, P in r10) instead of the generic walk's
+    # arg-register shuffles and push/pop comparison -- ~10 µops per
+    # element down to ~3, which is where quicksort spends its life.
+    if has_vm is 0
+        return 0
+    if leaf8 is 1
+        return 0
+    if _sov_list_len(blines) is not 1
+        return 0
+    c0: strip(cops(cond))
+    op: 0
+    pp: look(c0, " <= ")
+    if pp > 0 - 1
+        op: 2
+    if op is 0
+        pp: look(c0, " >= ")
+        if pp > 0 - 1
+            op: 4
+    if op is 0
+        pp: look(c0, " < ")
+        if pp > 0 - 1
+            op: 1
+    if op is 0
+        pp: look(c0, " > ")
+        if pp > 0 - 1
+            op: 3
+    if op is 0
+        return 0
+    lhs: strip(cut(c0, 0, pp))
+    rhsp: pp + 3
+    if op is 2
+        rhsp: pp + 4
+    if op is 4
+        rhsp: pp + 4
+    rhs: strip(cut(c0, rhsp, length(c0)))
+    if _sov_starts_with(lhs, "peek_i64(") is 0
+        return 0
+    if peek_byte(lhs, length(lhs) - 1) is not 41
+        return 0
+    al: split_args(cut(lhs, 9, length(lhs) - 1), _sov_list_new())
+    if _sov_list_len(al) is not 2
+        return 0
+    vnm: repl(strip(peek_i64(al, 16)), " ", "_")
+    idx: repl(strip(peek_i64(al, 24)), " ", "_")
+    if plain_name(vnm) is 0
+        return 0
+    pnm: repl(rhs, " ", "_")
+    pimm: 0
+    if is_imm(pnm) is 1
+        pimm: 1
+    if pimm is 0
+        if plain_name(pnm) is 0
+            return 0
+    l1: strip(_sov_list_get(blines, 0))
+    isep: look(l1, ": ")
+    if isep < 1
+        return 0
+    iv: repl(strip(cut(l1, 0, isep)), " ", "_")
+    if plain_name(iv) is 0
+        return 0
+    if lsh_find_s(iv) < 0
+        return 0
+    step: 0
+    if _sov_str_eq(l1, join(iv, join(": ", join(iv, " + 1")))) is 1
+        step: 1
+    if _sov_str_eq(l1, join(iv, join(": ", join(iv, " - 1")))) is 1
+        step: 0 - 1
+    if step is 0
+        return 0
+    csc: fdx_idxoff(idx, join(iv, "_*_8"))
+    if csc < 0
+        return 0
+    if _sov_str_eq(iv, vnm) is 1
+        return 0
+    if pimm is 0
+        if _sov_str_eq(pnm, iv) is 1
+            return 0
+        if _sov_str_eq(pnm, vnm) is 1
+            return 0
+    cflush_all()
+    loadv(vnm)
+    emit3(73, 137, 192)
+    if csc > 0
+        emit3(73, 129, 192)
+        emit4(csc)
+    loadv(iv)
+    emit3(73, 137, 195)
+    if pimm is 1
+        rax_imm(num_of(pnm))
+    if not
+        loadv(pnm)
+    emit3(73, 137, 194)
+    psc_j: jmp()
+    align32()
+    psc_hd: here()
+    if step is 1
+        emit3(73, 255, 195)
+    if not
+        emit3(73, 255, 203)
+    patch(psc_j)
+    emit3(79, 59, 20)
+    emit(216)
+    emit(15)
+    if op is 1
+        emit(143)
+    if op is 2
+        emit(141)
+    if op is 3
+        emit(140)
+    if op is 4
+        emit(142)
+    psc_bk: here()
+    emit4(0)
+    put(psc_bk, psc_hd - (psc_bk + 4))
+    emit3(76, 137, 216)
+    storev(iv)
+    cpx_p: 0 - 1
+    return 1
+
+try_bytecount_while cond blines lines li:
+    # SWAR byte counting: iv from 0 while iv < lim with body
+    #   if peek_byte(S, iv) is K
+    #       cnt: cnt + 1
+    #   iv: iv + 1
+    # r8=S, r9=cnt, r10=lim, r11=iv, rcx=lim-7, rdx=0x0101.., rsi=broadcast(K).
+    if has_vm is 0
+        return 0
+    if leaf8 is 1
+        return 0
+    if _sov_list_len(blines) is not 3
+        return 0
+    c0: strip(cops(cond))
+    p: look(c0, " < ")
+    if p < 0
+        return 0
+    iv: repl(strip(cut(c0, 0, p)), " ", "_")
+    lim: repl(strip(cut(c0, p + 3, length(c0))), " ", "_")
+    if plain_name(iv) is 0
+        return 0
+    if lsh_find_s(iv) < 0
+        return 0
+    limn: 0
+    if is_imm(lim) is 0
+        if plain_name(lim) is 0
+            return 0
+        limn: 1
+    l1: strip(_sov_list_get(blines, 0))
+    l2: strip(_sov_list_get(blines, 1))
+    l3: strip(_sov_list_get(blines, 2))
+    bq: li + 1
+    bq_n: _sov_list_len(lines)
+    bq_hav: 0
+    bq_i0: 0 - 1
+    bq_i1: 0 - 1
+    as long as bq < bq_n
+        if bq_hav < 2
+            rwq: peek_i64(lines, 16 + bq * 8)
+            plq: strip(rwq)
+            if length(plq) > 0
+                if peek_byte(plq, 0) is not 35
+                    if bq_hav is 0
+                        bq_i0: sg_ind(rwq)
+                    if bq_hav is 1
+                        bq_i1: sg_ind(rwq)
+                    bq_hav: bq_hav + 1
+        bq: bq + 1
+    if bq_i1 <= bq_i0
+        return 0
+    if _sov_str_eq(l3, join(iv, join(": ", join(iv, " + 1")))) is 0
+        return 0
+    if _sov_starts_with(l1, "if peek_byte(") is 0
+        return 0
+    cp: cfind1(l1, 41)
+    if cp < 14
+        return 0
+    al: split_args(cut(l1, 13, cp), _sov_list_new())
+    if _sov_list_len(al) is not 2
+        return 0
+    snm: repl(strip(peek_i64(al, 16)), " ", "_")
+    ix: repl(strip(peek_i64(al, 24)), " ", "_")
+    if plain_name(snm) is 0
+        return 0
+    if _sov_str_eq(ix, iv) is 0
+        return 0
+    rest: strip(cut(l1, cp + 1, length(l1)))
+    if _sov_starts_with(rest, "is ") is 0
+        return 0
+    ktxt: strip(cut(rest, 3, length(rest)))
+    if is_imm(ktxt) is 0
+        return 0
+    bc_kv: num_of(ktxt)
+    if bc_kv > 255
+        return 0
+    tc: look(l2, ": ")
+    if tc < 1
+        return 0
+    cnm: repl(strip(cut(l2, 0, tc)), " ", "_")
+    if plain_name(cnm) is 0
+        return 0
+    if _sov_str_eq(strip(cut(l2, tc + 2, length(l2))), join(cnm, " + 1")) is 0
+        return 0
+    if _sov_str_eq(cnm, iv) is 1
+        return 0
+    if _sov_str_eq(cnm, snm) is 1
+        return 0
+    if _sov_str_eq(snm, iv) is 1
+        return 0
+    if limn is 1
+        if _sov_str_eq(lim, cnm) is 1
+            return 0
+        if _sov_str_eq(lim, snm) is 1
+            return 0
+        if _sov_str_eq(lim, iv) is 1
+            return 0
+    wind: sg_ind(_sov_list_get(lines, li))
+    jj: li - 1
+    got0: 0
+    seen: 0
+    as long as jj >= 0
+        if got0 is 0
+            rw: _sov_list_get(lines, jj)
+            pl: strip(rw)
+            if length(pl) > 0
+                if peek_byte(pl, 0) is not 35
+                    if sg_ind(rw) is not wind
+                        jj: 0 - 1
+                    if not
+                        seen: seen + 1
+                        if seen > 4
+                            jj: 0 - 1
+                        if not
+                            if _sov_str_eq(pl, join(iv, ": 0")) is 1
+                                got0: 1
+                            if not
+                                if _sov_starts_with(pl, join(iv, ": ")) is 1
+                                    jj: 0 - 1
+        jj: jj - 1
+    if got0 is 0
+        return 0
+    cflush_all()
+    loadv(snm)
+    emit3(73, 137, 192)
+    loadv(cnm)
+    emit3(73, 137, 193)
+    if limn is 1
+        loadv(lim)
+    if not
+        rax_imm(num_of(lim))
+    emit3(73, 137, 194)
+    rax_imm(72340172838076673)
+    emit3(72, 137, 194)
+    kb: bc_kv
+    kb: bor(kb, bshl(kb, 8))
+    kb: bor(kb, bshl(kb, 16))
+    kb: bor(kb, bshl(kb, 32))
+    rax_imm(kb)
+    emit3(72, 137, 198)
+    emit3(76, 137, 209)
+    emit3(72, 131, 233)
+    emit(7)
+    emit3(69, 49, 219)
+    align32()
+    bc_hd: here()
+    emit3(73, 57, 203)
+    bc_ge: jge()
+    # exact zero-lane mask: ((x & 0x7F7F..) + 0x7F7F..) | x, inverted.
+    # The classic (x - 0x0101..) & ~x form borrows across lanes and
+    # false-counts a K^1 byte that follows a K byte in the same qword.
+    emit3(75, 139, 4)
+    emit(24)
+    emit3(72, 49, 240)
+    emit3(72, 137, 199)
+    emit3(72, 137, 208)
+    emit3(72, 193, 224)
+    emit(7)
+    emit3(72, 41, 208)
+    emit3(72, 33, 199)
+    emit3(72, 1, 199)
+    emit3(75, 139, 4)
+    emit(24)
+    emit3(72, 49, 240)
+    emit3(72, 9, 199)
+    emit3(72, 247, 215)
+    emit3(72, 137, 208)
+    emit3(72, 193, 224)
+    emit(7)
+    emit3(72, 33, 248)
+    emit3(72, 193, 232)
+    emit(7)
+    emit(72)
+    emit(15)
+    emit(175)
+    emit(194)
+    emit3(72, 193, 232)
+    emit(56)
+    emit3(73, 1, 193)
+    chk_ov()
+    emit3(73, 131, 195)
+    emit(8)
+    emit(233)
+    bc_bk: here()
+    emit4(0)
+    put(bc_bk, bc_hd - (bc_bk + 4))
+    patch(bc_ge)
+    bc_tl: here()
+    emit3(77, 57, 211)
+    bc_dn: jge()
+    emit3(67, 15, 182)
+    emit(4)
+    emit(24)
+    emit(61)
+    emit4(bc_kv)
+    emit(117)
+    bc_sk: here()
+    emit(0)
+    emit3(73, 255, 193)
+    chk_ov()
+    dummy: ocset(bc_sk, here() - (bc_sk + 1))
+    emit3(73, 255, 195)
+    emit(233)
+    bc_bk2: here()
+    emit4(0)
+    put(bc_bk2, bc_tl - (bc_bk2 + 4))
+    patch(bc_dn)
+    emit3(76, 137, 200)
+    storev(cnm)
+    emit3(76, 137, 216)
+    storev(iv)
+    return 1
+
+try_listsum_while cond blines lines li:
+    # integer list reduction: iv from 0/1 while iv < lim with body
+    #   S: S + list_get(L, iv)        (vec_get/_sov_list_get too)
+    #   iv: iv + 1
+    # requires lim: list_len(L) (or vec_len) in the pre-window so every
+    # access is in bounds (list_get returns the index when out of bounds).
+    # L in r8, accumulator r9, lim r10, iv r11; chk_ov per add.
+    if has_vm is 0
+        return 0
+    if leaf8 is 1
+        return 0
+    if _sov_list_len(blines) is not 2
+        return 0
+    c0: strip(cops(cond))
+    p: look(c0, " < ")
+    if p < 0
+        return 0
+    iv: repl(strip(cut(c0, 0, p)), " ", "_")
+    lim: repl(strip(cut(c0, p + 3, length(c0))), " ", "_")
+    if plain_name(iv) is 0
+        return 0
+    if lsh_find_s(iv) < 0
+        return 0
+    if plain_name(lim) is 0
+        return 0
+    if is_imm(lim) is 1
+        return 0
+    l1: strip(_sov_list_get(blines, 0))
+    l2: strip(_sov_list_get(blines, 1))
+    if _sov_str_eq(l2, join(iv, join(": ", join(iv, " + 1")))) is 0
+        return 0
+    tc: look(l1, ": ")
+    if tc < 1
+        return 0
+    snm: repl(strip(cut(l1, 0, tc)), " ", "_")
+    if plain_name(snm) is 0
+        return 0
+    rhs: strip(cut(l1, tc + 2, length(l1)))
+    pfx: join(snm, " + ")
+    if _sov_starts_with(rhs, pfx) is 0
+        return 0
+    ge: strip(cut(rhs, length(pfx), length(rhs)))
+    if _sov_starts_with(ge, "list_get(") is 0
+        if _sov_starts_with(ge, "_sov_list_get(") is 0
+            if _sov_starts_with(ge, "vec_get(") is 0
+                return 0
+    if peek_byte(ge, length(ge) - 1) is not 41
+        return 0
+    op: cfind1(ge, 40)
+    al: split_args(cut(ge, op + 1, length(ge) - 1), _sov_list_new())
+    if _sov_list_len(al) is not 2
+        return 0
+    lnm: repl(strip(peek_i64(al, 16)), " ", "_")
+    ix: repl(strip(peek_i64(al, 24)), " ", "_")
+    if plain_name(lnm) is 0
+        return 0
+    if _sov_str_eq(ix, iv) is 0
+        return 0
+    if _sov_str_eq(snm, iv) is 1
+        return 0
+    if _sov_str_eq(snm, lnm) is 1
+        return 0
+    if _sov_str_eq(snm, lim) is 1
+        return 0
+    if _sov_str_eq(lnm, iv) is 1
+        return 0
+    if _sov_str_eq(lnm, lim) is 1
+        return 0
+    if _sov_str_eq(iv, lim) is 1
+        return 0
+    ls_iv0: join(iv, ": 0")
+    ls_iv1: join(iv, ": 1")
+    ls_ln1: join(lim, join(": list_len(", join(lnm, ")")))
+    ls_ln2: join(lim, join(": vec_len(", join(lnm, ")")))
+    ls_ln3: join(lim, join(": _sov_list_len(", join(lnm, ")")))
+    ls_piv: join(iv, ": ")
+    ls_plm: join(lim, ": ")
+    ls_pls: join(lnm, ": ")
+    wind: sg_ind(_sov_list_get(lines, li))
+    jj: li - 1
+    got0: 0
+    gotn: 0
+    kval: 0
+    seen: 0
+    as long as jj >= 0
+        if got0 + gotn < 2
+            if gotn < 2
+                rw: _sov_list_get(lines, jj)
+                pl: strip(rw)
+                if length(pl) > 0
+                    if peek_byte(pl, 0) is not 35
+                        if sg_ind(rw) is not wind
+                            jj: 0 - 1
+                        if not
+                            seen: seen + 1
+                            if seen > 6
+                                jj: 0 - 1
+                            if not
+                                if _sov_starts_with(pl, ls_pls) is 1
+                                    jj: 0 - 1
+                                if not
+                                    if _sov_str_eq(pl, ls_iv0) is 1
+                                        got0: 1
+                                    if not
+                                        if _sov_str_eq(pl, ls_iv1) is 1
+                                            got0: 1
+                                            kval: 1
+                                        if not
+                                            if _sov_starts_with(pl, ls_piv) is 1
+                                                jj: 0 - 1
+                                    if _sov_str_eq(pl, ls_ln1) is 1
+                                        gotn: 1
+                                    if not
+                                        if _sov_str_eq(pl, ls_ln2) is 1
+                                            gotn: 1
+                                        if not
+                                            if _sov_str_eq(pl, ls_ln3) is 1
+                                                gotn: 1
+                                            if not
+                                                if _sov_starts_with(pl, ls_plm) is 1
+                                                    if gotn is 0
+                                                        jj: 0 - 1
+        if got0 is 1
+            if gotn is 1
+                jj: 0 - 1
+        jj: jj - 1
+    if got0 is 0
+        return 0
+    if gotn is 0
+        return 0
+    cflush_all()
+    loadv(lnm)
+    emit3(73, 137, 192)
+    loadv(snm)
+    emit3(73, 137, 193)
+    loadv(lim)
+    emit3(73, 137, 194)
+    if kval is 0
+        emit3(69, 49, 219)
+    if not
+        emit(73)
+        emit(199)
+        emit(195)
+        emit(1)
+        emit(0)
+        emit(0)
+        emit(0)
+    emit3(77, 57, 211)
+    ls_ge: jge()
+    align32()
+    ls_hd: here()
+    emit3(79, 3, 140)
+    emit(216)
+    emit4(16)
+    chk_ov()
+    emit3(73, 255, 195)
+    emit3(77, 57, 211)
+    emit(15)
+    emit(140)
+    ls_bk: here()
+    emit4(0)
+    put(ls_bk, ls_hd - (ls_bk + 4))
+    patch(ls_ge)
+    emit3(76, 137, 200)
+    storev(snm)
+    emit3(76, 137, 216)
+    storev(iv)
+    return 1
+
+try_append_while cond blines lines li:
+    # append loop: iv from 0 while iv < lim with body
+    #   L: list_add(L, EXPR)      (or _sov_list_add)
+    #   iv: iv + 1
+    # list in r8, len in r9, lim in r10, iv in r11. slow path (alloc/grow,
+    # incl L == 0) calls the written function name and resyncs.
+    if has_vm is 0
+        return 0
+    if leaf8 is 1
+        return 0
+    if _sov_list_len(blines) is not 2
+        return 0
+    c0: strip(cops(cond))
+    p: look(c0, " < ")
+    if p < 0
+        return 0
+    iv: repl(strip(cut(c0, 0, p)), " ", "_")
+    lim0: strip(cut(c0, p + 3, length(c0)))
+    lim: repl(lim0, " ", "_")
+    if plain_name(iv) is 0
+        return 0
+    if lsh_find_s(iv) < 0
+        return 0
+    limn: 0
+    if is_imm(lim) is 0
+        if plain_name(lim) is 0
+            return 0
+        limn: 1
+    l1: strip(_sov_list_get(blines, 0))
+    l2: strip(_sov_list_get(blines, 1))
+    if _sov_str_eq(l2, join(iv, join(": ", join(iv, " + 1")))) is 0
+        return 0
+    tc: look(l1, ": ")
+    if tc < 1
+        return 0
+    lnm: repl(strip(cut(l1, 0, tc)), " ", "_")
+    if plain_name(lnm) is 0
+        return 0
+    rhs: strip(cut(l1, tc + 2, length(l1)))
+    fnm: blank
+    if _sov_starts_with(rhs, "list_add(") is 1
+        fnm: "list_add"
+    if _sov_starts_with(rhs, "_sov_list_add(") is 1
+        fnm: "_sov_list_add"
+    if _sov_starts_with(rhs, "vec_push(") is 1
+        fnm: "vec_push"
+    if length(fnm) is 0
+        return 0
+    if peek_byte(rhs, length(rhs) - 1) is not 41
+        return 0
+    fp0: length(fnm) + 1
+    al: split_args(cut(rhs, fp0, length(rhs) - 1), _sov_list_new())
+    if _sov_list_len(al) is not 2
+        return 0
+    a0: repl(strip(peek_i64(al, 16)), " ", "_")
+    if _sov_str_eq(a0, lnm) is 0
+        return 0
+    ex: repl(strip(peek_i64(al, 24)), " ", "_")
+    exk: 0 - 1
+    if _sov_str_eq(ex, iv) is 1
+        exk: 0
+    if exk < 0
+        if is_imm(ex) is 1
+            exv: num_of(ex)
+            if exv > 2147483647
+                return 0
+            if exv < 0 - 2147483648
+                return 0
+            exk: 1
+    if exk < 0
+        if plain_name(ex) is 1
+            exk: 2
+    if exk < 0
+        return 0
+    if _sov_str_eq(lnm, iv) is 1
+        return 0
+    if exk is 2
+        if _sov_str_eq(ex, lnm) is 1
+            return 0
+        if _sov_str_eq(ex, iv) is 1
+            return 0
+    if limn is 1
+        if _sov_str_eq(lim, lnm) is 1
+            return 0
+        if _sov_str_eq(lim, iv) is 1
+            return 0
+    wind: sg_ind(_sov_list_get(lines, li))
+    jj: li - 1
+    got0: 0
+    seen: 0
+    as long as jj >= 0
+        if got0 is 0
+            rw: _sov_list_get(lines, jj)
+            pl: strip(rw)
+            if length(pl) > 0
+                if peek_byte(pl, 0) is not 35
+                    if sg_ind(rw) is not wind
+                        jj: 0 - 1
+                    if not
+                        seen: seen + 1
+                        if seen > 4
+                            jj: 0 - 1
+                        if not
+                            if _sov_str_eq(pl, join(iv, ": 0")) is 1
+                                got0: 1
+                            if not
+                                if _sov_starts_with(pl, join(iv, ": ")) is 1
+                                    jj: 0 - 1
+        jj: jj - 1
+    if got0 is 0
+        return 0
+    cflush_all()
+    loadv(lnm)
+    emit3(73, 137, 192)
+    if limn is 1
+        loadv(lim)
+    if not
+        rax_imm(num_of(lim))
+    emit3(73, 137, 194)
+    emit3(77, 133, 210)
+    askp: jle()
+    emit3(69, 49, 219)
+    emit(77)
+    emit(133)
+    emit(192)
+    afst: jz()
+    emit(77)
+    emit(139)
+    emit(72)
+    emit(8)
+    emit3(73, 139, 48)
+    ajmp: jmp()
+    align32()
+    ahd: here()
+    patch(ajmp)
+    emit3(73, 57, 241)
+    asl2: jae()
+    if exk is 0
+        emit3(79, 137, 156)
+        emit(200)
+        emit4(16)
+    if exk is 1
+        emit(75)
+        emit(199)
+        emit(132)
+        emit(200)
+        emit(16)
+        emit(0)
+        emit(0)
+        emit(0)
+        emit4(num_of(ex))
+    if exk is 2
+        loadv(ex)
+        emit3(75, 137, 132)
+        emit(200)
+        emit4(16)
+    emit3(73, 255, 193)
+    anxt: jmp()
+    patch(asl2)
+    emit(77)
+    emit(137)
+    emit(72)
+    emit(8)
+    patch(afst)
+    emit2(65, 83)
+    emit2(65, 82)
+    emit3(76, 137, 199)
+    if exk is 0
+        emit3(76, 137, 222)
+    if exk is 1
+        emit(190)
+        emit4(num_of(ex))
+    if exk is 2
+        loadv(ex)
+        emit3(72, 137, 198)
+    calln(fnm)
+    emit3(73, 137, 192)
+    emit(77)
+    emit(139)
+    emit(72)
+    emit(8)
+    emit3(73, 139, 48)
+    emit2(65, 90)
+    emit2(65, 91)
+    patch(anxt)
+    emit3(73, 255, 195)
+    emit3(77, 57, 211)
+    emit(15)
+    emit(140)
+    abk: here()
+    emit4(0)
+    put(abk, ahd - (abk + 4))
+    emit(77)
+    emit(137)
+    emit(72)
+    emit(8)
+    emit3(76, 137, 192)
+    storev(lnm)
+    emit3(76, 137, 216)
+    storev(iv)
+    aej: jmp()
+    patch(askp)
+    patch(aej)
+    return 1
+
+try_cat_while cond blines lines li:
+    # string-builder loop: iv from 0 while iv < lim with body
+    #   S: str_cat(S, EXPR)
+    #   iv: iv + 1
+    # EXPR is a string literal or a plain name != S,iv.  A runtime
+    # builder (_sov_sb_new/_sov_sb_add) accumulates with geometric
+    # growth, so the loop is O(total bytes) instead of alloc+copy of
+    # the whole prefix per iteration (O(n^2)).  r8=builder, r10=lim,
+    # r11=iv; the finished string is builder+16.
+    if has_vm is 0
+        return 0
+    if leaf8 is 1
+        return 0
+    if _sov_list_len(blines) is not 2
+        return 0
+    c0: strip(cops(cond))
+    p: look(c0, " < ")
+    if p < 0
+        return 0
+    iv: repl(strip(cut(c0, 0, p)), " ", "_")
+    lim0: strip(cut(c0, p + 3, length(c0)))
+    lim: repl(lim0, " ", "_")
+    if plain_name(iv) is 0
+        return 0
+    if lsh_find_s(iv) < 0
+        return 0
+    limn: 0
+    if is_imm(lim) is 0
+        if plain_name(lim) is 0
+            return 0
+        limn: 1
+    l1: strip(_sov_list_get(blines, 0))
+    l2: strip(_sov_list_get(blines, 1))
+    if _sov_str_eq(l2, join(iv, join(": ", join(iv, " + 1")))) is 0
+        return 0
+    tc: look(l1, ": ")
+    if tc < 1
+        return 0
+    snm: repl(strip(cut(l1, 0, tc)), " ", "_")
+    if plain_name(snm) is 0
+        return 0
+    if _sov_str_eq(snm, iv) is 1
+        return 0
+    if lsh_find_s(snm) < 0
+        return 0
+    rhs: strip(cut(l1, tc + 2, length(l1)))
+    if _sov_starts_with(rhs, "str_cat(") is 0
+        return 0
+    if peek_byte(rhs, length(rhs) - 1) is not 41
+        return 0
+    al: split_args(cut(rhs, 8, length(rhs) - 1), _sov_list_new())
+    if _sov_list_len(al) is not 2
+        return 0
+    a0: repl(strip(peek_i64(al, 16)), " ", "_")
+    if _sov_str_eq(a0, snm) is 0
+        return 0
+    ex: strip(peek_i64(al, 24))
+    exk: 0 - 1
+    exl: blank
+    if _sov_starts_with(ex, "\"") is 1
+        if length(ex) > 1
+            if peek_byte(ex, length(ex) - 1) is 34
+                exk: 0
+                exl: cut(ex, 1, length(ex) - 1)
+    if exk < 0
+        exn: repl(ex, " ", "_")
+        if plain_name(exn) is 1
+            if _sov_str_eq(exn, iv) is 0
+                if _sov_str_eq(exn, snm) is 1
+                    exk: 2
+                if not
+                    exk: 1
+                    exl: exn
+    if exk < 0
+        return 0
+    if limn is 1
+        if _sov_str_eq(lim, snm) is 1
+            return 0
+        if _sov_str_eq(lim, iv) is 1
+            return 0
+    wind: sg_ind(_sov_list_get(lines, li))
+    jj: li - 1
+    got0: 0
+    seen: 0
+    as long as jj >= 0
+        if got0 is 0
+            rw: _sov_list_get(lines, jj)
+            pl: strip(rw)
+            if length(pl) > 0
+                if peek_byte(pl, 0) is not 35
+                    if sg_ind(rw) is not wind
+                        jj: 0 - 1
+                    if not
+                        seen: seen + 1
+                        if seen > 4
+                            jj: 0 - 1
+                        if not
+                            if _sov_str_eq(pl, join(iv, ": 0")) is 1
+                                got0: 1
+                            if not
+                                if _sov_starts_with(pl, join(iv, ": ")) is 1
+                                    jj: 0 - 1
+        jj: jj - 1
+    if got0 is 0
+        return 0
+    cflush_all()
+    if limn is 1
+        loadv(lim)
+    if not
+        rax_imm(num_of(lim))
+    emit3(73, 137, 194)
+    emit3(77, 133, 210)
+    cskp: jle()
+    loadv(snm)
+    emit3(72, 137, 199)
+    emit2(65, 82)
+    calln("_sov_sb_new")
+    emit2(65, 90)
+    emit3(73, 137, 192)
+    emit3(69, 49, 219)
+    align32()
+    chd: here()
+    if exk is 0
+        rax_str(exl)
+        emit3(72, 137, 198)
+    if exk is 1
+        loadv(exl)
+        emit3(72, 137, 198)
+    if exk is 2
+        emit3(73, 141, 112)
+        emit(16)
+    emit3(76, 137, 199)
+    emit2(65, 83)
+    emit2(65, 82)
+    calln("_sov_sb_add")
+    emit2(65, 90)
+    emit2(65, 91)
+    emit3(73, 137, 192)
+    emit3(73, 255, 195)
+    emit3(77, 57, 211)
+    emit(15)
+    emit(140)
+    cbk: here()
+    emit4(0)
+    put(cbk, chd - (cbk + 4))
+    emit3(76, 137, 192)
+    emit(72)
+    emit(131)
+    emit(192)
+    emit(16)
+    storev(snm)
+    cp_nm: 0
+    cp_pend_kill: 1
+    emit3(76, 137, 216)
+    storev(iv)
+    cej: jmp()
+    patch(cskp)
+    patch(cej)
+    return 1
+
+try_def_peek var rhs:
+    if has_vm is 0
+        return 0
+    if sv_lookup(var) > 0 - 1
+        return 0
+    dv: homereg(var)
+    if dv < 0
+        return 0
+    q: fop2(rhs, "+", "-")
+    if q < 1
+        return 0
+    if q > length(rhs) - 2
+        return 0
+    opc: peek_byte(rhs, q)
+    if opc is not 43
+        if opc is not 45
+            return 0
+    dl: strip(cut(rhs, 0, q))
+    dr: strip(cut(rhs, q + 1, length(rhs)))
+    if pkpeek(dl) is 0
+        return 0
+    dg: pk_g
+    dx1: pk_x
+    if pkpeek(dr) is 0
+        return 0
+    if _sov_str_eq(pk_g, dg) is 0
+        return 0
+    hr: peek_home(pk_x)
+    if hr is dv
+        return 0
+    if hr < 0
+        scaled_rdx(pk_x)
+        hr: 2
+    loadv_rdi(dg)
+    hl: peek_home(dx1)
+    if hl < 0
+        scaled_rsi(dx1)
+        hl: 6
+    peek_reg_h(dv, hl)
+    if opc is 45
+        fold_mem_h(43, dv, hr)
+    if not
+        fold_mem_h(3, dv, hr)
+    return 1
+try_fill_while cond blines lines li:
+    if _sov_list_len(blines) is not 2
+        return 0
+    c: strip(cops(cond))
+    p: look(c, " < ")
+    if p < 0
+        return 0
+    iv: repl(strip(cut(c, 0, p)), " ", "_")
+    lim0: strip(cut(c, p + 3, length(c)))
+    lim: repl(lim0, " ", "_")
+    if plain_name(iv) is 0
+        return 0
+    want0: join(iv, ": 0")
+    jj: li - 1
+    found: 0
+    as long as jj >= 0
+        pl: strip(_sov_list_get(lines, jj))
+        if length(pl) > 0
+            if peek_byte(pl, 0) is not 35
+                if _sov_starts_with(pl, "use ") is 0
+                    if _sov_str_eq(pl, want0) is 1
+                        found: 1
+                    jj: 0 - 1
+        jj: jj - 1
+    if found is 0
+        return 0
+    l1: strip(_sov_list_get(blines, 0))
+    l2: strip(_sov_list_get(blines, 1))
+    pb1: "poke_byte("
+    fl: blank
+    if _sov_starts_with(l1, pb1) is 1
+        fl: l1
+    if _sov_starts_with(l2, pb1) is 1
+        fl: l2
+    if length(fl) is 0
+        return 0
+    inc_r: join(iv, join(": ", join(iv, " + 1")))
+    bumped: 0
+    if _sov_str_eq(l1, inc_r) is 1
+        bumped: 1
+    if _sov_str_eq(l2, inc_r) is 1
+        bumped: 1
+    if bumped is 0
+        return 0
+    if peek_byte(fl, length(fl) - 1) is 41 is 0
+        return 0
+    inn: cut(fl, 10, length(fl) - 1)
+    c1: look(inn, ",")
+    if c1 < 0
+        return 0
+    base: repl(strip(cut(inn, 0, c1)), " ", "_")
+    rest: cut(inn, c1 + 1, length(inn))
+    c2: look(rest, ",")
+    if c2 < 0
+        return 0
+    idx2: repl(strip(cut(rest, 0, c2)), " ", "_")
+    vvv: strip(cut(rest, c2 + 1, length(rest)))
+    if _sov_str_eq(idx2, iv) is 0
+        return 0
+    if is_imm(vvv) is 0
+        return 0
+    vv: num_of(vvv)
+    if vv < 0
+        return 0
+    if vv > 255
+        return 0
+    if plain_name(base) is 0
+        return 0
+    cflush_all()
+    loadv(base)
+    mov_rdi_rax()
+    if is_imm(lim) is 1
+        rax_imm(num_of(lim))
+    if not
+        expr(lim0)
+    mov_rsi_rax()
+    chk_mem(1)
+    emit(72)
+    emit(137)
+    emit(241)
+    rax_imm(vv)
+    emit(252)
+    emit(243)
+    emit(170)
+    emit(72)
+    emit(137)
+    emit(240)
+    storev(iv)
+    return 1
+try_lea_arg ag ai:
+    p: look(ag, " - ")
+    neg: 1
+    if p < 0
+        p: look(ag, " + ")
+        neg: 0
+    if p < 0
+        return 0
+    nm: strip(cut(ag, 0, p))
+    cs: strip(cut(ag, p + 3, length(ag)))
+    if plain_name(nm) is 0
+        return 0
+    if is_imm(cs) is 0
+        return 0
+    v: num_of(cs)
+    if neg is 1
+        v: 0 - v
+    if v > 127
+        return 0
+    if v < 0 - 128
+        return 0
+    if v is 0
+        return 0
+    sl: reg_slot(nm)
+    if sl < 0
+        return 0
+    cflush(nm)
+    emit_lea_arg(ai, sl, v)
+    return 1
+try_mem name argc m0 m1 m2 i2 v2:
+    nid: ik_cached(name)
+    if nid is kid_pkb
+        if argc is 3
+            if m0 > 0 - 1
+                if m1 > 0 - 1
+                    if m2 > 0 - 1
+                        mem_poke_byte_reg(m0, m1, m2)
+                        return 1
+                    if i2 is 1
+                        mem_poke_byte_imm(m0, m1, v2)
+                        return 1
+    if nid is kid_peb
+        if argc is 2
+            if m0 > 0 - 1
+                if m1 > 0 - 1
+                    mem_peek_byte(m0, m1)
+                    return 1
+    return 0
+try_inline_pkb nm ac al:
+    # call-site inline for peek_byte in the standard model (self-builds
+    # only: nat_gate). exactness: peek_byte is a raw byte read (s[i]);
+    # OOB reads hit the zero-filled bump arena exactly as the native does.
+    # register contract identical to the call it replaces: rax = result,
+    # rax/rcx clobbered (both were call-clobbered anyway).
+    if nat_gate is 0
+        return 0
+    if ac is not 2
+        return 0
+    if _sov_str_eq(nm, "peek_byte") is 0
+        return 0
+    a0: _sov_list_get(al, 0)
+    a1: _sov_list_get(al, 1)
+    if plain_name(a0) is 0
+        return 0
+    if is_imm(a1) is 1
+        v: num_of(a1)
+        if v > 0 - 1
+            if v < 128
+                cflush_globs()
+                loadv(a0)
+                emit3(15, 182, 64)
+                emit(v)
+                return 1
+        if v > -2147483648
+            if v < 2147483647
+                cflush_globs()
+                loadv(a0)
+                emit3(15, 182, 128)
+                emit4(v)
+                return 1
+        return 0
+    ap: look(a1, " + ")
+    if ap > 0 - 1
+        h: strip(cut(a1, 0, ap))
+        k2: strip(cut(a1, ap + 3, length(a1)))
+        if plain_name(h) is 1
+            if is_imm(k2) is 1
+                pk_kv: num_of(k2)
+                if pk_kv > 0
+                    if pk_kv < 128
+                        cflush_globs()
+                        loadv(a0)
+                        emit3(72, 137, 193)
+                        loadv(h)
+                        emit3(72, 131, 192)
+                        emit(pk_kv)
+                        emit3(15, 182, 4)
+                        emit(1)
+                        return 1
+    am: look(a1, " - ")
+    if am > 0 - 1
+        h: strip(cut(a1, 0, am))
+        k2: strip(cut(a1, am + 3, length(a1)))
+        if plain_name(h) is 1
+            if is_imm(k2) is 1
+                pk_kv: num_of(k2)
+                if pk_kv > 0
+                    if pk_kv < 128
+                        cflush_globs()
+                        loadv(a0)
+                        emit3(72, 137, 193)
+                        loadv(h)
+                        emit3(72, 131, 232)
+                        emit(pk_kv)
+                        emit3(15, 182, 4)
+                        emit(1)
+                        return 1
+    if plain_name(a1) is 1
+        cflush_globs()
+        loadv(a0)
+        emit3(72, 137, 193)
+        loadv(a1)
+        emit3(15, 182, 4)
+        emit(1)
+        return 1
+    return 0
+try_opt_while cond blines:
+    if _sov_list_len(blines) is not 2
+        return 0
+    c: strip(cops(cond))
+    p: look(c, " < ")
+    if p < 0
+        return 0
+    iv: repl(strip(cut(c, 0, p)), " ", "_")
+    lim: repl(strip(cut(c, p + 3, length(c))), " ", "_")
+    l1: strip(_sov_list_get(blines, 0))
+    l2: strip(_sov_list_get(blines, 1))
+    inc_r: join(iv, ": ")
+    inc_b: join(iv, " + 1")
+    isinc1: 0
+    if length(l1) is length(inc_r) + length(inc_b)
+        if sg_match(l1, 0, inc_r) is 1
+            if sg_match(l1, length(inc_r), inc_b) is 1
+            isinc1: 1
+    isinc2: 0
+    if length(l2) is length(inc_r) + length(inc_b)
+        if sg_match(l2, 0, inc_r) is 1
+            if sg_match(l2, length(inc_r), inc_b) is 1
+            isinc2: 1
+    if isinc1 is 0
+        if isinc2 is 0
+            return 0
+    work: l1
+    if isinc1 is 1
+        work: l2
+    tc: look(work, ": ")
+    if tc < 0
+        return 0
+    if tc > 0 - 1
+        acc: repl(strip(cut(work, 0, tc)), " ", "_")
+        rhs: strip(cut(work, tc + 2, length(work)))
+            if lim_const(lim) is 0
+                return 0
+            if _sov_str_eq(rhs, join(join(acc, " + "), iv)) is 1
+                emit_sum_closed(acc, iv, lim)
+                return 1
+            sq_r: join(join(acc, " + "), join(iv, join(" * ", iv)))
+            if _sov_str_eq(rhs, sq_r) is 1
+                emit_sumsq_closed(acc, iv, lim)
+                return 1
+            return 0
+            pfx: join(acc, " + peek_i64(")
+            if _sov_starts_with(rhs, pfx) is 1
+                if peek_byte(rhs, length(rhs) - 1) is 41 is 1
+                    inn: cut(rhs, length(pfx), length(rhs) - 1)
+                    cm: look(inn, ",")
+                    if cm > 0
+                        ap: strip(cut(inn, 0, cm))
+                        ix: strip(cut(inn, cm + 1, length(inn)))
+                        if _sov_str_eq(ix, join(iv, " times 8")) is 1
+                            if _sov_str_eq(ap, iota_ptr) is 1
+                                if _sov_str_eq(lim, iota_lim) is 1
+                                    emit_sum_closed(acc, iv, lim)
+                                    return 1
+                            loadv(ap)
+                            push_rax()
+                            loadv(iv)
+                            emit(72)
+                            emit(193)
+                            emit(224)
+                            emit(3)
+                            mov_rcx_rax()
+                            pop_rax()
+                        push_live: 0
+                            add_rax_rcx()
+                            mov_rsi_rax()
+                            loadv(lim)
+                            push_rax()
+                            loadv(iv)
+                            mov_rcx_rax()
+                            pop_rax()
+                        push_live: 0
+                            sub_rax_rcx()
+                            test_rax()
+                            skc: jle()
+                            mov_rcx_rax()
+                            emit(197)
+                            emit(253)
+                            emit(239)
+                            emit(192)
+                            hdz: 0
+
+                            lpc: here()
+                            emit(72)
+                            emit(131)
+                            emit(249)
+                            emit(4)
+                            tlc: jb()
+                            emit(197)
+                            emit(254)
+                            emit(111)
+                            emit(14)
+                            emit(197)
+                            emit(253)
+                            emit(212)
+                            emit(193)
+                            emit(72)
+                            emit(131)
+                            emit(198)
+                            emit(32)
+                            emit(72)
+                            emit(131)
+                            emit(233)
+                            emit(4)
+                            jbc: jmp()
+                            put(jbc, lpc - (jbc + 4))
+                            patch(tlc)
+                            emit(196)
+                            emit(227)
+                            emit(125)
+                            emit(57)
+                            emit(193)
+                            emit(1)
+                            emit(197)
+                            emit(249)
+                            emit(212)
+                            emit(193)
+                            emit(197)
+                            emit(249)
+                            emit(112)
+                            emit(200)
+                            emit(78)
+                            emit(197)
+                            emit(249)
+                            emit(212)
+                            emit(193)
+                            emit(196)
+                            emit(225)
+                            emit(249)
+                            emit(126)
+                            emit(192)
+                            emit(72)
+                            emit(133)
+                            emit(201)
+                            dnc: jz()
+                            align32()
+                            lpt: here()
+                            emit(72)
+                            emit(3)
+                            emit(6)
+                            emit(72)
+                            emit(131)
+                            emit(198)
+                            emit(8)
+                            emit(72)
+                            emit(255)
+                            emit(201)
+                            emit(15)
+                            emit(133)
+                            ajt: here()
+                            br_at: _sov_list_add(br_at, ajt)
+                            br_pv: _sov_list_add(br_pv, pad_ver)
+                            br_id: _sov_list_add(br_id, ajt)
+                            br_st: _sov_list_add(br_st, 0)
+                            emit4(0)
+                            put(ajt, lpt - (ajt + 4))
+                            patch(dnc)
+                            if ajt < 0
+                                print "PN2587"
+                            mov_rcx_rax()
+                            loadv(acc)
+                            add_rax_rcx()
+                            storev(acc)
+                            emit(197)
+                            emit(248)
+                            emit(119)
+                            loadv(lim)
+                            storev(iv)
+                            patch(skc)
+                            return 1
+    if _sov_starts_with(work, "poke_byte(") is 1
+        if peek_byte(work, length(work) - 1) is 41 is 1
+            inside: cut(work, 10, length(work) - 1)
+            p1: look(inside, ",")
+            if p1 > 0
+                ptr: strip(cut(inside, 0, p1))
+                rest: cut(inside, p1 + 1, length(inside))
+                p2: look(rest, ",")
+                if p2 > 0
+                    ix: strip(cut(rest, 0, p2))
+                    bv: strip(cut(rest, p2 + 1, length(rest)))
+                    if _sov_str_eq(ix, iv) is 1
+                        if _sov_starts_with(bv, "peek_byte(") is 1
+                            if peek_byte(bv, length(bv) - 1) is 41 is 1
+                                inn: cut(bv, 10, length(bv) - 1)
+                                q: look(inn, ",")
+                                if q > 0
+                                    src: strip(cut(inn, 0, q))
+                                    ix2: strip(cut(inn, q + 1, length(inn)))
+                                    if _sov_str_eq(ix2, iv) is 1
+                                        emit_rep_movs(ptr, src, iv, lim)
+                                        return 1
+                        if digitb(peek_byte(bv, 0)) is 1
+                            opt_imm: num_of(bv)
+                            emit_rep_stos(ptr, iv, lim)
+                            return 1
+    if _sov_starts_with(work, "poke_i64(") is 1
+        if peek_byte(work, length(work) - 1) is 41 is 1
+            inside: cut(work, 9, length(work) - 1)
+            p1: look(inside, ",")
+            if p1 > 0
+                ptr: strip(cut(inside, 0, p1))
+                rest: cut(inside, p1 + 1, length(inside))
+                p2: look(rest, ",")
+                if p2 > 0
+                    ix: strip(cut(rest, 0, p2))
+                    vv: strip(cut(rest, p2 + 1, length(rest)))
+                    if _sov_str_eq(ix, join(iv, " times 8")) is 1
+                        if _sov_str_eq(vv, iv) is 1
+                            iota_ptr: ptr
+                            iota_lim: lim
+                            if _sov_str_eq(lim, kn) is 1
+                                if kv > 0
+                                    return 1
+                            loadv(lim)
+                            storev(iv)
+                            return 1
+try_patfill_while cond blines lines li:
+    if _sov_list_len(blines) is not 2
+        return 0
+    c: strip(cops(cond))
+    p: look(c, " < ")
+    if p < 0
+        return 0
+    iv: repl(strip(cut(c, 0, p)), " ", "_")
+    lim: repl(strip(cut(c, p + 3, length(c))), " ", "_")
+    if plain_name(iv) is 0
+        return 0
+    if is_imm(lim) is 0
+        return 0
+    nn: num_of(lim)
+    if nn < 1
+        return 0
+    want0: join(iv, ": 0")
+    jj: li - 1
+    found: 0
+    as long as jj >= 0
+        pl: strip(_sov_list_get(lines, jj))
+        if length(pl) > 0
+            if peek_byte(pl, 0) is not 35
+                if _sov_starts_with(pl, "use ") is 0
+                    if _sov_str_eq(pl, want0) is 1
+                        found: 1
+                    jj: 0 - 1
+        jj: jj - 1
+    if found is 0
+        return 0
+    l1: strip(_sov_list_get(blines, 0))
+    l2: strip(_sov_list_get(blines, 1))
+    pb1: "poke_byte("
+    fl: blank
+    if _sov_starts_with(l1, pb1) is 1
+        fl: l1
+    if _sov_starts_with(l2, pb1) is 1
+        fl: l2
+    if length(fl) is 0
+        return 0
+    inc_r: join(iv, join(": ", join(iv, " + 1")))
+    bumped: 0
+    if _sov_str_eq(l1, inc_r) is 1
+        bumped: 1
+    if _sov_str_eq(l2, inc_r) is 1
+        bumped: 1
+    if bumped is 0
+        return 0
+    if peek_byte(fl, length(fl) - 1) is 41 is 0
+        return 0
+    inn: cut(fl, 10, length(fl) - 1)
+    c1: look(inn, ",")
+    if c1 < 0
+        return 0
+    dstb: repl(strip(cut(inn, 0, c1)), " ", "_")
+    rest: cut(inn, c1 + 1, length(inn))
+    c2: look(rest, ",")
+    if c2 < 0
+        return 0
+    idx2: repl(strip(cut(rest, 0, c2)), " ", "_")
+    if _sov_str_eq(idx2, iv) is 0
+        return 0
+    vvv: strip(cut(rest, c2 + 1, length(rest)))
+    if _sov_starts_with(vvv, "peek_byte(") is 0
+        return 0
+    if peek_byte(vvv, length(vvv) - 1) is 41 is 0
+        return 0
+    vinn: strip(cut(vvv, 10, length(vvv) - 1))
+    c3: look(vinn, ",")
+    if c3 < 0
+        return 0
+    srcb: repl(strip(cut(vinn, 0, c3)), " ", "_")
+    midx: strip(cut(vinn, c3 + 1, length(vinn)))
+    mpre: join(iv, " % ")
+    if _sov_starts_with(midx, mpre) is 0
+        return 0
+    ptxt: strip(cut(midx, length(mpre), length(midx)))
+    if length(ptxt) is 0
+        return 0
+    if is_imm(ptxt) is 0
+        return 0
+    pp: num_of(ptxt)
+    if pp < 1
+        return 0
+    if pp > nn
+        return 0
+    if pp > 32768
+        return 0
+    if plain_name(dstb) is 0
+        return 0
+    if plain_name(srcb) is 0
+        return 0
+    nb: nn / pp
+    rr: nn % pp
+    cflush_all()
+    loadv(dstb)
+    mov_rdi_rax()
+    rax_imm(nn)
+    mov_rsi_rax()
+    chk_mem(1)
+    emit(73)
+    emit(137)
+    emit(249)
+    loadv(srcb)
+    mov_rdi_rax()
+    rax_imm(pp)
+    mov_rsi_rax()
+    chk_mem(1)
+    emit(72)
+    emit(137)
+    emit(254)
+    emit(76)
+    emit(137)
+    emit(207)
+    emit(185)
+    emit4(nb)
+    align32()
+    lp: here()
+    ob: 0
+    if pp > 15
+        as long as ob + 16 <= pp
+            pf_movdqu(ob)
+            ob: ob + 16
+        if pp % 16 is not 0
+            pf_movdqu(pp - 16)
+    if not
+        as long as ob < pp
+            pf_movb(ob)
+            ob: ob + 1
+    if pp < 128
+        emit(72)
+        emit(131)
+        emit(199)
+        emit(pp)
+    if not
+        emit(72)
+        emit(129)
+        emit(199)
+        emit4(pp)
+    emit(72)
+    emit(255)
+    emit(201)
+    emit(15)
+    emit(133)
+    jb: here()
+    br_at: _sov_list_add(br_at, jb)
+    br_pv: _sov_list_add(br_pv, pad_ver)
+    br_id: _sov_list_add(br_id, jb)
+    br_st: _sov_list_add(br_st, 0)
+    emit4(0)
+    put(jb, lp - (jb + 4))
+    if rr > 15
+        ob: 0
+    if jb < 0
+        print "PN2659"
+        as long as ob + 16 <= rr
+            pf_movdqu(ob)
+            ob: ob + 16
+        if rr % 16 is not 0
+            pf_movdqu(rr - 16)
+    if not
+        if rr > 0
+            ob: 0
+            as long as ob < rr
+                pf_movb(ob)
+                ob: ob + 1
+    rax_imm(nn)
+    storev(iv)
+    return 1

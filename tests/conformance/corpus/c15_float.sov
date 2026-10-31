@@ -1,0 +1,12 @@
+# c15 — floating-point feature: f64 soft-float library, exact IEEE binary64.
+use f64
+main:
+    print f64_to_i64(f64_add(f64_from_i64(9007199254740992), f64_from_i64(1)))
+    print f64_to_i64(f64_mul(f64_from_i64(3), f64_from_i64(7)))
+    print f64_to_i64(f64_div(f64_from_i64(1), f64_from_i64(3)))
+    print f64_to_i64(f64_sub(f64_from_i64(1), f64_from_i64(3)))
+    print f64_cmp(f64_from_i64(-5), f64_from_i64(2))
+    print f64_to_i64(f64_mul(f64_from_i64(3037000500), f64_from_i64(3037000500)))
+    print f64_to_i64(f64_div(f64_from_i64(1), f64_from_i64(0)))
+    print f64_to_i64(f64_from_frac(22, 7))
+    print f64_to_i64(f64_add(f64_from_i64(9200000000000000000), f64_from_i64(700000000000000000)))

@@ -1,0 +1,223 @@
+use bit32
+use string
+use mem
+md5_k i:
+    if i is 0 -> return 3614090360
+    if i is 1 -> return 3905402710
+    if i is 2 -> return 606105819
+    if i is 3 -> return 3250441966
+    if i is 4 -> return 4118548399
+    if i is 5 -> return 1200080426
+    if i is 6 -> return 2821735955
+    if i is 7 -> return 4249261313
+    if i is 8 -> return 1770035416
+    if i is 9 -> return 2336552879
+    if i is 10 -> return 4294925233
+    if i is 11 -> return 2304563134
+    if i is 12 -> return 1804603682
+    if i is 13 -> return 4254626195
+    if i is 14 -> return 2792965006
+    if i is 15 -> return 1236535329
+    if i is 16 -> return 4129170786
+    if i is 17 -> return 3225465664
+    if i is 18 -> return 643717713
+    if i is 19 -> return 3921069994
+    if i is 20 -> return 3593408605
+    if i is 21 -> return 38016083
+    if i is 22 -> return 3634488961
+    if i is 23 -> return 3889429448
+    if i is 24 -> return 568446438
+    if i is 25 -> return 3275163606
+    if i is 26 -> return 4107603335
+    if i is 27 -> return 1163531501
+    if i is 28 -> return 2850285829
+    if i is 29 -> return 4243563512
+    if i is 30 -> return 1735328473
+    if i is 31 -> return 2368359562
+    if i is 32 -> return 4294588738
+    if i is 33 -> return 2272392833
+    if i is 34 -> return 1839030562
+    if i is 35 -> return 4259657740
+    if i is 36 -> return 2763975236
+    if i is 37 -> return 1272893353
+    if i is 38 -> return 4139469664
+    if i is 39 -> return 3200236656
+    if i is 40 -> return 681279174
+    if i is 41 -> return 3936430074
+    if i is 42 -> return 3572445317
+    if i is 43 -> return 76029189
+    if i is 44 -> return 3654602809
+    if i is 45 -> return 3873151461
+    if i is 46 -> return 530742520
+    if i is 47 -> return 3299628645
+    if i is 48 -> return 4096336452
+    if i is 49 -> return 1126891415
+    if i is 50 -> return 2878612391
+    if i is 51 -> return 4237533241
+    if i is 52 -> return 1700485571
+    if i is 53 -> return 2399980690
+    if i is 54 -> return 4293915773
+    if i is 55 -> return 2240044497
+    if i is 56 -> return 1873313359
+    if i is 57 -> return 4264355552
+    if i is 58 -> return 2734768916
+    if i is 59 -> return 1309151649
+    if i is 60 -> return 4149444226
+    if i is 61 -> return 3174756917
+    if i is 62 -> return 718787259
+    if i is 63 -> return 3951481745
+md5_s i:
+    if i < 16
+        if wand(i, 3) is 0 -> return 7
+        if wand(i, 3) is 1 -> return 12
+        if wand(i, 3) is 2 -> return 17
+        return 22
+    if i < 32
+        if wand(i, 3) is 0 -> return 5
+        if wand(i, 3) is 1 -> return 9
+        if wand(i, 3) is 2 -> return 14
+        return 20
+    if i < 48
+        if wand(i, 3) is 0 -> return 4
+        if wand(i, 3) is 1 -> return 11
+        if wand(i, 3) is 2 -> return 16
+        return 23
+    if wand(i, 3) is 0 -> return 6
+    if wand(i, 3) is 1 -> return 10
+    if wand(i, 3) is 2 -> return 15
+    return 21
+md5_midx i:
+    if i < 16 -> return i
+    if i < 32 -> return wand(1 + i * 5, 15)
+    if i < 48 -> return wand(5 + i * 3, 15)
+    return wand(i * 7, 15)
+md5_rotl x n:
+    return wor(shl(x, n), shr(x, 32 - n))
+md5_bytes data n:
+    tot: n + 9
+    as long as tot % 64 is not 0
+        tot: tot + 1
+    buf: _sov_heap_alloc(tot + 8)
+    mem_copy(buf, data, n)
+    poke_byte(buf, n, 128)
+    i: n + 1
+    as long as i < tot
+        poke_byte(buf, i, 0)
+        i: i + 1
+    bits: n * 8
+    poke_byte(buf, tot - 8, bits % 256)
+    poke_byte(buf, tot - 7, (bits / 256) % 256)
+    poke_byte(buf, tot - 6, (bits / 65536) % 256)
+    poke_byte(buf, tot - 5, (bits / 16777216) % 256)
+    h0: 1732584193
+    h1: 4023233417
+    h2: 2562383102
+    h3: 271733878
+    w: _sov_alloc(16 * 8)
+    blk: 0
+    as long as blk < tot
+        t: 0
+        as long as t < 16
+            b0: peek_byte(buf, blk + t * 4)
+            b1: peek_byte(buf, blk + t * 4 + 1)
+            b2: peek_byte(buf, blk + t * 4 + 2)
+            b3: peek_byte(buf, blk + t * 4 + 3)
+            poke_i64(w, t * 8, b3 * 16777216 + b2 * 65536 + b1 * 256 + b0)
+            t: t + 1
+        a: h0
+        b: h1
+        c: h2
+        d: h3
+        i: 0
+        as long as i < 64
+            if i < 16 -> f: wor(wand(b, c), wand(wnot(b), d))
+            if not
+                if i < 32 -> f: wor(wand(b, d), wand(c, wnot(d)))
+                if not
+                    if i < 48 -> f: wxor(wxor(b, c), d)
+                    if not -> f: wxor(c, wor(b, wnot(d)))
+            tmp: wadd(wadd(a, f), wadd(md5_k(i), peek_i64(w, md5_midx(i) * 8)))
+            tmp: wadd(b, md5_rotl(tmp, md5_s(i)))
+            a: d
+            d: c
+            c: b
+            b: tmp
+            i: i + 1
+        h0: wadd(h0, a)
+        h1: wadd(h1, b)
+        h2: wadd(h2, c)
+        h3: wadd(h3, d)
+        blk: blk + 64
+    out: _sov_alloc(16)
+    ws: _sov_alloc(32)
+    poke_i64(ws, 0, h0)
+    poke_i64(ws, 8, h1)
+    poke_i64(ws, 16, h2)
+    poke_i64(ws, 24, h3)
+    i: 0
+    as long as i < 4
+        v: peek_i64(ws, i * 8)
+        poke_byte(out, i * 4, wand(v, 255))
+        poke_byte(out, i * 4 + 1, wand(shr(v, 8), 255))
+        poke_byte(out, i * 4 + 2, wand(shr(v, 16), 255))
+        poke_byte(out, i * 4 + 3, wand(shr(v, 24), 255))
+        i: i + 1
+    return out
+md5_hex text:
+    d: md5_bytes(text, str_len(text))
+    s: ""
+    i: 0
+    as long as i < 16
+        b: peek_byte(d, i)
+        hi: b / 16
+        lo: b % 16
+        h1: "0123456789abcdef"
+        s: str_cat(s, str_sub(h1, hi, hi + 1))
+        s: str_cat(s, str_sub(h1, lo, lo + 1))
+        i: i + 1
+    return s
+hmac_md5 key klen msg mlen out:
+    kb: _sov_heap_alloc(64)
+    if klen > 64
+        db: md5_bytes(key, klen)
+        i: 0
+        as long as i < 64
+            poke_byte(kb, i, 0)
+            i: i + 1
+        i: 0
+        as long as i < 16
+            poke_byte(kb, i, peek_byte(db, i))
+            i: i + 1
+    if not
+        i: 0
+        as long as i < 64
+            poke_byte(kb, i, 0)
+            i: i + 1
+        i: 0
+        as long as i < klen
+            poke_byte(kb, i, peek_byte(key, i))
+            i: i + 1
+    inner: _sov_alloc(64 + mlen + 16)
+    i: 0
+    as long as i < 64
+        poke_byte(inner, i, wxor(peek_byte(kb, i), 54))
+        i: i + 1
+    i: 0
+    as long as i < mlen
+        poke_byte(inner, 64 + i, peek_byte(msg, i))
+        i: i + 1
+    ib: md5_bytes(inner, 64 + mlen)
+    outer: _sov_alloc(64 + 16)
+    i: 0
+    as long as i < 64
+        poke_byte(outer, i, wxor(peek_byte(kb, i), 92))
+        i: i + 1
+    i: 0
+    as long as i < 16
+        poke_byte(outer, 64 + i, peek_byte(ib, i))
+        i: i + 1
+    ob: md5_bytes(outer, 80)
+    i: 0
+    as long as i < 16
+        poke_byte(out, i, peek_byte(ob, i))
+        i: i + 1

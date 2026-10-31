@@ -1,0 +1,461 @@
+# unsafe-module
+KACPI_RSDP_V1_LENGTH: 20
+KACPI_RSDP_V2_LENGTH: 36
+KACPI_SDT_HEADER_LENGTH: 36
+KACPI_MAX_RSDP_LENGTH: 4096
+KACPI_DEFAULT_MAX_SDT: 65536
+KACPI_RMRR_STRIDE: 24
+KACPI_IOAPIC_ROUTE_STRIDE: 16
+KACPI_DRHD_STRIDE: 24
+KACPI_MCFG_STRIDE: 32 
+KACPI_SCOPE_STRIDE: 160
+kacpi_sum bytes length:
+    if bytes is 0 -> return 1
+    if length < 1 -> return 1
+    total: 0
+    i: 0
+    as long as i < length
+        total: total + peek_raw8(bytes + i, 0)
+        i: i + 1
+    return band(total, 255)
+kacpi_sig4 pointer a b c d:
+    if pointer is 0 -> return 0
+    if peek_raw8(pointer, 0) is not a -> return 0
+    if peek_raw8(pointer + 1, 0) is not b -> return 0
+    if peek_raw8(pointer + 2, 0) is not c -> return 0
+    if peek_raw8(pointer + 3, 0) is not d -> return 0
+    return 1
+kacpi_rsdp_valid rsdp:
+    if rsdp is 0 -> return 0
+    if kacpi_sig4(rsdp, 82, 83, 68, 32) is not 1 -> return 0
+    if peek_raw8(rsdp + 4, 0) is not 80 -> return 0
+    if peek_raw8(rsdp + 5, 0) is not 84 -> return 0
+    if peek_raw8(rsdp + 6, 0) is not 82 -> return 0
+    if peek_raw8(rsdp + 7, 0) is not 32 -> return 0
+    if kacpi_sum(rsdp, KACPI_RSDP_V1_LENGTH) is not 0 -> return 0
+    revision: peek_raw8(rsdp + 15, 0)
+    if revision < 2 -> return 1
+    length: peek_raw32(rsdp + 20, 0)
+    if length < KACPI_RSDP_V2_LENGTH -> return 0
+    if length > KACPI_MAX_RSDP_LENGTH -> return 0
+    if kacpi_sum(rsdp, length) is not 0 -> return 0
+    return 1
+kacpi_find_rsdp first last:
+    if first is 0 -> return 0
+    if last <= first -> return 0
+    pointer: first
+    remainder: pointer % 16
+    if remainder is not 0 -> pointer: pointer + 16 - remainder
+    as long as pointer + KACPI_RSDP_V1_LENGTH <= last
+        fits: 1
+        if peek_raw8(pointer + 15, 0) >= 2
+            if pointer + 24 > last -> fits: 0
+            if not
+                length: peek_raw32(pointer + 20, 0)
+                if length < KACPI_RSDP_V2_LENGTH -> fits: 0
+                if length > last - pointer -> fits: 0
+        if fits is 1
+            if kacpi_rsdp_valid(pointer) is 1 -> return pointer
+        pointer: pointer + 16
+kacpi_sdt_valid table maximum:
+    if table is 0 -> return 0
+    if maximum < KACPI_SDT_HEADER_LENGTH -> return 0
+    length: peek_raw32(table + 4, 0)
+    if length < KACPI_SDT_HEADER_LENGTH -> return 0
+    if length > maximum -> return 0
+    if kacpi_sum(table, length) is not 0 -> return 0
+    return 1
+kacpi_root_find root stride a b c d maximum:
+    if stride is not 4
+        if stride is not 8 -> return 0
+    if kacpi_sdt_valid(root, maximum) is not 1 -> return 0
+    length: peek_raw32(root + 4, 0)
+    if (length - KACPI_SDT_HEADER_LENGTH) % stride is not 0 -> return 0
+    count: (length - KACPI_SDT_HEADER_LENGTH) / stride
+    i: 0
+    as long as i < count
+        table: peek_raw32(root + KACPI_SDT_HEADER_LENGTH + i * stride, 0)
+        if stride is 8 -> table: peek_raw64(root + KACPI_SDT_HEADER_LENGTH + i * stride, 0)
+        if table is not 0
+            if kacpi_sig4(table, a, b, c, d) is 1
+                if kacpi_sdt_valid(table, maximum) is not 1 -> return 0
+                return table
+        i: i + 1
+kacpi_find_table rsdp a b c d maximum:
+    if kacpi_rsdp_valid(rsdp) is not 1 -> return 0
+    revision: peek_raw8(rsdp + 15, 0)
+    if revision >= 2
+        xsdt: peek_raw64(rsdp + 24, 0)
+        if xsdt is not 0
+            if kacpi_sig4(xsdt, 88, 83, 68, 84) is not 1 -> return 0
+            return kacpi_root_find(xsdt, 8, a, b, c, d, maximum)
+    rsdt: peek_raw32(rsdp + 16, 0)
+    if rsdt is 0 -> return 0
+    if kacpi_sig4(rsdt, 82, 83, 68, 84) is not 1 -> return 0
+    return kacpi_root_find(rsdt, 4, a, b, c, d, maximum)
+kacpi_mcfg_valid table maximum:
+    if kacpi_sdt_valid(table, maximum) is not 1 -> return 0
+    if kacpi_sig4(table, 77, 67, 70, 71) is not 1 -> return 0
+    length: peek_raw32(table + 4, 0)
+    if length < 44 -> return 0
+    if (length - 44) % 16 is not 0 -> return 0
+    reserved: 36
+    as long as reserved < 44
+        if peek_raw8(table + reserved, 0) is not 0 -> return 0
+        reserved: reserved + 1
+    count: (length - 44) / 16
+    index: 0
+    as long as index < count
+        entry: table + 44 + index * 16
+        base: peek_raw64(entry, 0)
+        segment: peek_raw16(entry + 8, 0)
+        first: peek_raw8(entry + 10, 0)
+        last: peek_raw8(entry + 11, 0)
+        if base < 1048576 -> return 0
+        if base % 1048576 is not 0 -> return 0
+        if last < first -> return 0
+        if peek_raw32(entry + 12, 0) is not 0 -> return 0
+        span: (last - first + 1) * 1048576
+        if base + span < base -> return 0
+        prior: 0
+        as long as prior < index
+            earlier: table + 44 + prior * 16
+            earlier_segment: peek_raw16(earlier + 8, 0)
+            if earlier_segment is segment
+                earlier_first: peek_raw8(earlier + 10, 0)
+                earlier_last: peek_raw8(earlier + 11, 0)
+                if first <= earlier_last
+                    if last >= earlier_first -> return 0
+            prior: prior + 1
+        index: index + 1
+    return 1
+kacpi_mcfg_count table maximum:
+    if kacpi_mcfg_valid(table, maximum) is not 1 -> return 0 - 1
+    return (peek_raw32(table + 4, 0) - 44) / 16
+kacpi_mcfg_at table maximum index record:
+    if record is 0 -> return 0
+    if index < 0 -> return 0
+    count: kacpi_mcfg_count(table, maximum)
+    if count < 0 -> return 0
+    if index >= count -> return 0
+    entry: table + 44 + index * 16
+    poke_raw64(record, 0, peek_raw64(entry, 0))
+    poke_raw64(record + 8, 0, peek_raw16(entry + 8, 0))
+    poke_raw64(record + 16, 0, peek_raw8(entry + 10, 0))
+    poke_raw64(record + 24, 0, peek_raw8(entry + 11, 0))
+    return 1
+kacpi_dmar_scope_list_valid record size first:
+    if first > size -> return 0
+    offset: first
+    as long as offset < size
+        if size - offset < 2 -> return 0
+        scope_type: peek_raw8(record + offset, 0)
+        scope_size: peek_raw8(record + offset + 1, 0)
+        if scope_type is 0 -> return 0
+        if scope_size < 8 -> return 0
+        if scope_size > size - offset -> return 0
+        if (scope_size - 6) % 2 is not 0 -> return 0
+        path: 6
+        as long as path < scope_size
+            device: peek_raw8(record + offset + path, 0)
+            function: peek_raw8(record + offset + path + 1, 0)
+            if device > 31 -> return 0
+            if function > 7 -> return 0
+            path: path + 2
+        offset: offset + scope_size
+    if offset is not size -> return 0
+    return 1
+kacpi_dmar_scopes_valid record size:
+    return kacpi_dmar_scope_list_valid(record, size, 16)
+kacpi_dmar_valid table maximum:
+    if kacpi_sdt_valid(table, maximum) is not 1 -> return 0
+    if kacpi_sig4(table, 68, 77, 65, 82) is not 1 -> return 0
+    length: peek_raw32(table + 4, 0)
+    if length < 48 -> return 0
+    offset: 48
+    as long as offset < length
+        if length - offset < 4 -> return 0
+        typ: peek_raw16(table + offset, 0)
+        size: peek_raw16(table + offset + 2, 0)
+        if size < 4 -> return 0
+        if size > length - offset -> return 0
+        if typ is 0
+            if size < 16 -> return 0
+            if kacpi_dmar_scope_list_valid(table + offset, size, 16) is not 1 -> return 0
+            drhd_scope: 16
+            as long as drhd_scope < size
+                drhd_scope_type: peek_raw8(table + offset + drhd_scope, 0)
+                if drhd_scope_type < 1 -> return 0
+                if drhd_scope_type > 4 -> return 0
+                drhd_scope: drhd_scope + peek_raw8(table + offset + drhd_scope + 1, 0)
+            base: peek_raw64(table + offset + 8, 0)
+            if base < 4096 -> return 0
+            if base % 4096 is not 0 -> return 0
+        if typ is 1
+            if size < 32 -> return 0
+            if kacpi_dmar_scope_list_valid(table + offset, size, 24) is not 1 -> return 0
+            rmrr_scope: 24
+            as long as rmrr_scope < size
+                rmrr_scope_type: peek_raw8(table + offset + rmrr_scope, 0)
+                if rmrr_scope_type is not 1
+                    if rmrr_scope_type is not 2 -> return 0
+                rmrr_scope: rmrr_scope + peek_raw8(table + offset + rmrr_scope + 1, 0)
+            reserved_base: peek_raw64(table + offset + 8, 0)
+            reserved_end: peek_raw64(table + offset + 16, 0)
+            if reserved_end < reserved_base -> return 0
+        if typ is 2
+            if size < 8 -> return 0
+            if kacpi_dmar_scope_list_valid(table + offset, size, 8) is not 1 -> return 0
+        if typ is 3
+            if size is not 20 -> return 0
+        offset: offset + size
+    if offset is not length -> return 0
+    return 1
+kacpi_dmar_drhd_count table maximum:
+    if kacpi_dmar_valid(table, maximum) is not 1 -> return 0 - 1
+    length: peek_raw32(table + 4, 0)
+    count: 0
+    offset: 48
+    as long as offset < length
+        typ: peek_raw16(table + offset, 0)
+        size: peek_raw16(table + offset + 2, 0)
+        if typ is 0 -> count: count + 1
+        offset: offset + size
+    return count
+kacpi_dmar_drhd_at table maximum index record:
+    if record is 0 -> return 0
+    if index < 0 -> return 0
+    if kacpi_dmar_valid(table, maximum) is not 1 -> return 0
+    length: peek_raw32(table + 4, 0)
+    found: 0
+    offset: 48
+    as long as offset < length
+        typ: peek_raw16(table + offset, 0)
+        size: peek_raw16(table + offset + 2, 0)
+        if typ is 0
+            if found is index
+                poke_raw64(record, 0, peek_raw64(table + offset + 8, 0))
+                poke_raw64(record + 8, 0, peek_raw16(table + offset + 6, 0))
+                poke_raw64(record + 16, 0, peek_raw8(table + offset + 4, 0))
+                return 1
+            found: found + 1
+        offset: offset + size
+kacpi_dmar_drhd_scope_count table maximum index:
+    if index < 0 -> return 0 - 1
+    if kacpi_dmar_valid(table, maximum) is not 1 -> return 0 - 1
+    length: peek_raw32(table + 4, 0)
+    found: 0
+    offset: 48
+    as long as offset < length
+        typ: peek_raw16(table + offset, 0)
+        size: peek_raw16(table + offset + 2, 0)
+        if typ is 0
+            if found is index
+                count: 0
+                scope: 16
+                as long as scope < size
+                    count: count + 1
+                    scope: scope + peek_raw8(table + offset + scope + 1, 0)
+                return count
+            found: found + 1
+        offset: offset + size
+    return 0 - 1
+kacpi_dmar_drhd_scope_at table maximum index scope_index record:
+    if record is 0 -> return 0
+    if index < 0 -> return 0
+    if scope_index < 0 -> return 0
+    if kacpi_dmar_valid(table, maximum) is not 1 -> return 0
+    length: peek_raw32(table + 4, 0)
+    found: 0
+    offset: 48
+    as long as offset < length
+        typ: peek_raw16(table + offset, 0)
+        size: peek_raw16(table + offset + 2, 0)
+        if typ is 0
+            if found is index
+                scope: 16
+                ordinal: 0
+                as long as scope < size
+                    scope_size: peek_raw8(table + offset + scope + 1, 0)
+                    if ordinal is scope_index
+                        path_count: (scope_size - 6) / 2
+                        poke_raw64(record, 0, peek_raw8(table + offset + scope, 0))
+                        poke_raw64(record + 8, 0, peek_raw8(table + offset + scope + 5, 0))
+                        poke_raw64(record + 16, 0, peek_raw8(table + offset + scope + 4, 0))
+                        poke_raw64(record + 24, 0, path_count)
+                        path: 0
+                        as long as path < path_count
+                            device: peek_raw8(table + offset + scope + 6 + path * 2, 0)
+                            function: peek_raw8(table + offset + scope + 7 + path * 2, 0)
+                            poke_raw8(record + 32 + path, 0, device * 8 + function)
+                            path: path + 1
+                        return 1
+                    ordinal: ordinal + 1
+                    scope: scope + scope_size
+                return 0
+            found: found + 1
+        offset: offset + size
+kacpi_dmar_ioapic_route table maximum enumeration scope drhd record:
+    if scope is 0 -> return 0
+    if drhd is 0 -> return 0
+    if record is 0 -> return 0
+    if enumeration < 0 -> return 0
+    if enumeration > 255 -> return 0
+    if kacpi_dmar_valid(table, maximum) is not 1 -> return 0
+    found: 0
+    count: kacpi_dmar_drhd_count(table, maximum)
+    unit: 0
+    as long as unit < count
+        if kacpi_dmar_drhd_at(table, maximum, unit, drhd) is not 1 -> return 0
+        if peek_raw64(drhd + 8, 0) is 0
+            scopes: kacpi_dmar_drhd_scope_count(table, maximum, unit)
+            scope_index: 0
+            as long as scope_index < scopes
+                if kacpi_dmar_drhd_scope_at(table, maximum, unit, scope_index, scope) is not 1 -> return 0
+                if peek_raw64(scope, 0) is 3
+                    if peek_raw64(scope + 16, 0) is enumeration
+                        if peek_raw64(scope + 24, 0) is not 1 -> return 0
+                        if found is 1 -> return 0
+                        source: peek_raw64(scope + 8, 0) * 256 + peek_raw8(scope + 32, 0)
+                        poke_raw64(record, 0, unit)
+                        poke_raw64(record + 8, 0, source)
+                        found: 1
+                scope_index: scope_index + 1
+        unit: unit + 1
+    return found
+kacpi_dmar_first_drhd table maximum:
+    if kacpi_dmar_valid(table, maximum) is not 1 -> return 0
+    length: peek_raw32(table + 4, 0)
+    offset: 48
+    as long as offset < length
+        typ: peek_raw16(table + offset, 0)
+        size: peek_raw16(table + offset + 2, 0)
+        if typ is 0
+            segment: peek_raw16(table + offset + 6, 0)
+            if segment is 0 -> return peek_raw64(table + offset + 8, 0)
+        offset: offset + size
+kacpi_dmar_rmrr_count table maximum:
+    if kacpi_dmar_valid(table, maximum) is not 1 -> return 0 - 1
+    length: peek_raw32(table + 4, 0)
+    count: 0
+    offset: 48
+    as long as offset < length
+        typ: peek_raw16(table + offset, 0)
+        size: peek_raw16(table + offset + 2, 0)
+        if typ is 1
+            if peek_raw16(table + offset + 6, 0) is 0 -> count: count + 1
+        offset: offset + size
+    return count
+kacpi_dmar_rmrr_at table maximum index record:
+    if record is 0 -> return 0
+    if index < 0 -> return 0
+    if kacpi_dmar_valid(table, maximum) is not 1 -> return 0
+    length: peek_raw32(table + 4, 0)
+    found: 0
+    offset: 48
+    as long as offset < length
+        typ: peek_raw16(table + offset, 0)
+        size: peek_raw16(table + offset + 2, 0)
+        if typ is 1
+            segment: peek_raw16(table + offset + 6, 0)
+            if segment is 0
+                if found is index
+                    poke_raw64(record, 0, peek_raw64(table + offset + 8, 0))
+                    poke_raw64(record + 8, 0, peek_raw64(table + offset + 16, 0))
+                    poke_raw64(record + 16, 0, segment)
+                    return 1
+                found: found + 1
+        offset: offset + size
+kacpi_dmar_rmrr_scope_count table maximum index:
+    if index < 0 -> return 0 - 1
+    if kacpi_dmar_valid(table, maximum) is not 1 -> return 0 - 1
+    length: peek_raw32(table + 4, 0)
+    found: 0
+    offset: 48
+    as long as offset < length
+        typ: peek_raw16(table + offset, 0)
+        size: peek_raw16(table + offset + 2, 0)
+        if typ is 1
+            if peek_raw16(table + offset + 6, 0) is 0
+                if found is index
+                    count: 0
+                    scope: 24
+                    as long as scope < size
+                        count: count + 1
+                        scope: scope + peek_raw8(table + offset + scope + 1, 0)
+                    return count
+                found: found + 1
+        offset: offset + size
+    return 0 - 1
+kacpi_dmar_rmrr_scope_at table maximum index scope_index record:
+    if record is 0 -> return 0
+    if index < 0 -> return 0
+    if scope_index < 0 -> return 0
+    if kacpi_dmar_valid(table, maximum) is not 1 -> return 0
+    length: peek_raw32(table + 4, 0)
+    found: 0
+    offset: 48
+    as long as offset < length
+        typ: peek_raw16(table + offset, 0)
+        size: peek_raw16(table + offset + 2, 0)
+        if typ is 1
+            if peek_raw16(table + offset + 6, 0) is 0
+                if found is index
+                    scope: 24
+                    ordinal: 0
+                    as long as scope < size
+                        scope_size: peek_raw8(table + offset + scope + 1, 0)
+                        if ordinal is scope_index
+                            path_count: (scope_size - 6) / 2
+                            poke_raw64(record, 0, peek_raw8(table + offset + scope, 0))
+                            poke_raw64(record + 8, 0, peek_raw8(table + offset + scope + 5, 0))
+                            poke_raw64(record + 16, 0, peek_raw8(table + offset + scope + 4, 0))
+                            poke_raw64(record + 24, 0, path_count)
+                            path: 0
+                            as long as path < path_count
+                                device: peek_raw8(table + offset + scope + 6 + path * 2, 0)
+                                function: peek_raw8(table + offset + scope + 7 + path * 2, 0)
+                                poke_raw8(record + 32 + path, 0, device * 8 + function)
+                                path: path + 1
+                            return 1
+                        ordinal: ordinal + 1
+                        scope: scope + scope_size
+                    return 0
+                found: found + 1
+        offset: offset + size
+kacpi_dmar_rmrr_match_direct table maximum index requester:
+    if requester < 0 -> return 0 - 1
+    if requester > 65535 -> return 0 - 1
+    if index < 0 -> return 0 - 1
+    if kacpi_dmar_valid(table, maximum) is not 1 -> return 0 - 1
+    length: peek_raw32(table + 4, 0)
+    found: 0
+    offset: 48
+    as long as offset < length
+        typ: peek_raw16(table + offset, 0)
+        size: peek_raw16(table + offset + 2, 0)
+        if typ is 1
+            if peek_raw16(table + offset + 6, 0) is 0
+                if found is index
+                    unresolved: 0
+                    scope: 24
+                    as long as scope < size
+                        scope_type: peek_raw8(table + offset + scope, 0)
+                        scope_size: peek_raw8(table + offset + scope + 1, 0)
+                        if scope_type is 1
+                            if scope_size is 8
+                                bus: peek_raw8(table + offset + scope + 5, 0)
+                                device: peek_raw8(table + offset + scope + 6, 0)
+                                function: peek_raw8(table + offset + scope + 7, 0)
+                                scoped: bus * 256 + device * 8 + function
+                                if scoped is requester -> return 1
+                            if not -> unresolved: 1
+                        if not -> unresolved: 1
+                        scope: scope + scope_size
+                    if unresolved is 1 -> return 0 - 2
+                    return 0
+                found: found + 1
+        offset: offset + size
+    return 0 - 1
+kacpi_dmar_first_rmrr table maximum record:
+    return kacpi_dmar_rmrr_at(table, maximum, 0, record)

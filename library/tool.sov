@@ -1,0 +1,90 @@
+use sys
+use pipe
+use list
+tool_outv path args:
+    fds: pipe_new()
+    if fds is 0 -> return blank
+    rfd: pipe_read_fd(fds)
+    wfd: pipe_write_fd(fds)
+    pid: sys_fork()
+    if pid is 0
+        sys_close(rfd)
+        sys_dup2(wfd, 1)
+        sys_close(wfd)
+        n: list_len(args)
+        argv: _sov_alloc((n + 2) * 8)
+        poke_i64(argv, 0, path)
+        i: 0
+        as long as i < n
+            poke_i64(argv, (i + 1) * 8, list_get(args, i))
+            i: i + 1
+        poke_i64(argv, (n + 1) * 8, 0)
+        syscall(59, path, argv, 0, 0, 0, 0)
+        sys_exit(127)
+    if pid < 0
+        pipe_close(fds)
+        return blank
+    sys_close(wfd)
+    cap: 262144
+    buf: _sov_heap_alloc(cap + 1)
+    n: 0
+    going: 1
+    as long as going is 1
+        r: sys_read(rfd, buf + n, 65536)
+        if r <= 0 -> going: 0
+        if not
+            n: n + r
+            if n > cap - 65536 -> going: 0
+    sys_close(rfd)
+    sys_wait(pid)
+    poke_byte(buf, n, 0)
+    return as text buf
+tool_out path arg:
+    fds: pipe_new()
+    if fds is 0 -> return blank
+    rfd: pipe_read_fd(fds)
+    wfd: pipe_write_fd(fds)
+    pid: sys_fork()
+    if pid is 0
+        sys_close(rfd)
+        sys_dup2(wfd, 1)
+        sys_close(wfd)
+        argv: _sov_alloc(32)
+        poke_i64(argv, 0, path)
+        poke_i64(argv, 8, arg)
+        poke_i64(argv, 16, 0)
+        syscall(59, path, argv, 0, 0, 0, 0)
+        sys_exit(127)
+    if pid < 0
+        pipe_close(fds)
+        return blank
+    sys_close(wfd)
+    cap: 65536
+    buf: _sov_heap_alloc(cap + 1)
+    n: 0
+    going: 1
+    as long as going is 1
+        room: cap - n
+        if room < 1 -> going: 0
+        if not
+            g: sys_read(rfd, buf + n, room)
+            if g < 1 -> going: 0
+            if not -> n: n + g
+    poke_byte(buf, n, 0)
+    sys_close(rfd)
+    sys_wait(pid)
+    if n > 0
+        if peek_byte(buf, n - 1) is 10 -> poke_byte(buf, n - 1, 0)
+    return as text buf
+tool_run path arg:
+    pid: sys_fork()
+    if pid is 0
+        argv: _sov_alloc(32)
+        poke_i64(argv, 0, path)
+        poke_i64(argv, 8, arg)
+        poke_i64(argv, 16, 0)
+        syscall(59, path, argv, 0, 0, 0, 0)
+        sys_exit(127)
+    if pid > 0
+        sys_wait(pid)
+        return 1

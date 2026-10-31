@@ -1,0 +1,20 @@
+use f64
+use num
+main:
+    a: f64_from_frac(1, 3)
+    b: f64_from_frac(1, 5)
+    c: f64_from_frac(1, 7)
+    d: f64_from_frac(1, 11)
+    q: f64_from_frac(1, 4)
+    k: 0
+    as long as k < 1000000
+        a: f64_mul(f64_add(a, b), q)
+        b: f64_mul(f64_add(b, c), q)
+        c: f64_mul(f64_add(c, d), q)
+        d: f64_mul(f64_add(d, a), q)
+        a: f64_mul(f64_add(a, c), q)
+        b: f64_mul(f64_add(b, d), q)
+        c: f64_mul(f64_add(c, a), q)
+        d: f64_mul(f64_add(d, b), q)
+        k: k + 1
+    print num_text(a + b + c + d)

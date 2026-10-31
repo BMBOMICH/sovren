@@ -1,0 +1,19 @@
+use string
+main:
+    a: "  hello world  "
+    b: "no trim"
+    print str_len(str_trim(a))
+    print str_len(str_trim(b))
+    print str_trim(a)
+    c: "   "
+    print str_len(str_trim(c))
+    d: " x"
+    print str_trim(d)
+    e: ""
+    print str_len(str_trim(e))
+    f: str_cat("  ab", "cd  ")
+    print str_trim(f)
+    print str_len(str_trim(f))
+    g: _sov_trim(a)
+    print g
+    print str_len(g)

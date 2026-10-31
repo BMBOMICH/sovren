@@ -1,0 +1,11 @@
+counter: 5
+bump by:
+    counter: counter + by
+    return 0
+main:
+    bump(10)
+    bump(100)
+    print counter
+    stage: counter * 2
+    bump(stage - 230)
+    print counter

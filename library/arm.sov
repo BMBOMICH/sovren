@@ -1,0 +1,1237 @@
+use lz2
+use mem
+use file
+use string
+use num
+use bit32
+ARM_MEM: 268435456
+ARM_OUT: 1048576
+arm_new:
+    m: mem_new(512)
+    i: 0
+    as long as i < 512
+        poke_byte(m, i, 0)
+        i: i + 1
+    poke_i64(m, 280, mem_new(ARM_MEM))
+    poke_i64(m, 288, ARM_MEM)
+    poke_i64(m, 296, mem_new(ARM_OUT))
+    poke_i64(m, 304, 0)
+    poke_i64(m, 440, mem_new(208))
+    poke_i64(m, 448, 0)
+    poke_i64(m, 456, 0)
+    poke_i64(m, 464, 0)
+    poke_i64(m, 472, 0)
+    return m
+arm_reg m n:
+    if n is 31 -> return peek_i64(m, 248)
+    return peek_i64(m, n * 8)
+arm_set m n v:
+    if n is 31
+        poke_i64(m, 248, v)
+        return 0
+    if n > 30 -> return 0
+    poke_i64(m, n * 8, v)
+arm_rz m n:
+    if n is 31 -> return 0
+    return peek_i64(m, n * 8)
+arm_pc m:
+    return peek_i64(m, 256)
+arm_set_pc m v:
+    poke_i64(m, 256, v)
+arm_sp m:
+    return peek_i64(m, 248)
+arm_set_sp m v:
+    poke_i64(m, 248, v)
+arm_base m:
+    return peek_i64(m, 280)
+arm_r8 m a:
+    if arm_in(m, a) is 0
+        arm_fault(m, a, 11)
+        return 0
+    return peek_byte(arm_base(m), a - peek_i64(m, 328))
+arm_fill_rand m a:
+    p: arm_base(m) + a - peek_i64(m, 328)
+    if sys_getrandom(p, 8) is 8 -> return 8
+arm_in m a:
+    d: a - peek_i64(m, 328)
+    if d < 0 -> return 0
+    if d >= peek_i64(m, 288) -> return 0
+    return 1
+arm_sig_slot sig:
+    if sig is 4 -> return 360
+    if sig is 6 -> return 368
+    if sig is 7 -> return 376
+    if sig is 8 -> return 384
+    return 392
+arm_fault m a sig:
+    poke_i64(m, 400, 1)
+    poke_i64(m, 408, sig)
+    poke_i64(m, 416, a)
+    if peek_i64(m, arm_sig_slot(sig)) > 0 -> poke_i64(m, 400, 2)
+arm_deliver m:
+    f: peek_i64(m, 400)
+    if f is 0 -> return 0
+    poke_i64(m, 400, 0)
+    sg: peek_i64(m, 408)
+    if f is 2
+        nsp: arm_reg(m, 31) - 64
+        arm_set(m, 31, nsp)
+        arm_set(m, 29, nsp)
+        arm_set(m, 0, sg)
+        arm_set_pc(m, peek_i64(m, arm_sig_slot(sg)))
+        return 1
+    poke_i64(m, 272, 2)
+    poke_i64(m, 336, peek_i64(m, 416))
+    file_append("/tmp/at.txt", str_cat(str_cat("fa=", num_text(peek_i64(m, 416))), str_cat(str_cat(" pc=", num_text(arm_pc(m))), str_cat(str_cat(" x30=", num_text(arm_reg(m, 30))), str_cat(str_cat(" h392=", num_text(peek_i64(m, 392))), str_cat(str_cat(" h360=", num_text(peek_i64(m, 360))), ""))))))
+    return 2
+arm_w8 m a v:
+    if arm_in(m, a) is 0
+        arm_fault(m, a, 11)
+        return 0
+    poke_byte(arm_base(m), a - peek_i64(m, 328), v)
+arm_r64 m a:
+    if arm_in(m, a) is 0
+        arm_fault(m, a, 11)
+        return 0
+    return peek_i64(arm_base(m) + a - peek_i64(m, 328), 0)
+arm_w64 m a v:
+    if arm_in(m, a) is 0
+        arm_fault(m, a, 11)
+        return 0
+    poke_i64(arm_base(m) + a - peek_i64(m, 328), 0, v)
+arm_w32c m a v:
+    q: v % 4294967296
+    arm_w8(m, a, q % 256)
+    arm_w8(m, a + 1, (q / 256) % 256)
+    arm_w8(m, a + 2, (q / 65536) % 256)
+    arm_w8(m, a + 3, (q / 16777216) % 256)
+arm_r32 m a:
+    if arm_in(m, a) is 0
+        arm_fault(m, a, 11)
+        return 0
+    b: arm_base(m) - peek_i64(m, 328)
+    v: peek_byte(b, a)
+    v: v + peek_byte(b, a + 1) * 256
+    v: v + peek_byte(b, a + 2) * 65536
+    v: v + peek_byte(b, a + 3) * 16777216
+    return v
+arm_say m p n:
+    o: peek_i64(m, 296)
+    used: peek_i64(m, 304)
+    i: 0
+    as long as i < n
+        if used < ARM_OUT - 2
+            poke_byte(o, used, arm_r8(m, p + i))
+            used: used + 1
+        i: i + 1
+    poke_byte(o, used, 0)
+    poke_i64(m, 304, used)
+arm_out m:
+    return as text peek_i64(m, 296)
+arm_code m:
+    return peek_i64(m, 312)
+arm_why m:
+    return peek_i64(m, 272)
+arm_signed v:
+    if v > 9223372036854775807 -> return v - 18446744073709551616
+    return v
+arm_wrap v:
+    if v < 0 -> return v + 18446744073709551616
+    if v > 18446744073709551615 -> return v - 18446744073709551616
+    return v
+arm_sx v n:
+    half: 0
+    if n is 26 -> half: 33554432
+    if n is 19 -> half: 262144
+    if n is 9 -> half: 256
+    if n is 7 -> half: 64
+    if half is 0
+        half: 1
+        i: 0
+        as long as i < n - 1
+            half: half * 2
+            i: i + 1
+    if v >= half -> return v - half * 2
+    return v
+arm_cmp m a b:
+    poke_i64(m, 264, a)
+    poke_i64(m, 272 - 0, peek_i64(m, 272))
+    poke_i64(m, 320, b)
+arm_flag_a m:
+    return peek_i64(m, 264)
+arm_flag_b m:
+    return peek_i64(m, 320)
+arm_cond m c:
+    a: arm_signed(arm_flag_a(m))
+    b: arm_signed(arm_flag_b(m))
+    if c is 0
+        if a is b -> return 1
+        return 0
+    if c is 1
+        if a is not b -> return 1
+        return 0
+    if c is 2
+        if arm_flag_a(m) >= arm_flag_b(m) -> return 1
+        return 0
+    if c is 3
+        if arm_flag_a(m) < arm_flag_b(m) -> return 1
+        return 0
+    if c is 8
+        if arm_flag_a(m) > arm_flag_b(m) -> return 1
+        return 0
+    if c is 9
+        if arm_flag_a(m) <= arm_flag_b(m) -> return 1
+        return 0
+    if c is 10
+        if a >= b -> return 1
+        return 0
+    if c is 11
+        if a < b -> return 1
+        return 0
+    if c is 12
+        if a > b -> return 1
+        return 0
+    if c is 13
+        if a <= b -> return 1
+        return 0
+    if c is 14 -> return 1
+arm_be4 d at:
+    return peek_byte(d, at) * 16777216 + peek_byte(d, at + 1) * 65536 + peek_byte(d, at + 2) * 256 + peek_byte(d, at + 3)
+arm_load m path:
+    d: file_read_all(path)
+    if d is 0 -> return 0
+    fszn: file_size(path)
+    if peek_byte(d, 0) is 207
+        if peek_byte(d, 1) is 250
+            if peek_byte(d, 2) is 237
+                if peek_byte(d, 3) is 254 -> return arm_load_macho(m, d, fszn)
+    if peek_byte(d, 0) is 202
+        if peek_byte(d, 1) is 254
+            if peek_byte(d, 2) is 186
+                if peek_byte(d, 3) is 190 -> return arm_load_macho(m, d, fszn)
+    if peek_byte(d, 0) is not 127
+        fszn: peek_i64(d, 0) % 4294967296
+        d2: lz2h_unpack(d)
+        if peek_byte(d2, 0) is not 127 -> return 0
+        d: d2
+    entry: peek_i64(d, 24)
+    phoff: peek_i64(d, 32)
+    phnum: peek_byte(d, 56) + peek_byte(d, 57) * 256
+    phsz: peek_byte(d, 54) + peek_byte(d, 55) * 256
+    if fszn < 64
+        print "arm_load: refused - elf is smaller than its own header"
+        return 0
+    if phnum < 1
+        print "arm_load: refused - no program headers"
+        return 0
+    if phnum > 32
+        print "arm_load: refused - absurd program header count"
+        return 0
+    if phoff + phnum * phsz > fszn
+        print "arm_load: refused - program header table runs past the file"
+        return 0
+    shoff2: peek_i64(d, 40)
+    shnum2: peek_byte(d, 60) + peek_byte(d, 61) * 256
+    if shoff2 > 0
+        if shoff2 + shnum2 * 64 > fszn
+            print "arm_load: refused - section header table runs past the file"
+            return 0
+    exlo: 0
+    exhi: 0
+    imghi: 0
+    i2: 0
+    as long as i2 < phnum
+        o2: phoff + i2 * phsz
+        t2: peek_byte(d, o2) + peek_byte(d, o2 + 1) * 256
+        if t2 is 1
+            off2: peek_i64(d, o2 + 8)
+            fsz2: peek_i64(d, o2 + 32)
+            msz2: peek_i64(d, o2 + 40)
+            if off2 + fsz2 > fszn
+                print "arm_load: refused - a load piece runs past the file"
+                return 0
+            if msz2 < fsz2
+                print "arm_load: refused - a piece maps more file than memory"
+                return 0
+            if peek_i64(d, o2 + 16) + msz2 > imghi -> imghi: peek_i64(d, o2 + 16) + msz2
+            fl2: peek_byte(d, o2 + 4)
+            if fl2 - (fl2 / 2) * 2 is 1
+                if exlo is 0 -> exlo: peek_i64(d, o2 + 16)
+                exhi: peek_i64(d, o2 + 16) + msz2
+        i2: i2 + 1
+    if exlo is 0
+        print "arm_load: refused - no executable piece"
+        return 0
+    if entry < exlo
+        print "arm_load: refused - entry outside the executable piece"
+        return 0
+    if entry > exhi - 1
+        print "arm_load: refused - entry outside the executable piece"
+        return 0
+    slide: 0
+    etype: peek_byte(d, 16) + peek_byte(d, 17) * 256
+    if etype is 3
+        rb: _sov_alloc(8)
+        if sys_getrandom(rb, 8) is 8
+            v: peek_i64(rb, 0)
+            if v < 0 -> v: 0 - v
+            slide: ((v - (v / 511) * 511) + 1) * 4096
+    lo: 0
+    i: 0
+    as long as i < phnum
+        o: phoff + i * phsz
+        t: peek_byte(d, o) + peek_byte(d, o + 1) * 256
+        if t is 1
+            off: peek_i64(d, o + 8)
+            va: peek_i64(d, o + 16)
+            fsz: peek_i64(d, o + 32)
+            if lo is 0
+                lo: va
+                poke_i64(m, 328, lo + slide)
+            k: 0
+            as long as k < fsz
+                arm_w8(m, va + slide + k, peek_byte(d, off + k))
+                k: k + 1
+            if va - lo is not off
+                k: 0
+                as long as k < fsz
+                    arm_w8(m, lo + slide + off + k, peek_byte(d, off + k))
+                    k: k + 1
+        i: i + 1
+    if slide > 0 -> dummy6: arm_rebase(m, lo + slide, fszn, exlo, imghi, slide)
+    poke_i64(m, 328, lo + slide)
+    arm_set_pc(m, entry + slide)
+    arm_set_sp(m, lo + slide + ARM_MEM - 65536)
+    arm_w64(m, arm_sp(m), 1)
+    arm_w8(m, lo + slide + ARM_MEM - 65700, 0)
+    arm_w64(m, lo + slide + ARM_MEM - 65600, lo + slide + ARM_MEM - 65700)
+    arm_w64(m, lo + slide + ARM_MEM - 65592, 0)
+    arm_set(m, 0, 1)
+    arm_set(m, 1, lo + slide + ARM_MEM - 65600)
+    return 1
+arm_w32 m a w:
+    b: arm_base(m)
+    poke_byte(b, a - peek_i64(m, 328), w % 256)
+    poke_byte(b, a - peek_i64(m, 328) + 1, (w / 256) % 256)
+    poke_byte(b, a - peek_i64(m, 328) + 2, (w / 65536) % 256)
+    poke_byte(b, a - peek_i64(m, 328) + 3, (w / 16777216) % 256)
+    return 0
+arm_rebase m img fsz elo ehi sl:
+    phoff: arm_r64(m, img + 32)
+    phnum: arm_mod8(arm_r32(m, img + 56))
+    phsz: arm_mod8(arm_r32(m, img + 54))
+    cend: 0
+    i2: 0
+    as long as i2 < phnum
+        o2: phoff + i2 * phsz
+        t2: arm_mod8(arm_r32(m, img + o2))
+        if t2 is 1
+            off2: arm_r64(m, img + o2 + 8)
+            va2: arm_r64(m, img + o2 + 16)
+            fsz2: arm_r64(m, img + o2 + 32)
+            if off2 + fsz2 > cend -> cend: off2 + fsz2
+        i2: i2 + 1
+    top: cend
+    if top > fsz -> top: fsz
+    i: 232
+    as long as i < top
+        w0: arm_r32(m, img + i)
+        if (w0 / 2097152) % 2048 is 1684
+            rt: w0 % 32
+            v: (w0 / 32) % 65536
+            je: i
+            j: i + 4
+            going: 1
+            as long as going is 1
+                if j >= top -> going: 0
+                if not
+                    wj: arm_r32(m, img + j)
+                    tj: (wj / 2097152) % 2048
+                    if tj > 1940
+                        if tj < 1944
+                            if wj % 32 is rt
+                                v: v + arm_shl((wj / 32) % 65536, (tj - 1941) * 16 + 16)
+                                je: j
+                                j: j + 4
+                            if not -> going: 0
+                        if not -> going: 0
+                    if not -> going: 0
+            adv: 4
+            if v >= elo
+                if v < ehi
+                    nv: v + sl
+                    k: i
+                    as long as k <= je
+                        wk: arm_r32(m, img + k)
+                        sh: ((wk / 2097152) % 4) * 16
+                        im: (nv / arm_shl(1, sh)) % 65536
+                        nw: ((wk / 2097152) % 2048) * 2097152 + im * 32 + wk % 32
+                        arm_w32(m, img + k, nw)
+                        k: k + 4
+                    adv: je + 4 - i
+            i: i + adv
+        if not -> i: i + 4
+    i2: 0
+    as long as i2 < phnum
+        o2: phoff + i2 * phsz
+        t2: arm_mod8(arm_r32(m, img + o2))
+        if t2 is 1
+            off2: arm_r64(m, img + o2 + 8)
+            va2: arm_r64(m, img + o2 + 16)
+            fsz2: arm_r64(m, img + o2 + 32)
+            q: va2 - elo
+            if q < 232 -> q: 232
+            as long as q < va2 - elo + fsz2
+                w: arm_r64(m, img + q)
+                if w >= elo
+                    if w < ehi -> arm_w64(m, img + q, w + sl)
+                q: q + 4
+        i2: i2 + 1
+    return 0
+arm_mod8 x:
+    return x - (x / 256) * 256
+arm_load_macho m d fszn:
+    if fszn < 32
+        print "arm_load: refused - macho smaller than its own header"
+        return 0
+    if peek_byte(d, 0) is 202
+        if peek_byte(d, 1) is 254
+            if peek_byte(d, 2) is 186
+                if peek_byte(d, 3) is 190
+                    if fszn < 28
+                        print "arm_load: refused - universal file smaller than its header"
+                        return 0
+                    nsl: arm_be4(d, 4)
+                    if nsl < 1
+                        print "arm_load: refused - universal file with no slices"
+                        return 0
+                    if nsl > 16
+                        print "arm_load: refused - absurd slice count"
+                        return 0
+                    a: 8
+                    j: 0
+                    as long as j < nsl
+                        ct: arm_be4(d, a)
+                        so2: arm_be4(d, a + 8)
+                        sz2: arm_be4(d, a + 12)
+                        if ct is 16777228
+                            if so2 + sz2 > fszn
+                                print "arm_load: refused - the arm64 slice runs past the file"
+                                return 0
+                            d2: _sov_alloc(sz2)
+                            k: 0
+                            as long as k < sz2
+                                poke_byte(d2, k, peek_byte(d, so2 + k))
+                                k: k + 1
+                            return arm_load_macho(m, d2, sz2)
+                        a: a + 20
+                        j: j + 1
+                    print "arm_load: refused - universal file has no arm64 slice"
+                    return 0
+    ncmds: peek_byte(d, 16) + peek_byte(d, 17) * 256 + peek_byte(d, 18) * 65536 + peek_byte(d, 19) * 16777216
+    szcmds: peek_byte(d, 20) + peek_byte(d, 21) * 256 + peek_byte(d, 22) * 65536 + peek_byte(d, 23) * 16777216
+    if 32 + szcmds > fszn
+        print "arm_load: refused - load commands run past the file"
+        return 0
+    if ncmds < 2
+        print "arm_load: refused - not enough load commands"
+        return 0
+    if ncmds > 64
+        print "arm_load: refused - absurd load command count"
+        return 0
+    base: 0
+    entry: 0
+    exlo: 0
+    exhi: 0
+    o: 32
+    ci: 0
+    as long as ci < ncmds
+        cmd: peek_byte(d, o) + peek_byte(d, o + 1) * 256 + peek_byte(d, o + 2) * 65536 + peek_byte(d, o + 3) * 16777216
+        csz: peek_byte(d, o + 4) + peek_byte(d, o + 5) * 256 + peek_byte(d, o + 6) * 65536 + peek_byte(d, o + 7) * 16777216
+        if csz < 8
+            print "arm_load: refused - degenerate load command"
+            return 0
+        if o + csz > fszn
+            print "arm_load: refused - a load command runs past the file"
+            return 0
+        if cmd is 25
+            vm: peek_i64(d, o + 24)
+            vms: peek_i64(d, o + 32)
+            fo: peek_i64(d, o + 40)
+            fsz: peek_i64(d, o + 48)
+            ip: peek_byte(d, o + 60) + peek_byte(d, o + 61) * 256 + peek_byte(d, o + 62) * 65536 + peek_byte(d, o + 63) * 16777216
+            if fo + fsz > fszn
+                print "arm_load: refused - a segment runs past the file"
+                return 0
+            if vms < fsz
+                print "arm_load: refused - a segment maps more file than memory"
+                return 0
+            if ip - (ip / 2) * 2 is 1
+                if exlo is 0 -> exlo: vm
+                exhi: vm + vms
+            if base is 0
+                base: vm
+                poke_i64(m, 328, vm)
+            k: 0
+            as long as k < fsz
+                arm_w8(m, vm + k, peek_byte(d, fo + k))
+                k: k + 1
+        if cmd is 2147483688 -> entry: base + peek_i64(d, o + 8)
+        o: o + csz
+        ci: ci + 1
+    if base is 0
+        print "arm_load: refused - no segments"
+        return 0
+    if exlo is 0
+        print "arm_load: refused - no executable piece"
+        return 0
+    if entry < exlo
+        print "arm_load: refused - entry outside the executable piece"
+        return 0
+    if entry > exhi - 1
+        print "arm_load: refused - entry outside the executable piece"
+        return 0
+    poke_i64(m, 328, base)
+    poke_i64(m, 424, 1)
+    arm_set_pc(m, entry)
+    arm_set_sp(m, base + ARM_MEM - 65536)
+    arm_w64(m, arm_sp(m), 1)
+    return 1
+arm_low m:
+    return peek_i64(m, 328)
+arm_step m:
+    dv: arm_deliver(m)
+    if dv is 1 -> return 1
+    if dv is 2 -> return 0
+    pc: arm_pc(m)
+    w: arm_r32(m, pc)
+    if peek_i64(m, 400) > 0
+        dv2: arm_deliver(m)
+        if dv2 is 1 -> return 1
+        return 0
+    nx: pc + 4
+    top: w / 16777216
+    rd: w % 32
+    rn: (w / 32) % 32
+    rm: (w / 65536) % 32
+    if w is 3596551104
+        arm_set_pc(m, arm_reg(m, 30))
+        if arm_reg(m, 30) is 0
+            poke_i64(m, 272, 1)
+            return 0
+        return 1
+    if w is 3556769793 -> return arm_svc(m, nx)
+    if top is 210
+        sh: ((w / 2097152) % 4) * 16
+        im: (w / 32) % 65536
+        arm_set(m, rd, arm_shl(im, sh))
+        arm_set_pc(m, nx)
+        return 1
+    if top is 146
+        if (w / 8388608) % 2 is 1
+            sh: ((w / 2097152) % 4) * 16
+            im: (w / 32) % 65536
+            arm_set(m, rd, arm_wrap(0 - arm_shl(im, sh) - 1))
+            arm_set_pc(m, nx)
+            return 1
+    if top is 242
+        sh: ((w / 2097152) % 4) * 16
+        im: (w / 32) % 65536
+        old: arm_reg(m, rd)
+        keep: arm_clear_field(old, sh)
+        arm_set(m, rd, arm_wrap(keep + arm_shl(im, sh)))
+        arm_set_pc(m, nx)
+        return 1
+    if top is 170
+        if rn is 31
+            arm_set(m, rd, arm_rz(m, rm))
+            arm_set_pc(m, nx)
+            return 1
+        arm_set(m, rd, arm_wrap(bor(arm_rz(m, rn), arm_rz(m, rm))))
+        arm_set_pc(m, nx)
+        return 1
+    if top is 202
+        if rn is 31
+            arm_set(m, rd, arm_rz(m, rm))
+            arm_set_pc(m, nx)
+            return 1
+        ea: arm_rz(m, rn)
+        eb: arm_rz(m, rm)
+        arm_set(m, rd, arm_wrap(bxor(ea, eb)))
+        arm_set_pc(m, nx)
+        return 1
+    if top is 139
+        arm_set(m, rd, arm_wrap(arm_rz(m, rn) + arm_rz(m, rm)))
+        arm_set_pc(m, nx)
+        return 1
+    if top is 203
+        arm_set(m, rd, arm_wrap(arm_rz(m, rn) - arm_rz(m, rm)))
+        arm_set_pc(m, nx)
+        return 1
+    if top is 145
+        im: (w / 1024) % 4096
+        if (w / 4194304) % 2 is 1 -> im: im * 4096
+        arm_set(m, rd, arm_wrap(arm_reg(m, rn) + im))
+        arm_set_pc(m, nx)
+        return 1
+    if top is 209
+        im: (w / 1024) % 4096
+        if (w / 4194304) % 2 is 1 -> im: im * 4096
+        arm_set(m, rd, arm_wrap(arm_reg(m, rn) - im))
+        arm_set_pc(m, nx)
+        return 1
+    if top is 235
+        arm_cmp(m, arm_rz(m, rn), arm_rz(m, rm))
+        if rd < 31 -> arm_set(m, rd, arm_wrap(arm_rz(m, rn) - arm_rz(m, rm)))
+        arm_set_pc(m, nx)
+        return 1
+    if top is 241
+        im: (w / 1024) % 4096
+        if (w / 4194304) % 2 is 1 -> im: im * 4096
+        arm_cmp(m, arm_reg(m, rn), im)
+        if rd < 31 -> arm_set(m, rd, arm_wrap(arm_reg(m, rn) - im))
+        arm_set_pc(m, nx)
+        return 1
+    if top is 107
+        arm_cmp(m, arm_rz(m, rn) % 4294967296, arm_rz(m, rm) % 4294967296)
+        if rd < 31 -> arm_set(m, rd, (arm_rz(m, rn) % 4294967296 + 4294967296 - arm_rz(m, rm) % 4294967296) % 4294967296)
+        arm_set_pc(m, nx)
+        return 1
+    if top is 113
+        im: (w / 1024) % 4096
+        if (w / 4194304) % 2 is 1 -> im: im * 4096
+        arm_cmp(m, arm_reg(m, rn) % 4294967296, im)
+        if rd < 31 -> arm_set(m, rd, (arm_reg(m, rn) % 4294967296 + 4294967296 - im % 4294967296) % 4294967296)
+        arm_set_pc(m, nx)
+        return 1
+    if (top % 32) is 16
+        im: (w / 32) % 524288 * 4 + (w / 536870912) % 4
+        if im > 1048575 -> im: im - 2097152
+        if rd < 31 -> arm_set(m, rd, arm_wrap(pc + im))
+        arm_set_pc(m, nx)
+        return 1
+    if top is 155
+        if (w / 32768) % 2 is 1
+            ra: (w / 1024) % 32
+            arm_set(m, rd, arm_wrap(arm_rz(m, ra) - arm_rz(m, rn) * arm_rz(m, rm)))
+            arm_set_pc(m, nx)
+            return 1
+        ra: (w / 1024) % 32
+        arm_set(m, rd, arm_wrap(arm_rz(m, ra) + arm_rz(m, rn) * arm_rz(m, rm)))
+        arm_set_pc(m, nx)
+        return 1
+    if top is 154
+        op: (w / 1024) % 64
+        if op is 8
+            sh: arm_rz(m, rm) % 64
+            arm_set(m, rd, bshl(arm_rz(m, rn), sh))
+            arm_set_pc(m, nx)
+            return 1
+        if op is 9
+            sh2: arm_rz(m, rm) % 64
+            arm_set(m, rd, bshr(arm_rz(m, rn), sh2))
+            arm_set_pc(m, nx)
+            return 1
+        if op is 10
+            sh3: arm_rz(m, rm) % 64
+            arm_set(m, rd, bsar(arm_rz(m, rn), sh3))
+            arm_set_pc(m, nx)
+            return 1
+        a: arm_signed(arm_rz(m, rn))
+        b: arm_signed(arm_rz(m, rm))
+        if op is 3
+            if b is 0 -> arm_set(m, rd, 0)
+            if not -> arm_set(m, rd, arm_wrap(a / b))
+            arm_set_pc(m, nx)
+            return 1
+        if op is 2
+            if b is 0 -> arm_set(m, rd, 0)
+            if not -> arm_set(m, rd, arm_wrap(arm_rz(m, rn) / arm_rz(m, rm)))
+            arm_set_pc(m, nx)
+            return 1
+        c: (w / 4096) % 16
+        inv: c
+        if inv % 2 is 1 -> inv: inv - 1
+        if not -> inv: inv + 1
+        if arm_cond(m, inv) is 1 -> arm_set(m, rd, 1)
+        if not -> arm_set(m, rd, 0)
+        arm_set_pc(m, nx)
+        return 1
+    if top is 146
+        arm_set(m, rd, arm_and_imm(arm_rz(m, rn), w))
+        arm_set_pc(m, nx)
+        return 1
+    six: w / 67108864
+    if six is 5
+        off: arm_sx(w % 67108864, 26) * 4
+        arm_set_pc(m, pc + off)
+        return 1
+    if six is 37
+        off: arm_sx(w % 67108864, 26) * 4
+        arm_set(m, 30, nx)
+        arm_set_pc(m, pc + off)
+        return 1
+    if top is 214
+        if (w / 2097152) % 2 is 1
+            tgt: arm_rz(m, rn)
+            arm_set(m, 30, nx)
+            arm_set_pc(m, tgt)
+            return 1
+        if not
+            arm_set_pc(m, arm_rz(m, rn))
+            return 1
+    if top is 84
+        c: w % 16
+        off: arm_sx((w / 32) % 524288, 19) * 4
+        if arm_cond(m, c) is 1
+            arm_set_pc(m, pc + off)
+            return 1
+        arm_set_pc(m, nx)
+        return 1
+    if top is 180
+        off: arm_sx((w / 32) % 524288, 19) * 4
+        if arm_rz(m, rd) is 0
+            arm_set_pc(m, pc + off)
+            return 1
+        arm_set_pc(m, nx)
+        return 1
+    return arm_step2(m, w, nx)
+arm_step2 m w nx:
+    top: w / 16777216
+    rd: w % 32
+    rn: (w / 32) % 32
+    rm: (w / 65536) % 32
+    if top is 56
+        opc: (w / 4194304) % 4
+        if opc is 1
+            arm_set(m, rd, arm_r8(m, arm_reg(m, rn) + arm_rz(m, rm)))
+            arm_set_pc(m, nx)
+            return 1
+        arm_w8(m, arm_reg(m, rn) + arm_rz(m, rm), arm_rz(m, rd) % 256)
+        arm_set_pc(m, nx)
+        return 1
+    if top is 248
+        kind: (w / 1024) % 4
+        opc: (w / 4194304) % 4
+        if (w / 2097152) % 2 is 1
+            sc2: 1
+            if (w / 8192) % 8 is 3
+                if (w / 4096) % 2 is 1 -> sc2: 8
+            if opc is 1
+                arm_set(m, rd, arm_r64(m, arm_reg(m, rn) + arm_rz(m, rm) * sc2))
+                arm_set_pc(m, nx)
+                return 1
+            arm_w64(m, arm_reg(m, rn) + arm_rz(m, rm) * sc2, arm_rz(m, rd))
+            arm_set_pc(m, nx)
+            return 1
+        off: arm_sx((w / 4096) % 512, 9)
+        if kind is 3
+            a: arm_reg(m, rn) + off
+            arm_set(m, rn, a)
+            if opc is 1 -> arm_set(m, rd, arm_r64(m, a))
+            if not -> arm_w64(m, a, arm_rz(m, rd))
+            arm_set_pc(m, nx)
+            return 1
+        if kind is 1
+            a: arm_reg(m, rn)
+            if opc is 1 -> arm_set(m, rd, arm_r64(m, a))
+            if not -> arm_w64(m, a, arm_rz(m, rd))
+            arm_set(m, rn, a + off)
+            arm_set_pc(m, nx)
+            return 1
+        a: arm_reg(m, rn) + off
+        if opc is 1 -> arm_set(m, rd, arm_r64(m, a))
+        if not -> arm_w64(m, a, arm_rz(m, rd))
+        arm_set_pc(m, nx)
+        return 1
+    if top is 57
+        im: (w / 1024) % 4096
+        opc: (w / 4194304) % 4
+        a: arm_reg(m, rn) + im
+        if opc is 1 -> arm_set(m, rd, arm_r8(m, a))
+        if not -> arm_w8(m, a, arm_rz(m, rd) % 256)
+        arm_set_pc(m, nx)
+        return 1
+    if top is 184
+        opc: (w / 4194304) % 4
+        if (w / 2097152) % 2 is 1
+            sc3: 1
+            if (w / 8192) % 8 is 3
+                if (w / 4096) % 2 is 1 -> sc3: 4
+            aa: arm_reg(m, rn) + arm_rz(m, rm) * sc3
+            if opc is 1 -> arm_set(m, rd, arm_r32(m, aa))
+            if not -> arm_w32c(m, aa, arm_rz(m, rd))
+            arm_set_pc(m, nx)
+            return 1
+        off3: arm_sx((w / 4096) % 512, 9)
+        aa2: arm_reg(m, rn) + off3
+        if opc is 1 -> arm_set(m, rd, arm_r32(m, aa2))
+        if not -> arm_w32c(m, aa2, arm_rz(m, rd))
+        arm_set_pc(m, nx)
+        return 1
+    if top is 185
+        im3: ((w / 1024) % 4096) * 4
+        opc3: (w / 4194304) % 4
+        aa3: arm_reg(m, rn) + im3
+        if opc3 is 1 -> arm_set(m, rd, arm_r32(m, aa3))
+        if not -> arm_w32c(m, aa3, arm_rz(m, rd))
+        arm_set_pc(m, nx)
+        return 1
+    if top is 249
+        im: ((w / 1024) % 4096) * 8
+        opc: (w / 4194304) % 4
+        a: arm_reg(m, rn) + im
+        if opc is 1 -> arm_set(m, rd, arm_r64(m, a))
+        if not -> arm_w64(m, a, arm_rz(m, rd))
+        arm_set_pc(m, nx)
+        return 1
+    if top is 169 -> return arm_pair(m, w, nx, 1)
+    if top is 168 -> return arm_pair(m, w, nx, 0)
+    if top is 138
+        rm: (w / 65536) % 32
+        arm_set(m, rd, arm_wrap(band(arm_rz(m, rn), arm_rz(m, rm))))
+        arm_set_pc(m, nx)
+        return 1
+    if top is 211
+        immr: (w / 65536) % 64
+        imms: (w / 1024) % 64
+        vv: arm_rz(m, rn)
+        if vv < 0 -> vv: vv + 18446744073709551616
+        if imms is 63
+            arm_set(m, rd, arm_wrap(vv / arm_shl(1, immr)))
+            arm_set_pc(m, nx)
+            return 1
+        if imms < 63
+            if immr is imms + 1
+                arm_set(m, rd, arm_wrap(vv * arm_shl(1, 63 - imms)))
+                arm_set_pc(m, nx)
+                return 1
+        if imms >= immr
+            wd: imms - immr + 1
+            msk: arm_shl(1, wd)
+            arm_set(m, rd, (vv / arm_shl(1, immr)) % msk)
+            arm_set_pc(m, nx)
+            return 1
+        print "arm: refused an unknown ubfm shape"
+        poke_i64(m, 272, 2)
+        poke_i64(m, 336, w)
+        return 0
+    if top is 82
+        sh: ((w / 2097152) % 4) * 16
+        im: (w / 32) % 65536
+        arm_set(m, rd, arm_shl(im, sh) % 4294967296)
+        arm_set_pc(m, nx)
+        return 1
+    if top is 53
+        t: arm_rz(m, rd) % 4294967296
+        if t is not 0
+            rel: ((w / 32) % 524288) * 4
+            if rel > 1048572 -> rel: rel - 2097152
+            arm_set_pc(m, peek_i64(m, 256) + rel)
+            return 1
+        arm_set_pc(m, nx)
+        return 1
+    if w is 3573751935
+        arm_set_pc(m, nx)
+        return 1
+    if top is 213
+        arm_set_pc(m, nx)
+        return 1
+    zq: w - rd
+    if zq is 3365927936
+        arm_w64(m, arm_rz(m, rn), arm_rz(m, rd))
+        arm_set_pc(m, nx)
+        return 1
+    if zq is 3096598528
+        arm_w32c(m, arm_rz(m, rn), arm_rz(m, rd))
+        arm_set_pc(m, nx)
+        return 1
+    if zq is 3370122240
+        arm_set(m, rd, arm_r64(m, arm_rz(m, rn)))
+        arm_set_pc(m, nx)
+        return 1
+    if zq is 2298478592
+        arm_set(m, rd, arm_r32(m, arm_rz(m, rn)))
+        arm_set_pc(m, nx)
+        return 1
+    if zq is 3368087552
+        arm_set(m, rd, arm_r64(m, arm_rz(m, rn)))
+        arm_set_pc(m, nx)
+        return 1
+    if zq is 2296443904
+        arm_set(m, rd, arm_r32(m, arm_rz(m, rn)))
+        arm_set_pc(m, nx)
+        return 1
+    if peek_i64(m, 392) > 0
+        nsp: arm_reg(m, 31) - 64
+        arm_set(m, 31, nsp)
+        arm_set(m, 29, nsp)
+        arm_set(m, 0, 11)
+        arm_set_pc(m, peek_i64(m, 392))
+        return 1
+    if peek_i64(m, 360) > 0
+        nsp2: arm_reg(m, 31) - 64
+        arm_set(m, 31, nsp2)
+        arm_set(m, 29, nsp2)
+        arm_set(m, 0, 4)
+        arm_set_pc(m, peek_i64(m, 360))
+        return 1
+    file_append("/tmp/at.txt", str_cat(str_cat("unk w=", num_text(w)), str_cat(str_cat(" pc=", num_text(arm_pc(m))), str_cat(str_cat(" x30=", num_text(arm_reg(m, 30))), str_cat(str_cat(" h360=", num_text(peek_i64(m, 360))), str_cat(str_cat(" h392=", num_text(peek_i64(m, 392))), str_cat(str_cat(" h368=", num_text(peek_i64(m, 368))), "")))))))
+    poke_i64(m, 272, 2)
+    poke_i64(m, 336, w)
+arm_bad m:
+    return peek_i64(m, 336)
+arm_pair m w nx pre:
+    rt: w % 32
+    rn: (w / 32) % 32
+    rt2: (w / 1024) % 32
+    off: arm_sx((w / 32768) % 128, 7) * 8
+    load: (w / 4194304) % 2
+    if pre is 1
+        if (w / 8388608) % 2 is 1
+            a: arm_reg(m, rn) + off
+            arm_set(m, rn, a)
+        if not -> a: arm_reg(m, rn) + off
+        if load is 1
+            arm_set(m, rt, arm_r64(m, a))
+            arm_set(m, rt2, arm_r64(m, a + 8))
+        if not
+            arm_w64(m, a, arm_rz(m, rt))
+            arm_w64(m, a + 8, arm_rz(m, rt2))
+        arm_set_pc(m, nx)
+        return 1
+    a: arm_reg(m, rn)
+    if load is 1
+        arm_set(m, rt, arm_r64(m, a))
+        arm_set(m, rt2, arm_r64(m, a + 8))
+    if not
+        arm_w64(m, a, arm_rz(m, rt))
+        arm_w64(m, a + 8, arm_rz(m, rt2))
+    arm_set(m, rn, a + off)
+    arm_set_pc(m, nx)
+    return 1
+arm_shl v n:
+    if n is 0 -> return v
+    if n is 16 -> return arm_wrap(v * 65536)
+    if n is 32 -> return arm_wrap(v * 4294967296)
+    if n is 48 -> return arm_wrap(v * 281474976710656)
+    x: v
+    i: 0
+    as long as i < n
+        x: x * 2
+        i: i + 1
+    return arm_wrap(x)
+arm_clear_field v sh:
+    lowmask: 1
+    if sh is 16 -> lowmask: 65536
+    if sh is 32 -> lowmask: 4294967296
+    if sh is 48 -> lowmask: 281474976710656
+    if sh > 48
+        i: 0
+        as long as i < sh
+            lowmask: lowmask * 2
+            i: i + 1
+    low: v % lowmask
+    high: 0
+    if lowmask < 281474976710656
+        highstart: lowmask * 65536
+        if v >= highstart -> high: (v / highstart) * highstart
+    return low + high
+arm_and_imm v w:
+    imms: (w / 1024) % 64
+    immr: (w / 65536) % 64
+    n: 1
+    i: 0
+    as long as i <= imms
+        n: n * 2
+        i: i + 1
+    keep: n - 1
+    if immr is 0 -> return v % n
+    drop: 1
+    i: 0
+    as long as i < 64 - immr
+        drop: drop * 2
+        i: i + 1
+    return v - (v % drop)
+arm_give m:
+    top: peek_i64(m, 344)
+    if top is 0 -> top: peek_i64(m, 328) + 134217728
+    lim: peek_i64(m, 472)
+    if lim > 0
+        if top + 16777216 > lim -> return 0
+    if top + 16777216 > peek_i64(m, 328) + peek_i64(m, 288) -> return 0
+    poke_i64(m, 344, top + 16777216)
+    return top
+arm_svc m nx:
+    nr: arm_reg(m, 8)
+    a0: arm_reg(m, 0)
+    a1: arm_reg(m, 1)
+    a2: arm_reg(m, 2)
+    if peek_i64(m, 424) is 1
+        if nr is 4 -> nr: 64
+        if nr is 1 -> nr: 93
+        if nr is 197 -> nr: 222
+        if nr is 78 -> nr: 232
+        if nr is 500 -> nr: 278
+    if nr is 64
+        if a0 is 0
+            arm_say(m, a1, a2)
+            arm_set(m, 0, a2)
+            arm_set_pc(m, nx)
+            return 1
+        if a0 is 1
+            arm_say(m, a1, a2)
+            arm_set(m, 0, a2)
+            arm_set_pc(m, nx)
+            return 1
+        if a0 is 2
+            arm_say(m, a1, a2)
+            arm_set(m, 0, a2)
+            arm_set_pc(m, nx)
+            return 1
+        hb2: _sov_alloc(a2 + 16)
+        k2: 0
+        as long as k2 < a2
+            poke_byte(hb2, k2, peek_byte(arm_base(m), a1 + k2 - peek_i64(m, 328)))
+            k2: k2 + 1
+        arm_set(m, 0, syscall(1, a0, hb2, a2))
+        arm_set_pc(m, nx)
+        return 1
+    if nr is 93
+        poke_i64(m, 312, a0)
+        poke_i64(m, 272, 1)
+        return 0
+    if nr is 222
+        arm_set(m, 0, arm_give(m))
+        arm_set_pc(m, nx)
+        return 1
+    if nr is 214
+        arm_set(m, 0, arm_give(m))
+        arm_set_pc(m, nx)
+        return 1
+    if nr is 278
+        arm_set(m, 0, arm_fill_rand(m, a0))
+        arm_set_pc(m, nx)
+        return 1
+    if nr is 226
+        if arm_in(m, a0) is 1
+            if arm_in(m, a0 + a1 - 1) is 1
+                arm_set(m, 0, 0)
+                arm_set_pc(m, nx)
+                return 1
+        arm_set(m, 0, 0 - 12)
+        arm_set_pc(m, nx)
+        return 1
+    if nr is 232
+        arm_set(m, 0, 0 - 12)
+        arm_set_pc(m, nx)
+        return 1
+    if nr is 134
+        if a0 > 3
+            if a0 < 12
+                poke_i64(m, arm_sig_slot(a0), arm_r64(m, a1))
+                arm_set(m, 0, 0)
+                arm_set_pc(m, nx)
+                return 1
+        arm_set(m, 0, 22)
+        arm_set_pc(m, nx)
+        return 1
+    if nr is 113
+        p: arm_base(m) + a1 - peek_i64(m, 328)
+        tb: _sov_alloc(16)
+        syscall(228, 0, tb)
+        poke_i64(p, 0, peek_i64(tb, 0))
+        poke_i64(p, 8, peek_i64(tb, 8))
+        arm_set(m, 0, 0)
+        arm_set_pc(m, nx)
+        return 1
+    if nr is 63
+        if a0 is 0
+            poke_i64(m, 448, 1)
+            poke_i64(m, 456, a1)
+            poke_i64(m, 464, a2)
+            poke_i64(m, 272, 4)
+            arm_set_pc(m, nx)
+            return 0
+        hb: _sov_alloc(a2 + 16)
+        rr: syscall(0, a0, hb, a2)
+        k: 0
+        as long as k < rr
+            poke_byte(arm_base(m), a1 + k - peek_i64(m, 328), peek_byte(hb, k))
+            k: k + 1
+        arm_set(m, 0, rr)
+        arm_set_pc(m, nx)
+        return 1
+    if nr is 56
+        hp: arm_base(m) + a1 - peek_i64(m, 328)
+        tb: _sov_alloc(512)
+        plen: 0
+        as long as peek_byte(hp, plen) is not 0
+            plen: plen + 1
+        ci: 0
+        as long as ci < plen
+            poke_byte(tb, ci, peek_byte(hp, ci))
+            ci: ci + 1
+        poke_byte(tb, plen, 0)
+        arm_set(m, 0, syscall(257, 0 - 100, tb, a2, 420))
+        arm_set_pc(m, nx)
+        return 1
+    if nr is 57
+        arm_set(m, 0, syscall(3, a0))
+        arm_set_pc(m, nx)
+        return 1
+    if nr is 444
+        blk: peek_i64(m, 440)
+        cnt: peek_i64(blk, 0)
+        if cnt < 8
+            poke_i64(blk, 8 + cnt * 24, a0)
+            poke_i64(blk, 8 + cnt * 24 + 8, a1)
+            poke_i64(blk, 8 + cnt * 24 + 16, a2)
+            poke_i64(blk, 0, cnt + 1)
+        arm_set(m, 0, 0)
+        arm_set_pc(m, nx)
+        return 1
+    arm_set(m, 0, 0)
+    arm_set_pc(m, nx)
+    return 1
+arm_wants_input m:
+    return peek_i64(m, 448)
+arm_feed m buf n:
+    p: peek_i64(m, 456)
+    mx: peek_i64(m, 464)
+    if mx < 1 -> mx: 1
+    w: 0
+    go: 1
+    as long as go is 1
+        if w >= n -> go: 0
+        if w >= mx - 1 -> go: 0
+        if go is 1
+            arm_w8(m, p + w, peek_byte(buf, w))
+            w: w + 1
+    arm_w8(m, p + w, 0)
+    arm_set(m, 0, w)
+    poke_i64(m, 448, 0)
+    poke_i64(m, 272, 0)
+arm_write_count m:
+    return peek_i64(peek_i64(m, 440), 0)
+arm_write_name m i:
+    return peek_i64(peek_i64(m, 440), 8 + i * 24)
+arm_write_data m i:
+    return peek_i64(peek_i64(m, 440), 8 + i * 24 + 8)
+arm_write_len m i:
+    return peek_i64(peek_i64(m, 440), 8 + i * 24 + 16)
+arm_cstr m a:
+    b: _sov_alloc(256)
+    i: 0
+    as long as i < 255
+        c: arm_r8(m, a + i)
+        if c is 0 -> leave
+        poke_byte(b, i, c)
+        i: i + 1
+    poke_byte(b, i, 0)
+    return as text b
+arm_read_bytes m a n:
+    b: _sov_alloc(n + 1)
+    i: 0
+    as long as i < n
+        poke_byte(b, i, arm_r8(m, a + i))
+        i: i + 1
+    poke_byte(b, n, 0)
+    return as text b
+arm_run m:
+    return arm_run_for(m, 20000000)
+arm_run_for m limit:
+    n: 0
+    going: 1
+    as long as going is 1
+        if n >= limit
+            poke_i64(m, 272, 3)
+            going: 0
+        if not
+            going: arm_step(m)
+            n: n + 1
+    return peek_i64(m, 272)
+ARM_RAW: 65536
+arm_bare:
+    m: arm_new()
+    poke_i64(m, 328, 0)
+    arm_set_pc(m, ARM_RAW)
+    arm_set_sp(m, 1048576)
+    return m
+arm_put m at w:
+    b: arm_base(m)
+    poke_byte(b, at, w % 256)
+    poke_byte(b, at + 1, (w / 256) % 256)
+    poke_byte(b, at + 2, (w / 65536) % 256)
+    poke_byte(b, at + 3, (w / 16777216) % 256)
+    return at + 4
+arm_result m:
+    arm_run_for(m, 500000)
+    return arm_reg(m, 0)
+arm_load_so m path:
+    d: file_read_all(path)
+    if d is 0 -> return 0
+    base: 4194304
+    poke_i64(m, 328, base)
+    n: _sov_strlen(d)
+    sz: file_size(path)
+    if sz < 1 -> sz: n
+    k: 0
+    as long as k < sz
+        arm_w8(m, base + k, peek_byte(d, k))
+        k: k + 1
+    poke_i64(m, 352, base)
+    arm_set_sp(m, base + 16777216)
+    arm_w64(m, arm_sp(m), 1)
+    return 1
+arm_symbol m name:
+    base: peek_i64(m, 352)
+    if base is 0 -> return 0
+    phoff: arm_r64(m, base + 32)
+    phnum: arm_r8(m, base + 56) + arm_r8(m, base + 57) * 256
+    phsz: arm_r8(m, base + 54) + arm_r8(m, base + 55) * 256
+    dynva: 0
+    dynsz: 0
+    i: 0
+    as long as i < phnum
+        o: base + phoff + i * phsz
+        t: arm_r8(m, o) + arm_r8(m, o + 1) * 256
+        if t is 2
+            dynva: arm_r64(m, o + 16)
+            dynsz: arm_r64(m, o + 40)
+        i: i + 1
+    if dynva is 0 -> return 0
+    symtab: 0
+    strtab: 0
+    syment: 24
+    k: 0
+    as long as k < dynsz
+        tag: arm_r64(m, dynva + k)
+        val: arm_r64(m, dynva + k + 8)
+        if tag is 5 -> strtab: val
+        if tag is 6 -> symtab: val
+        if tag is 11 -> syment: val
+        if tag is 0 -> k: dynsz
+        if not -> k: k + 16
+    if symtab is 0 -> return 0
+    want: _sov_strlen(name)
+    i: 1
+    as long as i < 64
+        sp: symtab + i * syment
+        nameoff: arm_r8(m, sp) + arm_r8(m, sp + 1) * 256 + arm_r8(m, sp + 2) * 65536 + arm_r8(m, sp + 3) * 16777216
+        value: arm_r64(m, sp + 8)
+        if value > 0
+            if arm_name_is(m, strtab + nameoff, name, want) is 1 -> return value
+        i: i + 1
+arm_name_is m at name n:
+    i: 0
+    as long as i < n
+        if arm_r8(m, at + i) is not peek_byte(name, i) -> return 0
+        i: i + 1
+    if arm_r8(m, at + n) is not 0 -> return 0
+    return 1
+arm_run_symbol m name:
+    a: arm_symbol(m, name)
+    if a is 0 -> return 0 - 1
+    arm_set_pc(m, a)
+    return arm_run(m)

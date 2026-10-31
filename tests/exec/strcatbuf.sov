@@ -1,0 +1,11 @@
+use buf
+use string
+main:
+    p: buf_new(64)
+    i: 0
+    as long as i < 240000
+        p: buf_add(p, 97 + i % 8)
+        i: i + 1
+    s: buf_text(p)
+    print str_len(s)
+    return 0

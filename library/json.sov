@@ -1,0 +1,222 @@
+use string
+json_skip s i:
+    n: str_len(s)
+    as long as i < n
+        c: peek_byte(s, i)
+        if c is 32 -> i: i + 1
+        if not
+            if c is 9 -> i: i + 1
+            if not
+                if c is 10 -> i: i + 1
+                if not
+                    if c is 13 -> i: i + 1
+                    if not -> return i
+    return i
+json_skip_string s i:
+    n: str_len(s)
+    i: i + 1
+    as long as i < n
+        c: peek_byte(s, i)
+        if c is 92 -> i: i + 2
+        if not
+            if c is 34 -> return i + 1
+            if not -> i: i + 1
+    return n
+json_scan s i:
+    n: str_len(s)
+    c: peek_byte(s, i)
+    if c is 34 -> return json_skip_string(s, i)
+    if c is 123
+        depth: 1
+        i: i + 1
+        as long as i < n
+            cc: peek_byte(s, i)
+            if cc is 34 -> i: json_skip_string(s, i)
+            if not
+                if cc is 123
+                    depth: depth + 1
+                    i: i + 1
+                if not
+                    if cc is 125
+                        depth: depth - 1
+                        i: i + 1
+                        if depth is 0 -> return i
+                    if not -> i: i + 1
+        return n
+    if c is 91
+        depth: 1
+        i: i + 1
+        as long as i < n
+            cc: peek_byte(s, i)
+            if cc is 34 -> i: json_skip_string(s, i)
+            if not
+                if cc is 91
+                    depth: depth + 1
+                    i: i + 1
+                if not
+                    if cc is 93
+                        depth: depth - 1
+                        i: i + 1
+                        if depth is 0 -> return i
+                    if not -> i: i + 1
+        return n
+    as long as i < n
+        cc: peek_byte(s, i)
+        if cc is 44 -> return i
+        if cc is 125 -> return i
+        if cc is 93 -> return i
+        i: i + 1
+    return n
+json_is_obj s i:
+    if peek_byte(s, i) is 123 -> return 1
+json_is_arr s i:
+    if peek_byte(s, i) is 91 -> return 1
+json_obj_find s i key:
+    n: str_len(s)
+    want: str_join3("\"", key, "\"")
+    wl: str_len(want)
+    i: i + 1
+    as long as i < n
+        i: json_skip(s, i)
+        c: peek_byte(s, i)
+        if c is 125 -> return 0 - 1
+        if c is 34
+            if str_eq(str_cut(s, i, i + wl), want) is 1
+                j: json_skip(s, i + wl)
+                if peek_byte(s, j) is 58 -> return json_skip(s, j + 1)
+            i: json_skip_string(s, i)
+            i: json_skip(s, i)
+            if peek_byte(s, i) is 58 -> i: json_scan(s, json_skip(s, i + 1))
+        if not -> i: i + 1
+    return 0 - 1
+json_arr_at s i k:
+    n: str_len(s)
+    i: i + 1
+    e: 0
+    as long as i < n
+        i: json_skip(s, i)
+        c: peek_byte(s, i)
+        if c is 93 -> return 0 - 1
+        if e is k -> return i
+        i: json_scan(s, i)
+        i: json_skip(s, i)
+        if peek_byte(s, i) is 44 -> i: i + 1
+        e: e + 1
+    return 0 - 1
+json_count s i:
+    n: str_len(s)
+    if json_is_obj(s, i) is 1
+        i: i + 1
+        c: 0
+        as long as i < n
+            i: json_skip(s, i)
+            cc: peek_byte(s, i)
+            if cc is 125 -> return c
+            if cc is 34
+                i: json_skip_string(s, i)
+                i: json_skip(s, i)
+                if peek_byte(s, i) is 58
+                    i: json_scan(s, json_skip(s, i + 1))
+                    c: c + 1
+            if not -> i: i + 1
+        return c
+    if json_is_arr(s, i) is 1
+        i: i + 1
+        c: 0
+        as long as i < n
+            i: json_skip(s, i)
+            cc: peek_byte(s, i)
+            if cc is 93 -> return c
+            i: json_scan(s, i)
+            i: json_skip(s, i)
+            if peek_byte(s, i) is 44 -> i: i + 1
+            c: c + 1
+        return c
+    return 0
+jp_key: ""
+jp_rest: ""
+jp_is_idx: 0
+jp_idx: 0
+json_next_seg path:
+    n: str_len(path)
+    jp_is_idx: 0
+    jp_idx: 0
+    jp_rest: ""
+    if n is 0
+        jp_key: ""
+        return 0
+    c: peek_byte(path, 0)
+    if c is 91
+        k: 1
+        v: 0
+        br: 0
+        as long as k < n
+            cc: peek_byte(path, k)
+            if cc is 93
+                v: 1
+                br: k
+                k: n
+            if not -> k: k + 1
+        if v is 1
+            jp_is_idx: 1
+            jp_idx: str_num(str_cut(path, 1, br))
+            jp_rest: str_cut(path, br + 1, n)
+            return 1
+    k: 0
+    ks: 0
+    if peek_byte(path, 0) is 46
+        k: 1
+        ks: 1
+    as long as k < n
+        cc: peek_byte(path, k)
+        if cc is 46
+            jp_key: str_cut(path, ks, k)
+            jp_rest: str_cut(path, k + 1, n)
+            return 1
+        if cc is 91
+            jp_key: str_cut(path, ks, k)
+            jp_rest: str_cut(path, k, n)
+            return 1
+        k: k + 1
+    jp_key: str_cut(path, ks, n)
+    jp_rest: ""
+    return 1
+json_at text path:
+    i: json_skip(text, 0)
+    return json_step(text, i, path)
+json_step text i path:
+    if i < 0 -> return blank
+    if str_len(path) is 0
+        e: json_scan(text, i)
+        if e <= i -> return blank
+        if peek_byte(text, i) is 34
+            if e - i > 1 -> return str_cut(text, i + 1, e - 1)
+        return str_cut(text, i, e)
+    json_next_seg(path)
+    if jp_is_idx is 1
+        ni: json_arr_at(text, i, jp_idx)
+        return json_step(text, ni, jp_rest)
+    ni: json_obj_find(text, i, jp_key)
+    return json_step(text, ni, jp_rest)
+json_len text path:
+    i: json_find_path(text, path)
+    if i < 0 -> return 0
+    return json_count(text, i)
+json_find_path text path:
+    i: json_skip(text, 0)
+    return json_find_step(text, i, path)
+json_find_step text i path:
+    if i < 0 -> return 0 - 1
+    if str_len(path) is 0 -> return i
+    json_next_seg(path)
+    if jp_is_idx is 1
+        ni: json_arr_at(text, i, jp_idx)
+        return json_find_step(text, ni, jp_rest)
+    ni: json_obj_find(text, i, jp_key)
+    return json_find_step(text, ni, jp_rest)
+json_str text key:
+    return json_at(text, key)
+json_num text key:
+    return str_num(json_str(text, key))
+json_at_num text path:
+    return str_num(json_at(text, path))

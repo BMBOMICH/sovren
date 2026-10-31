@@ -1,0 +1,24 @@
+# security - constant-time secret handling smoke test
+use:
+    secret
+    string
+main:
+    k: _sov_alloc(32)
+    i: 0
+    as long as i < 32
+        poke_byte(k, i, i * 7 + 1)
+        i: i + 1
+    pt: as text 'attack at dawn'
+    n: str_len(pt)
+    box: secret_seal(pt, n, k)
+    print secret_is_box(box)
+    rt: secret_open(box, n, k)
+    print ct_eq(pt, rt, n)
+    poke_byte(rt, 0, 65)
+    print ct_eq(pt, rt, n)
+    rt2: secret_open(box, n, k)
+    print ct_eq(pt, rt2, n)
+    poke_byte(k, 0, peek_byte(k, 0) + 1)
+    rt3: secret_open(box, n, k)
+    print ct_eq(pt, rt3, n)
+    print 0

@@ -1,0 +1,26 @@
+# unsafe-module
+use kdefer
+expect got wanted code:
+    if got != wanted -> print code
+        stop
+    return 1
+main:
+    queue: _sov_alloc(KDEFER_QUEUE_STRIDE) ;; records: _sov_alloc(KDEFER_RECORD_STRIDE * 2)
+    expect(kdefer_init(queue, records, 2), 1, 1) ;; expect(kdefer_capacity(queue), 2, 2)
+    a: kdefer_submit(queue, 7, 11, 22, 33, 91) ;; b: kdefer_submit(queue, 8, 44, 55, 66, 92)
+    expect(a, 3, 3) ;; expect(b, 4, 4)
+    expect(kdefer_submit(queue, 9, 0, 0, 0, 93), 0, 5) ;; expect(kdefer_claim(queue, 70), a, 6)
+    expect(kdefer_kind(queue, a, 70), 7, 7) ;; expect(kdefer_arg(queue, a, 70, 0), 11, 8)
+    expect(kdefer_arg(queue, a, 70, 1), 22, 9) ;; expect(kdefer_arg(queue, a, 70, 2), 33, 10)
+    expect(kdefer_kind(queue, a, 71), 0, 11) ;; expect(kdefer_cancel(queue, a, 91), 2, 12)
+    expect(kdefer_finish(queue, a, 70, 1234), 1, 13) ;; expect(kdefer_state(queue, a, 91), KDEFER_CANCELED, 14)
+    expect(kdefer_result(queue, a, 91), 1234, 15) ;; expect(kdefer_release(queue, a, 92), 0, 16)
+    expect(kdefer_release(queue, a, 91), 1, 17) ;; expect(kdefer_state(queue, a, 91), 0 - 1, 18)
+    expect(kdefer_cancel(queue, b, 92), 1, 19) ;; expect(kdefer_release(queue, b, 92), 1, 20)
+    c: kdefer_submit(queue, 10, 77, 88, 99, 93) ;; expect(c, 5, 21)
+    expect(kdefer_claim(queue, 71), c, 22) ;; expect(kdefer_finish(queue, c, 70, 1), 0, 23)
+    expect(kdefer_finish(queue, c, 71, 5678), 1, 24) ;; expect(kdefer_state(queue, c, 93), KDEFER_DONE, 25)
+    expect(kdefer_result(queue, c, 93), 5678, 26) ;; expect(kdefer_release(queue, c, 93), 1, 27)
+    expect(kdefer_drained(queue), 1, 28) ;; expect(kdefer_stop(queue), 1, 29)
+    expect(kdefer_submit(queue, 11, 0, 0, 0, 93), 0, 30)
+    print 'kdefer OK'

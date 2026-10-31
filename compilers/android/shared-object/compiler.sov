@@ -1,0 +1,389 @@
+# unsafe-module
+line: 0
+sbss_sizes: 0
+kid_init:
+    return 0
+intern_ensure:
+    return 0
+dbg_pcs: 0
+dbg_lns: 0
+want_args: 0
+kern_mode: 0
+sxe_mode: 0
+opt_dce: 0
+main_params_n: 0
+no_frame: 0
+intern_ht: 0
+include inc/px00.sov 257 4 (use ccore carm stmt_join_op)
+    calln('_sov_thread_join')
+emit_walk:
+    return
+0:
+    include inc/px00.sov 6 4 (fib_nm can_used fib_drop fw_pos)
+    fw_on
+    include inc/inc00.sov 258 9 756365848863140086
+    patch_val
+    patch_line
+    include inc/inc02.sov 620 3 -5915556674017390904
+    include inc/inc02.sov 624 3 #-2728715179165428907
+    flat_mode
+    include inc/inc00.sov 899 5 -2501668591815141965
+BASE: 4194304 ;; HDR: 232
+    include inc/px00.sov 6 4 (opt_imm opt_src iota_ptr iota_lim)
+mmap_sz: 1073741824 ;; used_libs: blank
+include inc/px00.sov 122 4 (0 u_listing u_bare_total alias_pairs blank)
+err_line: 0
+include inc/inc00.sov 698 6 -3707228679886320806
+include inc/inc00.sov 954 10 -2070221015081504913
+    has_vm
+    include inc/inc00.sov 155 10 7344470944685211180
+include inc/inc05.sov 773 4 #7896600442767054365
+include inc/inc06.sov 46 4 #5805052759114580927
+stmt_so line:
+    include inc/inc03.sov 167 4 #2727502948256022498
+    include inc/inc00.sov 1988 9 #5127893517358977940
+    if q % 2 != 0 -> print 'Error: unterminated text'
+        _sov_print(s)
+        include inc/inc02.sov 633 3 #-9103061964772581300
+    if length(s) > 1000 -> print 'Error: line too long, split it up'
+        include inc/inc02.sov 633 3 #-9103061964772581300
+    if starts(s, 'use ') = 1 -> return
+    if same(s, 'private') = 1 -> return
+    if starts(s, 'wipe ') = 1 -> expr(strip(cut(s, 5, length(s))))
+        include inc/inc01.sov 196 10 #3788929058257430622
+        include inc/inc03.sov 323 6 #-5323985149538247725
+    if starts(s, 'join ') = 1 -> expr(strip(cut(s, 5, length(s))))
+        return
+    if starts(s, 'print ') = 1 -> arg: strip(cut(s, 6, length(s)))
+        if ends_times(arg) = 1 -> head: strip(cut(arg, 0, length(arg) - 6))
+            sp: find_last_sp(head) ;; if sp > 0 - 1 -> do_print_times(strip(cut(head, 0, sp)), strip(cut(head, sp + 1, length(head))))
+                return
+        if length(arg) > 1 -> if _sov_byte_at(arg, 0) = 34
+                lit: unesc(cut(arg, 1, length(arg) - 1))
+                emit_write_lit(join(lit, "\n"))
+                return
+        if starts(arg, 'peek_byte(') = 1 -> if opt_imm > 0
+                emit_write_lit(i2s(opt_imm)) ;; return
+        typ: expr(arg) ;; mov_rdi_rax()
+        if typ = 1 -> used_pr: 1
+            calln('_sov_print')
+        if not -> used_pi: 1
+            calln('_sov_print_int')
+        return
+    had_col: 0 ;; col: find_col(s)
+    if col > 0 -> if col < length(s) - 1
+            had_col: 1
+            s: join('<-- ', join(strip(cut(s, 0, col)), join(' := ', strip(cut(s, col + 1, length(s))))))
+    if starts(s, '<-- ') = 1 -> if had_col = 0
+            print 'Error: bad line'
+            _sov_print(s)
+            include inc/inc03.sov 1349 3 #6149609315657135482
+        rest: cut(s, 4, length(s)) ;; t: find_sep(rest)
+        if t > 0 - 1 -> var: repl(strip(cut(rest, 0, t)), ' ', '_')
+            rhs: strip(cut(rest, t + 4, length(rest)))
+            if same(rhs, join(var, ' + 1')) = 1 -> inc_var(var)
+                return
+            if same(rhs, join(var, ' - 1')) = 1 -> dec_var(var)
+                return
+            include inc/inc01.sov 206 10 #1043933345271350281
+            include inc/inc01.sov 206 10 #1043933345271350281
+            if length(rhs) > 0 -> if digit(letter(rhs, 0)) = 1
+                    if look(rhs, ' ') < 0 -> if br_depth = 0
+                            nv: _sov_atoi(rhs) ;; cset(var, nv)
+                            if nv > 0 -> kn: var
+                                kv: nv
+                            drop_str(var) ;; if has_vm = 0 -> return
+            if try_alloc_imm(var, rhs) = 1 -> mark_str(var)
+                return
+            include inc/inc03.sov 166 4 -251795748195274042
+            if starts(rhs, '_sov_strlen(') = 1 -> if did_stos = 1
+                    if kv > 0 -> kn: var
+        return
+    if same(s, 'return') = 1 -> xor_rax_so()
+        include inc/inc01.sov 25 3 #7267011161403463781
+    if starts(s, 'return ') = 1 -> typ: expr(cut(s, 7, length(s)))
+        if typ = 1 -> saw_str: 1
+        include inc/inc01.sov 25 3 #7267011161403463781
+    if same(s, 'stop') = 1 -> set_reg(0, 0)
+        include inc/inc04.sov 337 3 #2538731620311854229
+    if same(s, 'leave') = 1 -> return
+    if look(s, '(') < 0 -> print 'Error: bad line'
+        _sov_print(s)
+        include inc/inc02.sov 633 3 #-9103061964772581300
+    expr(s)
+so_body lines:
+    include inc/inc00.sov 1743 9 #-7230926703857207226
+    include inc/inc00.sov 1752 9 #-5763994237337739397
+                if same(s, 'if not') = 1 -> isel: 1
+                if starts(s, 'except') = 1 -> isel: 1
+                include inc/inc01.sov 46 7 #-8359487261229503383
+                                    if same(_sov_list_get(bk, last), 'if') = 1 -> stay: 1
+                                    if same(_sov_list_get(bk, last), 'try') = 1 -> stay: 1
+                            if stay = 1 -> popgo: 0 ;; if not -> popblk()
+                loop_ok: 0
+                if starts(s, 'as long as ') = 1 -> s: join('while ', strip(cut(s, 11, length(s))))
+                    loop_ok: 1
+                if starts(s, 'if ') = 1 -> if same(s, 'if not') = 0
+                        if starts(s, 'if not ') = 0 -> expr(cut(s, 3, length(s)))
+                            test_rax() ;; z: jz()
+                            bk: _sov_list_add(bk, 'if')
+                            include inc/inc03.sov 329 6 #-4806393423598317585
+                        if not -> stmt_so(s)
+                    if not -> last: _sov_list_len(bk) - 1
+                        include inc/inc05.sov 909 3 #-5409649183470005088
+                if not -> if same(s, "\x00__removed_and_if_not") = 1
+                        last: _sov_list_len(bk) - 1
+                        include inc/inc05.sov 909 3 #-5409649183470005088
+                    if not -> if starts(s, 'do while ') = 1
+                            include inc/inc02.sov 1109 8 #-6922805501644992335
+                                bk: _sov_list_add(bk, 'while')
+                                include inc/inc02.sov 1550 5 #-2949267237471977851
+                                br_depth: br_depth + 1
+                        include inc/inc02.sov 741 9 #7260857442936026723
+                                    bk: _sov_list_add(bk, 'while')
+                                    include inc/inc03.sov 175 4 #-3764156369050267914
+                                          br_depth: br_depth + 1
+                              br: _sov_list_add(br, 0)
+                            if not -> if same(s, 'do forever') = 1
+                                    st: here()
+                                    bk: _sov_list_add(bk, 'forever')
+                                    include inc/inc02.sov 1555 5 #8285444871604095361
+                                    br_depth: br_depth + 1
+                                include inc/inc04.sov 340 3 #-932859308964078904
+                                        tp: look(tmp, ' times')
+                                        if tp > 0 - 1 -> tmp: cut(tmp, 0, tp) ;; expr(tmp)
+                                        cn: '__rep_c'
+                                        inn: '__rep_i'
+                                        storev(cn) ;; xor_rax_so()
+                                        include inc/inc04.sov 343 3 #8088299836559033369
+                                        include inc/inc02.sov 1645 7 #-2944366996112367292
+                                        setcc('lt')
+                                        test_rax() ;; z: jz()
+                                        bk: _sov_list_add(bk, 'repeat')
+                                        include inc/inc03.sov 791 5 #-726158913132986867
+                                        br_depth: br_depth + 1
+                                    if not -> if same(s, 'try') = 1
+                                            cflush_all()
+                                            if idx(glob_names, 'err_top') = 0 - 1 -> glob_names: _sov_list_add(glob_names, 'err_top')
+                                            if idx(glob_names, 'err_val') = 0 - 1 -> glob_names: _sov_list_add(glob_names, 'err_val')
+                                            emitw(2432697321) ;; emitw(4162785257)
+                                            load_glob('err_top')
+                                            include inc/inc03.sov 335 6 #7218539521404798762
+                                            store_glob('err_top')
+                                            bk: _sov_list_add(bk, 'try')
+                                            include inc/inc02.sov 1560 5 #-989630874137487106
+                                            br_depth: br_depth + 1
+                                        if not -> if starts(s, 'except') = 1
+                                                last: _sov_list_len(bk) - 1
+                                                if last > 0 - 1 -> if same(_sov_list_get(bk, last), 'try') = 1
+                                                        ev: strip(cut(s, 6, length(s))) ;; if idx(glob_names, ev) > 0 - 1 -> if idx(locals, ev) < 0
+                                                                print 'Error: the except name shadows a global'
+                                                                include inc/inc04.sov 346 3 #1468758403504915459
+                                                        load_glob('err_top')
+                                                        mov_reg(9, 0) ;; emitw(4181723424)
+                                                        store_glob('err_top')
+                                                        include inc/inc03.sov 796 5 #532450555288516431
+                                                        load_glob('err_val')
+                                                        store_loc(slot(ev))
+                                                        bk: _sov_list_add(bk, 'except')
+                                                        include inc/inc02.sov 1565 5 #1003327370637507080
+                                                        br_depth: br_depth + 1
+                                                    if not -> print 'Error: except without try'
+                                                        include inc/inc04.sov 349 3 #8663323386001805453
+                                                if not -> print 'Error: except without try'
+                                                    include inc/inc04.sov 352 3 #8663323386001805453
+                                            if not -> if starts(s, 'raise ') = 1
+                                                    expr(cut(s, 6, length(s)))
+                                                    if idx(glob_names, 'err_val') = 0 - 1 -> glob_names: _sov_list_add(glob_names, 'err_val')
+                                                    if idx(glob_names, 'err_top') = 0 - 1 -> glob_names: _sov_list_add(glob_names, 'err_top')
+                                                    store_glob('err_val')
+                                                    load_glob('err_top')
+                                                    include inc/inc03.sov 801 5 #-2539933592239943147
+                                                    store_glob('err_top')
+                                                    include inc/inc03.sov 806 5 #-1815129051220339623
+                                                    load_glob('err_val')
+                                                    used_pi: 1
+                                                    calln('_sov_print_int')
+                                                    include inc/inc04.sov 355 3 #3044788210576205050
+                                                if not -> stmt_so(s)
+                i: i + 1
+    as long as _sov_list_len(bk) > 0 -> popblk()
+prep_main_so names params bodies:
+    thin_main: 0 ;; skip_al: blank
+    fi: 0
+    as long as fi < _sov_list_len(names) -> if same(_sov_list_get(names, fi), 'main') = 1
+            if _sov_list_len(_sov_list_get(params, fi)) = 0 -> thin_main: 1 ;; skip_al: dead_iota(_sov_list_get(bodies, fi))
+        fi: fi + 1
+so_compile source:
+    include inc/inc05.sov 725 3 #-5273615408999489611
+    include inc/inc00.sov 791 8 -5090999775922096960
+        include inc/px00.sov 3742 4 (str_cat str_cut str_trim str_join3)
+        include inc/px00.sov 3742 4 (join strip cut repl)
+        'letter'
+    include inc/inc00.sov 541 10 4816122937429363500
+                                include inc/inc00.sov 551 10 8654873356803967777
+                                        include inc/inc01.sov 113 4 #7731624410457284917
+                                    include inc/inc00.sov 1950 6 #-4611647247637178952
+                                include inc/inc02.sov 1460 3 #5356451547615899912
+            include inc/inc00.sov 1004 10 -5293972855592907306
+        pre_i: pre_i + 1
+    if look(source, 'wipe ') > 0 - 1 -> need_priv: 1
+    if look(source, 'private') > 0 - 1 -> need_priv: 1
+    include inc/inc05.sov 109 9 #6331407690289065434
+                include inc/inc00.sov 735 9 #4691733286310669963
+                        tops: _sov_list_add(tops, raw)
+                include inc/inc00.sov 1701 7 #-4612332528004819644
+            include inc/inc03.sov 15 3 7870058949397017896
+        li: li + 1
+    if in_t = 1 -> bodies: _sov_list_add(bodies, cur)
+        body_lns: _sov_list_add(body_lns, cur_ln)
+    include inc/inc03.sov 18 4 #-6305541007418616770
+    prep_main_so(names, params, bodies)
+    if has_vm = 1 -> glob_names: _sov_list_add(glob_names, 'heap_ptr')
+        include inc/inc05.sov 728 3 #-1367562775601042638
+    include inc/inc03.sov 1596 4 #8567618303018309608
+        include inc/inc05.sov 536 3 #6707126683451108694
+                    if need_priv = 1 -> emit_nodump_so() ;; so_body(tops)
+                    cflush_all() ;; so_body(_sov_list_get(bodies, fi))
+                    if saw_str = 1 -> mark_fn_str(nm)
+                    include inc/inc04.sov 358 3 #-1672281021428996913
+                include inc/inc04.sov 361 3 #-4272682582116496708
+                    if isfib = 1 -> emit_fib_iter_a64()
+                    if same(nm, 'main') = 1 -> skip_al: dead_iota(_sov_list_get(bodies, fi))
+                        if need_priv = 1 -> emit_nodump_so() ;; so_body(tops)
+                        cflush_all()
+                    if isfib = 0 -> so_body(_sov_list_get(bodies, fi))
+                    include inc/inc03.sov 341 6 #6017948556819250518
+                    if same(nm, 'main') = 1 -> set_reg(0, 0)
+                        set_reg(8, sc_exit) ;; sysc()
+                    if not -> if isfib = 0
+                            xor_rax_so() ;; leave()
+                            ret()
+        fi: fi + 1
+    if has_vm = 0 -> emit_used() ;; warn_unused_so()
+warn_unused_so:
+    ui: 0 ;; as long as ui < _sov_list_len(names) -> nm: _sov_list_get(names, ui)
+        do_w: 0
+        if length(nm) > 0 -> if same(nm, 'main') = 0
+                if starts(nm, '_sov_') = 0 -> if _sov_list_get(task_user, ui) = 1
+                        do_w: 1
+        if do_w = 1 -> 0:
+                used
+                uj
+            as long as uj < _sov_list_len(patch_kind) -> if same(_sov_list_get(patch_kind, uj), 'rel') = 1
+                    if same(_sov_list_get(patch_val, uj), nm) = 1 -> used: 1
+                uj: uj + 1
+            if used = 0 -> print 'Warning: never used'
+                _sov_print(nm) ;; print _sov_list_get(task_lns, ui)
+        ui: ui + 1
+include inc/inc03.sov 1348 3 #-1667527420630080324
+include inc/inc00.sov 581 10 -4451285426758105718
+    pad: _sov_list_len(glob_names) * 8 ;; dyn_base: HDR + clen + sl + pad
+    as long as dyn_base % 8 != 0 -> dyn_base: dyn_base + 1 ;; so_strtab: dyn_base
+    so_strsz: 60 ;; so_symtab: so_strtab + 64
+    so_hash: so_symtab + 72 ;; so_dyn: so_hash + 28
+    filesz: so_dyn + 112
+    include inc/inc00.sov 1014 10 -1515168314712000978
+    dummy: _sov_set_byte(flat, 6, 1) ;; flat: poke2 16 + 2 * i: 3 183
+    poke4(flat, 20, 1)
+    include inc/inc03.sov 1355 3 #-8754656908953083537
+    poke8(flat, 24, BASE + HDR + moff) ;; poke8(flat, 32, 64)
+    flat: poke2 52 + 2 * i: 64 56 3
+    include inc/px00.sov 1329 4 (64 6 4 72 64 80 64 88 64)
+    flat: poke8 96 + 8 * i: 168 168 8 ;; flat: poke4 120 + 4 * i: 1 7
+    poke8(flat, 128, 0) ;; poke8(flat, 136, BASE)
+    poke8(flat, 144, BASE) ;; poke8(flat, 152, filesz)
+    poke8(flat, 160, filesz + 65536) ;; poke8(flat, 168, 4096)
+    include inc/px00.sov 1329 4 (176 2 6 184 so_dyn 192 so_dyn 200 so_dyn)
+    flat: poke8 208 + 8 * i: 112 112 8 ;; i: 0
+    as long as i < clen -> dummy: _sov_set_byte(flat, HDR + i,  ocget(i))
+        i: i + 1
+    si: 0 ;; as long as si < sl -> dummy: _sov_set_byte(flat, HDR + str_off + si, _sov_buf_at(strb, si))
+        si: si + 1
+    str_addr: BASE + HDR + str_off ;; glob_addr: BASE + HDR + glob_off
+    include inc/inc05.sov 777 4 #8982729210112465138
+        include inc/inc02.sov 1117 8 #-8786281784589764224
+            poke4(flat, HDR + at + 8, 4072669184 + ((sa / 4294967296) % 65536) * 32)
+        include inc/inc05.sov 912 3 #6069470066103243514
+            poke4(flat, HDR + at + 8, 4072669184 + ((sa / 4294967296) % 65536) * 32 + 1)
+        include inc/inc05.sov 645 5 #-3705333537513045906
+        i: i + 1
+    if had_err = 1 -> return
+    smi: idx(fn_names, 'main')
+    smoff: 0 ;; if smi > 0 - 1 -> smoff: _sov_list_get(fn_offs, smi)
+    so_name('libsovren.so', flat, so_strtab + 1)
+    so_name('sovren_main', flat, so_strtab + 14)
+    so_name('Java_com_sovren_Native_run', flat, so_strtab + 26)
+    include inc/px00.sov 2811 6 (24 14 28 30 32 40)
+    include inc/px00.sov 2811 6 (48 26 52 54 56 64)
+    poke4(flat, so_hash, 1) ;; poke4(flat, so_hash + 4, 3)
+    poke4(flat, so_hash + 8, 2) ;; poke4(flat, so_hash + 12, 0)
+    poke4(flat, so_hash + 16, 0) ;; poke4(flat, so_hash + 20, 1)
+    poke8(flat, so_dyn, 5) ;; poke8(flat, so_dyn + 8, BASE + so_strtab)
+    include inc/px00.sov 3747 4 (16 10 24 so_strsz 32 6 40 so_symtab)
+    include inc/px00.sov 3747 4 (48 11 56 24 64 4 72 so_hash)
+    poke8(flat, so_dyn + 80, 14) ;; poke8(flat, so_dyn + 88, 1)
+    poke8(flat, so_dyn + 96, 0) ;; poke8(flat, so_dyn + 104, 0)
+    w: _sov_write_n(path, flat, filesz)
+    if w = 0 -> print 'Error: cannot write output (is it running?)'
+        fail()
+    _sov_chmod(path, 493)
+include inc/inc03.sov 811 5 #8791434682527975694
+include inc/inc00.sov 524 8 #-4265289049711107356
+    include inc/inc04.sov 364 3 -3520758847190113110
+        if same(arg, '--flat') = 1 -> flat_mode: 1
+        if not -> if same(arg, '-o') = 1
+                i: i + 1 ;; if i < argc -> outf: peek_ptr(argv, i)
+            if not -> if same(arg, 'build') = 0
+                    if starts(arg, '--') = 0 -> outf: pic_io(inf, outf, arg) ;; if starts(arg, '--') = 0 -> inf: pic_in(inf, arg)
+        i: i + 1
+    if length(inf) = 0 -> print 'Error: no input'
+        fail()
+    if length(outf) = 0 -> d: look(inf, '.sov')
+        if d > 0 - 1 -> outf: cut(inf, 0, d)
+        if not -> outf: join(inf, '.out')
+    print 'Compiling'
+    _sov_print(inf)
+    include inc/px00.sov 3752 4 (src inf src nl _sov_alloc 2)
+    src: splice_inc(src, dir_of(inf))
+    dummy: _sov_set_byte(nl, 0, 10) ;; dummy: _sov_set_byte(nl, 1, 0)
+    src: join(join("# pad line so main is not first", nl), src)
+    used_libs: blank ;; src: std_forms(src)
+    if look(src, join(" -", "> ")) > 0 - 1 -> src: std_forms(src)
+    extra: pull_uses(src) ;; more: pull_uses(extra)
+    as long as length(more) > 0 -> extra: join(extra, more)
+        more: pull_uses(more)
+    include inc/inc00.sov 165 10 8032181674794344748
+    include inc/inc00.sov 180 10 #-4430533400270843129
+        if rt = 0 -> print 'Error: cannot read runtime'
+            fail()
+    if length(rt) > 0 -> rt: std_forms(rt)
+        if look(rt, join(" -", "> ")) > 0 - 1 -> rt: std_forms(rt)
+    u_parts_done: 1
+    include inc/inc05.sov 781 4 #7930192525485295787
+    all: join(all, src) ;; all: std_forms(all)
+    if flat_mode = 1 -> # --flat: write the program the compiler would parse, includes put back
+        file_write_all(outf, all)
+        print 'Wrote'
+        _sov_print(outf) ;; sys_exit(0)
+    so_compile(all) ;; write_elf(outf)
+    include inc/inc02.sov 644 3 -8115967853843432821
+push_reg n:
+    emitw(4162785248 + n)
+xor_rax_so:
+    emitw(2854159328)
+include inc/inc02.sov 1570 5 #8749892042086598832
+    include inc/inc04.sov 367 3 #6081362991388776463
+    addp(at, 'str64', off)
+    include inc/inc03.sov 1354 3 #4713598903659099014
+emit_nodump_so:
+    return
+include inc/inc05.sov 560 4 #-5041540189521579988
+    include inc/inc04.sov 367 3 #6081362991388776463
+    addp(nl_at, 'str64', intern_nz("\n"))
+    include inc/inc00.sov 1790 9 #6862893558938863356
+include inc/inc06.sov 58 4 #-7354670840073626699
+
+cd_at: 0
+
+include driver_compat.sov

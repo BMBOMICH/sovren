@@ -1,0 +1,93 @@
+use bounds
+use string
+sbuf_new cap:
+    if cap < 1 -> cap: 1
+    b: _sov_alloc(16 + cap + 1)
+    poke_i64(b, 0, cap)
+    poke_i64(b, 8, 0)
+    poke_byte(b, 16, 0)
+    return b
+sbuf_cap b:
+    if b < 4096 -> bounds_fail("sbuf", 0, 0)
+    return peek_i64(b, 0)
+sbuf_len b:
+    if b < 4096 -> bounds_fail("sbuf", 0, 0)
+    return peek_i64(b, 8)
+sbuf_get b i:
+    n: sbuf_len(b)
+    dummy: bounds_ok("sbuf", i, n)
+    if i < 0 -> return 0
+    if i >= n -> return 0
+    return peek_byte(b, 16 + i)
+sbuf_set b i v:
+    n: sbuf_len(b)
+    dummy: bounds_ok("sbuf", i, n)
+    if i < 0 -> return 0
+    if i >= n -> return 0
+    poke_byte(b, 16 + i, band(v, 255))
+    return 1
+sbuf_put b v:
+    n: sbuf_len(b)
+    c: peek_i64(b, 0)
+    dummy: bounds_ok("sbuf append", n + 1, c + 1)
+    if n >= c -> return 0
+    poke_byte(b, 16 + n, band(v, 255))
+    poke_i64(b, 8, n + 1)
+    poke_byte(b, 16 + n + 1, 0)
+    return 1
+sbuf_cat b s2:
+    n2: sbuf_len(s2)
+    i: 0
+    as long as i < n2
+        if sbuf_put(b, peek_byte(s2, 16 + i)) is 0 -> return 0
+        i: i + 1
+    return 1
+sbuf_slice b i n:
+    total: sbuf_len(b)
+    dummy: bounds_ok("sbuf slice", i, total + n - n)
+    if i < 0 -> return 0
+    if n < 0 -> return 0
+    if i + n > total -> return 0
+    r: sbuf_new(n)
+    j: 0
+    as long as j < n
+        sbuf_put(r, peek_byte(b, 16 + i + j))
+        j: j + 1
+    return r
+sbuf_from s:
+    n: _sov_strlen(s)
+    b: sbuf_new(n)
+    i: 0
+    as long as i < n
+        sbuf_put(b, _sov_byte_at(s, i))
+        i: i + 1
+    return b
+sbuf_text b:
+    n: sbuf_len(b)
+    r: _sov_alloc(n + 1)
+    i: 0
+    as long as i < n
+        poke_byte(r, i, peek_byte(b, 16 + i))
+        i: i + 1
+    poke_byte(r, n, 0)
+    return str_cat(r, "")
+sstr_new s:
+    return sbuf_from(s)
+sstr_len s:
+    return sbuf_len(s)
+sstr_cat a b:
+    return sbuf_cat(a, b)
+sstr_cat_text a t:
+    return sbuf_cat(a, sbuf_from(t))
+sstr_slice a i n:
+    return sbuf_slice(a, i, n)
+sstr_text a:
+    return sbuf_text(a)
+sstr_eq a b:
+    na: sbuf_len(a)
+    if na is not sbuf_len(b) -> return 0
+    i: 0
+    as long as i < na
+        if peek_byte(a, 16 + i) is not peek_byte(b, 16 + i) -> return 0
+        i: i + 1
+    return 1

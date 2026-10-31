@@ -1,0 +1,15 @@
+use list
+main:
+    l: list_new()
+    i: 0
+    as long as i < 300000
+        l: list_add(l, i)
+        i: i + 1
+    s: 0
+    j: 0
+    n: list_len(l)
+    as long as j < n
+        s: s + list_get(l, j)
+        j: j + 1
+    print s
+    return 0

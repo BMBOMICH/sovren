@@ -1,0 +1,175 @@
+# pad line so main is not first
+use sys
+use string
+file_open_read path:
+    return sys_open(path, 0)
+file_open_write path:
+    return sys_open(path, 577)
+file_close fd:
+    return sys_close(fd)
+file_size path:
+    fd: file_open_read(path)
+    if fd < 0
+        return 0 - 1
+    n: sys_seek(fd, 0, 2)
+    sys_close(fd)
+    return n
+file_read_all path:
+    fd: file_open_read(path)
+    if fd < 0
+        return 0
+    n: sys_seek(fd, 0, 2)
+    sys_seek(fd, 0, 0)
+    if n < 1
+        buf: _sov_alloc(8192)
+        got: sys_read(fd, buf, 8191)
+        sys_close(fd)
+        if got < 1
+            poke_byte(buf, 0, 0)
+            return as text buf
+        poke_byte(buf, got, 0)
+        return as text buf
+    buf: _sov_alloc(n + 1)
+    got: sys_read(fd, buf, n)
+    sys_close(fd)
+    poke_byte(buf, got, 0)
+    return as text buf
+file_write_all path data:
+    fd: file_open_write(path)
+    if fd < 0
+        return 0
+    n: _sov_strlen(data)
+    w: sys_write(fd, data, n)
+    sys_close(fd)
+    if w is n
+        return 1
+file_write_bytes path data n:
+    fd: file_open_write(path)
+    if fd < 0
+        return 0
+    w: sys_write(fd, data, n)
+    sys_close(fd)
+    if w is n
+        return 1
+file_read_bytes path:
+    return file_read_all(path)
+file_append path data:
+    fd: sys_open(path, 1089)
+    if fd < 0
+        return 0
+    n: _sov_strlen(data)
+    sys_write(fd, data, n)
+    sys_close(fd)
+    return 1
+file_exists path:
+    fd: file_open_read(path)
+    if fd < 0
+        return 0
+    sys_close(fd)
+    return 1
+file_delete path:
+    if sys_unlink(path) is 0
+        return 1
+file_read_max path cap:
+    fd: file_open_read(path)
+    if fd < 0
+        return 0
+    buf: _sov_alloc(cap + 1)
+    got: sys_read(fd, buf, cap)
+    sys_close(fd)
+    if got < 1
+        poke_byte(buf, 0, 0)
+        return as text buf
+    poke_byte(buf, got, 0)
+    return as text buf
+file_rename a b:
+    if sys_rename(a, b) is 0
+        return 1
+file_copy a b:
+    d: file_read_all(a)
+    if d is 0
+        return 0
+    return file_write_all(b, d)
+file_shred path:
+    fd: sys_open(path, 4098)
+    if fd < 0
+        return 0
+    n: sys_seek(fd, 0, 2)
+    sys_seek(fd, 0, 0)
+    z: _sov_heap_alloc(4096)
+    i: 0
+    as long as i < 4096
+        poke_byte(z, i, 0)
+        i: i + 1
+    left: n
+    as long as left > 0
+        take: 4096
+        if left < take
+            take: left
+        sys_write(fd, z, take)
+        left: left - take
+    syscall(74, fd, 0, 0, 0, 0, 0)
+    syscall(77, fd, 0, 0, 0, 0, 0)
+    syscall(74, fd, 0, 0, 0, 0, 0)
+    sys_close(fd)
+    r: syscall(263, 0 - 100, path, 0, 0, 0, 0)
+    parent: file_dirname(path)
+    dfd: sys_open(parent, 65536)
+    if dfd > 0 - 1
+        syscall(74, dfd, 0, 0, 0, 0, 0)
+        sys_close(dfd)
+    if r is 0
+        return 1
+file_dirname path:
+    n: _sov_strlen(path)
+    i: n - 1
+    as long as i > 0
+        if peek_byte(path, i) is 47
+            if i is 1
+                return "/"
+            return as text str_cut(path, 0, i)
+        i: i - 1
+    return "."
+file_open_secret path:
+    return syscall(257, 0 - 100, path, 4673, 384, 0, 0)
+file_write_secret_all path data:
+    fd: file_open_secret(path)
+    if fd < 0
+        return 0
+    n: _sov_strlen(data)
+    sys_write(fd, data, n)
+    sys_close(fd)
+    return 1
+file_write_secret_bytes path data n:
+    fd: file_open_secret(path)
+    if fd < 0
+        return 0
+    w: sys_write(fd, data, n)
+    sys_close(fd)
+    if w is n
+        return 1
+file_append_secret path data:
+    fd: syscall(257, 0 - 100, path, 5185, 384, 0, 0)
+    if fd < 0
+        return 0
+    n: _sov_strlen(data)
+    sys_write(fd, data, n)
+    sys_close(fd)
+    return 1
+
+sov_stamp_buf buf n tag:
+    if n < 512
+        return 0
+    i: 0
+    as long as i < 20
+        if peek_byte(buf, 488 + i) is not 0
+            return 0
+        i: i + 1
+    i: 0
+    as long as peek_byte(tag, i) is not 0
+        dummy: poke_byte(buf, 488 + i, peek_byte(tag, i))
+        i: i + 1
+    return 0
+sov_stamp_append p tag:
+    file_append_secret(p, tag)
+    return 0

@@ -1,0 +1,25 @@
+use string
+use list
+use num
+main:
+    s: "x"
+    i: 0
+    as long as i < 14
+        s: str_cat(s, s)
+        i: i + 1
+    parts: str_split(s, "xx")
+    n: list_len(parts)
+    total: 0
+    j: 0
+    as long as j < n
+        total: total + str_len(list_get(parts, j))
+        j: j + 1
+    print num_text(n)
+    print num_text(total)
+    c: 0
+    k: 0
+    as long as k < 200
+        if str_find(s, "xxxxxxxxxxxxxxxy") > 0 - 1
+            c: c + 1
+        k: k + 1
+    print num_text(c)

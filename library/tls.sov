@@ -1,0 +1,2455 @@
+# TRUST MODEL (honest scope, 2026-10-30): TLS 1.0/1.2/1.3 clients verify
+# the certificate chain to 7 embedded RSA roots (signatures RSA PKCS#1 v1.5
+# SHA-256/SHA-1), certificate validity windows, and the hostname (SAN
+# dNSName with single-label wildcards; CN fallback only when no SAN).
+# NOT covered: chains anchored at other/ECDSA roots, revocation
+# (CRL/OCSP), certificate Transparency. Widen the root set before
+# claiming general-web coverage.
+use mem
+use bigint
+use bit32
+use gcm
+use hkdf
+use hmac
+use num
+use sha256
+use rand
+use aes
+use md5
+use sha1
+use sock
+use string
+use sys
+use time
+use web
+use x25519
+tl_vstart: 0
+tl_vend: 0
+tl_wipe p n:
+    if p is 0 -> return 0
+    wi: 0
+    as long as wi < n
+        poke_byte(p, wi, 0)
+        wi: wi + 1
+    return 0
+tl12_wipe_a rcrs ms pm ep rb ret:
+    tl_wipe(rcrs, 64)
+    tl_wipe(ms, 48)
+    tl_wipe(pm, 48)
+    tl_wipe(ep, 32)
+    tl_wipe(rb, 32)
+    return ret
+tl12_wipe_b sk civ rk riv ret:
+    tl_wipe(sk, 16)
+    tl_wipe(civ, 4)
+    tl_wipe(rk, 16)
+    tl_wipe(riv, 4)
+    return ret
+tl13_wipe epriv cts sts cap sap hsec ret:
+    tl_wipe(epriv, 32)
+    tl_wipe(cts, 32)
+    tl_wipe(sts, 32)
+    tl_wipe(cap, 32)
+    tl_wipe(sap, 32)
+    tl_wipe(hsec, 32)
+    return ret
+tl10_wipe ctx rcrs pm ep rb ret:
+    tl_wipe(ctx, 176)
+    tl_wipe(rcrs, 64)
+    tl_wipe(pm, 48)
+    tl_wipe(ep, 32)
+    tl_wipe(rb, 32)
+    return ret
+tl_len p i:
+    l: peek_byte(p, i + 1)
+    if l < 128
+        tl_vstart: i + 2
+        tl_vend: i + 2 + l
+        return 0
+    if l is 129
+        tl_vstart: i + 3
+        tl_vend: i + 3 + peek_byte(p, i + 2)
+        return 0
+    if l is 130
+        tl_vstart: i + 4
+        tl_vend: i + 4 + peek_byte(p, i + 2) * 256 + peek_byte(p, i + 3)
+        return 0
+    return 0 - 1
+tl_child p i k:
+    tl_len(p, i)
+    at: tl_vstart
+    c: 0
+    as long as c < k
+        tl_len(p, at)
+        at: tl_vend
+        c: c + 1
+    return at
+tl_integer p i out:
+    tl_len(p, i)
+    a: tl_vstart
+    n: tl_vend - tl_vstart
+    if n > 1
+        if peek_byte(p, a) is 0
+            a: a + 1
+            n: n - 1
+    j: 0
+    as long as j < n
+        poke_byte(out, j, peek_byte(p, a + j))
+        j: j + 1
+    return n
+tl_mod: 0
+tl_modlen: 0
+tl_exp: 0
+tl_explen: 0
+tl_cert_key cert clen:
+    tbs: tl_child(cert, 0, 0)
+    spki: tl_child(cert, tbs, 6)
+    bs: tl_child(cert, spki, 1)
+    tl_len(cert, bs)
+    rsa: tl_vstart + 1
+    modi: tl_child(cert, rsa, 0)
+    expi: tl_child(cert, rsa, 1)
+    if tl_mod is 0 -> tl_mod: _sov_alloc(512)
+    if tl_exp is 0 -> tl_exp: _sov_alloc(8)
+    tl_modlen: tl_integer(cert, modi, tl_mod)
+    tl_explen: tl_integer(cert, expi, tl_exp)
+    return 0
+ROOT_N: 7
+ROOT_HA_DIGICERT_ROOT: "E23BE11172DEA8A4D3A357AA50A28F0B7790C9A2A5EE12CE965B010920CC0193A74E30B753F743C46900579DE28D22DD870640008109CECE1B83BFDFCD3B7146E2D666C705B37627168F7B9E1E957DEEB748A308DAD6AF7A0C3906657F4A5D1FBC17F8ABBEEE28D7747F7A78995985686E5C23324BBF4EC0E85A6DE370BF7710"
+ROOT_HB_DIGICERT_ROOT: "BFFC01F685D9A844105832A97518D5D1A2BE47E2276AF49A33F84908608BD45FB43A84BFA1AA4A4C7D3ECF4F5F6C765EA04B37919EDC22E66DCE141A8E6ACBFECDB3146417C75B299E32BFF2EEFAD30B42D4ABB74132DA0CD4EFF881D5BB8D583FB51BE84928A270DA3104DDF7B216F24C0A4E07A8ED4A3D5EB57FA390C3AF27"
+ROOT_NB_0: 19385280
+ROOT_NA_0: 32533920
+ROOT_HA_DIGICERT_G2: "BB37CD34DC7B6BC9B26890AD4A75FF46BA210A088DF51954C9FB88DBF3AEF23A89913C7AE6AB061A6BCFAC2DE85E092444BA629A7ED6A3A87EE054752005AC50B79C631A6C30DCDA1F19B1D71EDEFDD7E0CB948337AEEC1F434EDD7B2CD2BD2EA52FE4A9B8AD3AD499A4B625E99B6B00609260FF4F214918F76790AB61069C8F"
+ROOT_HB_DIGICERT_G2: "F2BAE9B4E992326BB5F357E85D1BCD8C1DAB95049549F3352D96E3496DDD77E3FB494BB4AC5507A98F95B3B423BB4C6D45F0F6A9B29530B4FD4C558C274A57147C829DCD7392D3164A060C8C50D18F1E09BE17A1E621CAFD83E510BC83A50AC46728F67314143D4676C387148921344DAF0F450CA649A1BABB9CC5B133832985"
+ROOT_NB_1: 22922640
+ROOT_NA_1: 35786160
+ROOT_HA_ISRG_X1: "ADE82473F41437F39B9E2B57281C87BEDCB7DF38908C6E3CE657A078F775C2A2FEF56A6EF6004F28DBDE68866C4493B6B163FD14126BBF1FD2EA319B217ED1333CBA48F5DD79DFB3B8FF12F1219A4BC18A8671694A66666C8F7E3C70BFAD292206F3E4C0E680AEE24B8FB7997E94039FD347977C99482353E838AE4F0A6F832ED149578C8074B6DA2FD0388D7B0370211B75F2303CFA8FAEDDDA63ABEB164FC28E114B7ECF0BE8FFB5772EF4B27B4AE04C12250C708D0329A0E15324EC13D9EE19BF10B34A8C3F89A36151DEAC870794F46371EC2EE26F5B9881E1895C34796C76EF3B906279E6DBA49A2F26C5D010E10EDED9108E16FBB7F7A8F7C7E5020798"
+ROOT_HB_ISRG_X1: "8F360895E7E237960D36759EFB0E72B11D9BBC03F94905D881DD05B42AD641E9AC0176950A0FD8DFD5BD121F352F28176CD298C1A80964776E4737BACEAC595E689D7F72D689C50641293E593EDD26F524C911A75AA34C401F46A199B5A73A516E863B9E7D72A712057859ED3E5178150B038F8DD02F05B23E7B4A1C4B730512FCC6EAE050137C439374B3CA74E78E1F0108D030D45B7136B407BAC130305C48B7823B98A67D608AA2A32982CCBABD83041BA2830341A1D605F11BC2B6F0A87C863B46A8482A88DC769A76BF1F6AA53D198FEB38F364DEC82B0D0A28FFF7DBE21542D422D0275DE179FE18E77088AD4EE6D98B3AC6DD27516EFFBC64F533434F"
+ROOT_NB_2: 23890264
+ROOT_NA_2: 34409464
+ROOT_HA_GTS_R1: "B611028B1EE3A1779B3BDCBF943EB795A7403CA1FD82F97D32068271F6F68C7FFBE8DBBC6A2E9797A38C4BF92BF6B1F9CE841DB1F9C597DEEFB9F2A3E9BC12895EA7AA52ABF82327CBA4B19C63DBD7997EF00A5EEB68A6F4C65A470D4D1033E34EB113A3C8186C4BECFC0990DF9D6429252307A1B4D23D2E60E0CFD20987BBCD48F04DC2C27A888ABBBACF5919D6AF8FB007B09E31F182C1C0DF2EA66D6C190EB5D87E261A45033DB079A49428AD0F7F26E5A808FE96E83C689453EE833A882B159609B2E07A8C2E75D69CEBA756648F964F68AE3D97C2848FC0BC40C00B5CBDF687B3356CAC18507F84E04CCD92D320E933BC5299AF32B529B3252AB448F972"
+ROOT_HB_GTS_R1: "E1CA64F7E682108DE89DC28A88FA38668AFC63F901F978FD7B5C77FA7687FAECDFB10E799557B4BD26EFD601D1EB160ABB8E0BB5C5C58A55ABD3ACEA914B29CC19A432254E2AF16544D002CEAACE49B4EA9F7C83B0407BE743ABA76CA38F7D8981FA4CA5FFD58EC3CE4BE0B5D8B38E45CF76C0ED402BFD530FB0A7D53B0DB18AA203DE31ADCC77EA6F7B3ED6DF912212E6BEFAD832FC1063145172DE5DD61693BD296833EF3A66EC078A26DF13D757657827DE5E491400A2007F9AA821B6A9B195B0A5B90D1611DAC76C483C40E07E0D5ACD563CD19705B9CB4BED394B9CC43FD255136E24B0D671FAF4C1BACCED1BF5FE8141D800983D3AC8AE7A9837180595"
+ROOT_NB_3: 24442560
+ROOT_NA_3: 34961760
+ROOT_HA_COMODO_RSA: "91E85492D20A56B1AC0D24DDC5CF446774992B37A37D23700071BC53DFC4FA2A128F4B7F1056BD9F7072B7617FC94B0F17A73DE3B00461EEFF1197C7F4863E0AFA3E5CF993E6347AD9146BE79CB385A0827A76AF7190D7ECFD0DFA9C6CFADFB082F4147EF9BEC4A62F4F7F997FB5FC674372BD0C00D689EB6B2CD3ED8F981C14AB7EE5E36EFCD8A8E49224DA436B62B855FDEAC1BC6CB68BF30E8D9AE49B6C6999F878483045D5ADE10D3C4560FC32965127BC67C3CA2EB66BEA46C7C720A0B11F65DE4808BAA44EA9F283463784EBE8CC814843674E722A9B5CBD4C1B288A5C227BB4AB98D9EEE05183C309464E6D3E99FA9517DA7C3357413C8D51ED0BB65C"
+ROOT_HB_COMODO_RSA: "AF2C631ADF57C83FBCE95DC49BAF4599E2A35A24B4BAA9563DCF6FAAFF4958BEF0A8FFF4B8ADE937FBBAB8F40B3AF9E843421E89D884CB13F1D9BBE18960B88C2856AC141D9C0AE771EBCF0EDD3DA996A148BD3CF7AFB50D224CC01181EC563BF6D3A2E25BB7B204225295809369E88E4C65F191032D707402EA8B671529695202BBD7DF506A5546BFA0A328617F70D0C3A2AA2C21AA47CE289C064576BF821827B4D5AEB4CB50E66BF44C867130E9A6DF1686E0D8FF40DDFBD042887FA3333A2E5C1E41118163CE18716B2BECA68AB7315C3A6A47E0C37959D6201AAFF26A98AA72BC574AD24B9DBB10FCB04C41E5ED1D3D5E289D9CCCBFB351DAA747E58453"
+ROOT_NB_4: 21064320
+ROOT_NA_4: 35791199
+ROOT_HA_GODADDY_G2: "BF716208F1FA5934F71BC918A3F7804958E9228313A6C52043013B84F1E685499F27EAF6841B4EA0B4DB7098C73201B1053E074EEEF4FA4F2F593022E7AB19566BE28007FCF316758039517BE5F935B6744EA98D8213E4B63FA90383FAA2BE8A156A7FDE0BC3B6191405CAEAC3A804943B467C320DF3006622C88D696D368C11"
+ROOT_HB_GODADDY_G2: "18B7D3B21C60B438FA028CCED3DD4607DE0A3EEB5D7CC87CFBB02B53A4926269512505611A44818C2CA9439623DFAC3A819A0E29C51CA9E95D1EB69E9E300A39CEF18880FB4B5DCC32EC85624325340256270191B43B702A3F6EB1E89C88017D9FD4F9DB536D609DBF2CE758ABB85F46FCCEC41B033C09EB49315C6946B3E047"
+ROOT_NB_5: 20862720
+ROOT_NA_5: 35765279
+ROOT_HA_AAA: "BE409DF46EE1EA76871C4D45448EBE46C883069DC12AFE181F8EE402FAF3AB5D508A16310B9A06D0C57022CD492D5463CCB66E68460B53EACB4C24C0BC724EEAF115AEF4549A120AC37AB23360E2DA8955F32258F3DEDCCFEF8386A28C944F9F68F29890468427C776BFE3CC352C8B5E07646582C048B0A891F9619F762050A8"
+ROOT_HB_AAA: "91C766B5EB78620356F08A1A13EA31A31EA099FD38F6F62732586F07F56BB8FB142BAFB7AACCD6635F738CDA0599A838A8CB17783651ACE99EF4783A8DCF0FD942E2980CAB2F9F0E01DEEF9F9949F12DDFAC744D1B98B547C5E529D1F99018C7629CBE83C7267B3E8A25C7C0DD9DE6356810209D8FD8DED2C3849C0D5EE82FC9"
+ROOT_NB_6: 17881920
+ROOT_NA_6: 31031999 
+ROOT_KEYS: 0
+tl_root_hex i:
+    if i is 0 -> return str_cat(ROOT_HA_DIGICERT_ROOT, ROOT_HB_DIGICERT_ROOT)
+    if i is 1 -> return str_cat(ROOT_HA_DIGICERT_G2, ROOT_HB_DIGICERT_G2)
+    if i is 2 -> return str_cat(ROOT_HA_ISRG_X1, ROOT_HB_ISRG_X1)
+    if i is 3 -> return str_cat(ROOT_HA_GTS_R1, ROOT_HB_GTS_R1)
+    if i is 4 -> return str_cat(ROOT_HA_COMODO_RSA, ROOT_HB_COMODO_RSA)
+    if i is 5 -> return str_cat(ROOT_HA_GODADDY_G2, ROOT_HB_GODADDY_G2)
+    return str_cat(ROOT_HA_AAA, ROOT_HB_AAA)
+tl_root_nb i:
+    if i is 0 -> return ROOT_NB_0
+    if i is 1 -> return ROOT_NB_1
+    if i is 2 -> return ROOT_NB_2
+    if i is 3 -> return ROOT_NB_3
+    if i is 4 -> return ROOT_NB_4
+    if i is 5 -> return ROOT_NB_5
+    return ROOT_NB_6
+tl_root_na i:
+    if i is 0 -> return ROOT_NA_0
+    if i is 1 -> return ROOT_NA_1
+    if i is 2 -> return ROOT_NA_2
+    if i is 3 -> return ROOT_NA_3
+    if i is 4 -> return ROOT_NA_4
+    if i is 5 -> return ROOT_NA_5
+    return ROOT_NA_6
+tl_hexv c:
+    if c >= 97 -> return c - 87
+    if c >= 65 -> return c - 55
+    return c - 48
+tl_roots_build:
+    if ROOT_KEYS is not 0 -> return 0
+    ROOT_KEYS: _sov_alloc(ROOT_N * 600)
+    r: 0
+    as long as r < ROOT_N
+        h: tl_root_hex(r)
+        slot: ROOT_KEYS + r * 600
+        hn: str_len(h)
+        nb: hn / 2
+        j: 0
+        as long as j < nb
+            poke_byte(slot, j, tl_hexv(peek_byte(h, j * 2)) * 16 + tl_hexv(peek_byte(h, j * 2 + 1)))
+            j: j + 1
+        poke_i64(slot, 512, nb)
+        poke_byte(slot, 520, 1)
+        poke_byte(slot, 521, 0)
+        poke_byte(slot, 522, 1)
+        poke_i64(slot, 528, 3)
+        r: r + 1
+tl_days_civil y m d:
+    y2: y
+    if m <= 2 -> y2: y - 1
+    era: y2 / 400
+    yoe: y2 - era * 400
+    mp: m + 9
+    if m > 2 -> mp: m - 3
+    doy: (153 * mp + 2) / 5 + d - 1
+    doe: yoe * 365 + yoe / 4 - yoe / 100 + doy
+    return era * 146097 + doe - 719468
+tl_ztime p i:
+    tl_len(p, i)
+    a: tl_vstart
+    n: tl_vend - a
+    yi: 2
+    if n > 13 -> yi: 4
+    v: 0
+    j: 0
+    as long as j < yi
+        v: v * 10 + peek_byte(p, a + j) - 48
+        j: j + 1
+    yr: v + 2000
+    if yi is 4 -> yr: v
+    if v >= 50
+        if yi is 2 -> yr: v + 1900
+    mo: (peek_byte(p, a + yi) - 48) * 10 + peek_byte(p, a + yi + 1) - 48
+    da: (peek_byte(p, a + yi + 2) - 48) * 10 + peek_byte(p, a + yi + 3) - 48
+    hh: (peek_byte(p, a + yi + 4) - 48) * 10 + peek_byte(p, a + yi + 5) - 48
+    mi: (peek_byte(p, a + yi + 6) - 48) * 10 + peek_byte(p, a + yi + 7) - 48
+    return tl_days_civil(yr, mo, da) * 1440 + hh * 60 + mi
+tl_cert_valid cert:
+    tbs: tl_child(cert, 0, 0)
+    val: tl_child(cert, tbs, 4)
+    nb: tl_child(cert, val, 0)
+    na: tl_child(cert, val, 1)
+    nowmin: time_now() / 60
+    if nowmin < tl_ztime(cert, nb) -> return 0
+    if nowmin > tl_ztime(cert, na) -> return 0
+    return 1
+tl_key_of cert mb:
+    tl_cert_key(cert, 0)
+    mem_copy(mb, tl_mod, tl_modlen)
+    eb: mb + 520
+    mem_copy(eb, tl_exp, tl_explen)
+    poke_i64(mb, 512, tl_modlen)
+    poke_i64(mb, 528, tl_explen)
+tl_tbs_digest cert which out:
+    tbs: tl_child(cert, 0, 0)
+    tl_len(cert, tbs)
+    start: cert + tbs
+    n: tl_vend - tbs
+    if which is 1
+        sw: sha1_bytes(start, n)
+        j: 0
+        as long as j < 5
+            v: peek_i64(sw, j * 8)
+            poke_byte(out, j * 4, wand(shr(v, 24), 255))
+            poke_byte(out, j * 4 + 1, wand(shr(v, 16), 255))
+            poke_byte(out, j * 4 + 2, wand(shr(v, 8), 255))
+            poke_byte(out, j * 4 + 3, wand(v, 255))
+            j: j + 1
+        return 0
+    sha256_bytes(start, n, out)
+tl_cert_signed cert mb:
+    sigtag: tl_child(cert, 0, 2)
+    tl_len(cert, sigtag)
+    sg: tl_vstart + 1
+    sl: tl_vend - tl_vstart - 1
+    k: peek_i64(mb, 512)
+    dg: _sov_alloc(32)
+    ck: _sov_alloc(512)
+    expd: _sov_alloc(528)
+    which: 0
+    as long as which < 2
+        dlen: 32
+        if which is 1 -> dlen: 20
+        j: 0
+        as long as j < k
+            poke_byte(expd, j, 255)
+            j: j + 1
+        poke_byte(expd, 0, 0)
+        poke_byte(expd, 1, 1)
+        if which is 0
+            poke_byte(expd, k - 51, 0)
+            poke_byte(expd, k - 50, 48)
+            poke_byte(expd, k - 49, 49)
+            poke_byte(expd, k - 48, 13)
+            poke_byte(expd, k - 47, 6)
+            poke_byte(expd, k - 46, 9)
+            poke_byte(expd, k - 45, 96)
+            poke_byte(expd, k - 44, 134)
+            poke_byte(expd, k - 43, 72)
+            poke_byte(expd, k - 42, 1)
+            poke_byte(expd, k - 41, 101)
+            poke_byte(expd, k - 40, 3)
+            poke_byte(expd, k - 39, 4)
+            poke_byte(expd, k - 38, 2)
+            poke_byte(expd, k - 37, 1)
+            poke_byte(expd, k - 36, 5)
+            poke_byte(expd, k - 35, 0)
+            poke_byte(expd, k - 34, 4)
+            poke_byte(expd, k - 33, 32)
+        if not
+            poke_byte(expd, k - 39, 0)
+            poke_byte(expd, k - 38, 48)
+            poke_byte(expd, k - 37, 33)
+            poke_byte(expd, k - 36, 48)
+            poke_byte(expd, k - 35, 9)
+            poke_byte(expd, k - 34, 6)
+            poke_byte(expd, k - 33, 5)
+            poke_byte(expd, k - 32, 43)
+            poke_byte(expd, k - 31, 14)
+            poke_byte(expd, k - 30, 3)
+            poke_byte(expd, k - 29, 2)
+            poke_byte(expd, k - 28, 26)
+            poke_byte(expd, k - 27, 5)
+            poke_byte(expd, k - 26, 0)
+            poke_byte(expd, k - 25, 4)
+            poke_byte(expd, k - 24, 20)
+        tl_tbs_digest(cert, which, dg)
+        j: 0
+        as long as j < dlen
+            poke_byte(expd, k - dlen + j, peek_byte(dg, j))
+            j: j + 1
+        ebase: mb + 520
+        elen: peek_i64(mb, 528)
+        tl_rsa_enc(sg, sl, ck, mb, k, ebase, elen)
+        bad: 0
+        j: 0
+        as long as j < k
+            if peek_byte(ck, j) is not peek_byte(expd, j) -> bad: 1
+            j: j + 1
+        if bad is 0 -> return 1
+        which: which + 1
+tl_key_is_root mb:
+    tl_roots_build()
+    r: 0
+    as long as r < ROOT_N
+        slot: ROOT_KEYS + r * 600
+        k: peek_i64(slot, 512)
+        if k is peek_i64(mb + 512)
+            same: 1
+            j: 0
+            as long as j < k
+                if peek_byte(slot + j) is not peek_byte(mb + j) -> same: 0
+                j: j + 1
+            if same is 1
+                nowmin: time_now() / 60
+                if nowmin < tl_root_nb(r) -> return 0
+                if nowmin > tl_root_na(r) -> return 0
+                return 1
+        r: r + 1
+tl_chain_ok offs n:
+    tl_roots_build()
+    i: 0
+    as long as i < n
+        if tl_cert_valid(peek_i64(offs, i * 8)) is 0 -> return 0
+        i: i + 1
+    topkey: _sov_alloc(600)
+    tl_key_of(peek_i64(offs, n - 1), topkey)
+    trusted: tl_key_is_root(topkey)
+    if trusted is 0
+        r: 0
+        as long as r < ROOT_N
+            if trusted is 0
+                if tl_cert_signed(peek_i64(offs, n - 1), ROOT_KEYS + r * 600) is 1
+                    nowmin: time_now() / 60
+                    if nowmin >= tl_root_nb(r)
+                        if nowmin <= tl_root_na(r) -> trusted: 1
+            r: r + 1
+    if trusted is 0 -> return 0
+    i: 0
+    as long as i < n - 1
+        upper: _sov_alloc(600)
+        tl_key_of(peek_i64(offs, i + 1), upper)
+        if tl_cert_signed(peek_i64(offs, i), upper) is 0 -> return 0
+        i: i + 1
+    if tl_cert_host_ok(peek_i64(offs, 0), tl_cur_host) is 0 -> return 0
+    return 1
+tl_chain12 cbody:
+    offs: _sov_alloc(64)
+    listlen: peek_byte(cbody, 0) * 65536 + peek_byte(cbody, 1) * 256 + peek_byte(cbody, 2)
+    endp: cbody + 3 + listlen
+    p: cbody + 3
+    n: 0
+    as long as n < 8
+        if p + 3 > endp -> leave
+        tlen: peek_byte(p, 0) * 65536 + peek_byte(p, 1) * 256 + peek_byte(p, 2)
+        if p + 3 + tlen > endp -> leave
+        poke_i64(offs, n * 8, p + 3)
+        n: n + 1
+        p: p + 3 + tlen
+    if n is 0 -> return 0
+    return tl_chain_ok(offs, n)
+tl_chain13 body:
+    offs: _sov_alloc(64)
+    listlen: peek_byte(body, 1) * 65536 + peek_byte(body, 2) * 256 + peek_byte(body, 3)
+    endp: body + 4 + listlen
+    p: body + 4
+    n: 0
+    as long as n < 8
+        if p + 4 > endp -> leave
+        clen: peek_byte(p, 0) * 65536 + peek_byte(p, 1) * 256 + peek_byte(p, 2)
+        poke_i64(offs, n * 8, p + 3)
+        n: n + 1
+        extlen: peek_byte(p, 3 + clen) * 256 + peek_byte(p, 4 + clen)
+        p: p + 3 + clen + 2 + extlen
+    if n is 0 -> return 0
+    return tl_chain_ok(offs, n)
+tl_cur_host: 0
+tl_lc b:
+    if b >= 65
+        if b <= 90 -> return b + 32
+    return b
+tl_host_len host:
+    n: 0
+    as long as peek_byte(host, n) is not 0
+        n: n + 1
+    return n
+tl_name_eq pat plen host hoff hlen:
+    if plen is not hlen -> return 0
+    j: 0
+    as long as j < plen
+        if tl_lc(peek_byte(pat, j)) is not tl_lc(peek_byte(host, hoff + j)) -> return 0
+        j: j + 1
+    return 1
+tl_name_match pat plen host:
+    hlen: tl_host_len(host)
+    if plen >= 3
+        if peek_byte(pat, 0) is 42
+            if peek_byte(pat, 1) is 46
+                d: 0
+                as long as d < hlen
+                    if peek_byte(host, d) is 46 -> leave
+                    d: d + 1
+                if d is 0 -> return 0
+                if d >= hlen -> return 0
+                return tl_name_eq(pat + 1, plen - 1, host, d, hlen - d)
+    return tl_name_eq(pat, plen, host, 0, hlen)
+tl_oid3 p off a b c:
+    tl_len(p, off)
+    if tl_vend - tl_vstart is not 3 -> return 0
+    if peek_byte(p, tl_vstart) is not a -> return 0
+    if peek_byte(p, tl_vstart + 1) is not b -> return 0
+    if peek_byte(p, tl_vstart + 2) is not c -> return 0
+    return 1
+tl_cert_host_ok cert host:
+    if host is 0 -> return 0
+    if peek_byte(host, 0) is 0 -> return 0
+    tbs: tl_child(cert, 0, 0)
+    tl_len(cert, tbs)
+    at: tl_vstart
+    tend: tl_vend
+    ext: 0 - 1
+    as long as at < tend
+        if peek_byte(cert, at) is 163 -> ext: at
+        tl_len(cert, at)
+        at: tl_vend
+    if ext >= 0
+        tl_len(cert, ext)
+        seq: tl_vstart
+        tl_len(cert, seq)
+        e: tl_vstart
+        eend: tl_vend
+        as long as e < eend
+            tl_len(cert, e)
+            xend: tl_vend
+            oid: tl_vstart
+            if tl_oid3(cert, oid, 85, 29, 17) is 1
+                v: tl_vend
+                if peek_byte(cert, v) is 1
+                    tl_len(cert, v)
+                    v: tl_vend
+                tl_len(cert, v)
+                san: cert + tl_vstart
+                tl_len(san, 0)
+                g: tl_vstart
+                gend: tl_vend
+                as long as g < gend
+                    tag: peek_byte(san, g)
+                    tl_len(san, g)
+                    vs: tl_vstart
+                    ve: tl_vend
+                    if tag is 130
+                        if tl_name_match(san + vs, ve - vs, host) is 1 -> return 1
+                    g: ve
+                return 0
+            e: xend
+    subj: tl_child(cert, tbs, 5)
+    tl_len(cert, subj)
+    r: tl_vstart
+    rend: tl_vend
+    as long as r < rend
+        tl_len(cert, r)
+        nrdn: tl_vend
+        s2: tl_vstart
+        send: tl_vend
+        as long as s2 < send
+            tl_len(cert, s2)
+            aend: tl_vend
+            aoid: tl_vstart
+            if tl_oid3(cert, aoid, 85, 4, 3) is 1
+                vv: tl_vend
+                tl_len(cert, vv)
+                if tl_name_match(cert + tl_vstart, tl_vend - tl_vstart, host) is 1 -> return 1
+            s2: aend
+        r: nrdn
+    return 0
+tl_n: 0
+tl_prf out secret slen label llen seed slen2:
+    a: _sov_alloc(32 + slen2)
+    j: llen
+    mem_copy(a, label, llen)
+    j: 0
+    as long as j < slen2
+        poke_byte(a, llen + j, peek_byte(seed, j))
+        j: j + 1
+    alen: llen + slen2
+    pos: 0
+    na: _sov_alloc(32)
+    blk: _sov_alloc(32)
+    as long as pos < tl_n
+        hmac_raw(secret, slen, a, alen, na)
+        j: 32
+        mem_copy(a, na, 32)
+        alen: 32
+        buf: _sov_alloc(32 + llen + slen2 + 1)
+        j: 32
+        mem_copy(buf, a, 32)
+        j: 0
+        as long as j < llen
+            poke_byte(buf, 32 + j, peek_byte(label, j))
+            j: j + 1
+        j: 0
+        as long as j < slen2
+            poke_byte(buf, 32 + llen + j, peek_byte(seed, j))
+            j: j + 1
+        hmac_raw(secret, slen, buf, 32 + llen + slen2, blk)
+        j: 0
+        as long as j < 32
+            if pos + j < tl_n -> poke_byte(out, pos + j, peek_byte(blk, j))
+            j: j + 1
+        pos: pos + 32
+    return 0
+tl_clen: 0
+tl_rsa_enc m mlen out mod modlen exp explen:
+    n: bi_from_bytes(mod, modlen)
+    ev: 0
+    j: 0
+    as long as j < explen
+        ev: ev * 256 + peek_byte(exp, j)
+        j: j + 1
+    mb: bi_from_bytes(m, mlen)
+    c: bi_modpow17(mb, ev, n)
+    bi_to_bytes(c, out, modlen)
+    tl_clen: modlen
+    return 0
+tl_seq_c: 0
+tl_seq_s: 0
+tl_rec_enc out typ body blen key iv:
+    sq: tl_seq_c
+    poke_byte(out, 0, typ)
+    poke_byte(out, 1, 3)
+    poke_byte(out, 2, 3)
+    clen: blen + 16 + 8
+    poke_byte(out, 3, clen / 256)
+    poke_byte(out, 4, clen % 256)
+    i: 0
+    as long as i < 8
+        poke_byte(out, 5 + i, wand(shr(sq, (7 - i) * 8), 255))
+        i: i + 1
+    aad: _sov_heap_alloc(16)
+    i: 0
+    as long as i < 8
+        poke_byte(aad, i, wand(shr(sq, (7 - i) * 8), 255))
+        i: i + 1
+    poke_byte(aad, 8, typ)
+    poke_byte(aad, 9, 3)
+    poke_byte(aad, 10, 3)
+    poke_byte(aad, 11, blen / 256)
+    poke_byte(aad, 12, blen % 256)
+    nonce: _sov_heap_alloc(16)
+    i: 4
+    mem_copy(nonce, iv, 4)
+    i: 0
+    as long as i < 8
+        poke_byte(nonce, 4 + i, wand(shr(sq, (7 - i) * 8), 255))
+        i: i + 1
+    ct: _sov_alloc(blen + 16)
+    gmt: gm_enc(key, nonce, aad, 13, body, blen, ct)
+    i: 0
+    as long as i < blen
+        poke_byte(out, 13 + i, peek_byte(ct, i))
+        i: i + 1
+    i: 0
+    as long as i < 16
+        poke_byte(out, 13 + blen + i, peek_byte(gm_tag, i))
+        i: i + 1
+    tl_seq_c: sq + 1
+    tl_clen: 5 + 8 + blen + 16
+    return 5 + 8 + blen + 16
+tl_rec_dec in blen typ out key iv:
+    ss: tl_seq_s
+    nonce: _sov_heap_alloc(16)
+    i: 4
+    mem_copy(nonce, iv, 4)
+    i: 0
+    as long as i < 8
+        poke_byte(nonce, 4 + i, peek_byte(in, i))
+        i: i + 1
+    n: blen - 8 - 16
+    aad: _sov_heap_alloc(16)
+    i: 0
+    as long as i < 8
+        poke_byte(aad, i, wand(shr(ss, (7 - i) * 8), 255))
+        i: i + 1
+    poke_byte(aad, 8, typ)
+    poke_byte(aad, 9, 3)
+    poke_byte(aad, 10, 3)
+    poke_byte(aad, 11, n / 256)
+    poke_byte(aad, 12, n % 256)
+    ct: _sov_alloc(n)
+    i: 0
+    as long as i < n
+        poke_byte(ct, i, peek_byte(in, 8 + i))
+        i: i + 1
+    gm_ctr_dec(key, nonce, ct, n, out)
+    gm_tag_of(key, nonce, aad, 13, ct, n)
+    bad: 0
+    i: 0
+    as long as i < 16
+        if peek_byte(gm_tag, i) is not peek_byte(in, 8 + n + i) -> bad: 1
+        i: i + 1
+    tl_seq_s: ss + 1
+    if bad is 0 -> return 1
+    return 0
+tl_rb: 0
+tl_rtype: 0
+tl_rlen: 0
+tl_recv fd:
+    hdr: _sov_alloc(8)
+    got: 0
+    as long as got < 5
+        n: sock_recv_raw(fd, hdr + got, 5 - got)
+        if n < 1 -> return 0 - 1
+        got: got + n
+    tl_rtype: peek_byte(hdr, 0)
+    l: peek_byte(hdr, 3) * 256 + peek_byte(hdr, 4)
+    tl_rlen: l
+    if tl_rb is 0 -> tl_rb: _sov_alloc(20000)
+    got: 0
+    as long as got < l
+        n: sock_recv_raw(fd, tl_rb + got, l - got)
+        if n < 1 -> return 0 - 1
+        got: got + n
+    return 0
+tl_hslen: 0
+tl_hs_add hs at typ body blen:
+    poke_byte(hs, at, typ)
+    poke_byte(hs, at + 1, blen / 65536)
+    poke_byte(hs, at + 2, (blen / 256) % 256)
+    poke_byte(hs, at + 3, blen % 256)
+    i: 0
+    as long as i < blen
+        poke_byte(hs, at + 4 + i, peek_byte(body, i))
+        i: i + 1
+    tl_hslen: at + 4 + blen
+tl_client fd host req out outmax:
+    tl_cur_host: host
+    tl_seq_c: 0
+    tl_seq_s: 0
+    rcrs: _sov_alloc(64)
+    ms: _sov_alloc(48)
+    pm: _sov_alloc(48)
+    ep: _sov_heap_alloc(32)
+    epu: _sov_heap_alloc(32)
+    spub: _sov_heap_alloc(32)
+    b9: _sov_heap_alloc(32)
+    sk: _sov_alloc(16)
+    civ: _sov_alloc(4)
+    rk: _sov_alloc(16)
+    riv: _sov_alloc(4)
+    mb: _sov_heap_alloc(272)
+    eb: _sov_heap_alloc(8)
+    hs: _sov_heap_alloc(20000)
+    hlen: 0
+    rb: rand_bytes(32)
+    i: 0
+    as long as i < 32
+        poke_byte(rcrs, i, peek_byte(rb, i))
+        i: i + 1
+    poke_byte(b9, 0, 9)
+    r: tl_step_ch(fd, rcrs, hs)
+    if r is 0 -> return tl12_wipe_b(sk, civ, rk, riv, tl12_wipe_a(rcrs, ms, pm, ep, rb, 0))
+    hlen: tl_hslen
+    r: tl_step_sh(fd, rcrs, hs, hlen)
+    if r is 0 -> return tl12_wipe_b(sk, civ, rk, riv, tl12_wipe_a(rcrs, ms, pm, ep, rb, 0))
+    hlen: tl_hslen
+    r: tl_step_cert(fd, mb, eb, hs, hlen)
+    if r is 0 -> return tl12_wipe_b(sk, civ, rk, riv, tl12_wipe_a(rcrs, ms, pm, ep, rb, 0))
+    hlen: tl_hslen
+    r: tl_step_ske(fd, rcrs, mb, eb, spub, hs, hlen)
+    if r is 0 -> return tl12_wipe_b(sk, civ, rk, riv, tl12_wipe_a(rcrs, ms, pm, ep, rb, 0))
+    hlen: tl_hslen
+    r: tl_step_ep(ep, epu, spub, pm, b9)
+    if r is 0 -> return tl12_wipe_b(sk, civ, rk, riv, tl12_wipe_a(rcrs, ms, pm, ep, rb, 0))
+    r: tl_step_shd(fd, hs, hlen)
+    if r is 0 -> return tl12_wipe_b(sk, civ, rk, riv, tl12_wipe_a(rcrs, ms, pm, ep, rb, 0))
+    hlen: tl_hslen
+    r: tl_step_cke(fd, epu, hs, hlen)
+    if r is 0 -> return tl12_wipe_b(sk, civ, rk, riv, tl12_wipe_a(rcrs, ms, pm, ep, rb, 0))
+    hlen: tl_hslen
+    r: tl_step_keys(rcrs, pm, ms, sk, civ, rk, riv)
+    if r is 0 -> return tl12_wipe_b(sk, civ, rk, riv, tl12_wipe_a(rcrs, ms, pm, ep, rb, 0))
+    tl_wipe(ep, 32)
+    tl_wipe(pm, 48)
+    tl_seq_c: 0
+    r: tl_step_finish(fd, sk, civ, ms, hs, hlen)
+    if r is 0 -> return tl12_wipe_b(sk, civ, rk, riv, tl12_wipe_a(rcrs, ms, pm, ep, rb, 0))
+    hlen: tl_hslen
+    r: tl_step_vfinish(fd, rk, riv, ms, hs, hlen)
+    if r is 0 -> return tl12_wipe_b(sk, civ, rk, riv, tl12_wipe_a(rcrs, ms, pm, ep, rb, 0))
+    tl_wipe(ms, 48)
+    tl_seq_c: 1
+    r: tl_step_send(fd, sk, civ, req, out, outmax)
+    if r is 0 -> return tl12_wipe_b(sk, civ, rk, riv, tl12_wipe_a(rcrs, ms, pm, ep, rb, 0))
+    r: tl_step_read(fd, rk, riv, out, outmax)
+    tl_len: tl_gtot
+    return tl12_wipe_b(sk, civ, rk, riv, tl12_wipe_a(rcrs, ms, pm, ep, rb, tl_gtot))
+tl_gtot: 0
+tl_step_send fd sk civ req out outmax:
+    n: str_len(req)
+    sq: 1
+    i: 0
+    as long as i < n
+        cl: 4096
+        if n - i < 4096 -> cl: n - i
+        chunk: _sov_heap_alloc(4096)
+        j: 0
+        as long as j < cl
+            poke_byte(chunk, j, peek_byte(req, i + j))
+            j: j + 1
+        en: _sov_heap_alloc(4200)
+        tl_seq_c: sq
+        tl_rec_enc(en, 23, chunk, cl, sk, civ)
+        rl: tl_clen
+        sq: sq + 1
+        sock_send_raw(fd, en, rl)
+        i: i + cl
+    return 1
+tl_step_read fd rk riv out outmax:
+    tot: 0
+    ss: tl_seq_s
+    more: 1
+    as long as more is 1
+        r: tl_recv(fd)
+        if r is not 0 -> more: 0
+        if not
+            if tl_rtype is 23
+                d: _sov_heap_alloc(20000)
+                tl_seq_s: ss
+                ok: tl_rec_dec(tl_rb, tl_rlen, tl_rtype, d, rk, riv)
+                ss: tl_seq_s
+                if ok is 1
+                    n: tl_rlen - 24
+                    j: 0
+                    as long as j < n
+                        if tot + j < outmax -> poke_byte(out, tot + j, peek_byte(d, j))
+                        j: j + 1
+                    tot: tot + n
+            if not -> more: 0
+    tl_gtot: tot
+    return 1
+tl_step_ch fd rcrs hs:
+    ch: _sov_alloc(80)
+    poke_byte(ch, 0, 3)
+    poke_byte(ch, 1, 3)
+    i: 0
+    as long as i < 32
+        poke_byte(ch, 2 + i, peek_byte(rcrs, i))
+        i: i + 1
+    poke_byte(ch, 34, 0)
+    poke_byte(ch, 35, 0)
+    poke_byte(ch, 36, 2)
+    poke_byte(ch, 37, 192)
+    poke_byte(ch, 38, 47)
+    poke_byte(ch, 39, 1)
+    poke_byte(ch, 40, 0)
+    poke_byte(ch, 41, 0)
+    poke_byte(ch, 42, 22)
+    poke_byte(ch, 43, 0)
+    poke_byte(ch, 44, 13)
+    poke_byte(ch, 45, 0)
+    poke_byte(ch, 46, 4)
+    poke_byte(ch, 47, 0)
+    poke_byte(ch, 48, 2)
+    poke_byte(ch, 49, 4)
+    poke_byte(ch, 50, 1)
+    poke_byte(ch, 51, 0)
+    poke_byte(ch, 52, 10)
+    poke_byte(ch, 53, 0)
+    poke_byte(ch, 54, 4)
+    poke_byte(ch, 55, 0)
+    poke_byte(ch, 56, 2)
+    poke_byte(ch, 57, 0)
+    poke_byte(ch, 58, 29)
+    poke_byte(ch, 59, 0)
+    poke_byte(ch, 60, 11)
+    poke_byte(ch, 61, 0)
+    poke_byte(ch, 62, 2)
+    poke_byte(ch, 63, 1)
+    poke_byte(ch, 64, 0)
+    tl_hs_add(hs, 0, 1, ch, 65)
+    rec: _sov_alloc(64)
+    poke_byte(rec, 0, 22)
+    poke_byte(rec, 1, 3)
+    poke_byte(rec, 2, 3)
+    poke_byte(rec, 3, tl_hslen / 256)
+    poke_byte(rec, 4, tl_hslen % 256)
+    i: 0
+    as long as i < tl_hslen
+        poke_byte(rec, 5 + i, peek_byte(hs, i))
+        i: i + 1
+    sock_send_raw(fd, rec, 5 + tl_hslen)
+    return 1
+tl_step_sh fd rcrs hs hlen:
+    r: tl_recv(fd)
+    if r is not 0 -> return 0
+    if tl_rtype is not 22 -> return 0
+    sh: tl_rb + 4
+    i: 0
+    as long as i < 32
+        poke_byte(rcrs, 32 + i, peek_byte(sh, 2 + i))
+        i: i + 1
+    tl_hs_add(hs, hlen, 2, sh, tl_rlen - 4)
+    return 1
+tl_step_cert fd mb eb hs hlen:
+    r: tl_recv(fd)
+    if r is not 0 -> return 0
+    if tl_rtype is not 22 -> return 0
+    cbody: tl_rb + 4
+    clen: peek_byte(cbody, 3) * 65536 + peek_byte(cbody, 4) * 256 + peek_byte(cbody, 5)
+    cert: cbody + 6
+    tl_hs_add(hs, hlen, 11, cbody, tl_rlen - 4)
+    if tl_chain12(cbody) is 0 -> return 0
+    tl_cert_key(cert, clen)
+    j: tl_modlen
+    mem_copy(mb, tl_mod, tl_modlen)
+    mem_copy(eb, tl_exp, tl_explen)
+    poke_i64(mb, 256, tl_modlen)
+    poke_i64(mb, 264, tl_explen)
+    return 1
+tl_step_shd fd hs hlen:
+    r: tl_recv(fd)
+    if r is not 0 -> return 0
+    if tl_rtype is not 22 -> return 0
+    tl_hs_add(hs, hlen, 14, tl_rb + 4, tl_rlen - 4)
+    return 1
+tl_step_ep ep epu spub pm b9:
+    rb: rand_bytes(32)
+    i: 0
+    as long as i < 32
+        poke_byte(ep, i, peek_byte(rb, i))
+        i: i + 1
+    x19(epu, ep, b9)
+    x19(pm, ep, spub)
+    return 1
+tl_step_ske fd rcrs mb eb spub hs hlen:
+    r: tl_recv(fd)
+    if r is not 0 -> return 0
+    if tl_rtype is not 22 -> return 0
+    if peek_byte(tl_rb, 0) is not 12 -> return 0
+    prm: tl_rb + 4
+    i: 0
+    as long as i < 32
+        poke_byte(spub, i, peek_byte(prm, 4 + i))
+        i: i + 1
+    tl_hs_add(hs, hlen, 12, tl_rb + 4, tl_rlen - 4)
+    hi: _sov_heap_alloc(100)
+    i: 0
+    as long as i < 32
+        poke_byte(hi, i, peek_byte(rcrs, i))
+        poke_byte(hi, 32 + i, peek_byte(rcrs, 32 + i))
+        i: i + 1
+    i: 0
+    as long as i < 36
+        poke_byte(hi, 64 + i, peek_byte(prm, i))
+        i: i + 1
+    hb: _sov_heap_alloc(64)
+    sha256_bytes(hi, 100, hb)
+    fseed: _sov_heap_alloc(32)
+    j: 0
+    as long as j < 8
+        v: peek_i64(hb, j * 8)
+        poke_byte(fseed, j * 4, wand(shr(v, 24), 255))
+        poke_byte(fseed, j * 4 + 1, wand(shr(v, 16), 255))
+        poke_byte(fseed, j * 4 + 2, wand(shr(v, 8), 255))
+        poke_byte(fseed, j * 4 + 3, wand(v, 255))
+        j: j + 1
+    k: peek_i64(mb, 256)
+    expd: _sov_alloc(512)
+    j: 0
+    as long as j < k
+        poke_byte(expd, j, 255)
+        j: j + 1
+    poke_byte(expd, 0, 0)
+    poke_byte(expd, 1, 1)
+    poke_byte(expd, k - 52, 0)
+    poke_byte(expd, k - 51, 48)
+    poke_byte(expd, k - 50, 49)
+    poke_byte(expd, k - 49, 48)
+    poke_byte(expd, k - 48, 13)
+    poke_byte(expd, k - 47, 6)
+    poke_byte(expd, k - 46, 9)
+    poke_byte(expd, k - 45, 96)
+    poke_byte(expd, k - 44, 134)
+    poke_byte(expd, k - 43, 72)
+    poke_byte(expd, k - 42, 1)
+    poke_byte(expd, k - 41, 101)
+    poke_byte(expd, k - 40, 3)
+    poke_byte(expd, k - 39, 4)
+    poke_byte(expd, k - 38, 2)
+    poke_byte(expd, k - 37, 1)
+    poke_byte(expd, k - 36, 5)
+    poke_byte(expd, k - 35, 0)
+    poke_byte(expd, k - 34, 4)
+    poke_byte(expd, k - 33, 32)
+    j: 0
+    as long as j < 32
+        poke_byte(expd, k - 32 + j, peek_byte(fseed, j))
+        j: j + 1
+    sl: peek_byte(tl_rb, 42) * 256 + peek_byte(tl_rb, 43)
+    sg: tl_rb + 44
+    ck: _sov_alloc(512)
+    tl_rsa_enc(sg, sl, ck, mb, k, eb, peek_i64(mb, 264))
+    bad: 0
+    j: 0
+    as long as j < k
+        if peek_byte(ck, j) is not peek_byte(expd, j) -> bad: 1
+        j: j + 1
+    if bad is 1 -> return 0
+    return 1
+tl_step_cke fd epu hs hlen:
+    cke: _sov_heap_alloc(40)
+    poke_byte(cke, 0, 32)
+    j: 0
+    as long as j < 32
+        poke_byte(cke, 1 + j, peek_byte(epu, j))
+        j: j + 1
+    tl_hs_add(hs, hlen, 16, cke, 33)
+    rec: _sov_alloc(45)
+    poke_byte(rec, 0, 22)
+    poke_byte(rec, 1, 3)
+    poke_byte(rec, 2, 3)
+    l: 4 + 33
+    poke_byte(rec, 3, l / 256)
+    poke_byte(rec, 4, l % 256)
+    poke_byte(rec, 5, 16)
+    poke_byte(rec, 6, 0)
+    poke_byte(rec, 7, 0)
+    poke_byte(rec, 8, 33)
+    j: 0
+    as long as j < 33
+        poke_byte(rec, 9 + j, peek_byte(cke, j))
+        j: j + 1
+    sock_send_raw(fd, rec, 9 + 33)
+    return 1
+tl_step_keys rcrs pm ms sk civ rk riv:
+    tl_n: 48
+    tl_prf(ms, pm, 48, "master secret", 13, rcrs, 64)
+    seed2: _sov_heap_alloc(64)
+    j: 0
+    as long as j < 32
+        poke_byte(seed2, j, peek_byte(rcrs, 32 + j))
+        poke_byte(seed2, 32 + j, peek_byte(rcrs, j))
+        j: j + 1
+    kb: _sov_heap_alloc(40)
+    tl_n: 40
+    tl_prf(kb, ms, 48, "key expansion", 13, seed2, 64)
+    j: 0
+    as long as j < 16
+        poke_byte(sk, j, peek_byte(kb, j))
+        poke_byte(rk, j, peek_byte(kb, 16 + j))
+        j: j + 1
+    j: 0
+    as long as j < 4
+        poke_byte(civ, j, peek_byte(kb, 32 + j))
+        poke_byte(riv, j, peek_byte(kb, 36 + j))
+        j: j + 1
+    return 1
+    tl_wipe(kb, 40)
+tl_step_finish fd sk civ ms hs hlen:
+    hs2: _sov_heap_alloc(64)
+    sha256_bytes(hs, hlen, hs2)
+    fseed: _sov_heap_alloc(32)
+    j: 0
+    as long as j < 8
+        v: peek_i64(hs2, j * 8)
+        poke_byte(fseed, j * 4, wand(shr(v, 24), 255))
+        poke_byte(fseed, j * 4 + 1, wand(shr(v, 16), 255))
+        poke_byte(fseed, j * 4 + 2, wand(shr(v, 8), 255))
+        poke_byte(fseed, j * 4 + 3, wand(v, 255))
+        j: j + 1
+    fv: _sov_alloc(32)
+    tl_n: 12
+    tl_prf(fv, ms, 48, "client finished", 15, fseed, 32)
+    fm: _sov_heap_alloc(16)
+    poke_byte(fm, 0, 20)
+    poke_byte(fm, 1, 0)
+    poke_byte(fm, 2, 0)
+    poke_byte(fm, 3, 12)
+    j: 0
+    as long as j < 12
+        poke_byte(fm, 4 + j, peek_byte(fv, j))
+        j: j + 1
+    en: _sov_alloc(64)
+    tl_seq_c: 0
+    tl_rec_enc(en, 22, fm, 16, sk, civ)
+    rl: tl_clen
+    both: _sov_alloc(80)
+    poke_byte(both, 0, 20)
+    poke_byte(both, 1, 3)
+    poke_byte(both, 2, 3)
+    poke_byte(both, 3, 0)
+    poke_byte(both, 4, 1)
+    poke_byte(both, 5, 1)
+    i: 0
+    as long as i < rl
+        poke_byte(both, 6 + i, peek_byte(en, i))
+        i: i + 1
+    sock_send_raw(fd, both, 6 + rl)
+    tl_hs_add(hs, hlen, 20, fv, 12)
+    return 1
+tl_step_vfinish fd rk riv ms hs hlen:
+    r: tl_recv(fd)
+    if r is not 0 -> return 0
+    if tl_rtype is not 20 -> return 0
+    r: tl_recv(fd)
+    if r is not 0 -> return 0
+    if tl_rtype is not 22 -> return 0
+    d: _sov_alloc(200)
+    ok: tl_rec_dec(tl_rb, tl_rlen, tl_rtype, d, rk, riv)
+    if ok is 0 -> return 0
+    hs2: _sov_heap_alloc(64)
+    sha256_bytes(hs, hlen, hs2)
+    fseed: _sov_heap_alloc(32)
+    j: 0
+    as long as j < 8
+        v: peek_i64(hs2, j * 8)
+        poke_byte(fseed, j * 4, wand(shr(v, 24), 255))
+        poke_byte(fseed, j * 4 + 1, wand(shr(v, 16), 255))
+        poke_byte(fseed, j * 4 + 2, wand(shr(v, 8), 255))
+        poke_byte(fseed, j * 4 + 3, wand(v, 255))
+        j: j + 1
+    sv: _sov_alloc(32)
+    tl_n: 12
+    tl_prf(sv, ms, 48, "server finished", 15, fseed, 32)
+    bad: 0
+    j: 0
+    as long as j < 12
+        if peek_byte(sv, j) is not peek_byte(d, 4 + j) -> bad: 1
+        j: j + 1
+    if bad is 1 -> return 0
+    return 1
+tl_len: 0
+tl_send_req host port req out outmax:
+    ip: web_lookup(host)
+    if str_len(ip) is 0 -> return 0
+    tl_parse_ip(ip)
+    fd: sock_connect(tl_a0, tl_a1, tl_a2, tl_a3, port)
+    if fd < 0 -> return 0
+    tot: tl_client(fd, host, req, out, outmax)
+    sock_close(fd)
+    return tot
+tl_get host port path out outmax:
+    req: str_cat("GET ", path)
+    req: str_cat(req, " HTTP/1.1\r\nHost: ")
+    req: str_cat(req, host)
+    req: str_cat(req, "\r\nConnection: close\r\n\r\n")
+    return tl_send_req(host, port, req, out, outmax)
+tl_a0: 0
+tl_a1: 0
+tl_a2: 0
+tl_a3: 0
+tl_parse_ip s:
+    a: 0
+    b: 0
+    c: 0
+    d: 0
+    tl_a0: 0
+    tl_a1: 0
+    tl_a2: 0
+    tl_a3: 0
+    n: str_len(s)
+    v: 0
+    part: 0
+    i: 0
+    as long as i < n
+        ch: peek_byte(s, i)
+        if ch is 46
+            if part is 0 -> tl_a0: v
+            if part is 1 -> tl_a1: v
+            if part is 2 -> tl_a2: v
+            part: part + 1
+            v: 0
+        if not -> v: v * 10 + ch - 48
+        i: i + 1
+    tl_a3: v
+tl13_pack32 src dst:
+    j: 0
+    as long as j < 8
+        v: peek_i64(src, j * 8)
+        poke_byte(dst, j * 4, wand(shr(v, 24), 255))
+        poke_byte(dst, j * 4 + 1, wand(shr(v, 16), 255))
+        poke_byte(dst, j * 4 + 2, wand(shr(v, 8), 255))
+        poke_byte(dst, j * 4 + 3, wand(v, 255))
+        j: j + 1
+    return 0
+TL_V30: 768
+TL_V10: 769
+TL_V11: 770
+TL_V12: 771
+TL_V13: 772 
+tl13_ln: 0
+tl13_info out want label:
+    ln: str_len(label)
+    poke_byte(out, 0, want / 256)
+    poke_byte(out, 1, want % 256)
+    poke_byte(out, 2, 6 + ln)
+    i: 0
+    as long as i < 6
+        poke_byte(out, 3 + i, peek_byte("tls13 ", i))
+        i: i + 1
+    i: 0
+    as long as i < ln
+        poke_byte(out, 9 + i, peek_byte(label, i))
+        i: i + 1
+    o: 9 + ln
+    poke_byte(out, o, 32)
+    i: 0
+    as long as i < 32
+        poke_byte(out, o + 1 + i, peek_byte(label, 33 + i))
+        i: i + 1
+    tl13_ln: o + 33
+tl13_expl secret label want out:
+    info: _sov_alloc(128)
+    tl13_info(info, want, label)
+    n: tl13_ln
+    hkdf_expand(secret, info, n, want, out)
+tl13_derive secret label out:
+    tl13_expl(secret, label, 32, out)
+tl13_nonce iv seq out:
+    i: 0
+    as long as i < 12
+        poke_byte(out, i, peek_byte(iv, i))
+        i: i + 1
+    s: seq
+    i: 11
+    as long as i > 3
+        poke_byte(out, i, wxor(peek_byte(iv, i), s % 256))
+        s: s / 256
+        i: i - 1
+tl13_enc out body blen key iv seq itype:
+    ct: _sov_alloc(blen + 16)
+    aad: _sov_alloc(13)
+    poke_byte(aad, 0, 23)
+    poke_byte(aad, 1, 3)
+    poke_byte(aad, 2, 3)
+    l: blen + 1 + 16
+    poke_byte(aad, 3, l / 256)
+    poke_byte(aad, 4, l % 256)
+    inner: _sov_heap_alloc(blen + 1)
+    i: 0
+    as long as i < blen
+        poke_byte(inner, i, peek_byte(body, i))
+        i: i + 1
+    poke_byte(inner, blen, itype)
+    nnc: _sov_alloc(12)
+    tl13_nonce(iv, seq, nnc)
+    gm_enc(key, nnc, aad, 5, inner, blen + 1, ct)
+    rl: 5 + blen + 1 + 16
+    poke_byte(out, 0, 23)
+    poke_byte(out, 1, 3)
+    poke_byte(out, 2, 3)
+    poke_byte(out, 3, (blen + 17) / 256)
+    poke_byte(out, 4, (blen + 17) % 256)
+    i: 0
+    as long as i < blen + 1
+        poke_byte(out, 5 + i, peek_byte(ct, i))
+        i: i + 1
+    i: 0
+    as long as i < 16
+        poke_byte(out, 5 + blen + 1 + i, peek_byte(gm_tag, i))
+        i: i + 1
+    tl_clen: rl
+    return 0
+tl13_pn: 0
+tl13_ptype: 0
+tl13_dec in blen key iv seq out:
+    aad: _sov_alloc(13)
+    poke_byte(aad, 0, 23)
+    poke_byte(aad, 1, 3)
+    poke_byte(aad, 2, 3)
+    poke_byte(aad, 3, blen / 256)
+    poke_byte(aad, 4, blen % 256)
+    nnc: _sov_alloc(12)
+    tl13_nonce(iv, seq, nnc)
+    pt: _sov_alloc(blen)
+    n: blen - 16
+    ct: _sov_alloc(n + 16)
+    i: 0
+    as long as i < n + 16
+        poke_byte(ct, i, peek_byte(in, i))
+        i: i + 1
+    gm_ctr_dec(key, nnc, ct, n, pt)
+    gm_tag_of(key, nnc, aad, 5, ct, n)
+    bad: 0
+    i: 0
+    as long as i < 16
+        if peek_byte(gm_tag, i) is not peek_byte(ct, n + i) -> bad: 1
+        i: i + 1
+    if bad is 1 -> return 0
+    m: n
+    as long as m > 0
+        if peek_byte(pt, m - 1) is not 0 -> leave
+        m: m - 1
+    if m < 1 -> return 0
+    tl13_ptype: peek_byte(pt, m - 1)
+    tl13_pn: m - 1
+    i: 0
+    as long as i < m - 1
+        poke_byte(out, i, peek_byte(pt, i))
+        i: i + 1
+    return 1
+tl13_step_ch fd host hs epriv epub:
+    ch: _sov_alloc(256)
+    rb: rand_bytes(32)
+    i: 0
+    as long as i < 32
+        poke_byte(epriv, i, peek_byte(rb, i))
+        i: i + 1
+    b9: _sov_alloc(32)
+    poke_byte(b9, 0, 9)
+    x19(epub, epriv, b9)
+    poke_byte(ch, 0, 3)
+    poke_byte(ch, 1, 3)
+    rb2: rand_bytes(32)
+    i: 0
+    as long as i < 32
+        poke_byte(ch, 2 + i, peek_byte(rb2, i))
+        i: i + 1
+    poke_byte(ch, 34, 0)
+    poke_byte(ch, 35, 0)
+    poke_byte(ch, 36, 2)
+    poke_byte(ch, 37, 19)
+    poke_byte(ch, 38, 1)
+    poke_byte(ch, 39, 1)
+    poke_byte(ch, 40, 0)
+    at: 41
+    poke_byte(ch, at, 0)
+    poke_byte(ch, at + 1, 0)
+    at: at + 2
+    hn: str_len(host)
+    if hn > 0
+        poke_byte(ch, at, 0)
+        poke_byte(ch, at + 1, 0)
+        poke_byte(ch, at + 2, (hn + 5) / 256)
+        poke_byte(ch, at + 3, (hn + 5) % 256)
+        poke_byte(ch, at + 4, 0)
+        poke_byte(ch, at + 5, hn + 3)
+        poke_byte(ch, at + 6, 0)
+        poke_byte(ch, at + 7, 0)
+        poke_byte(ch, at + 8, hn)
+        i: 0
+        as long as i < hn
+            poke_byte(ch, at + 9 + i, peek_byte(host, i))
+            i: i + 1
+        at: at + 9 + hn
+    poke_byte(ch, at, 0)
+    poke_byte(ch, at + 1, 10)
+    poke_byte(ch, at + 2, 0)
+    poke_byte(ch, at + 3, 4)
+    poke_byte(ch, at + 4, 0)
+    poke_byte(ch, at + 5, 2)
+    poke_byte(ch, at + 6, 0)
+    poke_byte(ch, at + 7, 29)
+    at: at + 8
+    poke_byte(ch, at, 0)
+    poke_byte(ch, at + 1, 13)
+    poke_byte(ch, at + 2, 0)
+    poke_byte(ch, at + 3, 6)
+    poke_byte(ch, at + 4, 0)
+    poke_byte(ch, at + 5, 4)
+    poke_byte(ch, at + 6, 8)
+    poke_byte(ch, at + 7, 4)
+    poke_byte(ch, at + 8, 4)
+    poke_byte(ch, at + 9, 1)
+    at: at + 10
+    poke_byte(ch, at, 0)
+    poke_byte(ch, at + 1, 43)
+    poke_byte(ch, at + 2, 0)
+    poke_byte(ch, at + 3, 3)
+    poke_byte(ch, at + 4, 2)
+    poke_byte(ch, at + 5, 3)
+    poke_byte(ch, at + 6, 4)
+    at: at + 7
+    poke_byte(ch, at, 0)
+    poke_byte(ch, at + 1, 51)
+    poke_byte(ch, at + 2, 0)
+    poke_byte(ch, at + 3, 38)
+    poke_byte(ch, at + 4, 0)
+    poke_byte(ch, at + 5, 36)
+    poke_byte(ch, at + 6, 0)
+    poke_byte(ch, at + 7, 29)
+    poke_byte(ch, at + 8, 0)
+    poke_byte(ch, at + 9, 32)
+    i: 0
+    as long as i < 32
+        poke_byte(ch, at + 10 + i, peek_byte(epub, i))
+        i: i + 1
+    at: at + 42
+    exts: at - 43
+    poke_byte(ch, 41, exts / 256)
+    poke_byte(ch, 42, exts % 256)
+    tl_hs_add(hs, 0, 1, ch, at)
+    rec: _sov_alloc(300)
+    l: at + 4
+    poke_byte(rec, 0, 22)
+    poke_byte(rec, 1, 3)
+    poke_byte(rec, 2, 3)
+    poke_byte(rec, 3, l / 256)
+    poke_byte(rec, 4, l % 256)
+    i: 0
+    as long as i < l
+        poke_byte(rec, 5 + i, peek_byte(hs, i))
+        i: i + 1
+    sock_send_raw(fd, rec, 5 + l)
+    return 1
+tl13_step_sh fd hs spub:
+    r: tl_recv(fd)
+    if r is not 0 -> return 0
+    if tl_rtype is not 22 -> return 0
+    if peek_byte(tl_rb, 0) is not 2 -> return 0
+    sh: tl_rb + 4
+    p: 35 + peek_byte(sh, 34)
+    p: p + 5
+    tl_hs_add(hs, tl_hslen, 2, sh, tl_rlen - 4)
+    pend: p + peek_byte(sh, p - 2) * 256 + peek_byte(sh, p - 1)
+    got13: 0
+    gotshare: 0
+    as long as p < pend
+        et: peek_byte(sh, p) * 256 + peek_byte(sh, p + 1)
+        el: peek_byte(sh, p + 2) * 256 + peek_byte(sh, p + 3)
+        if et is 43
+            if peek_byte(sh, p + 4) is 3
+                if peek_byte(sh, p + 5) is 4 -> got13: 1
+        if et is 51
+            if peek_byte(sh, p + 4) is 0
+                if peek_byte(sh, p + 5) is 29
+                    i: 0
+                    as long as i < 32
+                        poke_byte(spub, i, peek_byte(sh, p + 8 + i))
+                        i: i + 1
+                    gotshare: 1
+        p: p + 4 + el
+    if got13 is 0 -> return 0
+    if gotshare is 0 -> return 0
+    return 1
+tl13_hs_keys epriv spub chs shs cts sts:
+    ss: _sov_heap_alloc(32)
+    x19(ss, epriv, spub)
+    zero: _sov_heap_alloc(32)
+    i: 0
+    as long as i < 32
+        poke_byte(zero, i, 0)
+        i: i + 1
+    early: _sov_heap_alloc(32)
+    hkdf_extract(as text zero, 32, as text zero, 32, early)
+    h0r: _sov_heap_alloc(64)
+    sha256_bytes(zero, 0, h0r)
+    h0: _sov_heap_alloc(32)
+    tl13_pack32(h0r, h0)
+    lab: _sov_heap_alloc(80)
+    i: 0
+    as long as i < 7
+        poke_byte(lab, i, peek_byte("derived", i))
+        i: i + 1
+    poke_byte(lab, 7, 0)
+    i: 0
+    as long as i < 32
+        poke_byte(lab, 33 + i, peek_byte(h0, i))
+        i: i + 1
+    salt: _sov_heap_alloc(32)
+    tl13_derive(early, lab, salt)
+    hs_secret: _sov_alloc(32)
+    hkdf_extract(as text salt, 32, as text ss, 32, hs_secret)
+    thr: _sov_alloc(64)
+    sha256_bytes(chs, shs, thr)
+    th: _sov_alloc(32)
+    tl13_pack32(thr, th)
+    i: 0
+    as long as i < 13
+        poke_byte(lab, i, peek_byte("c hs traffic", i))
+        i: i + 1
+    poke_byte(lab, 13, 0)
+    i: 0
+    as long as i < 32
+        poke_byte(lab, 33 + i, peek_byte(th, i))
+        i: i + 1
+    tl13_derive(hs_secret, lab, cts)
+    i: 0
+    as long as i < 13
+        poke_byte(lab, i, peek_byte("s hs traffic", i))
+        i: i + 1
+    poke_byte(lab, 13, 0)
+    tl13_derive(hs_secret, lab, sts)
+    tl_wipe(ss, 32)
+    tl_wipe(early, 32)
+    tl_wipe(salt, 32)
+    tl_wipe(hs_secret, 32)
+    return 1
+tl13_info0 out want label:
+    ln: str_len(label)
+    poke_byte(out, 0, want / 256)
+    poke_byte(out, 1, want % 256)
+    poke_byte(out, 2, 6 + ln)
+    i: 0
+    as long as i < 6
+        poke_byte(out, 3 + i, peek_byte("tls13 ", i))
+        i: i + 1
+    i: 0
+    as long as i < ln
+        poke_byte(out, 9 + i, peek_byte(label, i))
+        i: i + 1
+    poke_byte(out, 9 + ln, 0)
+    tl13_ln: 10 + ln
+tl13_key secret out:
+    info: _sov_heap_alloc(32)
+    tl13_info0(info, 16, "key")
+    n: tl13_ln
+    hkdf_expand(secret, info, n, 16, out)
+tl13_iv secret out:
+    info: _sov_heap_alloc(32)
+    tl13_info0(info, 12, "iv")
+    n: tl13_ln
+    hkdf_expand(secret, info, n, 12, out)
+tl13_fk secret out:
+    info: _sov_heap_alloc(32)
+    tl13_info0(info, 32, "finished")
+    n: tl13_ln
+    hkdf_expand(secret, info, n, 32, out)
+    return 0
+tl13_hss: 0
+tl13_flight fd hs hlen sts mb eb:
+    seq: 0
+    pt: _sov_alloc(20000)
+    body: _sov_alloc(16384)
+    done: 0
+    finvd: _sov_alloc(32)
+    as long as done is 0
+        r: tl_recv(fd)
+        if r is not 0 -> return 0
+        if tl_rtype is 20 -> done: done
+        if not
+            if tl_rtype is not 23 -> return 0
+            srk: _sov_alloc(16)
+            sriv: _sov_alloc(12)
+            tl13_key(sts, srk)
+            tl13_iv(sts, sriv)
+            ok: tl13_dec(tl_rb, tl_rlen, srk, sriv, seq, pt)
+            seq: seq + 1
+            tl_wipe(srk, 16)
+            tl_wipe(sriv, 12)
+            if ok is 0 -> return 0
+            off: 0
+            pl: tl13_pn
+            as long as off < pl
+                mt: peek_byte(pt, off)
+                ml: peek_byte(pt, off + 1) * 65536 + peek_byte(pt, off + 2) * 256 + peek_byte(pt, off + 3)
+                i: 0
+                as long as i < ml
+                    poke_byte(body, i, peek_byte(pt, off + 4 + i))
+                    i: i + 1
+                if mt is 8
+                    tl_hs_add(hs, hlen, 8, body, ml)
+                    hlen: tl_hslen
+                if mt is 11
+                    tl_hs_add(hs, hlen, 11, body, ml)
+                    hlen: tl_hslen
+                    clen: peek_byte(body, 4) * 65536 + peek_byte(body, 5) * 256 + peek_byte(body, 6)
+                    der: _sov_alloc(clen + 4)
+                    i: 0
+                    as long as i < clen
+                        poke_byte(der, i, peek_byte(body, 7 + i))
+                        i: i + 1
+                    if tl_chain13(body) is 0 -> return 0
+                    tl_cert_key(der, clen)
+                    mem_copy(mb, tl_mod, tl_modlen)
+                    mem_copy(eb, tl_exp, tl_explen)
+                    poke_i64(mb, 256, tl_modlen)
+                    poke_i64(mb, 264, tl_explen)
+                if mt is 15
+                    thr: _sov_alloc(64)
+                    sha256_bytes(hs, hlen, thr)
+                    th: _sov_heap_alloc(32)
+                    tl13_pack32(thr, th)
+                    content: _sov_heap_alloc(160)
+                    i: 0
+                    as long as i < 64
+                        poke_byte(content, i, 32)
+                        i: i + 1
+                    sig33: "TLS 1.3, server CertificateVerify"
+                    i: 0
+                    as long as i < 33
+                        poke_byte(content, 64 + i, peek_byte(sig33, i))
+                        i: i + 1
+                    poke_byte(content, 97, 0)
+                    i: 0
+                    as long as i < 32
+                        poke_byte(content, 98 + i, peek_byte(th, i))
+                        i: i + 1
+                    hb: _sov_heap_alloc(64)
+                    sha256_bytes(content, 130, hb)
+                    fseed: _sov_heap_alloc(32)
+                    j: 0
+                    as long as j < 8
+                        v: peek_i64(hb, j * 8)
+                        poke_byte(fseed, j * 4, wand(shr(v, 24), 255))
+                        poke_byte(fseed, j * 4 + 1, wand(shr(v, 16), 255))
+                        poke_byte(fseed, j * 4 + 2, wand(shr(v, 8), 255))
+                        poke_byte(fseed, j * 4 + 3, wand(v, 255))
+                        j: j + 1
+                    k: peek_i64(mb, 256)
+                    expd: _sov_alloc(512)
+                    j: 0
+                    as long as j < k
+                        poke_byte(expd, j, 255)
+                        j: j + 1
+                    poke_byte(expd, 0, 0)
+                    poke_byte(expd, 1, 1)
+                    poke_byte(expd, k - 52, 0)
+                    poke_byte(expd, k - 51, 48)
+                    poke_byte(expd, k - 50, 49)
+                    poke_byte(expd, k - 49, 48)
+                    poke_byte(expd, k - 48, 13)
+                    poke_byte(expd, k - 47, 6)
+                    poke_byte(expd, k - 46, 9)
+                    poke_byte(expd, k - 45, 96)
+                    poke_byte(expd, k - 44, 134)
+                    poke_byte(expd, k - 43, 72)
+                    poke_byte(expd, k - 42, 1)
+                    poke_byte(expd, k - 41, 101)
+                    poke_byte(expd, k - 40, 3)
+                    poke_byte(expd, k - 39, 4)
+                    poke_byte(expd, k - 38, 2)
+                    poke_byte(expd, k - 37, 1)
+                    poke_byte(expd, k - 36, 5)
+                    poke_byte(expd, k - 35, 0)
+                    poke_byte(expd, k - 34, 4)
+                    poke_byte(expd, k - 33, 32)
+                    j: 0
+                    as long as j < 32
+                        poke_byte(expd, k - 32 + j, peek_byte(fseed, j))
+                        j: j + 1
+                    sl: peek_byte(body, 2) * 256 + peek_byte(body, 3)
+                    sg: _sov_alloc(sl + 4)
+                    i: 0
+                    as long as i < sl
+                        poke_byte(sg, i, peek_byte(body, 4 + i))
+                        i: i + 1
+                    alg: peek_byte(body, 0) * 256 + peek_byte(body, 1)
+                    if sl > 0 -> kk: peek_i64(mb, 256)
+                    cvok: 0
+                    if alg is 2052 -> cvok: tl13_cv_pss(sg, sl, mb, eb, fseed)
+                    if alg is 1025
+                        ck: _sov_alloc(512)
+                        tl_rsa_enc(sg, sl, ck, mb, k, eb, peek_i64(mb, 264))
+                        bad: 0
+                        j: 0
+                        as long as j < k
+                            if peek_byte(ck, j) is not peek_byte(expd, j) -> bad: 1
+                            j: j + 1
+                        if bad is 0 -> cvok: 1
+                    if cvok is 0 -> return 0
+                    tl_hs_add(hs, hlen, 15, body, ml)
+                    hlen: tl_hslen
+                if mt is 20
+                    th2r: _sov_alloc(64)
+                    sha256_bytes(hs, hlen, th2r)
+                    th2: _sov_alloc(32)
+                    tl13_pack32(th2r, th2)
+                    fk: _sov_alloc(32)
+                    tl13_fk(sts, fk)
+                    hmac_raw(fk, 32, th2, 32, finvd)
+                    tl_wipe(fk, 32)
+                    bad2: 0
+                    i: 0
+                    as long as i < 32
+                        if peek_byte(finvd, i) is not peek_byte(body, i) -> bad2: 1
+                        i: i + 1
+                    if bad2 is 1 -> return 0
+                    tl_hs_add(hs, hlen, 20, body, ml)
+                    hlen: tl_hslen
+                    done: 1
+                off: off + 4 + ml
+    return 1
+tl13_app_keys hs_secret hs hfin cts sts cap sap:
+    zero: _sov_alloc(32)
+    i: 0
+    as long as i < 32
+        poke_byte(zero, i, 0)
+        i: i + 1
+    h0r: _sov_heap_alloc(64)
+    sha256_bytes(zero, 0, h0r)
+    h0: _sov_heap_alloc(32)
+    tl13_pack32(h0r, h0)
+    lab: _sov_heap_alloc(80)
+    i: 0
+    as long as i < 7
+        poke_byte(lab, i, peek_byte("derived", i))
+        i: i + 1
+    poke_byte(lab, 7, 0)
+    i: 0
+    as long as i < 32
+        poke_byte(lab, 33 + i, peek_byte(h0, i))
+        i: i + 1
+    salt: _sov_heap_alloc(32)
+    tl13_derive(hs_secret, lab, salt)
+    master: _sov_alloc(32)
+    hkdf_extract(salt, 32, zero, 32, master)
+    thr: _sov_heap_alloc(64)
+    sha256_bytes(hs, hfin, thr)
+    th: _sov_heap_alloc(32)
+    tl13_pack32(thr, th)
+    i: 0
+    as long as i < 13
+        poke_byte(lab, i, peek_byte("c ap traffic", i))
+        i: i + 1
+    poke_byte(lab, 13, 0)
+    i: 0
+    as long as i < 32
+        poke_byte(lab, 33 + i, peek_byte(th, i))
+        i: i + 1
+    tl13_derive(master, lab, cap)
+    i: 0
+    as long as i < 13
+        poke_byte(lab, i, peek_byte("s ap traffic", i))
+        i: i + 1
+    poke_byte(lab, 13, 0)
+    tl13_derive(master, lab, sap)
+    tl_wipe(salt, 32)
+    tl_wipe(master, 32)
+    return 1
+tl13_step_cfin fd hs hfin cts:
+    thr: _sov_heap_alloc(64)
+    sha256_bytes(hs, hfin, thr)
+    th: _sov_heap_alloc(32)
+    tl13_pack32(thr, th)
+    fk: _sov_alloc(32)
+    tl13_fk(cts, fk)
+    vd: _sov_alloc(32)
+    hmac_raw(fk, 32, th, 32, vd)
+    tl_wipe(fk, 32)
+    fm: _sov_alloc(64)
+    poke_byte(fm, 0, 20)
+    poke_byte(fm, 1, 0)
+    poke_byte(fm, 2, 0)
+    poke_byte(fm, 3, 32)
+    i: 0
+    as long as i < 32
+        poke_byte(fm, 4 + i, peek_byte(vd, i))
+        i: i + 1
+    ckey: _sov_heap_alloc(16)
+    civ: _sov_heap_alloc(12)
+    tl13_key(cts, ckey)
+    tl13_iv(cts, civ)
+    en: _sov_alloc(96)
+    tl13_enc(en, fm, 36, ckey, civ, 0, 22)
+    rl: tl_clen
+    tl_wipe(ckey, 16)
+    tl_wipe(civ, 12)
+    both: _sov_alloc(128)
+    poke_byte(both, 0, 20)
+    poke_byte(both, 1, 3)
+    poke_byte(both, 2, 3)
+    poke_byte(both, 3, 0)
+    poke_byte(both, 4, 1)
+    poke_byte(both, 5, 1)
+    i: 0
+    as long as i < rl
+        poke_byte(both, 6 + i, peek_byte(en, i))
+        i: i + 1
+    sock_send_raw(fd, both, 6 + rl)
+    return 1
+tl13_step_send fd req cap:
+    ckey: _sov_heap_alloc(16)
+    civ: _sov_heap_alloc(12)
+    tl13_key(cap, ckey)
+    tl13_iv(cap, civ)
+    n: str_len(req)
+    seq: 0
+    i: 0
+    as long as i < n
+        cl: 4096
+        if n - i < 4096 -> cl: n - i
+        chunk: _sov_heap_alloc(4096)
+        j: 0
+        as long as j < cl
+            poke_byte(chunk, j, peek_byte(req, i + j))
+            j: j + 1
+        en: _sov_heap_alloc(4200)
+        tl13_enc(en, chunk, cl, ckey, civ, seq, 23)
+        rl: tl_clen
+        seq: seq + 1
+        sock_send_raw(fd, en, rl)
+        i: i + cl
+    tl_wipe(ckey, 16)
+    tl_wipe(civ, 12)
+    return 1
+tl13_step_read fd sap out outmax:
+    skey: _sov_heap_alloc(16)
+    siv: _sov_heap_alloc(12)
+    tl13_key(sap, skey)
+    tl13_iv(sap, siv)
+    pt: _sov_alloc(20000)
+    seq: 0
+    tot: 0
+    more: 1
+    as long as more is 1
+        r: tl_recv(fd)
+        if r is not 0 -> more: 0
+        if not
+            if tl_rtype is 20 -> more: more
+            if not
+                if tl_rtype is not 23 -> more: 0
+                if not
+                    ok: tl13_dec(tl_rb, tl_rlen, skey, siv, seq, pt)
+                    seq: seq + 1
+                    if ok is 0 -> more: 0
+                    if not
+                        if tl13_ptype is 23
+                            j: 0
+                            as long as j < tl13_pn
+                                if tot + j < outmax -> poke_byte(out, tot + j, peek_byte(pt, j))
+                                j: j + 1
+                            tot: tot + tl13_pn
+                        if tl13_ptype is 21 -> more: 0
+    tl_wipe(skey, 16)
+    tl_wipe(siv, 12)
+    tl_gtot: tot
+    return 1
+tl13_client fd host req out outmax:
+    tl_cur_host: host
+    tl_seq_c: 0
+    tl_seq_s: 0
+    hs: _sov_alloc(20000)
+    epriv: _sov_alloc(32)
+    epub: _sov_alloc(32)
+    spub: _sov_alloc(32)
+    cts: _sov_alloc(32)
+    sts: _sov_alloc(32)
+    cap: _sov_alloc(32)
+    sap: _sov_alloc(32)
+    hsec: 0
+    mb: _sov_alloc(272)
+    eb: _sov_alloc(8)
+    r: tl13_step_ch(fd, host, hs, epriv, epub)
+    if r is 0 -> return tl13_wipe(epriv, cts, sts, cap, sap, hsec, 0)
+    hlen: tl_hslen
+    r: tl13_step_sh(fd, hs, spub)
+    if r is 0 -> return tl13_wipe(epriv, cts, sts, cap, sap, hsec, 0)
+    hlen: tl_hslen
+    r: tl13_hs_keys(epriv, spub, hs, hlen, cts, sts)
+    if r is 0 -> return tl13_wipe(epriv, cts, sts, cap, sap, hsec, 0)
+    tl13_hss: 0
+    r: tl13_flight(fd, hs, hlen, sts, mb, eb)
+    if r is 0 -> return tl13_wipe(epriv, cts, sts, cap, sap, hsec, 0)
+    hfin: tl_hslen
+    hsec: tl13_hs_secret(epriv, spub)
+    r: tl13_app_keys(hsec, hs, hfin, cts, sts, cap, sap)
+    if r is 0 -> return tl13_wipe(epriv, cts, sts, cap, sap, hsec, 0)
+    tl_wipe(epriv, 32)
+    tl_wipe(hsec, 32)
+    r: tl13_step_cfin(fd, hs, hfin, cts)
+    if r is 0 -> return tl13_wipe(epriv, cts, sts, cap, sap, hsec, 0)
+    r: tl13_step_send(fd, req, cap)
+    if r is 0 -> return tl13_wipe(epriv, cts, sts, cap, sap, hsec, 0)
+    r: tl13_step_read(fd, sap, out, outmax)
+    tl_len: tl_gtot
+    return tl13_wipe(epriv, cts, sts, cap, sap, hsec, tl_gtot)
+tl13_hs_secret epriv spub:
+    ss: _sov_heap_alloc(32)
+    x19(ss, epriv, spub)
+    zero: _sov_heap_alloc(32)
+    i: 0
+    as long as i < 32
+        poke_byte(zero, i, 0)
+        i: i + 1
+    early: _sov_heap_alloc(32)
+    hkdf_extract(zero, 32, zero, 32, early)
+    h0r: _sov_heap_alloc(64)
+    sha256_bytes(zero, 0, h0r)
+    h0: _sov_heap_alloc(32)
+    tl13_pack32(h0r, h0)
+    lab: _sov_heap_alloc(80)
+    i: 0
+    as long as i < 7
+        poke_byte(lab, i, peek_byte("derived", i))
+        i: i + 1
+    i: 0
+    as long as i < 32
+        poke_byte(lab, 33 + i, peek_byte(h0, i))
+        i: i + 1
+    salt: _sov_heap_alloc(32)
+    tl13_derive(early, lab, salt)
+    hssec: _sov_alloc(32)
+    hkdf_extract(salt, 32, ss, 32, hssec)
+    tl_wipe(ss, 32)
+    tl_wipe(early, 32)
+    tl_wipe(salt, 32)
+    return hssec
+tl13_send_req host port req out outmax:
+    ip: web_lookup(host)
+    if str_len(ip) is 0 -> return 0
+    tl_parse_ip(ip)
+    fd: sock_connect(tl_a0, tl_a1, tl_a2, tl_a3, port)
+    if fd < 0 -> return 0
+    tot: tl13_client(fd, host, req, out, outmax)
+    sock_close(fd)
+    return tot
+tl13_get host port path out outmax:
+    req: str_cat("GET ", path)
+    req: str_cat(req, " HTTP/1.1\r\nHost: ")
+    req: str_cat(req, host)
+    req: str_cat(req, "\r\nConnection: close\r\n\r\n")
+    return tl13_send_req(host, port, req, out, outmax)
+tl_get_best host port path out outmax:
+    tot: tl13_get(host, port, path, out, outmax)
+    if tot > 0 -> return tot
+    return tl_get(host, port, path, out, outmax)
+tl13_mgf1 h out n:
+    c: 0
+    filled: 0
+    as long as filled < n
+        b: _sov_alloc(36)
+        i: 0
+        as long as i < 32
+            poke_byte(b, i, peek_byte(h, i))
+            i: i + 1
+        poke_byte(b, 32, wand(shr(c, 24), 255))
+        poke_byte(b, 33, wand(shr(c, 16), 255))
+        poke_byte(b, 34, wand(shr(c, 8), 255))
+        poke_byte(b, 35, c % 256)
+        o: _sov_alloc(64)
+        sha256_bytes(b, 36, o)
+        p: _sov_alloc(32)
+        tl13_pack32(o, p)
+        i: 0
+        as long as i < 32
+            if filled + i < n -> poke_byte(out, filled + i, peek_byte(p, i))
+            i: i + 1
+        filled: filled + 32
+        c: c + 1
+tl13_cv_pss sg sl mb eb hb:
+    k: peek_i64(mb, 256)
+    ck: _sov_alloc(600)
+    tl_rsa_enc(sg, sl, ck, mb, k, eb, peek_i64(mb, 264))
+    hh: _sov_alloc(32)
+    i: 0
+    as long as i < 32
+        poke_byte(hh, i, peek_byte(ck, k - 33 + i))
+        i: i + 1
+    dbl: k - 33
+    mask: _sov_heap_alloc(dbl)
+    tl13_mgf1(hh, mask, dbl)
+    db: _sov_heap_alloc(dbl)
+    i: 0
+    as long as i < dbl
+        poke_byte(db, i, wxor(peek_byte(ck, i), peek_byte(mask, i)))
+        i: i + 1
+    if wand(peek_byte(db, 0), 127) is not 0 -> return 0
+    i: 1
+    as long as i < dbl - 33
+        if peek_byte(db, i) is not 0 -> return 0
+        i: i + 1
+    if peek_byte(db, dbl - 33) is not 1 -> return 0
+    mp: _sov_heap_alloc(72)
+    i: 0
+    as long as i < 8
+        poke_byte(mp, i, 0)
+        i: i + 1
+    i: 0
+    as long as i < 32
+        poke_byte(mp, 8 + i, peek_byte(hb, i))
+        poke_byte(mp, 40 + i, peek_byte(db, dbl - 32 + i))
+        i: i + 1
+    h2r: _sov_alloc(64)
+    sha256_bytes(mp, 72, h2r)
+    h2: _sov_alloc(32)
+    tl13_pack32(h2r, h2)
+    i: 0
+    as long as i < 32
+        if peek_byte(h2, i) is not peek_byte(hh, i) -> return 0
+        i: i + 1
+    return 1
+tl10_n: 0
+tl10_flen: 0
+tl10_stream out secret slen hashwhich lseed llen:
+    s: _sov_alloc(24)
+    if hashwhich is 0 -> hmac_md5(secret, slen, lseed, llen, s)
+    if not -> hmac_sha1(secret, slen, lseed, llen, s)
+    sl: 16
+    if hashwhich is not 0 -> sl: 20
+    pos: 0
+    blk: _sov_alloc(20)
+    am: _sov_alloc(sl + llen)
+    as long as pos < tl10_n
+        j: 0
+        as long as j < sl
+            poke_byte(am, j, peek_byte(s, j))
+            j: j + 1
+        j: 0
+        as long as j < llen
+            poke_byte(am, sl + j, peek_byte(lseed, j))
+            j: j + 1
+        if hashwhich is 0 -> hmac_md5(secret, slen, am, sl + llen, blk)
+        if not -> hmac_sha1(secret, slen, am, sl + llen, blk)
+        j: 0
+        as long as j < sl
+            if pos + j < tl10_n -> poke_byte(out, pos + j, peek_byte(blk, j))
+            j: j + 1
+        if hashwhich is 0 -> hmac_md5(secret, slen, s, 16, s)
+        if not -> hmac_sha1(secret, slen, s, 20, s)
+        pos: pos + sl
+tl10_prf out secret slen label llen seed slen2:
+    half: (slen + 1) / 2
+    lseed: _sov_heap_alloc(llen + slen2 + 1)
+    j: 0
+    as long as j < llen
+        poke_byte(lseed, j, peek_byte(label, j))
+        j: j + 1
+    j: 0
+    as long as j < slen2
+        poke_byte(lseed, llen + j, peek_byte(seed, j))
+        j: j + 1
+    want: tl10_n
+    s2: _sov_alloc(half + 1)
+    j: 0
+    as long as j < half
+        poke_byte(s2, j, peek_byte(secret, slen - half + j))
+        j: j + 1
+    d5: _sov_alloc(want)
+    d1: _sov_alloc(want)
+    tl10_n: want
+    tl10_stream(d5, secret, half, 0, lseed, llen + slen2)
+    tl10_stream(d1, s2, half, 1, lseed, llen + slen2)
+    j: 0
+    as long as j < want
+        poke_byte(out, j, wxor(peek_byte(d5, j), peek_byte(d1, j)))
+        j: j + 1
+    tl10_n: want
+tl10_hh hs hlen out:
+    m: md5_bytes(hs, hlen)
+    j: 0
+    as long as j < 16
+        poke_byte(out, j, peek_byte(m, j))
+        j: j + 1
+    sw: sha1_bytes(hs, hlen)
+    j: 0
+    as long as j < 5
+        v: peek_i64(sw, j * 8)
+        poke_byte(out, 16 + j * 4, wand(shr(v, 24), 255))
+        poke_byte(out, 17 + j * 4, wand(shr(v, 16), 255))
+        poke_byte(out, 18 + j * 4, wand(shr(v, 8), 255))
+        poke_byte(out, 19 + j * 4, wand(v, 255))
+        j: j + 1
+tl10_cbc_enc ctx out typ body blen seq side:
+    ver: peek_byte(ctx, 0)
+    explicit: peek_i64(ctx, 8)
+    wk: ctx + 64 + side * 16
+    mk: ctx + 16 + side * 24
+    iv: ctx + 96 + side * 16
+    rk: _sov_alloc(176)
+    ae_expand(wk, rk)
+    macin: _sov_alloc(8 + 5 + blen)
+    j: 0
+    as long as j < 8
+        q: shr(seq, (7 - j) * 8)
+        poke_byte(macin, j, q % 256)
+        j: j + 1
+    poke_byte(macin, 8, typ)
+    poke_byte(macin, 9, 3)
+    poke_byte(macin, 10, ver)
+    poke_byte(macin, 11, blen / 256)
+    poke_byte(macin, 12, blen % 256)
+    j: 0
+    as long as j < blen
+        poke_byte(macin, 13 + j, peek_byte(body, j))
+        j: j + 1
+    mac: _sov_heap_alloc(20)
+    hmac_sha1(mk, 20, macin, 13 + blen, mac)
+    frag: blen + 20
+    l: 16 - frag % 16
+    if l is 0 -> l: 16
+    pt: _sov_heap_alloc(frag + l + 16)
+    j: 0
+    as long as j < blen
+        poke_byte(pt, j, peek_byte(body, j))
+        j: j + 1
+    j: 0
+    as long as j < 20
+        poke_byte(pt, blen + j, peek_byte(mac, j))
+        j: j + 1
+    j: 0
+    as long as j < l
+        poke_byte(pt, frag + j, l - 1)
+        j: j + 1
+    w: 0
+    if explicit is 1
+        j: 0
+        as long as j < 16
+            poke_byte(out, 5 + j, peek_byte(iv, j))
+            j: j + 1
+        w: 16
+    prev: _sov_alloc(16)
+    j: 0
+    as long as j < 16
+        poke_byte(prev, j, peek_byte(iv, j))
+        j: j + 1
+    blk: _sov_alloc(16)
+    p: 0
+    as long as p < frag + l
+        j: 0
+        as long as j < 16
+            poke_byte(blk, j, wxor(peek_byte(pt, p + j), peek_byte(prev, j)))
+            j: j + 1
+        ae_enc_block(rk, blk, out + 5 + w)
+        j: 0
+        as long as j < 16
+            poke_byte(prev, j, peek_byte(out, 5 + w + j))
+            j: j + 1
+        w: w + 16
+        p: p + 16
+    j: 0
+    as long as j < 16
+        poke_byte(iv, j, peek_byte(prev, j))
+        j: j + 1
+    tl_clen: 5 + w
+    poke_byte(out, 0, typ)
+    poke_byte(out, 1, 3)
+    poke_byte(out, 2, ver)
+    poke_byte(out, 3, (tl_clen - 5) / 256)
+    poke_byte(out, 4, (tl_clen - 5) % 256)
+tl10_cbc_dec ctx in blen typ out seq side:
+    ver: peek_byte(ctx, 0)
+    explicit: peek_i64(ctx, 8)
+    wk: ctx + 64 + side * 16
+    mk: ctx + 16 + side * 24
+    iv: ctx + 96 + side * 16
+    p: 0
+    ivc: _sov_alloc(16)
+    if explicit is 1
+        j: 0
+        as long as j < 16
+            poke_byte(ivc, j, peek_byte(in, j))
+            j: j + 1
+        p: 16
+    if not
+        j: 0
+        as long as j < 16
+            poke_byte(ivc, j, peek_byte(iv, j))
+            j: j + 1
+    ctlen: blen - p
+    if ctlen < 32 -> return 0
+    if ctlen % 16 is not 0 -> return 0
+    rk: _sov_alloc(176)
+    ae_expand(wk, rk)
+    pt: _sov_alloc(ctlen + 1)
+    db: _sov_alloc(16)
+    w: 0
+    as long as w < ctlen
+        ae_dec_block(rk, in + p + w, db)
+        j: 0
+        as long as j < 16
+            poke_byte(pt, w + j, wxor(peek_byte(db, j), peek_byte(ivc, j)))
+            j: j + 1
+        j: 0
+        as long as j < 16
+            poke_byte(ivc, j, peek_byte(in, p + w + j))
+            j: j + 1
+        w: w + 16
+    j: 0
+    as long as j < 16
+        poke_byte(iv, j, peek_byte(in, p + ctlen - 16 + j))
+        j: j + 1
+    l: peek_byte(pt, ctlen - 1)
+    if l > 15 -> return 0
+    frag: ctlen - l - 1 - 20
+    if frag < 0 -> return 0
+    macin: _sov_alloc(8 + 5 + frag)
+    j: 0
+    as long as j < 8
+        q: shr(seq, (7 - j) * 8)
+        poke_byte(macin, j, q % 256)
+        j: j + 1
+    poke_byte(macin, 8, typ)
+    poke_byte(macin, 9, 3)
+    poke_byte(macin, 10, ver)
+    poke_byte(macin, 11, frag / 256)
+    poke_byte(macin, 12, frag % 256)
+    j: 0
+    as long as j < frag
+        poke_byte(macin, 13 + j, peek_byte(pt, j))
+        j: j + 1
+    mac: _sov_heap_alloc(20)
+    hmac_sha1(mk, 20, macin, 13 + frag, mac)
+    bad: 0
+    j: 0
+    as long as j < 20
+        if peek_byte(mac, j) is not peek_byte(pt, frag + j) -> bad: 1
+        j: j + 1
+    if bad is 1 -> return 0
+    j: 0
+    as long as j < frag
+        poke_byte(out, j, peek_byte(pt, j))
+        j: j + 1
+    tl10_flen: frag
+    return 1
+tl10_step_ch fd rcrs hs ver:
+    ch: _sov_alloc(80)
+    poke_byte(ch, 0, 3)
+    poke_byte(ch, 1, ver)
+    i: 0
+    as long as i < 32
+        poke_byte(ch, 2 + i, peek_byte(rcrs, i))
+        i: i + 1
+    poke_byte(ch, 34, 0)
+    poke_byte(ch, 35, 0)
+    poke_byte(ch, 36, 2)
+    poke_byte(ch, 37, 192)
+    poke_byte(ch, 38, 19)
+    poke_byte(ch, 39, 1)
+    poke_byte(ch, 40, 0)
+    poke_byte(ch, 41, 0)
+    poke_byte(ch, 42, 22)
+    poke_byte(ch, 43, 0)
+    poke_byte(ch, 44, 13)
+    poke_byte(ch, 45, 0)
+    poke_byte(ch, 46, 4)
+    poke_byte(ch, 47, 0)
+    poke_byte(ch, 48, 2)
+    poke_byte(ch, 49, 4)
+    poke_byte(ch, 50, 1)
+    poke_byte(ch, 51, 0)
+    poke_byte(ch, 52, 10)
+    poke_byte(ch, 53, 0)
+    poke_byte(ch, 54, 4)
+    poke_byte(ch, 55, 0)
+    poke_byte(ch, 56, 2)
+    poke_byte(ch, 57, 0)
+    poke_byte(ch, 58, 29)
+    poke_byte(ch, 59, 0)
+    poke_byte(ch, 60, 11)
+    poke_byte(ch, 61, 0)
+    poke_byte(ch, 62, 2)
+    poke_byte(ch, 63, 1)
+    poke_byte(ch, 64, 0)
+    tl_hs_add(hs, 0, 1, ch, 65)
+    rec: _sov_alloc(128)
+    poke_byte(rec, 0, 22)
+    poke_byte(rec, 1, 3)
+    poke_byte(rec, 2, ver)
+    poke_byte(rec, 3, tl_hslen / 256)
+    poke_byte(rec, 4, tl_hslen % 256)
+    i: 0
+    as long as i < tl_hslen
+        poke_byte(rec, 5 + i, peek_byte(hs, i))
+        i: i + 1
+    sock_send_raw(fd, rec, 5 + tl_hslen)
+    return 1
+tl10_step_shcert fd rcrs mb eb hs:
+    r: tl_recv(fd)
+    if r is not 0 -> return 0
+    if tl_rtype is not 22 -> return 0
+    sh: tl_rb + 4
+    gotver: peek_byte(sh, 1)
+    i: 0
+    as long as i < 32
+        poke_byte(rcrs, 32 + i, peek_byte(sh, 2 + i))
+        i: i + 1
+    tl_hs_add(hs, tl_hslen, 2, sh, tl_rlen - 4)
+    r: tl_recv(fd)
+    if r is not 0 -> return 0
+    if tl_rtype is not 22 -> return 0
+    cbody: tl_rb + 4
+    clen: peek_byte(cbody, 3) * 65536 + peek_byte(cbody, 4) * 256 + peek_byte(cbody, 5)
+    cert: cbody + 6
+    tl_hs_add(hs, tl_hslen, 11, cbody, tl_rlen - 4)
+    if tl_chain12(cbody) is 0 -> return 0
+    tl_cert_key(cert, clen)
+    mem_copy(mb, tl_mod, tl_modlen)
+    poke_i64(mb, 256, tl_modlen)
+    j: 0
+    as long as j < 8
+        poke_byte(eb, j, peek_byte(tl_exp, j))
+        j: j + 1
+    poke_i64(mb, 264, tl_explen)
+    return gotver
+tl10_step_ske fd rcrs mb eb spub hs:
+    r: tl_recv(fd)
+    if r is not 0 -> return 0
+    if tl_rtype is not 22 -> return 0
+    if peek_byte(tl_rb, 0) is not 12 -> return 0
+    prm: tl_rb + 4
+    i: 0
+    as long as i < 32
+        poke_byte(spub, i, peek_byte(prm, 4 + i))
+        i: i + 1
+    tl_hs_add(hs, tl_hslen, 12, tl_rb + 4, tl_rlen - 4)
+    hi: _sov_heap_alloc(100)
+    i: 0
+    as long as i < 32
+        poke_byte(hi, i, peek_byte(rcrs, i))
+        poke_byte(hi, 32 + i, peek_byte(rcrs, 32 + i))
+        i: i + 1
+    i: 0
+    as long as i < 36
+        poke_byte(hi, 64 + i, peek_byte(prm, i))
+        i: i + 1
+    hh: _sov_alloc(36)
+    tl10_hh(hi, 100, hh)
+    sl: peek_byte(tl_rb, 40) * 256 + peek_byte(tl_rb, 41)
+    sg: tl_rb + 42
+    k: peek_i64(mb, 256)
+    ck: _sov_alloc(512)
+    tl_rsa_enc(sg, sl, ck, mb, k, eb, peek_i64(mb, 264))
+    if peek_byte(ck, 0) is not 0 -> return 0
+    if peek_byte(ck, 1) is not 1 -> return 0
+    if peek_byte(ck, 2) is not 255 -> return 0
+    bad: 0
+    j: 0
+    as long as j < 36
+        if peek_byte(ck, k - 36 + j) is not peek_byte(hh, j) -> bad: 1
+        j: j + 1
+    if bad is 1 -> return 0
+    return 1
+tl10_step_cke fd epu hs ver:
+    r: tl_recv(fd)
+    if r is not 0 -> return 0
+    if tl_rtype is not 22 -> return 0
+    tl_hs_add(hs, tl_hslen, 14, tl_rb + 4, tl_rlen - 4)
+    cke: _sov_heap_alloc(40)
+    poke_byte(cke, 0, 32)
+    j: 0
+    as long as j < 32
+        poke_byte(cke, 1 + j, peek_byte(epu, j))
+        j: j + 1
+    tl_hs_add(hs, tl_hslen, 16, cke, 33)
+    rec: _sov_alloc(64)
+    poke_byte(rec, 0, 22)
+    poke_byte(rec, 1, 3)
+    poke_byte(rec, 2, ver)
+    l: 4 + 33
+    poke_byte(rec, 3, l / 256)
+    poke_byte(rec, 4, l % 256)
+    poke_byte(rec, 5, 16)
+    poke_byte(rec, 6, 0)
+    poke_byte(rec, 7, 0)
+    poke_byte(rec, 8, 33)
+    j: 0
+    as long as j < 33
+        poke_byte(rec, 9 + j, peek_byte(cke, j))
+        j: j + 1
+    sock_send_raw(fd, rec, 9 + 33)
+    return 1
+tl10_step_keys ctx rcrs pm pmlen:
+    ms: ctx + 128
+    tl10_n: 48
+    tl10_prf(ms, pm, pmlen, "master secret", 13, rcrs, 64)
+    seed2: _sov_heap_alloc(64)
+    j: 0
+    as long as j < 32
+        poke_byte(seed2, j, peek_byte(rcrs, 32 + j))
+        poke_byte(seed2, 32 + j, peek_byte(rcrs, j))
+        j: j + 1
+    kb: _sov_heap_alloc(104)
+    tl10_n: 104
+    tl10_prf(kb, ms, 48, "key expansion", 13, seed2, 64)
+    j: 0
+    as long as j < 20
+        poke_byte(ctx, 16 + j, peek_byte(kb, j))
+        poke_byte(ctx, 40 + j, peek_byte(kb, 20 + j))
+        j: j + 1
+    j: 0
+    as long as j < 16
+        poke_byte(ctx, 64 + j, peek_byte(kb, 40 + j))
+        poke_byte(ctx, 80 + j, peek_byte(kb, 56 + j))
+        poke_byte(ctx, 96 + j, peek_byte(kb, 72 + j))
+        poke_byte(ctx, 112 + j, peek_byte(kb, 88 + j))
+        j: j + 1
+    return 1
+    tl_wipe(kb, 104)
+tl10_step_finish ctx fd hs hlen:
+    ver: peek_byte(ctx, 0)
+    ms: ctx + 128
+    hh: _sov_heap_alloc(36)
+    tl10_hh(hs, hlen, hh)
+    fv: _sov_alloc(16)
+    tl10_n: 12
+    tl10_prf(fv, ms, 48, "client finished", 15, hh, 36)
+    fm: _sov_heap_alloc(16)
+    poke_byte(fm, 0, 20)
+    poke_byte(fm, 1, 0)
+    poke_byte(fm, 2, 0)
+    poke_byte(fm, 3, 12)
+    j: 0
+    as long as j < 12
+        poke_byte(fm, 4 + j, peek_byte(fv, j))
+        j: j + 1
+    en: _sov_alloc(160)
+    tl10_cbc_enc(ctx, en, 22, fm, 16, 0, 0)
+    both: _sov_alloc(192)
+    poke_byte(both, 0, 20)
+    poke_byte(both, 1, 3)
+    poke_byte(both, 2, ver)
+    poke_byte(both, 3, 0)
+    poke_byte(both, 4, 1)
+    poke_byte(both, 5, 1)
+    i: 0
+    as long as i < tl_clen
+        poke_byte(both, 6 + i, peek_byte(en, i))
+        i: i + 1
+    sock_send_raw(fd, both, 6 + tl_clen)
+    tl_hs_add(hs, tl_hslen, 20, fv, 12)
+    return 1
+tl10_step_vfinish ctx fd hs hlen:
+    r: tl_recv(fd)
+    if r is not 0 -> return 0
+    if tl_rtype is not 20 -> return 0
+    r: tl_recv(fd)
+    if r is not 0 -> return 0
+    if tl_rtype is not 22 -> return 0
+    d: _sov_alloc(512)
+    ok: tl10_cbc_dec(ctx, tl_rb, tl_rlen, tl_rtype, d, 0, 1)
+    if ok is 0 -> return 0
+    ms: ctx + 128
+    hh: _sov_heap_alloc(36)
+    tl10_hh(hs, hlen, hh)
+    sv: _sov_alloc(16)
+    tl10_n: 12
+    tl10_prf(sv, ms, 48, "server finished", 15, hh, 36)
+    bad: 0
+    j: 0
+    as long as j < 12
+        if peek_byte(sv, j) is not peek_byte(d, 4 + j) -> bad: 1
+        j: j + 1
+    if bad is 1 -> return 0
+    return 1
+tl10_step_send ctx fd req:
+    n: str_len(req)
+    sq: 1
+    i: 0
+    as long as i < n
+        cl: 4096
+        if n - i < 4096 -> cl: n - i
+        chunk: _sov_heap_alloc(4096)
+        j: 0
+        as long as j < cl
+            poke_byte(chunk, j, peek_byte(req, i + j))
+            j: j + 1
+        en: _sov_heap_alloc(4200)
+        tl10_cbc_enc(ctx, en, 23, chunk, cl, sq, 0)
+        sq: sq + 1
+        sock_send_raw(fd, en, tl_clen)
+        i: i + cl
+    return 1
+tl10_step_read ctx fd out outmax:
+    tot: 0
+    ss: 1
+    more: 1
+    as long as more is 1
+        r: tl_recv(fd)
+        if r is not 0 -> more: 0
+        if not
+            if tl_rtype is 23
+                d: _sov_heap_alloc(20000)
+                ok: tl10_cbc_dec(ctx, tl_rb, tl_rlen, tl_rtype, d, ss, 1)
+                ss: ss + 1
+                if ok is 1
+                    j: 0
+                    as long as j < tl10_flen
+                        if tot + j < outmax -> poke_byte(out, tot + j, peek_byte(d, j))
+                        j: j + 1
+                    tot: tot + tl10_flen
+            if not -> more: 0
+    tl_gtot: tot
+    return 1
+tl10_client fd host req out outmax minor:
+    tl_cur_host: host
+    ver: 1
+    explicit: 0
+    if minor is 1
+        ver: 2
+        explicit: 1
+    ctx: _sov_alloc(176)
+    poke_byte(ctx, 0, ver)
+    poke_i64(ctx, 8, explicit)
+    rcrs: _sov_alloc(64)
+    pm: _sov_alloc(48)
+    ep: _sov_heap_alloc(32)
+    epu: _sov_heap_alloc(32)
+    spub: _sov_heap_alloc(32)
+    b9: _sov_heap_alloc(32)
+    mb: _sov_heap_alloc(272)
+    eb: _sov_heap_alloc(8)
+    hs: _sov_heap_alloc(20000)
+    rb: rand_bytes(32)
+    i: 0
+    as long as i < 32
+        poke_byte(rcrs, i, peek_byte(rb, i))
+        i: i + 1
+    poke_byte(b9, 0, 9)
+    r: tl10_step_ch(fd, rcrs, hs, ver)
+    if r is 0 -> return tl10_wipe(ctx, rcrs, pm, ep, rb, 0)
+    r: tl10_step_shcert(fd, rcrs, mb, eb, hs)
+    if r is 0 -> return tl10_wipe(ctx, rcrs, pm, ep, rb, 0)
+    if r is not ver -> return tl10_wipe(ctx, rcrs, pm, ep, rb, 0)
+    r: tl10_step_ske(fd, rcrs, mb, eb, spub, hs)
+    if r is 0 -> return tl10_wipe(ctx, rcrs, pm, ep, rb, 0)
+    tl_step_ep(ep, epu, spub, pm, b9)
+    r: tl10_step_cke(fd, epu, hs, ver)
+    if r is 0 -> return tl10_wipe(ctx, rcrs, pm, ep, rb, 0)
+    r: tl10_step_keys(ctx, rcrs, pm, 32)
+    if r is 0 -> return tl10_wipe(ctx, rcrs, pm, ep, rb, 0)
+    tl_wipe(ep, 32)
+    tl_wipe(pm, 48)
+    hlen: tl_hslen
+    r: tl10_step_finish(ctx, fd, hs, hlen)
+    if r is 0 -> return tl10_wipe(ctx, rcrs, pm, ep, rb, 0)
+    hlen: tl_hslen
+    r: tl10_step_vfinish(ctx, fd, hs, hlen)
+    if r is 0 -> return tl10_wipe(ctx, rcrs, pm, ep, rb, 0)
+    tl_wipe(ctx + 128, 48)
+    r: tl10_step_send(ctx, fd, req)
+    if r is 0 -> return tl10_wipe(ctx, rcrs, pm, ep, rb, 0)
+    r: tl10_step_read(ctx, fd, out, outmax)
+    tl_len: tl_gtot
+    return tl10_wipe(ctx, rcrs, pm, ep, rb, tl_gtot)
+tl10_send_req host port req out outmax minor:
+    ip: web_lookup(host)
+    if str_len(ip) is 0 -> return 0
+    fd: sock_connect(web_part(ip, 0), web_part(ip, 1), web_part(ip, 2), web_part(ip, 3), port)
+    if fd < 0 -> return 0
+    n: tl10_client(fd, host, req, out, outmax, minor)
+    sys_close(fd)
+    return n
+tl10_get host port path out outmax minor:
+    req: str_cat("GET ", path)
+    req: str_cat(req, " HTTP/1.0\r\nHost: ")
+    req: str_cat(req, host)
+    req: str_cat(req, "\r\nUser-Agent: sovren\r\nConnection: close\r\n\r\n")
+    return tl10_send_req(host, port, req, out, outmax, minor)

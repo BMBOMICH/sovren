@@ -1,0 +1,10 @@
+# tgsrv - tiny server state machine (no sockets, pure logic)
+main:
+    print serve(3)
+    print serve(7)
+    print 0
+
+serve kind:
+    if kind = 3 -> return 100
+    if kind = 7 -> return 207
+    if not -> return 0 - 1

@@ -1,0 +1,15 @@
+use string
+main:
+    src: _sov_heap_alloc(65536)
+    dst: _sov_heap_alloc(65536)
+    i: 0
+    as long as i < 65536
+        poke_byte(src, i, i % 251)
+        i: i + 1
+    acc: 0
+    r: 0
+    as long as r < 3000
+        dummy: _sov_memcpy(dst, src, 65536)
+        acc: acc + peek_byte(dst, r % 60000)
+        r: r + 1
+    print acc

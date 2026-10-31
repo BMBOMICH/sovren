@@ -1,0 +1,29 @@
+# unsafe-module
+sc c:
+    as long as 1 is 1
+        # unsafe
+        if band(port_in8(1021), 32) is not 0 -> leave
+    # unsafe
+    port_out8(1016, c)
+sputs s:
+    i: 0
+    as long as 1 is 1
+        c: peek_byte(s, i)
+        if c is 0 -> leave
+        sc(c)
+        i: i + 1
+sinit:
+    # unsafe
+    port_out8(1017, 0)
+    # unsafe
+    port_out8(1019, 128)
+    # unsafe
+    port_out8(1016, 3)
+    # unsafe
+    port_out8(1017, 0)
+    # unsafe
+    port_out8(1019, 3)
+    # unsafe
+    port_out8(1018, 199)
+    # unsafe
+    port_out8(1020, 11)

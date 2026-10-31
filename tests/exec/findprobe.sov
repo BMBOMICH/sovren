@@ -1,0 +1,25 @@
+use string
+main:
+    print str_find("hello world", "wor")
+    print str_find("hello", "z")
+    print str_find("aaaaab", "aab")
+    print str_find("abc", "")
+    print str_find("", "a")
+    print str_find("", "")
+    print str_find("abc", "abcd")
+    print str_find("mississippi", "issi")
+    print str_find("mississippi", "issip")
+    print str_find("abcdefghijabcdefghij", "ghijabz")
+    print str_find("aaaaaaaaaaaaaaaaaaaaaaaa", "aaaa")
+    print str_find("the quick brown fox jumps", "jumps")
+    print str_find(str_cat(str_chr(1), str_chr(97)), str_chr(97))
+    print str_find(str_cat(str_chr(255), "b"), "b")
+    s: "abcdefghij"
+    r: 0
+    as long as r < 13
+        s: str_cat(s, s)
+        r: r + 1
+    print str_find(s, "jabcdefghi")
+    print str_find(s, "defghijab")
+    print str_find(s, "xyz")
+    return 0

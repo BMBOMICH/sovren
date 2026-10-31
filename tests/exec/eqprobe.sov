@@ -1,0 +1,27 @@
+use string
+main:
+    a: "hello world this is a somewhat longer test string 0123456789"
+    b: str_cat("hello world this is a somewhat ", "longer test string 0123456789")
+    c: str_cat("hello world this is a somewhat ", "longer test string 012345678X")
+    print str_eq(a, b)
+    print str_eq(a, c)
+    print str_eq("", "")
+    print str_eq("a", "")
+    print str_eq("", "a")
+    g: "x"
+    r: 0
+    as long as r < 12
+        g: str_cat(g, g)
+        r: r + 1
+    h: str_cat(g, "")
+    print str_eq(g, h)
+    h2: str_cat(g, "y")
+    print str_eq(g, h2)
+    print str_len(g)
+    i: 0
+    s: 0
+    as long as i < 20000
+        s: s + str_eq(g, h)
+        i: i + 1
+    print s
+    return 0

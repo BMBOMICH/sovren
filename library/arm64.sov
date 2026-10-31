@@ -1,0 +1,1254 @@
+# arm64.sov - AArch64 user-mode interpreter for Sovren-built ELFs.
+# unsafe-module
+a_m: 0
+ar: 0
+at_r: 0
+A64_BASE: 4194304
+A64_LO: 16
+A64_STACKTOP: 32505856
+A64_MEM: 33554432
+A64_OUT: 65536
+A64_STRTOP: 32374784
+A64_BRK: 8388608
+A64_MMAP: 12582912
+
+arm64_new:
+    a_m: _sov_alloc(A64_MEM)
+    _sov_mem_set(a_m, 0, 262144)
+    poke_i64(a_m, 524544, A64_BASE)
+    poke_i64(a_m, 524552, _sov_alloc(A64_OUT))
+    poke_i64(a_m, 524568, 0)
+    poke_i64(a_m, 524592, _sov_alloc(A64_OUT))
+    poke_i64(a_m, 524656, 0)
+    poke_i64(a_m, 524664, A64_BRK)
+    poke_i64(a_m, 524672, A64_MMAP)
+    poke_i64(a_m, 524576, 0)
+    poke_i64(a_m, 524560, 0)
+    return a_m
+
+arm64_why a:
+    return peek_i64(a_m, 524576)
+
+arm64_code a:
+    return peek_i64(a_m, 524560)
+
+arm64_bad a:
+    return peek_i64(a_m, 524584)
+
+arm64_out a:
+    return as text peek_i64(a_m, 524552)
+
+arm64_err a:
+    return as text peek_i64(a_m, 524592)
+
+arm64_argv a n b:
+    poke_i64(a_m, 524640, n)
+    poke_i64(a_m, 524648, b)
+    return 0
+
+arm64_run_for a limit:
+    n: 0
+    r: 1
+    as long as r = 1
+        a_step()
+        r: peek_i64(a_m, 524576)
+        r: band(1 - r, 1 - bshr(limit - n, 63))
+        n: n + 1
+    w: peek_i64(a_m, 524576)
+    if w = 0 -> poke_i64(a_m, 524576, 3)
+    return peek_i64(a_m, 524576)
+
+arm64_load a path:
+    d: file_read_all(path)
+    if d is 0 -> return 0
+    fszn: file_size(path)
+    if fszn < 64 -> return 0
+    if peek_byte(d, 0) is not 127 -> return 0
+    em: peek_byte(d, 18) + peek_byte(d, 19) * 256
+    if em != 183 -> return 0
+    entry: peek_i64(d, 24)
+    phoff: peek_i64(d, 32)
+    phent: peek_byte(d, 54) + peek_byte(d, 55) * 256
+    phnum: peek_byte(d, 56) + peek_byte(d, 57) * 256
+    if phoff + phnum * phent > fszn -> return 0
+    bias: 1048576
+    i: 0
+    as long as i < phnum
+        o: phoff + i * phent
+        pt: peek_byte(d, o) + peek_byte(d, o + 1) * 256 + peek_byte(d, o + 2) * 65536 + peek_byte(d, o + 3) * 16777216
+        isl: 0
+        if pt = 1 -> isl: 1
+        if isl = 1 -> a_ldseg(d, fszn, o, bias)
+        i: i + 1
+    entry: entry + bias
+    poke_i64(a_m, 524544, entry)
+    poke_i64(a_m, 524528, entry)
+    na: peek_i64(a_m, 524640)
+    bp: peek_i64(a_m, 524648)
+    vec: A64_STACKTOP - 8 * (na + 4) - 64
+    poke_i64(a_m, vec, na)
+    i: 0
+    as long as i < na
+        sp2: A64_STRTOP + i * 512
+        hp: peek_i64(bp, i * 8)
+        j: 0
+        as long as peek_byte(hp, j) != 0
+            poke_byte(a_m, sp2 + j, peek_byte(hp, j))
+            j: j + 1
+        poke_byte(a_m, sp2 + j, 0)
+        poke_i64(a_m, vec + 8 + i * 8, sp2)
+        i: i + 1
+    poke_i64(a_m, vec + 8 + na * 8, 0)
+    poke_i64(a_m, vec + 16 + na * 8, 0)
+    av: vec + 24 + na * 8
+    poke_i64(a_m, av, 3)
+    pv: A64_BASE + bias + 64
+    poke_i64(a_m, av + 8, pv)
+    poke_i64(a_m, av + 16, 4)
+    poke_i64(a_m, av + 24, 56)
+    poke_i64(a_m, av + 32, 5)
+    poke_i64(a_m, av + 40, 3)
+    poke_i64(a_m, av + 48, 6)
+    poke_i64(a_m, av + 56, 4096)
+    poke_i64(a_m, av + 64, 7)
+    poke_i64(a_m, av + 72, 0)
+    poke_i64(a_m, av + 80, 9)
+    poke_i64(a_m, av + 88, A64_BASE + bias)
+    poke_i64(a_m, av + 96, 25)
+    rv: av + 160
+    poke_i64(a_m, av + 104, rv)
+    poke_i64(a_m, av + 112, 0)
+    poke_i64(a_m, av + 120, 0)
+    a_setsp(vec)
+    a_setx(0, na)
+    a1v: vec + 8
+    a_setx(1, a1v)
+    a2v: vec + 16 + na * 8
+    a_setx(2, a2v)
+    return 1
+
+u64_add a b:
+    c: 0
+    ls: band(a, 4294967295) + band(b, 4294967295)
+    if ls >= 4294967296 -> c: 1
+    hs: band(bshr(a, 32), 4294967295) + band(bshr(b, 32), 4294967295) + c
+    ac: 0
+    if hs >= 4294967296 -> ac: 1
+    ar: bor(bshl(band(hs, 4294967295), 32), band(ls, 4294967295))
+    return 0
+
+u64_neg x:
+    u64_add(bxor(x, 0 - 1), 1)
+    return ar
+
+u64_sub a b:
+    u64_neg(b)
+    u64_add(a, ar)
+    return ar
+
+u64_mullo a b:
+    a0: band(a, 65535)
+    a1: band(bshr(a, 16), 65535)
+    a2: band(bshr(a, 32), 65535)
+    a3: band(bshr(a, 48), 65535)
+    b0: band(b, 65535)
+    b1: band(bshr(b, 16), 65535)
+    b2: band(bshr(b, 32), 65535)
+    b3: band(bshr(b, 48), 65535)
+    r: a0 * b0
+    u64_add(r, bshl(a0 * b1 + a1 * b0, 16))
+    r: ar
+    u64_add(r, band(bshl(a0 * b2 + a1 * b1 + a2 * b0, 32), 0 - 1))
+    r: ar
+    u64_add(r, band(bshl(a0 * b3 + a1 * b2 + a2 * b1 + a3 * b0, 48), 0 - 1))
+    r: ar
+    ar: r
+    return 0
+
+u64_lt a b:
+    xa: bxor(a, bshl(1, 63))
+    xb: bxor(b, bshl(1, 63))
+    if xa < xb -> return 1
+    return 0
+
+u64_ror v amt:
+    if amt = 0 -> return v
+    hi: bshr(v, amt)
+    lo: bshl(band(v, bshl(1, amt) - 1), 64 - amt)
+    u64_add(hi, lo)
+    return ar
+
+a_x r:
+    if r = 31 -> return 0
+    return peek_i64(a_m, r * 8)
+
+a_setx r v:
+    if r = 31 -> return 0
+    poke_i64(a_m, r * 8, v)
+    return 0
+
+a_w r:
+    v: a_x(r)
+    return band(v, 4294967295)
+
+a_setw r v:
+    if r = 31 -> return 0
+    poke_i64(a_m, r * 8, band(v, 4294967295))
+    return 0
+
+a_sp:
+    return peek_i64(a_m, 524536)
+
+a_setsp v:
+    poke_i64(a_m, 524536, v)
+    return 0
+
+a_host g:
+    return a_m + g
+
+a_badpc addr why:
+    poke_i64(a_m, 524576, why)
+    poke_i64(a_m, 524584, addr)
+    poke_i64(a_m, 525088, peek_byte(a_m, addr) + peek_byte(a_m, addr + 1) * 256 + peek_byte(a_m, addr + 2) * 65536 + peek_byte(a_m, addr + 3) * 16777216)
+    return 0
+
+a_sx8 v:
+    v: band(v, 255)
+    if v >= 128 -> return v - 256
+    return v
+
+a_sx16 v:
+    v: band(v, 65535)
+    if v >= 32768 -> return v - 65536
+    return v
+
+a_sx32 v:
+    v: band(v, 4294967295)
+    if v >= 2147483648 -> return v - 4294967296
+    return v
+
+a_sx64 v:
+    if v >= 9223372036854775808 -> return v - 18446744073709551616
+    return v
+
+a_sx9 v:
+    v: band(v, 511)
+    if v >= 256 -> return v - 512
+    return v
+
+a_sx19 v:
+    v: band(v, 524287)
+    if v >= 262144 -> return v - 524288
+    return v
+
+a_sx21 v:
+    v: band(v, 2097151)
+    if v >= 1048576 -> return v - 2097152
+    return v
+
+a_sx26 v:
+    v: band(v, 67108863)
+    if v >= 33554432 -> return v - 67108864
+    return v
+
+a_mem8 a:
+    if u64_lt(a, A64_LO) = 1 -> poke_i64(a_m, 524576, 6)
+    if u64_lt(a, A64_MEM - 256) = 0 -> poke_i64(a_m, 524576, 6)
+    if u64_lt(a, A64_LO) = 1 -> return 0
+    if u64_lt(a, A64_MEM - 256) = 0 -> return 0
+    return peek_byte(a_m, a)
+
+a_w8m a v:
+    if u64_lt(a, A64_LO) = 1 -> poke_i64(a_m, 524600, a)
+    if u64_lt(a, A64_MEM - 256) = 0 -> poke_i64(a_m, 524600, a)
+    if u64_lt(a, A64_LO) = 1 -> poke_i64(a_m, 524576, 6)
+    if u64_lt(a, A64_MEM - 256) = 0 -> poke_i64(a_m, 524576, 6)
+    if u64_lt(a, A64_LO) = 1 -> return 0
+    if u64_lt(a, A64_MEM - 256) = 0 -> return 0
+    poke_byte(a_m, a, band(v, 255))
+    return 0
+
+a_mem16 a:
+    return a_mem8(a) + a_mem8(a + 1) * 256
+
+a_mem32 a:
+    return a_mem8(a) + a_mem8(a + 1) * 256 + a_mem8(a + 2) * 65536 + a_mem8(a + 3) * 16777216
+
+a_w16m a v:
+    a_w8m(a, v)
+    a_w8m(a + 1, bshr(v, 8))
+    return 0
+
+a_w32m a v:
+    a_w8m(a, v)
+    a_w8m(a + 1, bshr(v, 8))
+    a_w8m(a + 2, bshr(v, 16))
+    a_w8m(a + 3, bshr(v, 24))
+    return 0
+
+a_w64m a v:
+    a_w32m(a, v)
+    a_w32m(a + 4, bshr(v, 32))
+    return 0
+
+a_setadds va vb r w32:
+    N: 0
+    Z: 0
+    C: 0
+    V: 0
+    sr: band(bshr(r, w32 - 1), 1)
+    if sr = 1 -> N: 1
+    if r = 0 -> Z: 1
+    sa: band(bshr(va, w32 - 1), 1)
+    sb: band(bshr(vb, w32 - 1), 1)
+    sv: 0
+    if sa = sb -> sv: 1
+    if sv = 1 -> V: bxor(sr, sa)
+    msk: bshl(1, w32) - 1
+    u64_add(band(va, msk), band(vb, msk))
+    if u64_lt(msk, ar) = 1 -> C: 1
+    poke_i64(a_m, 524608, N)
+    poke_i64(a_m, 524616, Z)
+    poke_i64(a_m, 524624, C)
+    poke_i64(a_m, 524632, V)
+    return 0
+
+a_setsubs va vb r w32:
+    N: 0
+    Z: 0
+    C: 1
+    V: 0
+    sr: band(bshr(r, w32 - 1), 1)
+    if sr = 1 -> N: 1
+    if r = 0 -> Z: 1
+    msk: bshl(1, w32) - 1
+    ua: band(va, msk)
+    ub: band(vb, msk)
+    if u64_lt(ua, ub) = 1 -> C: 0
+    sa: band(bshr(va, w32 - 1), 1)
+    sb: band(bshr(vb, w32 - 1), 1)
+    dv: bxor(sa, sb)
+    if dv = 1 -> V: bxor(sr, sa)
+    poke_i64(a_m, 524608, N)
+    poke_i64(a_m, 524616, Z)
+    poke_i64(a_m, 524624, C)
+    poke_i64(a_m, 524632, V)
+    return 0
+
+a_cond c:
+    N: peek_i64(a_m, 524608)
+    Z: peek_i64(a_m, 524616)
+    C: peek_i64(a_m, 524624)
+    V: peek_i64(a_m, 524632)
+    if c = 0 -> return Z
+    if c = 1 -> return 1 - Z
+    if c = 2 -> return C
+    if c = 3 -> return 1 - C
+    if c = 4 -> return N
+    if c = 5 -> return 1 - N
+    if c = 6 -> return V
+    if c = 7 -> return 1 - V
+    hiv: C * (1 - Z)
+    if c = 8 -> return hiv
+    if c = 9 -> return 1 - hiv
+    ge: 1 - band(N + V, 1)
+    if c = 10 -> return ge
+    if c = 11 -> return 1 - ge
+    gt: ge * (1 - Z)
+    if c = 12 -> return gt
+    if c = 13 -> return 1 - gt
+    return 1
+
+a_step:
+    pc: peek_i64(a_m, 524544)
+    if u64_lt(pc, A64_BASE) = 1 -> a_badpc(pc, 6)
+    if peek_i64(a_m, 524576) != 0 -> return 0
+    lim: A64_BASE + 4194304
+    if u64_lt(pc, lim) = 0 -> a_badpc(pc, 6)
+    if peek_i64(a_m, 524576) != 0 -> return 0
+    w: peek_byte(a_m, pc) + peek_byte(a_m, pc + 1) * 256 + peek_byte(a_m, pc + 2) * 65536 + peek_byte(a_m, pc + 3) * 16777216
+    np: pc + 4
+    poke_i64(a_m, 524544, np)
+    r: a_exec(w)
+    nw: peek_i64(a_m, 524544)
+    if nw != np
+        poke_i64(a_m, 524988, pc)
+        poke_i64(a_m, 524996, nw)
+        poke_i64(a_m, 525004, w)
+    return r
+
+a_exec w:
+    if w = 3573751839 -> return 1
+    if w = 3573752927 -> return 1
+    if w = 3596551104 -> return a_do_ret(w)
+    if band(w, 4292870175) = 3556769793 -> return a_sysc()
+    if band(w, 4292870144) = 3558866944
+        a_badpc(peek_i64(a_m, 524544) - 4, 2)
+        return 0
+    t: band(bshr(w, 24), 255)
+    if t = 20 -> return a_do_b(w)
+    if t = 21 -> return a_do_b(w)
+    if t = 22 -> return a_do_b(w)
+    if t = 23 -> return a_do_b(w)
+    if t = 148 -> return a_do_b(w)
+    if t = 149 -> return a_do_b(w)
+    if t = 150 -> return a_do_b(w)
+    if t = 151 -> return a_do_b(w)
+    if band(w, 4278190096) = 1409286144 -> return a_do_bcond(w)
+    if band(w, 2113929216) = 872415232 -> return a_do_cbz(w)
+    if band(w, 2113929216) = 905969664 -> return a_do_tbz(w)
+    if band(w, 167772160) = 134217728 -> return a_do_ldst(w)
+    if band(w, 260046848) = 167772160 -> return a_do_log(w)
+    if band(w, 520093696) = 285212672 -> return a_do_addsub(w)
+    if band(w, 520093696) = 184549376 -> return a_do_addsub(w)
+    if band(w, 1071644672) = 452984832 -> return a_do_mul(w)
+    if band(w, 1071644672) = 455081984 -> return a_do_mul(w)
+    if band(w, 1071644672) = 448790528 -> return a_do_dpm(w)
+    if band(w, 2139095040) = 1384120320 -> return a_do_movzw(w)
+    if band(w, 2139095040) = 1920991232 -> return a_do_movzw(w)
+    if band(w, 2139095040) = 309905408 -> return a_do_movzw(w)
+    if band(w, 2667577344) = 2415919104 -> return a_do_adr(w)
+    if band(w, 2667577344) = 268435456 -> return a_do_adr(w)
+    if band(w, 2139095040) = 1392508928 -> return a_do_bfm(w)
+    if band(w, 2139095040) = 318767104 -> return a_do_bfm(w)
+    bp: peek_i64(a_m, 524544) - 4
+    a_badpc(bp, 2)
+    return 0
+
+a_do_b w:
+    v: band(w, 67108863)
+    sv: a_sx26(v)
+    off: sv * 4
+    pc: peek_i64(a_m, 524544)
+    if band(w, 2147483648) = 0
+        u64_add(pc - 4, off)
+        poke_i64(a_m, 524544, ar)
+        return 1
+    u64_add(pc - 4, off)
+    a_setx(30, pc)
+    poke_i64(a_m, 524544, ar)
+    return 1
+
+a_do_bcond w:
+    c: band(w, 15)
+    v: band(bshr(w, 5), 524287)
+    sv: a_sx19(v)
+    off: sv * 4
+    t: a_cond(c)
+    pc: peek_i64(a_m, 524544)
+    if t = 1
+        u64_add(pc - 4, off)
+        poke_i64(a_m, 524544, ar)
+    return 1
+
+a_do_cbz w:
+    v: band(bshr(w, 5), 524287)
+    sv: a_sx19(v)
+    off: sv * 4
+    rt: band(w, 31)
+    val: a_x(rt)
+    sf: band(bshr(w, 31), 1)
+    if sf = 0 -> val: band(val, 4294967295)
+    nz: band(bshr(w, 24), 1)
+    z: 1
+    if val != 0 -> z: 0
+    t: z
+    if nz = 1 -> t: 1 - z
+    pc: peek_i64(a_m, 524544)
+    u64_add(pc - 4, off)
+    tgt: ar
+    if t = 1 -> poke_i64(a_m, 524544, tgt)
+    return 1
+
+a_do_tbz w:
+    v: band(bshr(w, 5), 32767)
+    sv: a_sx19(v * 2)
+    off: sv * 4
+    rt: band(w, 31)
+    bit: band(bshr(w, 19), 31)
+    val: a_x(rt)
+    bitv: band(bshr(val, bit), 1)
+    nz: band(bshr(w, 24), 1)
+    t: 1 - band(bxor(bitv, nz), 1)
+    pc: peek_i64(a_m, 524544)
+    u64_add(pc - 4, off)
+    tgt: ar
+    if t = 1 -> poke_i64(a_m, 524544, tgt)
+    return 1
+
+a_do_ret w:
+    val: a_x(30)
+    poke_i64(a_m, 524544, val)
+    return 1
+
+a_doldst w rn rt off sz op wb:
+    addr: a_x(rn)
+    if rn = 31 -> addr: a_sp()
+    fl: u64_lt(addr, A64_LO)
+    fh: u64_lt(addr, A64_MEM - 256)
+    bad: 0
+    if fl = 1 -> bad: 1
+    if fh = 0 -> bad: 1
+    if bad = 1 -> a_badpc(addr, 6)
+    if bad = 1 -> return 1
+    a_preup(rn, addr, off * band(bshr(wb, 1), 1))
+    saddr: addr + off * band(bshr(wb, 1), 1)
+    if op = 0 -> a_stmem(rt, saddr, sz)
+    if op = 1 -> a_ldmem(rt, saddr, sz, 0)
+    if op = 2 -> a_ldmem(rt, saddr, sz, 1)
+    if wb = 1 -> a_postup(rn, addr, off)
+    return 1
+
+a_preup rn addr off:
+    u64_add(addr, off)
+    if rn = 31 -> a_setsp(ar)
+    if rn != 31 -> a_setx(rn, ar)
+    return 0
+
+a_postup rn addr off:
+    u64_add(addr, off)
+    if rn = 31 -> a_setsp(ar)
+    if rn != 31 -> a_setx(rn, ar)
+    return 0
+
+a_stmem rt addr sz:
+    v: a_w(rt)
+    if sz = 3 -> v: a_x(rt)
+    if u64_lt(4194304, addr) = 1 -> a_tr_st(addr, v, sz)
+    if sz = 0 -> a_w8m(addr, v)
+    if sz = 1 -> a_w16m(addr, v)
+    if sz = 2 -> a_w32m(addr, v)
+    if sz = 3 -> a_w64m(addr, v)
+    return 0
+
+a_tr_st addr v sz:
+    poke_i64(a_m, 525048, addr)
+    poke_i64(a_m, 525056, v)
+    poke_i64(a_m, 525064, sz)
+    poke_i64(a_m, 525072, peek_i64(a_m, 524544) - 4)
+    return 0
+
+a_ldmem rt addr sz sgn:
+    v: 0
+    if sz = 0 -> v: a_mem8(addr)
+    if sz = 1 -> v: a_mem16(addr)
+    if sz = 2 -> v: a_mem32(addr)
+    if sz = 3 -> v: peek_i64(a_m, addr)
+    if sgn = 1 -> v: a_sgnext(v, sz)
+    if sgn = 0 -> a_ldwr(rt, v, sz)
+    if sgn = 1 -> a_setx(rt, v)
+    return 0
+
+a_ldwr rt v sz:
+    if sz = 2 -> a_setw(rt, v)
+    if sz != 2 -> a_setx(rt, v)
+    return 0
+
+a_sgnext v sz:
+    if sz = 0 -> return a_sx8(v)
+    if sz = 1 -> return a_sx16(v)
+    if sz = 2 -> return a_sx32(v)
+    return v
+
+a_do_ldst w:
+    pr: band(bshr(w, 26), 3)
+    pb: band(bshr(w, 28), 1)
+    isp: band(bshr(pr, 1), 1 - pb)
+    if isp = 1 -> return a_do_ldp(w)
+    sz: band(bshr(w, 30), 3)
+    kind: band(bshr(w, 24), 3)
+    op: band(bshr(w, 22), 3)
+    rt: band(w, 31)
+    rn: band(bshr(w, 5), 31)
+    wb: band(bshr(w, 10), 3)
+    if kind = 0 -> return a_ldim9(w, rn, rt, sz, op, wb)
+    if kind = 1 -> return a_ldim12(w, rn, rt, sz, op)
+    if kind = 2 -> return a_ldreg(w, rn, rt, sz, op)
+    return a_do_ldp(w)
+
+a_ldim9 w rn rt sz op wb:
+    off: a_sx9(band(bshr(w, 12), 511))
+    a_doldst(w, rn, rt, off, sz, op, wb)
+    return 1
+
+a_ldim12 w rn rt sz op:
+    m: bshl(1, sz)
+    off: band(bshr(w, 10), 4095) * m
+    a_doldst(w, rn, rt, off, sz, op, 0)
+    return 1
+
+a_ldreg w rn rt sz op:
+    rm: band(bshr(w, 16), 31)
+    opt: band(bshr(w, 13), 7)
+    sfl: band(bshr(w, 12), 1)
+    base: a_x(rm)
+    off: base
+    if opt = 1 -> off: band(base, 65535)
+    if opt = 2 -> off: band(base, 4294967295)
+    if opt = 3 -> off: a_sx32(base)
+    if opt > 3 -> a_badpc(peek_i64(a_m, 524544) - 4, 2)
+    if peek_i64(a_m, 524576) != 0 -> return 0
+    if sfl = 1 -> a_badpc(peek_i64(a_m, 524544) - 4, 2)
+    if peek_i64(a_m, 524576) != 0 -> return 0
+    szs: bshl(1, sz)
+    u64_mullo(off, szs)
+    off: ar
+    a_doldst(w, rn, rt, off, sz, op, 0)
+    return 1
+    wb: band(bshr(w, 10), 3)
+    off: a_sx9(band(bshr(w, 12), 511))
+    wbb: 0
+    if wb = 1 -> wbb: 1
+    if wb = 3 -> wbb: 3
+    a_doldst(w, rn, rt, off, sz, op, wbb)
+    return 1
+
+a_do_ldp w:
+    op64: band(bshr(w, 31), 1)
+    ld: band(bshr(w, 22), 1)
+    mode: band(bshr(w, 23), 3)
+    rt: band(w, 31)
+    rn: band(bshr(w, 5), 31)
+    rt2: band(bshr(w, 10), 31)
+    imm7: band(bshr(w, 15), 127)
+    if imm7 >= 64 -> imm7: imm7 - 128
+    m: 4
+    if op64 = 1 -> m: 8
+    imm7: imm7 * m
+    addr: a_x(rn)
+    if rn = 31 -> addr: a_sp()
+    fl: u64_lt(addr, A64_LO)
+    if fl = 1 -> poke_i64(a_m, 524576, 6)
+    fh: u64_lt(addr, A64_MEM - 256)
+    if fh = 0 -> poke_i64(a_m, 524576, 6)
+    fl: u64_lt(addr, A64_LO)
+    if fl = 1 -> return 1
+    fh: u64_lt(addr, A64_MEM - 256)
+    if fh = 0 -> return 1
+    if mode = 3 -> a_preup(rn, addr, imm7)
+    if mode = 3 -> u64_add(addr, imm7)
+    if mode = 3 -> addr: ar
+    if ld = 1 -> a_ldpair(rt, rt2, addr, op64)
+    if ld = 0 -> a_stpair(rt, rt2, addr, op64)
+    if mode = 1 -> a_postup(rn, addr, imm7)
+    return 1
+
+a_ldpair rt rt2 addr op64:
+    if op64 = 1 -> a_setx(rt, peek_i64(a_m, addr))
+    if op64 = 0 -> a_setw(rt, a_mem32(addr))
+    d: 4
+    if op64 = 1 -> d: 8
+    a2: addr + d
+    if op64 = 1 -> a_setx(rt2, peek_i64(a_m, a2))
+    if op64 = 0 -> a_setw(rt2, a_mem32(a2))
+    return 0
+
+a_stpair rt rt2 addr op64:
+    v: a_w(rt)
+    v2: a_w(rt2)
+    if op64 = 1 -> a_w64m(addr, v)
+    if op64 = 0 -> a_w32m(addr, v)
+    d: 4
+    if op64 = 1 -> d: 8
+    a2: addr + d
+    if op64 = 1 -> a_w64m(a2, v2)
+    if op64 = 0 -> a_w32m(a2, v2)
+    return 0
+
+a_do_log w:
+    sf: band(bshr(w, 31), 1)
+    opc: band(bshr(w, 29), 3)
+    rm: band(bshr(w, 16), 31)
+    tp: band(bshr(w, 22), 3)
+    amt: band(bshr(w, 10), 63)
+    rn: band(bshr(w, 5), 31)
+    rd: band(w, 31)
+    nfb: band(bshr(w, 21), 1)
+    va: a_x(rn)
+    vb: a_x(rm)
+    if tp = 1 -> vb: bshr(vb, amt)
+    if tp = 2 -> vb: a_asrvv(vb, amt)
+    if tp = 3
+        u64_ror(vb, amt)
+        vb: ar
+    if nfb = 1 -> vb: bxor(vb, 0 - 1)
+    if sf = 0 -> return a_log32(va, vb, opc, rd)
+    r: 0
+    if opc = 0 -> r: band(va, vb)
+    if opc = 1 -> r: bor(va, vb)
+    if opc = 2 -> r: bxor(va, vb)
+    if opc = 3 -> return a_logset(va, vb, rd, 64)
+    if rd = 31 -> return 1
+    a_setx(rd, r)
+    return 1
+
+a_log32 va vb opc rd:
+    va: band(va, 4294967295)
+    vb: band(vb, 4294967295)
+    r: 0
+    if opc = 0 -> r: band(va, vb)
+    if opc = 1 -> r: bor(va, vb)
+    if opc = 2 -> r: bxor(va, vb)
+    if opc = 3 -> return a_logset(va, vb, rd, 32)
+    if rd = 31 -> return 1
+    a_setw(rd, r)
+    return 1
+
+a_logset va vb rd wsz:
+    m: bshl(1, wsz) - 1
+    r: band(band(va, vb), m)
+    n: band(bshr(r, wsz - 1), 1)
+    z: 1
+    if r != 0 -> z: 0
+    poke_i64(a_m, 524608, n)
+    poke_i64(a_m, 524616, z)
+    poke_i64(a_m, 524624, 0)
+    poke_i64(a_m, 524632, 0)
+    if rd = 31 -> return 1
+    if wsz = 32 -> a_setw(rd, r)
+    if wsz = 64 -> a_setx(rd, r)
+    return 1
+
+a_do_addsub w:
+    poke_i64(a_m, 524992, w)
+    sf: band(bshr(w, 31), 1)
+    op: band(bshr(w, 30), 1)
+    sb: band(bshr(w, 29), 1)
+    rd: band(w, 31)
+    rn: band(bshr(w, 5), 31)
+    va: a_x(rn)
+    immf: band(bshr(w, 28), 1)
+    if immf = 1 -> return a_addi(w, sf, op, sb, rd, rn)
+    sb2: band(bshr(w, 21), 1)
+    if sb2 = 0 -> return a_addsf(w, sf, op, sb, rd, rn)
+    return a_addex(w, sf, op, sb, rd, rn)
+
+a_addi w sf op sb rd rn:
+    va: a_x(rn)
+    if rn = 31 -> va: a_sp()
+    if sf = 0 -> va: band(va, 4294967295)
+    imm: band(bshr(w, 10), 4095)
+    shf: band(bshr(w, 22), 3)
+    if shf = 1 -> imm: imm * 4096
+    bp: peek_i64(a_m, 524544) - 4
+    if shf > 1 -> a_badpc(bp, 2)
+    if shf > 1 -> return 0
+    if op = 1 -> imm: u64_neg(imm)
+    if sb = 1 -> return a_addfl(va, imm, op, sf, rd)
+    return a_addnf(va, imm, sf, rd)
+
+a_addnf va imm sf rd:
+    if sf = 0 -> return a_addnf32(va, imm, rd)
+    u64_add(va, imm)
+    a_setx(rd, ar)
+    return 1
+
+a_addnf32 va imm rd:
+    r: band(va + imm, 4294967295)
+    if rd = 31 -> a_setsp(r)
+    if rd != 31 -> a_setw(rd, r)
+    return 1
+
+a_addfl va imm op sf rd:
+    if sf = 0 -> return a_addfl32(va, imm, op, rd)
+    r: u64_add(va, imm)
+    a_setadds(va, imm, ar, 64)
+    a_setx(rd, ar)
+    return 1
+
+a_addfl32 va imm op rd:
+    r: band(va + imm, 4294967295)
+    a_setadds(va, band(imm, 4294967295), r, 32)
+    a_setw(rd, r)
+    return 1
+
+a_addsf w sf op sb rd rn:
+    va: a_x(rn)
+    tp: band(bshr(w, 22), 3)
+    amt: band(bshr(w, 10), 63)
+    rm: band(bshr(w, 16), 31)
+    vb: a_x(rm)
+    if tp = 1 -> vb: bshr(vb, amt)
+    if tp = 2 -> vb: a_asrvv(vb, amt)
+    bp: peek_i64(a_m, 524544) - 4
+    if tp = 3 -> a_badpc(bp, 2)
+    if tp = 3 -> return 0
+    if sf = 0 -> return a_addsf32(va, vb, op, sb, rd)
+    r: 0
+    if op = 0 -> r: band(va + vb, 0 - 1)
+    if op = 1 -> r: u64_sub(va, vb)
+    if sb = 0 -> return a_addn64(r, rd)
+    if op = 0 -> a_setadds(va, vb, r, 64)
+    if op = 1 -> a_setsubs(va, vb, r, 64)
+    a_setx(rd, r)
+    return 1
+
+a_addsf32 va vb op sb rd:
+    va: band(va, 4294967295)
+    vb: band(vb, 4294967295)
+    r: 0
+    if op = 0 -> r: band(va + vb, 4294967295)
+    nb: band(u64_neg(vb), 4294967295)
+    if op = 1 -> r: band(va + nb, 4294967295)
+    if sb = 0 -> return a_addn32(r, rd)
+    if op = 0 -> a_setadds(va, vb, r, 32)
+    if op = 1 -> a_setsubs(va, nb, r, 32)
+    a_setw(rd, r)
+    return 1
+
+a_addn64 r rd:
+    if rd = 31 -> return 1
+    a_setx(rd, r)
+    return 1
+
+a_addn32 r rd:
+    if rd = 31 -> return 1
+    a_setw(rd, r)
+    return 1
+
+a_addex w sf op sb rd rn:
+    va: a_x(rn)
+    opt: band(bshr(w, 13), 7)
+    amt: band(bshr(w, 10), 7)
+    rm: band(bshr(w, 16), 31)
+    vb: a_x(rm)
+    if opt = 0 -> vb: band(vb, 255)
+    if opt = 1 -> vb: band(vb, 65535)
+    if opt = 2 -> vb: band(vb, 4294967295)
+    if opt = 4 -> vb: a_sx8(vb)
+    if opt = 5 -> vb: a_sx16(vb)
+    if opt = 6 -> vb: a_sx32(vb)
+    sh: bshl(1, amt) - 1
+    if opt < 4 -> vb: band(vb, sh)
+    hi: bshl(0 - 1, amt) * 2
+    if opt >= 4 -> return a_addexs(va, vb, hi, op, sb, rd, sf)
+    if sf = 0 -> return a_addsf32(va, vb, op, sb, rd)
+    r: 0
+    if op = 0 -> r: band(va + vb, 0 - 1)
+    if op = 1 -> r: u64_sub(va, vb)
+    if sb = 0 -> return a_addn64(r, rd)
+    if op = 0 -> a_setadds(va, vb, r, 64)
+    if op = 1 -> a_setsubs(va, vb, r, 64)
+    a_setx(rd, r)
+    return 1
+
+a_addexs va vb hi op sb rd sf:
+    if vb < 0 -> vb: bor(vb, hi)
+    if sf = 0 -> return a_addsf32(va, vb, op, sb, rd)
+    r: 0
+    if op = 0 -> r: band(va + vb, 0 - 1)
+    if op = 1 -> r: u64_sub(va, vb)
+    if sb = 0 -> return a_addn64(r, rd)
+    if op = 0 -> a_setadds(va, vb, r, 64)
+    if op = 1 -> a_setsubs(va, vb, r, 64)
+    a_setx(rd, r)
+    return 1
+
+a_do_mul w:
+    poke_i64(a_m, 525080, w)
+    sf: band(bshr(w, 31), 1)
+    o31: band(bshr(w, 15), 1)
+    rm: band(bshr(w, 16), 31)
+    ra: band(bshr(w, 10), 31)
+    rn: band(bshr(w, 5), 31)
+    rd: band(w, 31)
+    vb: a_x(rm)
+    va: a_x(rn)
+    vc: a_x(ra)
+    if sf = 0 -> return a_mul32(va, vb, vc, o31, rd)
+    u64_mullo(va, vb)
+    if o31 = 0 -> return a_madd64(vc, rd)
+    u64_sub(vc, ar)
+    a_setx(rd, ar)
+    return 1
+
+a_mul32 va vb vc o31 rd:
+    va: band(va, 4294967295)
+    vb: band(vb, 4294967295)
+    vc: band(vc, 4294967295)
+    pr: band(va * vb, 4294967295)
+    r: band(pr + vc, 4294967295)
+    if o31 = 1 -> r: band(pr + (0 - vc), 4294967295)
+    a_setw(rd, r)
+    return 1
+
+a_madd64 vc rd:
+    u64_add(ar, vc)
+    a_setx(rd, ar)
+    return 0
+
+a_do_dpm w:
+    sf: band(bshr(w, 31), 1)
+    rd: band(w, 31)
+    rn: band(bshr(w, 5), 31)
+    rm: band(bshr(w, 16), 31)
+    var: band(bshr(w, 10), 63)
+    va: a_x(rn)
+    vb: a_x(rm)
+    if sf = 0
+        va: band(va, 4294967295)
+        vb: band(vb, 4294967295)
+    if var = 2 -> a_dodiv(rd, va, vb, sf, 0)
+    if var = 3 -> a_dodiv(rd, va, vb, sf, 1)
+    if var = 8 -> a_doshift(rd, va, vb, sf, 0)
+    if var = 9 -> a_doshift(rd, va, vb, sf, 1)
+    if var = 10 -> a_doshift(rd, va, vb, sf, 2)
+    return 1
+
+a_doshift rd va vb sf kind:
+    sh: vb
+    if sf = 0 -> sh: band(sh, 31)
+    if sf = 1 -> sh: band(sh, 63)
+    if rd = 31 -> return 0
+    if kind = 1 -> return a_shr_v(va, sh, sf)
+    if kind = 2 -> return a_asr_v(va, sh, sf)
+    i: 0
+    r: va
+    as long as i < sh
+        u64_add(r, r)
+        r: ar
+        if sf = 0 -> r: band(r, 4294967295)
+        i: i + 1
+    at_r: r
+    return 0
+
+a_shr_v va sh sf:
+    if sf = 0 -> at_r: band(bshr(va, sh), 4294967295)
+    if sf = 1 -> at_r: bshr(va, sh)
+    return 0
+
+a_asr_v va sh sf:
+    sgn: band(bshr(va, 63), 1)
+    r: bshr(va, sh)
+    if sgn = 0 -> return a_asr_vz(r, sf)
+    hi: bshl(bshl(1, sh) - 1, 64 - sh)
+    u64_add(r, hi)
+    r: ar
+    if sf = 0 -> at_r: band(r, 4294967295)
+    if sf = 1 -> at_r: r
+    return 0
+
+a_asr_vz r sf:
+    if sf = 0 -> at_r: band(r, 4294967295)
+    if sf = 1 -> at_r: r
+    return 0
+
+a_dodiv rd va vb sf signed:
+    if vb = 0 -> return a_divz(rd, sf)
+    if signed = 0 -> return a_divu(va, vb, rd, sf)
+    sa: a_sx64(va)
+    sb: a_sx64(vb)
+    if sf = 0
+        sa: a_sx32(va)
+        sb: a_sx32(vb)
+    neg: 0
+    if sa < 0 -> neg: 1
+    if sb < 0 -> neg: 1 - neg
+    ua: sa
+    ub: sb
+    if ua < 0 -> ua: 0 - ua
+    if ub < 0 -> ub: 0 - ub
+    if ua = 9223372036854775808 -> ua: 9223372036854775807
+    q: a_udivq(ua, ub)
+    if neg = 1 -> q: 0 - q
+    if sf = 0 -> q: band(q, 4294967295)
+    if sf = 0 -> a_setw(rd, q)
+    if sf = 1 -> a_setx(rd, q)
+    return 0
+
+a_udivq va vb:
+    q: 0
+    rem: 0
+    i: 0
+    as long as i < 64
+        u64_add(rem, rem)
+        rem: ar
+        bit: band(bshr(va, 63 - i), 1)
+        u64_add(rem, bit)
+        rem: ar
+        f: u64_lt(rem, vb)
+        f: 1 - f
+        u64_sub(rem, vb)
+        d: ar
+        if f = 1 -> rem: d
+        w: bshl(1, 63 - i)
+        u64_add(q, w * f)
+        q: ar
+        i: i + 1
+    return q
+
+a_do_movzw w:
+    rd: band(w, 31)
+    hw: band(bshr(w, 21), 3)
+    imm: band(bshr(w, 5), 65535)
+    opc: band(bshr(w, 29), 3)
+    sh: hw * 16
+    sf: band(bshr(w, 31), 1)
+    if opc = 2 -> return a_movz(rd, imm, sh, sf)
+    if opc = 0 -> return a_movn(rd, imm, sh, sf)
+    cur: a_x(rd)
+    fld: bshl(imm, sh)
+    msk: bshl(65535, sh)
+    r: band(cur, 0 - 1 - msk) + fld
+    if sf = 0 -> r: band(r, 4294967295)
+    if sf = 0 -> a_setw(rd, r)
+    if sf = 1 -> a_setx(rd, r)
+    return 1
+
+a_movz rd imm sh sf:
+    v: bshl(imm, sh)
+    if sf = 0 -> a_setw(rd, v)
+    if sf = 1 -> a_setx(rd, v)
+    return 1
+
+a_movn rd imm sh sf:
+    n: bshl(imm, sh)
+    n: bxor(n, 0 - 1)
+    if sf = 0 -> a_setw(rd, band(n, 4294967295))
+    if sf = 1 -> a_setx(rd, n)
+    return 1
+
+a_do_adr w:
+    rd: band(w, 31)
+    pc: peek_i64(a_m, 524544) - 4
+    adrp: band(bshr(w, 31), 1)
+    immlo: band(bshr(w, 29), 3)
+    immhi: band(bshr(w, 5), 524287)
+    imm: immhi * 4 + immlo
+    imm: a_sx21(imm)
+    if adrp = 1
+        pg: band(pc, 0 - 4096)
+        u64_add(pg, imm * 4096)
+        a_setx(rd, ar)
+        return 1
+    u64_add(pc, imm)
+    a_setx(rd, ar)
+    return 1
+
+a_do_bfm w:
+    sf: band(bshr(w, 31), 1)
+    opc: band(bshr(w, 29), 3)
+    immr: band(bshr(w, 16), 63)
+    imms: band(bshr(w, 10), 63)
+    rn: band(bshr(w, 5), 31)
+    rd: band(w, 31)
+    val: a_x(rn)
+    wsz: 64
+    if sf = 0 -> wsz: 32
+    if sf = 0 -> val: band(val, 4294967295)
+    if opc = 1 -> return a_bfm_ins(val, immr, imms, rd, sf)
+    if opc = 0 -> return a_bfm_ext(val, immr, imms, rd, wsz, sf, 0)
+    return a_bfm_ext(val, immr, imms, rd, wsz, sf, 1)
+
+a_bfm_ins val immr imms rd sf:
+    mask: bshl(1, imms + 1) - 1
+    u64_ror(val, immr)
+    sr: band(ar, mask)
+    dst: a_x(rd)
+    r: band(dst, 0 - 1 - mask) + sr
+    if sf = 0 -> r: band(r, 4294967295)
+    if sf = 0 -> a_setw(rd, r)
+    if sf = 1 -> a_setx(rd, r)
+    return 1
+
+a_bfm_ext val immr imms rd wsz sf sgn:
+    r: 0
+    al: a_bfalias(immr, imms, wsz)
+    if al = 0 -> r: bshr(val, immr)
+    if al = 1 -> r: bshl(val, wsz - 1 - imms)
+    if al = 2 -> r: a_bfgen(val, immr, imms)
+    if sgn = 1 -> r: a_bfsign(r, wsz, imms)
+    if sf = 0 -> r: band(r, 4294967295)
+    if sf = 0 -> a_setw(rd, r)
+    if sf = 1 -> a_setx(rd, r)
+    return 1
+
+a_bfalias immr imms wsz:
+    if imms = wsz - 1 -> return 0
+    if immr = imms + 1 -> return 1
+    return 2
+
+a_bfgen val immr imms:
+    u64_ror(val, immr)
+    r: band(ar, bshl(1, imms + 1) - 1)
+    return r
+
+a_bfsign r wsz imms:
+    sb: band(bshr(r, imms), 1)
+    if sb = 0 -> return r
+    hm: bshl(bshl(1, wsz - 1 - imms) - 1, imms + 1)
+    u64_add(r, hm)
+    return ar
+
+a_sysc:
+    n: a_x(8)
+    poke_i64(a_m, 525032, peek_i64(a_m, 525032) + 1)
+    poke_i64(a_m, 525040, n)
+    a0: a_x(0)
+    a1: a_x(1)
+    a2: a_x(2)
+    if n = 64 -> return a_sc_wr(a0, a1, a2)
+    if n = 66 -> return a_sc_wrv(a0, a1, a2)
+    if n = 93 -> return a_xit(a0)
+    if n = 94 -> return a_xit(a0)
+    if n = 63
+        a_setx(0, 0)
+        return 1
+    if n = 57
+        a_setx(0, 0)
+        return 1
+    if n = 56
+        a_setx(0, 0 - 2)
+        return 1
+    if n = 62
+        a_setx(0, 0)
+        return 1
+    if n = 80 -> return a_sc_fstat(a1)
+    if n = 214
+        brk: peek_i64(a_m, 524664)
+        if a0 = 0 -> a_setx(0, brk)
+        if a0 != 0
+            poke_i64(a_m, 524664, a0)
+            a_setx(0, a0)
+        return 1
+    if n = 222 -> return a_sc_mmap(a1)
+    if n = 215
+        a_setx(0, 0)
+        return 1
+    if n = 226
+        a_setx(0, 0)
+        return 1
+    if n = 29
+        a_setx(0, 0)
+        return 1
+    if n = 96
+        a_setx(0, 0)
+        return 1
+    if n = 98
+        a_setx(0, 0)
+        return 1
+    if n = 113
+        a_w64m(a1, 0)
+        a_w64m(a1 + 8, 0)
+        a_setx(0, 0)
+        return 1
+    if n = 117
+        a_setx(0, 0)
+        return 1
+    if n = 160 -> return a_sc_zero(a0, 390)
+    bp: peek_i64(a_m, 524544) - 4
+    a_badpc(bp, 2)
+    return 0
+
+a_sc_wr fd gbuf glen:
+    nw: 0
+    if fd = 1 -> nw: a_cap(524552, 524568, gbuf, glen)
+    if fd = 2 -> nw: a_cap(524592, 524656, gbuf, glen)
+    a_setx(0, nw)
+    return 1
+
+a_cap bptr blen gbuf glen:
+    ob: peek_i64(a_m, bptr)
+    used: peek_i64(a_m, blen)
+    i: 0
+    as long as i < glen
+        if used < A64_OUT - 2 -> a_capb(ob, blen, gbuf + i)
+        i: i + 1
+    ob: peek_i64(a_m, bptr)
+    used: peek_i64(a_m, blen)
+    poke_byte(ob, used, 0)
+    return glen
+
+a_capb ob blen src:
+    used: peek_i64(a_m, blen)
+    b: a_mem8(src)
+    poke_byte(ob, used, b)
+    used: used + 1
+    poke_i64(a_m, blen, used)
+    return 0
+
+a_sc_wrv fd iov iovn:
+    nw: 0
+    i: 0
+    as long as i < iovn
+        io: iov + i * 16
+        bp: peek_i64(a_m, io)
+        bl: peek_i64(a_m, io + 8)
+        if fd = 1 -> a_cap(524552, 524568, bp, bl)
+        nw: nw + bl
+        i: i + 1
+    a_setx(0, nw)
+    return 1
+
+a_sc_fstat a1:
+    i: 0
+    as long as i < 144
+        a_w8m(a1 + i, 0)
+        i: i + 1
+    a_setx(0, 0)
+    return 1
+
+a_sc_zero a1 cnt:
+    i: 0
+    as long as i < cnt
+        a_w8m(a1 + i, 0)
+        i: i + 1
+    a_setx(0, 0)
+    return 1
+
+a_sc_mmap a1:
+    mp: peek_i64(a_m, 524672)
+    ln: a1
+    if ln < 4096 -> ln: 4096
+    if ln % 4096 != 0 -> ln: ln + 4096 - ln % 4096
+    poke_i64(a_m, 524672, mp + ln)
+    a_setx(0, mp)
+    return 1
+
+a_xit c:
+    poke_i64(a_m, 524560, c)
+    poke_i64(a_m, 524576, 1)
+    return 0
+
+
+a_divz rd sf:
+    if sf = 0 -> a_setw(rd, 0)
+    if sf = 1 -> a_setx(rd, 0)
+    return 0
+
+a_divu va vb rd sf:
+    q: a_udivq(va, vb)
+    if sf = 0 -> q: band(q, 4294967295)
+    if sf = 0 -> a_setw(rd, q)
+    if sf = 1 -> a_setx(rd, q)
+    return 0
+
+a_asrvv v amt:
+    sgn: band(bshr(v, 63), 1)
+    r: bshr(v, amt)
+    if sgn = 0 -> return r
+    hi: bshl(bshl(1, amt) - 1, 64 - amt)
+    u64_add(r, hi)
+    return ar
+
+a_ldseg d fszn o bias:
+    poff: peek_i64(d, o + 8)
+    pva: peek_i64(d, o + 16)
+    pfsz: peek_i64(d, o + 32)
+    pmsz: peek_i64(d, o + 40)
+    endv: poff + pfsz
+    if u64_lt(fszn, endv) = 1 -> return 0
+    j: 0
+    as long as j < pmsz
+        sv: 0
+        if j < pfsz -> sv: peek_byte(d, poff + j)
+        poke_byte(a_m, pva + bias + j, sv)
+        j: j + 1
+    return 1
+
+arm64_outbyte a i:
+    ob: peek_i64(a_m, 524552)
+    return peek_byte(ob, i)
+
+arm64_am a:
+    return a_m

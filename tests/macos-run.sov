@@ -1,0 +1,17 @@
+include inc/inc02.sov 581 10
+    p: arg_at(1)
+    if str_len(p) = 0 -> print 'Usage: run <app>'
+        print 'Runs a Mac program here, on an emulated processor.'
+        sys_exit(1)
+    include inc/inc04.sov 313 4
+    if peek_i64(m, 240) != 2 -> print 'that is not a 64-bit Mach-O program'
+        sys_exit(2)
+    include inc/inc03.sov 1326 5
+        say_err('REJECTED: the program used a Linux syscall number.')
+        write_err('  number ')
+        say_err(num_text(x86_bad(m)))
+        say_err('macOS numbers its calls differently and marks them with')
+        say_err('the class bit 0x2000000. A real Mac refuses this.')
+        sys_exit(3)
+    include inc/inc02.sov 591 10
+    sys_exit(x86_code(m))

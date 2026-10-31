@@ -1,0 +1,459 @@
+# unsafe-module
+use kio
+KBLK_STRIDE: 160
+KBLK_READ: 1
+KBLK_WRITE: 2
+KBLK_FLUSH: 3
+KBLK_DISCARD: 4
+KBLK_WRITE_ZEROES: 5
+KBLK_REQ_FUA: 1
+KBLK_REQ_BARRIER: 2
+KBLK_DEVICE_STRIDE: 96
+KBLK_DEVICE_FREE: 0
+KBLK_DEVICE_OFFLINE: 1
+KBLK_DEVICE_ONLINE: 2
+KBLK_DEVICE_REMOVING: 3
+KBLK_DEVICE_READ_ONLY: 1
+KBLK_DEVICE_REMOVABLE: 2
+KBLK_DEVICE_FLUSH: 4
+KBLK_DEVICE_DISCARD: 8
+KBLK_DEVICE_WRITE_ZEROES: 16
+KBLK_DEVICE_FUA: 32
+KBLK_MAX_DEVICES: 256
+KBLK_MAX_I64: 9223372036854775807
+kblk_init request owner:
+    if request is 0 -> return 0
+    if owner < 1 -> return 0
+    if kio_req_init(request) is not 1 -> return 0
+    poke_raw64(request + 96, 0, owner)
+    poke_raw64(request + 104, 0, 0)
+    poke_raw64(request + 112, 0, 0)
+    poke_raw64(request + 120, 0, 0)
+    poke_raw64(request + 128, 0, 0)
+    poke_raw64(request + 136, 0, 0)
+    poke_raw64(request + 144, 0, 0)
+    poke_raw64(request + 152, 0, 0)
+    return 1
+kblk_owner request:
+    if request is 0 -> return 0
+    return peek_raw64(request + 96, 0)
+kblk_lba request:
+    if request is 0 -> return 0
+    return peek_raw64(request + 104, 0)
+kblk_blocks request:
+    if request is 0 -> return 0
+    return peek_raw64(request + 112, 0)
+kblk_block_size request:
+    if request is 0 -> return 0
+    return peek_raw64(request + 120, 0)
+kblk_bytes request:
+    if request is 0 -> return 0
+    return peek_raw64(request + 128, 0)
+kblk_prepare request operation lba blocks block_size buffer buffer_bytes:
+    if request is 0 -> return 0
+    if operation is not KBLK_READ
+        if operation is not KBLK_WRITE
+            if operation is not KBLK_FLUSH
+                if operation is not KBLK_DISCARD
+                    if operation is not KBLK_WRITE_ZEROES -> return 0
+    if blocks < 1 -> return 0
+    if blocks > 65535 -> return 0
+    if block_size < 512 -> return 0
+    if block_size > 65536 -> return 0
+    if band(block_size, block_size - 1) is not 0 -> return 0
+    if lba < 0 -> return 0
+    if lba > 9223372036854775807 - (blocks - 1) -> return 0
+    if blocks > 9223372036854775807 / block_size -> return 0
+    bytes: blocks * block_size
+    if operation is KBLK_FLUSH -> bytes: 0
+    if operation is KBLK_DISCARD -> bytes: 0
+    if operation is KBLK_WRITE_ZEROES -> bytes: 0
+    if bytes > buffer_bytes -> return 0
+    if bytes > 0
+        if buffer is 0 -> return 0
+    owner: kblk_owner(request)
+    if kio_req_prepare(request, owner, operation, buffer, bytes, 0) is not 1 -> return 0
+    poke_raw64(request + 104, 0, lba)
+    poke_raw64(request + 112, 0, blocks)
+    poke_raw64(request + 120, 0, block_size)
+    poke_raw64(request + 128, 0, bytes)
+    return 1
+kblk_set_deadline request deadline:
+    if request is 0 -> return 0
+    if kio_req_state(request) is not KIO_REQ_QUEUED -> return 0
+    if deadline < 0 -> return 0
+    poke_raw64(request + 56, 0, deadline)
+    return 1
+kblk_flags request:
+    if request is 0 -> return 0
+    return peek_raw64(request + 152, 0)
+kblk_set_flags request flags:
+    if request is 0 -> return 0
+    if kio_req_state(request) is not KIO_REQ_QUEUED -> return 0
+    if flags < 0 -> return 0
+    if flags > KBLK_REQ_FUA + KBLK_REQ_BARRIER -> return 0
+    operation: peek_raw64(request + 16, 0)
+    if band(flags, KBLK_REQ_FUA) is not 0
+        if operation is not KBLK_WRITE -> return 0
+    if band(flags, KBLK_REQ_BARRIER) is not 0
+        if operation is not KBLK_WRITE
+            if operation is not KBLK_FLUSH -> return 0
+    poke_raw64(request + 152, 0, flags)
+    return 1
+kblk_activate request:
+    if request is 0 -> return 0
+    return kio_req_activate(request, kblk_owner(request))
+kblk_complete request status blocks_done:
+    if request is 0 -> return 0
+    if blocks_done < 0 -> return 0
+    if blocks_done > kblk_blocks(request) -> return 0
+    transferred: blocks_done * kblk_block_size(request)
+    if status is not 0 -> transferred: 0
+    return kio_req_complete(request, kblk_owner(request), status, transferred)
+kblk_cancel request:
+    if request is 0 -> return 0
+    return kio_req_cancel(request, kblk_owner(request))
+kblk_timeout request now:
+    if request is 0 -> return 0
+    return kio_req_timeout(request, kblk_owner(request), now)
+kblk_cancel_ack request blocks_done:
+    if request is 0 -> return 0
+    if blocks_done < 0 -> return 0
+    if blocks_done > kblk_blocks(request) -> return 0
+    transferred: blocks_done * kblk_block_size(request)
+    return kio_req_cancel_ack(request, kblk_owner(request), transferred)
+kblk_timeout_ack request blocks_done:
+    if request is 0 -> return 0
+    if blocks_done < 0 -> return 0
+    if blocks_done > kblk_blocks(request) -> return 0
+    transferred: blocks_done * kblk_block_size(request)
+    return kio_req_timeout_ack(request, kblk_owner(request), transferred)
+_kblk_device_ptr registry capacity device_id:
+    if registry is 0 -> return 0
+    if capacity < 1 -> return 0
+    if capacity > KBLK_MAX_DEVICES -> return 0
+    if device_id < 1 -> return 0
+    if device_id > capacity -> return 0
+    p: registry + (device_id - 1) * KBLK_DEVICE_STRIDE
+    if peek_raw64(p, 0) is KBLK_DEVICE_FREE -> return 0
+    return p
+kblk_registry_init registry capacity:
+    if registry is 0 -> return 0
+    if capacity < 1 -> return 0
+    if capacity > KBLK_MAX_DEVICES -> return 0
+    i: 0
+    as long as i < capacity * KBLK_DEVICE_STRIDE
+        poke_raw64(registry + i, 0, 0)
+        i: i + 8
+    return 1
+kblk_device_register registry capacity backend block_size max_blocks max_transfer_blocks flags:
+    if registry is 0 -> return 0
+    if capacity < 1 -> return 0
+    if capacity > KBLK_MAX_DEVICES -> return 0
+    if backend < 1 -> return 0
+    if block_size < 512 -> return 0
+    if block_size > 65536 -> return 0
+    if band(block_size, block_size - 1) is not 0 -> return 0
+    if max_blocks < 1 -> return 0
+    if max_blocks > KBLK_MAX_I64 / block_size -> return 0
+    if max_transfer_blocks < 1 -> return 0
+    if max_transfer_blocks > 65535 -> return 0
+    if max_transfer_blocks > max_blocks -> return 0
+    if flags < 0 -> return 0
+    if flags > 63 -> return 0
+    slot: 0
+    as long as slot < capacity
+        p: registry + slot * KBLK_DEVICE_STRIDE
+        if peek_raw64(p, 0) is KBLK_DEVICE_FREE
+            generation: peek_raw64(p + 8, 0) + 1
+            if generation < 1 -> generation: 1
+            poke_raw64(p + 16, 0, backend)
+            poke_raw64(p + 24, 0, backend)
+            poke_raw64(p + 32, 0, block_size)
+            poke_raw64(p + 40, 0, max_blocks)
+            poke_raw64(p + 48, 0, max_transfer_blocks)
+            poke_raw64(p + 56, 0, flags)
+            poke_raw64(p + 64, 0, 0)
+            poke_raw64(p + 72, 0, 0)
+            poke_raw64(p + 80, 0, 0)
+            poke_raw64(p + 88, 0, 0)
+            poke_raw64(p + 8, 0, generation)
+            poke_raw64(p, 0, KBLK_DEVICE_OFFLINE)
+            return slot + 1
+        slot: slot + 1
+kblk_device_state registry capacity device_id:
+    p: _kblk_device_ptr(registry, capacity, device_id)
+    if p is 0 -> return KBLK_DEVICE_FREE
+    return peek_raw64(p, 0)
+kblk_device_generation registry capacity device_id:
+    p: _kblk_device_ptr(registry, capacity, device_id)
+    if p is 0 -> return 0
+    return peek_raw64(p + 8, 0)
+kblk_device_backend registry capacity device_id:
+    p: _kblk_device_ptr(registry, capacity, device_id)
+    if p is 0 -> return 0
+    return peek_raw64(p + 16, 0)
+kblk_device_block_size registry capacity device_id:
+    p: _kblk_device_ptr(registry, capacity, device_id)
+    if p is 0 -> return 0
+    return peek_raw64(p + 32, 0)
+kblk_device_blocks registry capacity device_id:
+    p: _kblk_device_ptr(registry, capacity, device_id)
+    if p is 0 -> return 0
+    return peek_raw64(p + 40, 0)
+kblk_device_inflight registry capacity device_id:
+    p: _kblk_device_ptr(registry, capacity, device_id)
+    if p is 0 -> return 0
+    return peek_raw64(p + 64, 0)
+kblk_device_pending registry capacity device_id:
+    p: _kblk_device_ptr(registry, capacity, device_id)
+    if p is 0 -> return 0
+    return peek_raw64(p + 72, 0)
+kblk_device_find_backend registry capacity backend:
+    if registry is 0 -> return 0
+    if capacity < 1 -> return 0
+    if capacity > KBLK_MAX_DEVICES -> return 0
+    slot: 0
+    as long as slot < capacity
+        p: registry + slot * KBLK_DEVICE_STRIDE
+        if peek_raw64(p, 0) is not KBLK_DEVICE_FREE
+            if peek_raw64(p + 16, 0) is backend -> return slot + 1
+        slot: slot + 1
+kblk_device_attach_queue registry capacity device_id owner queue:
+    p: _kblk_device_ptr(registry, capacity, device_id)
+    if p is 0 -> return 0
+    if queue is 0 -> return 0
+    if peek_raw64(p + 24, 0) is not owner -> return 0
+    if peek_raw64(p, 0) is not KBLK_DEVICE_OFFLINE -> return 0
+    if peek_raw64(queue, 0) is 0 -> return 0
+    if peek_raw64(queue + 8, 0) < 1 -> return 0
+    if kio_queue_count(queue) is not 0 -> return 0
+    poke_raw64(p + 80, 0, queue)
+    return 1
+kblk_device_online registry capacity device_id owner:
+    p: _kblk_device_ptr(registry, capacity, device_id)
+    if p is 0 -> return 0
+    if peek_raw64(p + 24, 0) is not owner -> return 0
+    if peek_raw64(p, 0) is not KBLK_DEVICE_OFFLINE -> return 0
+    poke_raw64(p, 0, KBLK_DEVICE_ONLINE)
+    return 1
+_kblk_device_request_valid p generation request:
+    if p is 0 -> return 0
+    if request is 0 -> return 0
+    if peek_raw64(p + 8, 0) is not generation -> return 0
+    if kio_req_state(request) is not KIO_REQ_QUEUED -> return 0
+    backend: peek_raw64(p + 16, 0)
+    if kio_req_owner(request) is not backend -> return 0
+    operation: peek_raw64(request + 16, 0)
+    blocks: kblk_blocks(request)
+    if blocks < 1 -> return 0
+    if blocks > peek_raw64(p + 48, 0) -> return 0
+    lba: kblk_lba(request)
+    if lba < 0 -> return 0
+    max_blocks: peek_raw64(p + 40, 0)
+    if blocks > max_blocks -> return 0
+    if lba > max_blocks - blocks -> return 0
+    if kblk_block_size(request) is not peek_raw64(p + 32, 0) -> return 0
+    device_flags: peek_raw64(p + 56, 0)
+    if band(device_flags, KBLK_DEVICE_READ_ONLY) is not 0
+        if operation is KBLK_WRITE -> return 0
+        if operation is KBLK_DISCARD -> return 0
+        if operation is KBLK_WRITE_ZEROES -> return 0
+    if operation is KBLK_FLUSH
+        if band(device_flags, KBLK_DEVICE_FLUSH) is 0 -> return 0
+    if operation is KBLK_DISCARD
+        if band(device_flags, KBLK_DEVICE_DISCARD) is 0 -> return 0
+    if operation is KBLK_WRITE_ZEROES
+        if band(device_flags, KBLK_DEVICE_WRITE_ZEROES) is 0 -> return 0
+    if band(kblk_flags(request), KBLK_REQ_FUA) is not 0
+        if band(device_flags, KBLK_DEVICE_FUA) is 0 -> return 0
+    return 1
+kblk_device_submit registry capacity device_id generation request:
+    p: _kblk_device_ptr(registry, capacity, device_id)
+    if p is 0 -> return 0
+    if peek_raw64(p, 0) is not KBLK_DEVICE_ONLINE -> return 0
+    if _kblk_device_request_valid(p, generation, request) is not 1 -> return 0
+    poke_raw64(request + 136, 0, device_id)
+    poke_raw64(request + 144, 0, generation)
+    if kblk_activate(request) is not 1
+        poke_raw64(request + 136, 0, 0)
+        poke_raw64(request + 144, 0, 0)
+        return 0
+    poke_raw64(p + 64, 0, peek_raw64(p + 64, 0) + 1)
+    return 1
+kblk_device_enqueue registry capacity device_id generation request:
+    p: _kblk_device_ptr(registry, capacity, device_id)
+    if p is 0 -> return 0
+    if peek_raw64(p, 0) is not KBLK_DEVICE_ONLINE -> return 0
+    if _kblk_device_request_valid(p, generation, request) is not 1 -> return 0
+    queue: peek_raw64(p + 80, 0)
+    if queue is 0 -> return 0
+    poke_raw64(request + 136, 0, device_id)
+    poke_raw64(request + 144, 0, generation)
+    if kio_queue_push(queue, request) is not 1
+        poke_raw64(request + 136, 0, 0)
+        poke_raw64(request + 144, 0, 0)
+        return 0
+    poke_raw64(p + 72, 0, peek_raw64(p + 72, 0) + 1)
+    return 1
+kblk_device_dispatch registry capacity device_id generation:
+    p: _kblk_device_ptr(registry, capacity, device_id)
+    if p is 0 -> return 0
+    state: peek_raw64(p, 0)
+    if state is not KBLK_DEVICE_ONLINE
+        if state is not KBLK_DEVICE_REMOVING -> return 0
+    if peek_raw64(p + 8, 0) is not generation -> return 0
+    if peek_raw64(p + 72, 0) < 1 -> return 0
+    queue: peek_raw64(p + 80, 0)
+    if queue is 0 -> return 0
+    request: kio_queue_pop(queue)
+    if request is 0 -> return 0
+    if peek_raw64(request + 136, 0) is not device_id -> return 0
+    if peek_raw64(request + 144, 0) is not generation -> return 0
+    if kblk_activate(request) is not 1 -> return 0
+    poke_raw64(p + 72, 0, peek_raw64(p + 72, 0) - 1)
+    poke_raw64(p + 64, 0, peek_raw64(p + 64, 0) + 1)
+    return request
+kblk_device_cancel_queued registry capacity device_id generation request:
+    p: _kblk_device_ptr(registry, capacity, device_id)
+    if p is 0 -> return 0
+    if request is 0 -> return 0
+    state: peek_raw64(p, 0)
+    if state is not KBLK_DEVICE_ONLINE
+        if state is not KBLK_DEVICE_REMOVING -> return 0
+    if peek_raw64(p + 8, 0) is not generation -> return 0
+    if peek_raw64(request + 136, 0) is not device_id -> return 0
+    if peek_raw64(request + 144, 0) is not generation -> return 0
+    if kio_req_state(request) is not KIO_REQ_QUEUED -> return 0
+    if peek_raw64(p + 72, 0) < 1 -> return 0
+    queue: peek_raw64(p + 80, 0)
+    if kio_queue_remove(queue, request) is not 1 -> return 0
+    if kblk_cancel(request) is not 1 -> return 0
+    poke_raw64(p + 72, 0, peek_raw64(p + 72, 0) - 1)
+    poke_raw64(request + 136, 0, 0)
+    poke_raw64(request + 144, 0, 0)
+    return 1
+kblk_device_timeout_queued registry capacity device_id generation request now:
+    p: _kblk_device_ptr(registry, capacity, device_id)
+    if p is 0 -> return 0
+    if request is 0 -> return 0
+    state: peek_raw64(p, 0)
+    if state is not KBLK_DEVICE_ONLINE
+        if state is not KBLK_DEVICE_REMOVING -> return 0
+    if peek_raw64(p + 8, 0) is not generation -> return 0
+    if peek_raw64(request + 136, 0) is not device_id -> return 0
+    if peek_raw64(request + 144, 0) is not generation -> return 0
+    if kio_req_state(request) is not KIO_REQ_QUEUED -> return 0
+    if now < 0 -> return 0
+    deadline: peek_raw64(request + 56, 0)
+    if deadline is 0 -> return 0
+    if now < deadline -> return 0
+    if peek_raw64(p + 72, 0) < 1 -> return 0
+    queue: peek_raw64(p + 80, 0)
+    if kio_queue_remove(queue, request) is not 1 -> return 0
+    if kio_req_timeout(request, peek_raw64(p + 16, 0), now) is not 1 -> return 0
+    poke_raw64(p + 72, 0, peek_raw64(p + 72, 0) - 1)
+    poke_raw64(request + 136, 0, 0)
+    poke_raw64(request + 144, 0, 0)
+    return 1
+kblk_device_complete registry capacity device_id generation request status blocks_done:
+    p: _kblk_device_ptr(registry, capacity, device_id)
+    if p is 0 -> return 0
+    if request is 0 -> return 0
+    state: peek_raw64(p, 0)
+    if state is not KBLK_DEVICE_ONLINE
+        if state is not KBLK_DEVICE_REMOVING -> return 0
+    if peek_raw64(p + 8, 0) is not generation -> return 0
+    if peek_raw64(request + 136, 0) is not device_id -> return 0
+    if peek_raw64(request + 144, 0) is not generation -> return 0
+    if peek_raw64(p + 64, 0) < 1 -> return 0
+    if kblk_complete(request, status, blocks_done) is not 1 -> return 0
+    poke_raw64(p + 64, 0, peek_raw64(p + 64, 0) - 1)
+    poke_raw64(request + 136, 0, 0)
+    poke_raw64(request + 144, 0, 0)
+    return 1
+kblk_device_cancel registry capacity device_id generation request:
+    p: _kblk_device_ptr(registry, capacity, device_id)
+    if p is 0 -> return 0
+    if request is 0 -> return 0
+    state: peek_raw64(p, 0)
+    if state is not KBLK_DEVICE_ONLINE
+        if state is not KBLK_DEVICE_REMOVING -> return 0
+    if peek_raw64(p + 8, 0) is not generation -> return 0
+    if peek_raw64(request + 136, 0) is not device_id -> return 0
+    if peek_raw64(request + 144, 0) is not generation -> return 0
+    if peek_raw64(p + 64, 0) < 1 -> return 0
+    return kblk_cancel(request)
+kblk_device_timeout registry capacity device_id generation request now:
+    p: _kblk_device_ptr(registry, capacity, device_id)
+    if p is 0 -> return 0
+    if request is 0 -> return 0
+    state: peek_raw64(p, 0)
+    if state is not KBLK_DEVICE_ONLINE
+        if state is not KBLK_DEVICE_REMOVING -> return 0
+    if peek_raw64(p + 8, 0) is not generation -> return 0
+    if peek_raw64(request + 136, 0) is not device_id -> return 0
+    if peek_raw64(request + 144, 0) is not generation -> return 0
+    if peek_raw64(p + 64, 0) < 1 -> return 0
+    return kblk_timeout(request, now)
+_kblk_device_terminal_ack registry capacity device_id generation request blocks_done disposition:
+    p: _kblk_device_ptr(registry, capacity, device_id)
+    if p is 0 -> return 0
+    if request is 0 -> return 0
+    state: peek_raw64(p, 0)
+    if state is not KBLK_DEVICE_ONLINE
+        if state is not KBLK_DEVICE_REMOVING -> return 0
+    if peek_raw64(p + 8, 0) is not generation -> return 0
+    if peek_raw64(request + 136, 0) is not device_id -> return 0
+    if peek_raw64(request + 144, 0) is not generation -> return 0
+    if peek_raw64(p + 64, 0) < 1 -> return 0
+    acknowledged: 0
+    if disposition is 1 -> acknowledged: kblk_cancel_ack(request, blocks_done)
+    if disposition is 2 -> acknowledged: kblk_timeout_ack(request, blocks_done)
+    if acknowledged is not 1 -> return 0
+    poke_raw64(p + 64, 0, peek_raw64(p + 64, 0) - 1)
+    poke_raw64(request + 136, 0, 0)
+    poke_raw64(request + 144, 0, 0)
+    return 1
+kblk_device_cancel_ack registry capacity device_id generation request blocks_done:
+    return _kblk_device_terminal_ack(registry, capacity, device_id, generation, request, blocks_done, 1)
+kblk_device_timeout_ack registry capacity device_id generation request blocks_done:
+    return _kblk_device_terminal_ack(registry, capacity, device_id, generation, request, blocks_done, 2)
+kblk_device_quiesce registry capacity device_id owner:
+    p: _kblk_device_ptr(registry, capacity, device_id)
+    if p is 0 -> return 0
+    if peek_raw64(p + 24, 0) is not owner -> return 0
+    if peek_raw64(p, 0) is KBLK_DEVICE_REMOVING -> return 1
+    if peek_raw64(p, 0) is not KBLK_DEVICE_ONLINE -> return 0
+    poke_raw64(p, 0, KBLK_DEVICE_REMOVING)
+    return 1
+kblk_device_offline registry capacity device_id owner:
+    p: _kblk_device_ptr(registry, capacity, device_id)
+    if p is 0 -> return 0
+    if peek_raw64(p + 24, 0) is not owner -> return 0
+    state: peek_raw64(p, 0)
+    if state is KBLK_DEVICE_OFFLINE -> return 1
+    if state is not KBLK_DEVICE_ONLINE
+        if state is not KBLK_DEVICE_REMOVING -> return 0
+    if peek_raw64(p + 64, 0) is not 0 -> return 0
+    if peek_raw64(p + 72, 0) is not 0 -> return 0
+    poke_raw64(p, 0, KBLK_DEVICE_OFFLINE)
+    return 1
+kblk_device_remove registry capacity device_id owner:
+    p: _kblk_device_ptr(registry, capacity, device_id)
+    if p is 0 -> return 0
+    if peek_raw64(p + 24, 0) is not owner -> return 0
+    if peek_raw64(p, 0) is not KBLK_DEVICE_OFFLINE -> return 0
+    if peek_raw64(p + 64, 0) is not 0 -> return 0
+    if peek_raw64(p + 72, 0) is not 0 -> return 0
+    queue: peek_raw64(p + 80, 0)
+    if queue is not 0
+        if kio_queue_count(queue) is not 0 -> return 0
+    generation: peek_raw64(p + 8, 0)
+    i: 16
+    as long as i < KBLK_DEVICE_STRIDE
+        poke_raw64(p + i, 0, 0)
+        i: i + 8
+    poke_raw64(p + 8, 0, generation)
+    poke_raw64(p, 0, KBLK_DEVICE_FREE)
+    return 1

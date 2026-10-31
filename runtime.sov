@@ -1,0 +1,1622 @@
+# pad line so main is not first
+heap_ptr: 0
+heap_end: 0
+g_argc: g_argc
+g_argv: g_argv
+heap_ptr: 0
+heap_end: 0
+g_meta: 0
+g_meta_bump: 0
+g_ndesc: 0
+g_desc2: 0
+g_lcg: 0
+g_alloc_dbg: 0
+g_out_budget: 0
+g_jl: 0
+g_ji: 0
+g_flog: 0
+g_cpu_feat: 0
+g_fi: 0
+g_mc_cur: 0
+g_mc_end: 0
+g_alloc_lk: 0
+g_ctx_tab: 0
+g_ctx_n: 0
+g_z_ring: 0
+g_z_n: 0
+_sov_thread_gone:
+    ci: _sov_ctx_find()
+    if ci < 0
+        return 0
+    cb: peek_i64(g_ctx_tab + ci * 64 + 8, 0)
+    if cb < 4096
+        return 0
+    if peek_i64(cb, 80) is not 773411
+        return 0
+    dummy: poke_i64(cb, 0, 1)
+    dummy: syscall(202, cb, 1, 1, 0, 0, 0)
+    return 0
+_sov_oom:
+    dummy: _sov_thread_gone()
+    syscall(1, 1, "out of memory\n", 14)
+    pd_pid: syscall(39, 0, 0, 0, 0, 0)
+    print pd_pid
+    print g_ndesc
+    syscall(60, 7)
+_sov_alloc_abort msg code:
+    dummy: _sov_thread_gone()
+    n: 0
+    as long as _sov_byte_at(msg, n) is not 0
+        n: n + 1
+    syscall(1, 1, msg, n)
+    syscall(1, 1, "\n", 1)
+    syscall(60, code)
+_sov_lock:
+    if g_alloc_lk is 0
+        return 0
+    w: 1
+    as long as w is 1
+        old: atomic_swap(g_alloc_lk, 1)
+        if old is 0
+            w: 0
+_sov_unlock:
+    if g_alloc_lk is 0
+        return 0
+    atomic_store(g_alloc_lk, 0)
+_sov_jlog op a n:
+    if g_jl is 0
+        return 0
+    qq: 0
+    if g_ji < 65536
+        qq: g_ji % 65536
+        poke_i64(g_jl + qq * 24, 0, (op * 65536) + g_ji)
+        poke_i64(g_jl + qq * 24 + 8, 0, a)
+        poke_i64(g_jl + qq * 24 + 16, 0, n)
+    g_ji: g_ji + 1
+_sov_mmap_anon sz:
+    p: syscall(9, 0, sz, 3, 34, 0 - 1, 0)
+    if p < 65536
+        if p > 0 - 65536
+            dummy: _sov_oom()
+    return p
+_sov_munmap p n:
+    dummy: _sov_jlog(2, p, n)
+    return syscall(11, p, n)
+_sov_guard_none p:
+    dummy: _sov_jlog(4, p, 4096)
+    return syscall(10, p, 4096, 0)
+_sov_dget i q:
+    if i < 512
+        return peek_i64(g_meta + 1024 + i * 128 + q * 8, 0)
+    return peek_i64(g_desc2 + (i - 512) * 128 + q * 8, 0)
+_sov_dset i q v:
+    if i < 512
+        dummy: poke_i64(g_meta + 1024 + i * 128 + q * 8, 0, v)
+    if not
+        dummy: poke_i64(g_desc2 + (i - 512) * 128 + q * 8, 0, v)
+    return v
+_sov_meta_chain n:
+    if g_mc_cur is 0
+        g_mc_cur: _sov_mmap_anon(16777216)
+        g_mc_end: g_mc_cur + 16777216
+    if g_mc_cur + n > g_mc_end
+        if n > 16777216
+            return _sov_mmap_anon(n)
+        g_mc_cur: _sov_mmap_anon(16777216)
+        g_mc_end: g_mc_cur + 16777216
+    r: g_mc_cur
+    g_mc_cur: g_mc_cur + n
+    return r
+_sov_meta_take n:
+    if n % 16 is not 0
+        n: (n / 16 + 1) * 16
+    if g_meta_bump + n > g_meta + 16777216
+        return _sov_meta_chain(n)
+    r: g_meta_bump
+    g_meta_bump: g_meta_bump + n
+    return r
+_sov_bzero p n:
+    i: 0
+    as long as i + 8 <= n
+        poke_i64(p + i, 0, 0)
+        i: i + 8
+    as long as i < n
+        poke_byte(p, i, 0)
+        i: i + 1
+    return p
+_sov_lcg:
+    g_lcg: g_lcg * 6364136223846793005 + 1442695040888963407
+    return band(g_lcg / 65536, 2147483647)
+_sov_flog p n:
+    if g_flog is 0
+        return 0
+    slot: (g_fi % 131072) * 16
+    poke_i64(g_flog + slot, 0, p)
+    poke_i64(g_flog + slot + 8, 0, n)
+    g_fi: g_fi + 1
+_sov_desc_new kind:
+    j: 0
+    as long as j < g_ndesc
+        if _sov_dget(j, 1) is 0
+            dummy: _sov_dset(j, 1, kind)
+            return j
+        j: j + 1
+    if g_ndesc >= 512
+        if g_desc2 is 0
+            g_desc2: _sov_mmap_anon(8323072)
+    if g_ndesc >= 65536
+        dummy: _sov_oom()
+    i: g_ndesc
+    g_ndesc: g_ndesc + 1
+    j: 0
+    as long as j < 16
+        dummy: _sov_dset(i, j, 0)
+        j: j + 1
+    dummy: _sov_dset(i, 1, kind)
+    return i
+rt_heap:
+    if g_meta is not 0
+        return g_meta
+    m: _sov_mmap_anon(16777216)
+    g_meta: m
+    g_meta_bump: m + 1024 + 65536
+    g_ndesc: 0
+    g_lcg: _sov_meta_take(16)
+    g_alloc_lk: m + 512
+    atomic_store(m + 512, 0)
+    i: 0
+    as long as i < 64
+        poke_i64(m + i * 8, 0, 0 - 1)
+        i: i + 1
+    g_jl: _sov_meta_take(1572864)
+    g_ji: 0
+    g_ctx_tab: _sov_meta_take(1024)
+    g_z_ring: _sov_meta_take(128)
+    g_z_n: 0
+    return m
+rt_init argc argv:
+    g_argc: argc
+    g_argv: argv
+    return rt_heap()
+_sov_small_region c:
+    unit: (c + 1) * 16
+    base: _sov_meta_take(2097152)
+    d: _sov_desc_new(1)
+    dummy: _sov_dset(d, 0, base)
+    dummy: _sov_dset(d, 2, unit)
+    nslots: 2097152 / unit
+    dummy: _sov_dset(d, 3, nslots)
+    dummy: _sov_dset(d, 7, _sov_meta_take(256))
+    gen: _sov_meta_take(nslots)
+    dummy: _sov_dset(d, 10, gen)
+    return d
+_sov_small_try d:
+    unit: _sov_dget(d, 2)
+    base: _sov_dget(d, 0)
+    fh: _sov_dget(d, 5)
+    if fh is not 0
+        nxt: peek_i64(fh, 0)
+        if nxt is not 0
+            if nxt < base
+                dummy: _sov_alloc_abort("heap corrupt", 10)
+            if nxt >= base + 2097152
+                dummy: _sov_alloc_abort("heap corrupt", 10)
+            if (nxt - base) % unit is not 0
+                dummy: _sov_alloc_abort("heap corrupt", 10)
+        dummy: _sov_dset(d, 5, nxt)
+        if g_alloc_dbg is 1
+            dummy: _sov_dbg_fill(fh, unit)
+        return fh
+    carve: _sov_dget(d, 4)
+    if carve < _sov_dget(d, 3)
+        dummy: _sov_dset(d, 4, carve + 1)
+        p: base + carve * unit
+        if g_alloc_dbg is 1
+            dummy: _sov_dbg_fill(p, unit)
+        return p
+_sov_alloc_small c:
+    d: peek_i64(g_meta + c * 8, 0)
+    if d >= 0
+        p: _sov_small_try(d)
+        if p > 0
+            return p
+
+    d2: 0
+    as long as d2 < g_ndesc
+        if _sov_dget(d2, 1) is 1
+            if _sov_dget(d2, 2) is (c + 1) * 16
+                p: _sov_small_try(d2)
+                if p > 0
+                    poke_i64(g_meta + c * 8, 0, d2)
+                    return p
+        d2: d2 + 1
+    d3: _sov_small_region(c)
+    poke_i64(g_meta + c * 8, 0, d3)
+    return _sov_small_try(d3)
+_sov_free_small d p:
+    base: _sov_dget(d, 0)
+    unit: _sov_dget(d, 2)
+    idx: (p - base) / unit
+    if (p - base) % unit is not 0
+        dummy: _sov_alloc_abort("invalid free", 9)
+    if idx >= _sov_dget(d, 3)
+        dummy: _sov_alloc_abort("invalid free", 9)
+    gen: _sov_dget(d, 10)
+    if peek_byte(gen, idx) is 1
+        dummy: _sov_alloc_abort("double free", 8)
+    poke_byte(gen, idx, 1)
+    if g_flog is not 0
+        dummy: _sov_flog(p, unit)
+    dummy: _sov_bzero(p, unit)
+    ring: _sov_dget(d, 7)
+    rc: _sov_dget(d, 8)
+    if rc < 32
+        pos: (_sov_dget(d, 9) + rc) % 32
+        poke_i64(ring + pos * 8, 0, p)
+        dummy: _sov_dset(d, 8, rc + 1)
+        return 0
+    r: band(_sov_lcg(), 31)
+    victim: peek_i64(ring + r * 8, 0)
+    vidx: (victim - base) / unit
+    poke_byte(gen, vidx, 0)
+    nxt: _sov_dget(d, 5)
+    poke_i64(victim, 0, nxt)
+    dummy: _sov_dset(d, 5, victim)
+    poke_i64(ring + r * 8, 0, p)
+    dummy: _sov_dset(d, 9, (_sov_dget(d, 9) + 1) % 32)
+_sov_med_region:
+    base: _sov_meta_take(2097152)
+    dummy: _sov_jlog(1, base, 2097152)
+    d: _sov_desc_new(2)
+    dummy: _sov_dset(d, 0, base)
+    bm: _sov_meta_take(512)
+    dummy: _sov_dset(d, 10, bm)
+    ln: _sov_meta_take(512)
+    dummy: _sov_dset(d, 11, ln)
+    return d
+_sov_med_try d k:
+    base: _sov_dget(d, 0)
+    bm: _sov_dget(d, 10)
+    ln: _sov_dget(d, 11)
+    i: 0
+    as long as i + k <= 512
+        ok: 1
+        j: 0
+        as long as j < k
+            if peek_byte(bm, i + j) is 1
+                ok: 0
+                j: k + 1
+            j: j + 1
+        if ok is 1
+            j: 0
+            as long as j < k
+                poke_byte(bm, i + j, 1)
+                j: j + 1
+            poke_byte(ln, i, k)
+            p: base + i * 4096
+            if g_alloc_dbg is 1
+                dummy: _sov_dbg_fill(p, k * 4096)
+            return p
+        i: i + 1
+_sov_alloc_med n:
+    k: (n + 4095) / 4096
+    d: 0
+    as long as d < g_ndesc
+        if _sov_dget(d, 1) is 2
+            p: _sov_med_try(d, k)
+            if p > 0
+                return p
+        d: d + 1
+    d2: _sov_med_region()
+    return _sov_med_try(d2, k)
+_sov_free_med d p:
+    base: _sov_dget(d, 0)
+    if (p - base) % 4096 is not 0
+        dummy: _sov_alloc_abort("invalid free", 9)
+    idx: (p - base) / 4096
+    if idx >= 512
+        dummy: _sov_alloc_abort("invalid free", 9)
+    ln: _sov_dget(d, 11)
+    bm: _sov_dget(d, 10)
+    k: peek_byte(ln, idx)
+    if k is 0
+        dummy: _sov_alloc_abort("double free", 8)
+    j: 0
+    as long as j < k
+        if peek_byte(bm, idx + j) is 0
+            dummy: _sov_alloc_abort("heap corrupt", 10)
+        j: j + 1
+    if g_flog is not 0
+        dummy: _sov_flog(p, k * 4096)
+    if g_jl is not 0
+        dummy: _sov_jlog(3, p, k * 4096)
+    dummy: _sov_bzero(p, k * 4096)
+    j: 0
+    as long as j < k
+        poke_byte(bm, idx + j, 0)
+        j: j + 1
+    poke_byte(ln, idx, 0)
+_sov_alloc_large n:
+    pay: (n + 4095) / 4096 * 4096
+    total: pay + 8192
+    # Reserve VA geometrically (pow2, at least 4MB) so later growth is an
+    # mprotect-commit inside the reservation: pointer-stable, no copy.
+    # (mremap in-place is not an option: top-down mmap adjacency blocks
+    # it, and the guard mprotects split the span into multiple VMAs,
+    # which mremap rejects with EFAULT.)
+    res: 4194304
+    as long as res < total
+        res: res * 2
+    # Geometric builders double repeatedly; a reserve ending exactly at a
+    # pow2 boundary still exhausts on the final step, so grant up to 16x
+    # headroom (MAP_NORESERVE keeps overcommit accounting sane).
+    res: res * 16
+    if res > 1073741824
+        res: 1073741824
+    map: syscall(9, 0, res, 3, 16418, 0 - 1, 0)
+    if map < 65536
+        res: total
+        map: _sov_mmap_anon(total)
+    dummy: _sov_jlog(1, map, total)
+    if total >= 2097152
+        dummy: syscall(28, map, total, 14)
+    dummy: _sov_guard_none(map)
+    dummy: _sov_guard_none(map + total - 4096)
+    if res > total
+        dummy: syscall(10, map + total, res - total, 0)
+    d: _sov_desc_new(3)
+    dummy: _sov_dset(d, 0, map)
+    dummy: _sov_dset(d, 2, total)
+    dummy: _sov_dset(d, 6, map + 4096)
+    dummy: _sov_dset(d, 7, pay)
+    dummy: _sov_dset(d, 13, res)
+    p: map + 4096
+    if g_alloc_dbg is 1
+        dummy: _sov_dbg_fill(p, pay)
+    return p
+_sov_free_large d:
+    pay: _sov_dget(d, 6)
+    n: _sov_dget(d, 7)
+    m: _sov_dget(d, 0)
+    t: _sov_dget(d, 2)
+    rs: _sov_dget(d, 13)
+    if rs > t
+        t: rs
+    dummy: _sov_munmap(m, t)
+    dummy: _sov_dset(d, 1, 0)
+    dummy: _sov_dset(d, 0, 0)
+    dummy: _sov_dset(d, 6, 0)
+    dummy: _sov_dset(d, 7, 0)
+_sov_fast_alloc size:
+    if g_ctx_n is not 0
+        return 0
+    if g_meta is 0
+        return 0
+    if g_alloc_dbg is not 0
+        return 0
+    if size < 1
+        return 0
+    if size > 1024
+        return 0
+    d: peek_i64(g_meta + ((size + 15) / 16 - 1) * 8, 0)
+    if d < 0
+        return 0
+    db: g_meta + 1024 + d * 128
+    if d >= 512
+        db: g_desc2 + (d - 512) * 128
+    fh: peek_i64(db + 40, 0)
+    if fh is not 0
+        dummy: poke_i64(db + 40, 0, peek_i64(fh, 0))
+        return fh
+    carve: peek_i64(db + 32, 0)
+    if carve < peek_i64(db + 24, 0)
+        dummy: poke_i64(db + 32, 0, carve + 1)
+        return peek_i64(db + 0, 0) + carve * peek_i64(db + 16, 0)
+    return 0
+_sov_heap_alloc size:
+    fp: _sov_fast_alloc(size)
+    if fp is not 0
+        return fp
+    ci: 0 - 1
+    if g_ctx_n > 0
+        ci: _sov_ctx_find()
+    if ci >= 0
+        if size <= 1024
+            tp: _sov_ctx_alloc_small(ci, size)
+            if tp > 0
+                return tp
+    if g_meta is 0
+        rt_heap()
+    locked: 0
+    if g_ctx_n > 0
+        dummy: _sov_lock()
+        locked: 1
+    n: size
+    if n < 1
+        n: 16
+    p: 0
+    if n <= 1024
+        p: _sov_alloc_small((n + 15) / 16 - 1)
+    if n > 1024
+        if n <= 65536
+            p: _sov_alloc_med(n)
+    if n > 65536
+        p: _sov_alloc_large(n)
+    if p is 0
+        if locked is 1
+            dummy: _sov_unlock()
+        dummy: _sov_oom()
+    if locked is 1
+        dummy: _sov_unlock()
+    return p
+_sov_alloc size:
+    return _sov_heap_alloc(size)
+_sov_heap_wipe:
+    if g_meta is 0
+        return 0
+    d: 0
+    as long as d < g_ndesc
+        k: _sov_dget(d, 1)
+        if k is 1
+            dummy: _sov_bzero(_sov_dget(d, 0), 2097152)
+        if k is 2
+            dummy: _sov_bzero(_sov_dget(d, 0), 2097152)
+        if k is 3
+            dummy: _sov_bzero(_sov_dget(d, 6), _sov_dget(d, 7))
+        if k is 4
+            dummy: _sov_bzero(_sov_dget(d, 0), _sov_dget(d, 2))
+        d: d + 1
+    i: 0
+    as long as i < 16
+        wb: peek_i64(g_ctx_tab + i * 64 + 16, 0)
+        if wb > 0
+            dummy: _sov_bzero(wb, 2097152)
+        i: i + 1
+    j: 0
+    as long as j < g_z_n
+        zb: peek_i64(g_z_ring + j * 16, 0)
+        if zb > 0
+            dummy: _sov_bzero(zb, 2097152)
+        j: j + 1
+    dummy: _sov_bzero(g_meta, 4194304)
+    if g_desc2 is not 0
+        dummy: _sov_bzero(g_desc2, 458752)
+_sov_free p:
+    if p is 0
+        return 0
+    if g_meta is 0
+        dummy: _sov_alloc_abort("invalid free", 9)
+    if g_ctx_tab is not 0
+        ci: _sov_ctx_find()
+        if ci >= 0
+            if _sov_ctx_release(ci, p) is 0
+                return 0
+    dummy: _sov_lock()
+    d: 0
+    hit: 0
+    as long as d < g_ndesc
+        k: _sov_dget(d, 1)
+        if k is 1
+            b: _sov_dget(d, 0)
+            if p >= b
+                if p < b + 2097152
+                    dummy: _sov_free_small(d, p)
+                    hit: 1
+                    d: g_ndesc
+        if k is 2
+            b: _sov_dget(d, 0)
+            if p >= b
+                if p < b + 2097152
+                    dummy: _sov_free_med(d, p)
+                    hit: 1
+                    d: g_ndesc
+        if k is 3
+            if p is _sov_dget(d, 6)
+                dummy: _sov_free_large(d)
+                hit: 1
+                d: g_ndesc
+        if k is 4
+            b: _sov_dget(d, 0)
+            if p >= b
+                if p < b + _sov_dget(d, 2)
+                    dummy: _sov_alloc_abort("arena payload is freed by arena_destroy", 11)
+        d: d + 1
+    if hit is 0
+        dummy: _sov_alloc_abort("invalid free", 9)
+    dummy: _sov_unlock()
+_sov_try_grow_large p n:
+    # In-place growth for kind-3 (large mmap) blocks via mremap(flags=0):
+    # the kernel extends the mapping at the same address when it can, so
+    # list growth becomes O(1) page-table work instead of alloc+memcpy of
+    # the whole buffer on every doubling (the copy traffic that put
+    # list-heavy programs far behind glibc realloc).  The old trailing
+    # guard page ends up mid-mapping after the remap: unguard it, then
+    # guard the new last page.  Returns p on success, 0 to let the caller
+    # fall back to alloc+copy (block not kind-3, or cannot grow in place).
+    if p is 0
+        return 0
+    if g_meta is 0
+        return 0
+    d: 0
+    fd: 0 - 1
+    as long as d < g_ndesc
+        if _sov_dget(d, 1) is 3
+            if _sov_dget(d, 6) is p
+                fd: d
+                d: g_ndesc
+        d: d + 1
+    if fd < 0
+        return 0
+    pay: _sov_dget(fd, 7)
+    if n <= pay
+        return p
+    map: _sov_dget(fd, 0)
+    total: _sov_dget(fd, 2)
+    res: _sov_dget(fd, 13)
+    npay: (n + 4095) / 4096 * 4096
+    ntotal: npay + 8192
+    if ntotal > res
+        return 0
+    # Commit more of the reservation: the old trailing guard page
+    # becomes payload, a fresh guard goes at the new end.
+    dummy: syscall(10, map + total - 4096, ntotal - total, 3)
+    dummy: _sov_guard_none(map + ntotal - 4096)
+    if ntotal >= 2097152
+        dummy: syscall(28, map, ntotal, 14)
+    dummy: _sov_jlog(7, map, ntotal)
+    dummy: _sov_dset(fd, 2, ntotal)
+    dummy: _sov_dset(fd, 7, npay)
+    return p
+_sov_realloc p n:
+    if p is 0
+        return _sov_heap_alloc(n)
+    if n is 0
+        dummy: _sov_free(p)
+        return 0
+    ci: _sov_ctx_find()
+    if ci >= 0
+        rp: _sov_ctx_realloc(ci, p, n)
+        if rp > 0
+            return rp
+    gp: _sov_try_grow_large(p, n)
+    if gp is not 0
+        return gp
+    old: 0
+    d: 0
+    as long as d < g_ndesc
+        k: _sov_dget(d, 1)
+        if k is 1
+            b: _sov_dget(d, 0)
+            if p >= b
+                if p < b + 2097152
+                    u: _sov_dget(d, 2)
+                    idx: (p - b) / u
+                    if (p - b) % u is not 0
+                        dummy: _sov_alloc_abort("invalid realloc", 9)
+                    if idx < _sov_dget(d, 3)
+                        old: u
+        if k is 2
+            b: _sov_dget(d, 0)
+            if p >= b
+                if p < b + 2097152
+                    idx: (p - b) / 4096
+                    if idx < 512
+                        lk: peek_byte(_sov_dget(d, 11), idx)
+                        if lk > 0
+                            old: lk * 4096
+        if k is 3
+            if p is _sov_dget(d, 6)
+                old: _sov_dget(d, 7)
+        d: d + 1
+    if old is 0
+        dummy: _sov_alloc_abort("invalid realloc", 9)
+    if n <= 1024
+        if old <= 1024
+            if (n + 15) / 16 is (old + 15) / 16
+                return p
+    if n > 1024
+        if n <= old
+            if n + 4096 > old
+                return p
+    if n > 65536
+        if old > 65536
+            if (n + 4095) / 4096 * 4096 is old
+                return p
+    np: _sov_heap_alloc(n)
+    cp: n
+    if old < n
+        cp: old
+    dummy: _sov_memcpy(np, p, cp)
+    dummy: _sov_free(p)
+    return np
+_sov_arena_new cap:
+    if g_meta is 0
+        rt_heap()
+    dummy: _sov_lock()
+    t: (cap + 4095) / 4096 * 4096
+    if t < 4096
+        t: 4096
+    base: _sov_mmap_anon(t)
+    d: _sov_desc_new(4)
+    dummy: _sov_dset(d, 0, base)
+    dummy: _sov_dset(d, 2, t)
+    dummy: _sov_dset(d, 12, 0)
+    dummy: _sov_unlock()
+    return d
+_sov_arena_alloc a n:
+    if g_meta is 0
+        rt_heap()
+    dummy: _sov_lock()
+    if _sov_dget(a, 1) is not 4
+        dummy: _sov_alloc_abort("bad arena", 12)
+    if n % 16 is not 0
+        n: (n / 16 + 1) * 16
+    u: _sov_dget(a, 12)
+    if u + n > _sov_dget(a, 2)
+        dummy: _sov_unlock()
+        dummy: _sov_oom()
+    dummy: _sov_dset(a, 12, u + n)
+    p: _sov_dget(a, 0) + u
+    dummy: _sov_unlock()
+    return p
+_sov_arena_destroy a:
+    if g_meta is 0
+        return 0
+    dummy: _sov_lock()
+    if _sov_dget(a, 1) is not 4
+        dummy: _sov_alloc_abort("bad arena", 12)
+    dummy: _sov_munmap(_sov_dget(a, 0), _sov_dget(a, 2))
+    dummy: _sov_dset(a, 1, 0)
+    dummy: _sov_dset(a, 0, 0)
+    dummy: _sov_unlock()
+_sov_dbg_fill p n:
+    if n > 65536
+        return p
+    i: 0
+    as long as i < n
+        poke_byte(p, i, 165)
+        i: i + 1
+    return p
+_sov_strlen s:
+    # swar: one aligned qword per step.  An aligned eight-byte read inside a
+    # page can never cross into an unmapped one, so the scan is safe, and it
+    # is ~5x fewer memory touches than the byte loop for the line-sized
+    # strings the front end keeps asking about.
+    if s < 4096
+        return 0
+    n: 0
+    as long as band(s + n, 7) is not 0
+        if peek_byte(s, n) is 0
+            return n
+        n: n + 1
+    as long as 1
+        q: peek_i64(s, n)
+        z: band(band(q - 72340172838076673, bxor(q, 0 - 1)), -9187201950435737472)
+        if z is not 0
+            b0: band(q, 255)
+            if b0 is 0
+                return n
+            b1: band(bshr(q, 8), 255)
+            if b1 is 0
+                return n + 1
+            b2: band(bshr(q, 16), 255)
+            if b2 is 0
+                return n + 2
+            b3: band(bshr(q, 24), 255)
+            if b3 is 0
+                return n + 3
+            b4: band(bshr(q, 32), 255)
+            if b4 is 0
+                return n + 4
+            b5: band(bshr(q, 40), 255)
+            if b5 is 0
+                return n + 5
+            b6: band(bshr(q, 48), 255)
+            if b6 is 0
+                return n + 6
+            b7: band(bshr(q, 56), 255)
+            if b7 is 0
+                return n + 7
+        n: n + 8
+    return n
+
+_sov_print v:
+    _sov_print_val(v, 1)
+_sov_print_raw v:
+    _sov_print_val(v, 0)
+_sov_print_val v nl:
+    # Anti-spew budget (0 = unlimited).  The compiler arms this so no
+    # diagnostic path - known or unknown - can ever flood stdout and
+    # fill a disk; user programs never arm it and pay one compare.
+    if g_out_budget > 0
+        if g_out_budget < 64
+            dummy0: syscall(60, 1, 0, 0)
+        g_out_budget: g_out_budget - 64
+    if v is 0
+        syscall(1, 1, intern_zero(), 1)
+        if nl is 1
+            syscall(1, 1, intern_nl(), 1)
+        return 0
+    b0: _sov_byte_at(v, 0)
+    if b0 > 0
+        if b0 < 128
+            n: _sov_strlen(v)
+            if g_out_budget > 0
+                g_out_budget: g_out_budget - n
+            if n > 0
+                if n < 1000000
+                    syscall(1, 1, v, n)
+                    if nl is 1
+                        syscall(1, 1, intern_nl(), 1)
+                    return 0
+    _sov_print_int(v)
+    if nl is 1
+        syscall(1, 1, intern_nl(), 1)
+intern_nl:
+    return "\n"
+intern_zero:
+    return "0"
+_sov_print_int n:
+    buf: _sov_heap_alloc(32)
+    i: 0
+    neg: 0
+    x: n
+    if x is 0
+        syscall(1, 1, intern_zero(), 1)
+        return 0
+    if x < 0
+        neg: 1
+    as long as x is not 0
+        d: x % 10
+        if d < 0
+            d: 0 - d
+        dummy: _sov_set_byte(buf, i, d + 48)
+        i: i + 1
+        x: x / 10
+    if neg is 1
+        dummy: _sov_set_byte(buf, i, 45)
+        i: i + 1
+    as long as i > 0
+        i: i - 1
+        syscall(1, 1, buf + i, 1)
+_sov_strcat a b:
+    if a is 0
+        a: blank
+    if b is 0
+        b: blank
+    la: _sov_strlen(a)
+    lb: _sov_strlen(b)
+    r: _sov_heap_alloc(la + lb + 1)
+    dummy: _sov_memcpy(r, a, la)
+    dummy: _sov_memcpy(r + la, b, lb)
+    dummy: _sov_set_byte(r, la + lb, 0)
+    return r
+_sov_substring s start endd:
+    if s < 4096
+        return blank
+    n: _sov_strlen(s)
+    if start < 0
+        start: 0
+    if endd > n
+        endd: n
+    if endd < start
+        endd: start
+    L: endd - start
+    r: _sov_heap_alloc(L + 1)
+    dummy: _sov_memcpy(r, s + start, L)
+    dummy: poke_byte(r, L, 0)
+    return r
+_sov_char_at s i:
+    r: _sov_heap_alloc(2)
+    if s is 0
+        dummy: _sov_set_byte(r, 0, 0)
+        return r
+    if i < 0
+        dummy: _sov_set_byte(r, 0, 0)
+        return r
+    if i >= _sov_strlen(s)
+        dummy: _sov_set_byte(r, 0, 0)
+        return r
+    dummy: _sov_set_byte(r, 0, _sov_byte_at(s, i))
+    dummy: _sov_set_byte(r, 1, 0)
+    return r
+_sov_byte_at s i:
+    return peek_byte(s, i)
+_sov_set_byte s i v:
+    poke_byte(s, i, v)
+    return s
+_sov_str_eq a b:
+    if a is 0
+        if b is 0
+            return 1
+        return 0
+    if b is 0
+        return 0
+    if a is b
+        return 1
+    i: 0
+    as long as band(a + i, 7) is not 0
+        ca: peek_byte(a, i)
+        cb: peek_byte(b, i)
+        if ca is not cb
+            return 0
+        if ca is 0
+            return 1
+        i: i + 1
+    as long as 1
+        qa: peek_i64(a, i)
+        qb: peek_i64(b, i)
+        za: band(band(qa - 72340172838076673, bxor(qa, 0 - 1)), -9187201950435737472)
+        zb: band(band(qb - 72340172838076673, bxor(qb, 0 - 1)), -9187201950435737472)
+        if qa is not qb
+            k: 0
+            as long as k < 8
+                ca: band(bshr(qa, k * 8), 255)
+                cb: band(bshr(qb, k * 8), 255)
+                if ca is not cb
+                    return 0
+                if ca is 0
+                    return 1
+                k: k + 1
+        if za is not 0
+            return 1
+        if zb is not 0
+            return 1
+        i: i + 8
+_sov_txt_eq a b:
+    if a is 0
+        if b is 0
+            return 1
+        return 0
+    if b is 0
+        return 0
+    if a < 4194304
+        if _sov_strlen(b) is not 1
+            return 0
+        if _sov_byte_at(b, 0) is a
+            return 1
+        return 0
+    if b < 4194304
+        if _sov_strlen(a) is not 1
+            return 0
+        if _sov_byte_at(a, 0) is b
+            return 1
+        return 0
+    return _sov_str_eq(a, b)
+_sov_txt_ne a b:
+    return 1 - _sov_txt_eq(a, b)
+_sov_starts_with s p:
+    if s is 0
+        return 0
+    if p is 0
+        return 1
+    i: 0
+    as long as 1
+        cp: peek_byte(p, i)
+        if cp is 0
+            return 1
+        if peek_byte(s, i) is not cp
+            return 0
+        i: i + 1
+_sov_find_text s n:
+    # bounded scan: byte-wise for the first 64 bytes (most callers search
+    # line-sized text and finish or fail there), then Boyer-Moore-Horspool
+    # skipping on the needle's last byte for long haystacks, which jumps
+    # ~ln bytes per step whenever the window's last byte is rare in the
+    # needle - the case the plain scan handles worst.  The byte preamble
+    # keeps short-string costs identical to the old loop; the verify
+    # never reads past the haystack NUL (it mismatches there).
+    if s is 0
+        return 0 - 1
+    if n is 0
+        return 0
+    nb: peek_byte(n, 0)
+    if nb is 0
+        return 0
+    ln: _sov_strlen(n)
+    i: 0
+    ft_c: peek_byte(s, 0)
+    as long as ft_c is not 0
+        if i >= 64
+            if ln > 1
+                ft_c: 0
+        if ft_c is not 0
+            if ft_c is nb
+                if ln is 1
+                    return i
+                if _sov_ft_eq(s, n, i, ln) is 1
+                    return i
+            i: i + 1
+            ft_c: peek_byte(s, i)
+    if ln is 1
+        return 0 - 1
+    if peek_byte(s, i) is 0
+        return 0 - 1
+    ls: _sov_strlen(s)
+    if ln > ls
+        return 0 - 1
+    sk: _sov_heap_alloc(2048)
+    k: 0
+    as long as k < 256
+        poke_i64(sk, k * 8, ln)
+        k: k + 1
+    k: 0
+    as long as k < ln - 1
+        poke_i64(sk, peek_byte(n, k) * 8, ln - 1 - k)
+        k: k + 1
+    lb: peek_byte(n, ln - 1)
+    e: ln - 1
+    as long as e < ls
+        c: peek_byte(s, e)
+        if c is lb
+            st: e - ln + 1
+            if peek_byte(s, st) is nb
+                if _sov_ft_eq(s, n, st, ln) is 1
+                    return st
+        e: e + peek_i64(sk, c * 8)
+    return 0 - 1
+_sov_ft_eq s n i ln:
+    j: 1
+    as long as j < ln
+        if peek_byte(s, i + j) is not peek_byte(n, j)
+            return 0
+        j: j + 1
+    return 1
+_sov_trim s:
+    if s is 0
+        return blank
+    n: _sov_strlen(s)
+    a: 0
+    go: 1
+    as long as go is 1
+        if a >= n
+            go: 0
+        if not
+            c: peek_byte(s, a)
+            if c is 32
+                a: a + 1
+            if not
+                if c is 9
+                    a: a + 1
+                if not
+                    if c is 10
+                        a: a + 1
+                    if not
+                        if c is 13
+                            a: a + 1
+                        if not
+                            go: 0
+    b: n
+    go: 1
+    as long as go is 1
+        if b <= a
+            go: 0
+        if not
+            c: peek_byte(s, b - 1)
+            if c is 32
+                b: b - 1
+            if not
+                if c is 9
+                    b: b - 1
+                if not
+                    if c is 10
+                        b: b - 1
+                    if not
+                        if c is 13
+                            b: b - 1
+                        if not
+                            go: 0
+    if a is 0
+        if b is n
+            return s
+    return _sov_substring(s, a, b)
+_sov_open path flags:
+    return syscall(257, 0 - 100, path, flags, 420, 0, 0)
+_sov_read fd buf n:
+    return syscall(0, fd, buf, n, 0, 0, 0)
+_sov_write fd buf n:
+    return syscall(1, fd, buf, n, 0, 0, 0)
+_sov_close fd:
+    return syscall(3, fd, 0, 0, 0, 0, 0)
+_sov_lseek fd off whence:
+    return syscall(8, fd, off, whence, 0, 0, 0)
+_sov_chmod path mode:
+    return syscall(90, path, mode, 0, 0, 0, 0)
+_sov_read_file path:
+    fd: _sov_open(path, 0)
+    if fd < 0
+        return 0
+    sz: _sov_lseek(fd, 0, 2)
+    _sov_lseek(fd, 0, 0)
+    if sz < 0
+        sz: 0
+    buf: _sov_heap_alloc(sz + 1)
+    got: 0
+    as long as got < sz
+        n: _sov_read(fd, buf + got, sz - got)
+        if n < 1
+            sz: got
+        if not
+            got: got + n
+    dummy: _sov_set_byte(buf, got, 0)
+    _sov_close(fd)
+    return buf
+_sov_write_file path data:
+    fd: syscall(257, 0 - 100, path, 577, 420, 0, 0)
+    if fd < 0
+        return 0
+    n: _sov_strlen(data)
+    off: 0
+    as long as off < n
+        w: _sov_write(fd, data + off, n - off)
+        if w < 1
+            _sov_close(fd)
+            return 0
+        off: off + w
+    _sov_close(fd)
+    return 1
+_sov_read_n path n:
+    fd: _sov_open(path, 0)
+    if fd < 0
+        return 0
+    buf: _sov_heap_alloc(n + 1)
+    got: 0
+    as long as got < n
+        r: _sov_read(fd, buf + got, n - got)
+        if r < 1
+            n: got
+        if not
+            got: got + r
+    dummy: _sov_set_byte(buf, got, 0)
+    _sov_close(fd)
+    return buf
+_sov_write_n path data n:
+    fd: syscall(257, 0 - 100, path, 577, 420, 0, 0)
+    if fd < 0
+        return 0
+    off: 0
+    as long as off + 65536 <= n
+        w: _sov_write(fd, data + off, 65536)
+        if w < 1
+            _sov_close(fd)
+            return 0
+        off: off + w
+    as long as off < n
+        w: _sov_write(fd, data + off, n - off)
+        if w < 1
+            _sov_close(fd)
+            return 0
+        off: off + w
+    _sov_close(fd)
+    return 1
+_sov_argc:
+    return g_argc
+_sov_argv_get i:
+    if i < 0
+        return blank
+    if i >= g_argc
+        return blank
+    return peek_ptr(g_argv, i)
+_sov_env_at i:
+    if i < 0
+        return blank
+    base: g_argv + (g_argc + 1) * 8
+    p: peek_ptr(base, i)
+    if p is 0
+        return blank
+    return p
+_sov_memcpy dst src n:
+    # eight bytes a step, the way _sov_bzero already goes: a byte at a time
+    # through two calls apiece made every copy in the system (list growth,
+    # realloc, every join) cost a call per byte
+    k: 0
+    as long as k + 8 <= n
+        poke_i64(dst, k, peek_i64(src, k))
+        k: k + 8
+    as long as k < n
+        poke_byte(dst, k, peek_byte(src, k))
+        k: k + 1
+    return dst
+_sov_atoi s:
+    if s is 0
+        return 0
+    n: 0
+    sign: 1
+    i: 0
+    if _sov_byte_at(s, 0) is 45
+        sign: 0 - 1
+        i: 1
+    if _sov_byte_at(s, i) is 48
+        hx2: _sov_byte_at(s, i + 1)
+        if hx2 is 120
+            i: i + 2
+            as long as 1
+                c: peek_byte(s, i)
+                v: 0 - 1
+                if c > 47
+                    if c < 58
+                        v: c - 48
+                if v < 0
+                    if c > 96
+                        if c < 103
+                            v: c - 87
+                if v < 0
+                    if c > 64
+                        if c < 71
+                            v: c - 55
+                if v < 0
+                    return n * sign
+                n: n * 16 + v
+                i: i + 1
+            return n * sign
+        if hx2 is 98
+            i: i + 2
+            as long as 1
+                c: peek_byte(s, i)
+                if c is 48
+                    n: n * 2
+                    i: i + 1
+                if not
+                    if c is 49
+                        n: n * 2 + 1
+                        i: i + 1
+                    if not
+                        return n * sign
+            return n * sign
+    go: 1
+    as long as go is 1
+        c: peek_byte(s, i)
+        if c < 48
+            go: 0
+        if not
+            if c > 57
+                go: 0
+            if not
+                n: n * 10 + (c - 48)
+                i: i + 1
+    return n * sign
+_sov_list_new:
+    a: _sov_heap_alloc(208)
+    poke_i64(a, 0, 24)
+    poke_i64(a, 8, 0)
+    return a
+_sov_sb_new s:
+    # string builder block: [cap @0][len @8][bytes @16].  Lets repeated
+    # concatenation grow geometrically (reusing _sov_try_grow_large when
+    # the block is mmap-backed) instead of alloc+copy per cat.
+    ln: 0
+    if s is not 0
+        ln: _sov_strlen(s)
+    cap: 64
+    as long as cap < ln + 1
+        cap: cap * 2
+    b: _sov_heap_alloc(16 + cap)
+    poke_i64(b, 0, cap)
+    poke_i64(b, 8, ln)
+    if ln > 0
+        dummy: _sov_memcpy(b + 16, s, ln)
+    poke_byte(b + 16 + ln, 0, 0)
+    return b
+_sov_sb_add b t:
+    ln: peek_i64(b, 8)
+    cap: peek_i64(b, 0)
+    tl: 0
+    if t is b + 16
+        tl: ln
+    if not
+        if t is not 0
+            tl: _sov_strlen(t)
+    if ln + tl + 1 > cap
+        nc: cap
+        if nc < 1
+            nc: 64
+        as long as nc < ln + tl + 1
+            nc: nc * 2
+        gb: _sov_try_grow_large(b, 16 + nc)
+        if gb is 0
+            nb: _sov_heap_alloc(16 + nc)
+            dummy: _sov_memcpy(nb + 16, b + 16, ln)
+            if t >= b + 16
+                if t < b + 16 + ln + 1
+                    t: t + (nb - b)
+            b: nb
+        poke_i64(b, 0, nc)
+        poke_i64(b, 8, ln)
+    if tl > 0
+        dummy: _sov_memcpy(b + 16 + ln, t, tl)
+    poke_byte(b + 16 + ln + tl, 0, 0)
+    poke_i64(b, 8, ln + tl)
+    return b
+_sov_sb_done b:
+    return b + 16
+_sov_list_add lst item:
+    if lst is not 0
+        lnf: peek_i64(lst, 8)
+        if lnf < peek_i64(lst, 0)
+            poke_i64(lst, 16 + lnf * 8, item)
+            poke_i64(lst, 8, lnf + 1)
+            return lst
+    return _sov_list_add_slow(lst, item)
+
+_sov_list_add_slow lst item:
+    if lst is 0
+        lst: _sov_list_new()
+    cap: peek_i64(lst, 0)
+    len: peek_i64(lst, 8)
+    if len >= cap
+        nc: cap * 2
+        gp: _sov_try_grow_large(lst, 16 + nc * 8)
+        if gp is not 0
+            lst: gp
+            poke_i64(lst, 0, nc)
+        if not
+            b: _sov_heap_alloc(16 + nc * 8)
+            poke_i64(b, 0, nc)
+            poke_i64(b, 8, len)
+            dummy: _sov_memcpy(b + 16, lst + 16, len * 8)
+            lst: b
+    poke_i64(lst, 16 + len * 8, item)
+    poke_i64(lst, 8, len + 1)
+    return lst
+_sov_list_get lst i:
+    if lst is 0
+        return 0
+    len: peek_i64(lst, 8)
+    if i < 0
+        return 0
+    if i >= len
+        return 0
+    return peek_i64(lst, 16 + i * 8)
+_sov_list_len lst:
+    if lst is 0
+        return 0
+    return peek_i64(lst, 8)
+_sov_list_set lst i v:
+    if lst is 0
+        return 0
+    len: peek_i64(lst, 8)
+    if i < 0
+        return lst
+    if i >= len
+        return lst
+    poke_i64(lst, 16 + i * 8, v)
+    return lst
+_sov_buf_new:
+    p: _sov_heap_alloc(80)
+    poke_i64(p, 0, 64)
+    poke_i64(p, 8, 0)
+    return p
+_sov_buf_u8 buf v:
+    if buf is 0
+        buf: _sov_buf_new()
+    cap: peek_i64(buf, 0)
+    len: peek_i64(buf, 8)
+    if len + 1 > cap
+        nc: cap * 2
+        as long as nc < len + 1
+            nc: nc * 2
+        b: _sov_heap_alloc(16 + nc)
+        poke_i64(b, 0, nc)
+        poke_i64(b, 8, len)
+        i: 0
+        as long as i < len
+            dummy: _sov_set_byte(b, 16 + i, _sov_byte_at(buf, 16 + i))
+            i: i + 1
+        buf: b
+    dummy: _sov_set_byte(buf, 16 + peek_i64(buf, 8), v)
+    poke_i64(buf, 8, peek_i64(buf, 8) + 1)
+    return buf
+_sov_buf_u32 buf v:
+    buf: _sov_buf_u8(buf, v % 256)
+    buf: _sov_buf_u8(buf, (v / 256) % 256)
+    buf: _sov_buf_u8(buf, (v / 65536) % 256)
+    buf: _sov_buf_u8(buf, (v / 16777216) % 256)
+    return buf
+_sov_buf_u64 buf v:
+    x: v
+    i: 0
+    as long as i < 8
+        buf: _sov_buf_u8(buf, x % 256)
+        x: x / 256
+        i: i + 1
+    return buf
+_sov_buf_len buf:
+    if buf is 0
+        return 0
+    return peek_i64(buf, 8)
+_sov_buf_at buf i:
+    if buf is 0
+        return 0
+    len: peek_i64(buf, 8)
+    if i < 0
+        return 0
+    if i >= len
+        return 0
+    return _sov_byte_at(buf, 16 + i)
+_sov_buf_write path buf:
+    if buf is 0
+        return 0
+    return _sov_write_n(path, buf + 16, peek_i64(buf, 8))
+_sov_ctx_gettid:
+    return syscall(186, 0, 0, 0, 0, 0, 0)
+_sov_ctx_slot_for_tid t:
+    i: 0
+    as long as i < 16
+        if peek_i64(g_ctx_tab + i * 64, 0) is t
+            return i
+        i: i + 1
+    return 0 - 1
+_sov_ctx_find:
+    if g_ctx_tab is 0
+        return 0 - 1
+    if g_ctx_n is 0
+        return 0 - 1
+    t: _sov_ctx_gettid()
+    if t < 1
+        return 0 - 1
+    return _sov_ctx_slot_for_tid(t)
+_sov_ctx_reserve cb:
+    dummy: rt_heap()
+    if g_ctx_tab is 0
+        poke_i64(cb, 64, 0 - 1)
+        return 0 - 1
+    i: 0
+    hit: 0 - 1
+    as long as i < 16
+        if hit is 0 - 1
+            if peek_i64(g_ctx_tab + i * 64 + 8, 0) is 0
+                hit: i
+        i: i + 1
+    if hit is 0 - 1
+        poke_i64(cb, 64, 0 - 1)
+        return 0 - 1
+    i: hit
+    g_ctx_n: g_ctx_n + 1
+    poke_i64(g_ctx_tab + i * 64 + 8, 0, cb)
+    poke_i64(cb, 64, i)
+    return i
+_sov_ctx_map:
+    dummy: _sov_lock()
+    b: 0
+    if g_z_n > 0
+        g_z_n: g_z_n - 1
+        b: peek_i64(g_z_ring + g_z_n * 16, 0)
+        poke_i64(g_z_ring + g_z_n * 16, 0, 0)
+    dummy: _sov_unlock()
+    if b > 0
+        return b
+    return syscall(9, 0, 2097152, 3, 34, 0 - 1, 0)
+_sov_ctx_setup cb:
+    dummy: rt_heap()
+    if g_ctx_tab is 0
+        return 0 - 1
+    t: _sov_ctx_gettid()
+    if t < 1
+        return 0 - 1
+    i: peek_i64(cb, 64)
+    if i < 0
+        return 0 - 1
+    if i >= 16
+        return 0 - 1
+    if peek_i64(g_ctx_tab + i * 64 + 8, 0) is not cb
+        return 0 - 1
+    base: _sov_ctx_map()
+    if base < 0
+        if base > 0 - 65536
+            return 0 - 1
+    poke_i64(g_ctx_tab + i * 64, 0, t)
+    poke_i64(g_ctx_tab + i * 64 + 16, 0, base)
+    poke_i64(g_ctx_tab + i * 64 + 24, 0, base + 2097152)
+    poke_i64(g_ctx_tab + i * 64 + 32, 0, base + 1024)
+    dummy: _sov_bzero(base, 1024)
+    return i
+_sov_ctx_retire cb:
+    if g_ctx_tab is 0
+        return 0
+    i: peek_i64(cb, 64)
+    if i < 0
+        return 0
+    if i >= 16
+        return 0
+    g_ctx_n: g_ctx_n - 1
+    poke_i64(cb, 64, 0 - 1)
+    base: peek_i64(g_ctx_tab + i * 64 + 16, 0)
+    poke_i64(g_ctx_tab + i * 64, 0, 0)
+    poke_i64(g_ctx_tab + i * 64 + 8, 0, 0)
+    poke_i64(g_ctx_tab + i * 64 + 16, 0, 0)
+    poke_i64(g_ctx_tab + i * 64 + 24, 0, 0)
+    poke_i64(g_ctx_tab + i * 64 + 32, 0, 0)
+    if base is 0
+        return 0
+    if g_z_n >= 8
+        old: peek_i64(g_z_ring, 0)
+        if old > 0
+            dummy: syscall(11, old, 2097152)
+        j: 0
+        as long as j < 7
+            poke_i64(g_z_ring + j * 16, 0, peek_i64(g_z_ring + (j + 1) * 16, 0))
+            j: j + 1
+        g_z_n: 7
+    poke_i64(g_z_ring + g_z_n * 16, 0, base)
+    g_z_n: g_z_n + 1
+_sov_ctx_alloc_small ci size:
+    base: peek_i64(g_ctx_tab + ci * 64 + 16, 0)
+    if base is 0
+        return 0
+    n: size
+    if n < 1
+        n: 16
+    c: (n + 15) / 16 - 1
+    h: peek_i64(base + c * 8, 0)
+    if h is not 0
+        nxt: peek_i64(h, 0)
+        poke_i64(base + c * 8, 0, nxt)
+        poke_i64(h + 8, 0, c + 1)
+        if g_alloc_dbg is 1
+            dummy: _sov_dbg_fill(h + 16, (c + 1) * 16)
+        return h + 16
+    bump: peek_i64(g_ctx_tab + ci * 64 + 32, 0)
+    end: peek_i64(g_ctx_tab + ci * 64 + 24, 0)
+    need: 16 + (c + 1) * 16
+    if bump + need > end
+        return 0
+    poke_i64(g_ctx_tab + ci * 64 + 32, 0, bump + need)
+    poke_i64(bump, 0, 0)
+    poke_i64(bump + 8, 0, c + 1)
+    p: bump + 16
+    if g_alloc_dbg is 1
+        dummy: _sov_dbg_fill(p, (c + 1) * 16)
+    return p
+_sov_ctx_release ci p:
+    if p < 65536
+        return 1
+    if (p - 16) % 16 is not 0
+        return 1
+    hdr: p - 16
+    cls: peek_i64(hdr + 8, 0)
+    if cls < 1
+        return 1
+    c: cls - 1
+    if c > 63
+        return 1
+    base: peek_i64(g_ctx_tab + ci * 64 + 16, 0)
+    if base is 0
+        return 1
+    if p < base + 1040
+        return 1
+    if p >= peek_i64(g_ctx_tab + ci * 64 + 24, 0)
+        return 1
+    poke_i64(hdr + 8, 0, 0)
+    poke_i64(hdr, 0, peek_i64(base + c * 8, 0))
+    poke_i64(base + c * 8, 0, hdr)
+_sov_ctx_realloc ci p n:
+    base: peek_i64(g_ctx_tab + ci * 64 + 16, 0)
+    if base is 0
+        return 0 - 1
+    if p < base + 1040
+        return 0 - 1
+    if p >= peek_i64(g_ctx_tab + ci * 64 + 24, 0)
+        return 0 - 1
+    if (p - 16) % 16 is not 0
+        return 0 - 1
+    hdr: p - 16
+    cls: peek_i64(hdr + 8, 0)
+    if cls < 1
+        dummy: _sov_alloc_abort("invalid realloc", 9)
+    c: cls - 1
+    old: (c + 1) * 16
+    if n <= 1024
+        if (n + 15) / 16 is c + 1
+            return p
+        np: _sov_ctx_alloc_small(ci, n)
+        if np is 0
+            return 0 - 2
+    if n > 1024
+        np: _sov_heap_alloc(n)
+    cp: n
+    if old < n
+        cp: old
+    i: 0
+    as long as i < cp
+        poke_byte(np + i, 0, peek_byte(p + i, 0))
+        i: i + 1
+    poke_i64(hdr + 8, 0, 0)
+    poke_i64(hdr, 0, peek_i64(base + c * 8, 0))
+    poke_i64(base + c * 8, 0, hdr)
+    return np
+g_thread_cb: 0
+g_no_clone: 0
+t_pool_base: 0
+t_pool_end: 0
+thread_slot i:
+    if t_pool_base is 0
+        b: syscall(9, 0, 65536, 3, 33, 0 - 1, 0)
+        if b < 0
+            return b
+        t_pool_base: b
+        t_pool_end: b + 65536
+    p: t_pool_base + i * 8
+    if p > t_pool_end
+        return 0 - 1
+    return p
+_sov_thread_spawn fn a0 a1 a2 a3 a4 a5:
+    base: syscall(9, 0, 262272, 3, 33, 0 - 1, 0)
+    if base < 0
+        return base
+    top: base + 262272
+    poke_i64(base, 0, 0)
+    poke_i64(base, 8, fn)
+    poke_i64(base, 16, a0)
+    poke_i64(base, 24, a1)
+    poke_i64(base, 32, a2)
+    poke_i64(base, 40, a3)
+    poke_i64(base, 48, a4)
+    poke_i64(base, 56, a5)
+    poke_i64(base, 80, 773411)
+    dummy: _sov_ctx_reserve(base)
+    e: addr_of _sov_thread_entry_stack
+    # Always try the real clone first.  The old /proc Seccomp probe
+    # treated any filter as "clone blocked" and silently degraded to
+    # fork (copy-on-write), which gives wrong results for shared
+    # memory on systems where clone works fine (e.g. Docker).  A
+    # failed clone returns < 0 and only then do we fork.
+    r: syscall(56, e, top, 12032, 0, 0, 0)
+    if r < 0
+        g_no_clone: 1
+        g_thread_cb: base
+        p: syscall(57, 0, 0, 0, 0, 0, 0)
+        if p > 0
+            poke_i64(base, 72, p)
+        if p is 0
+            cb: g_thread_cb
+            dummy: _sov_ctx_setup(cb)
+            f: peek_i64(cb, 8)
+            dummy: cfunc(f, peek_i64(cb, 16), peek_i64(cb, 24), peek_i64(cb, 32), peek_i64(cb, 40), peek_i64(cb, 48), peek_i64(cb, 56))
+            poke_i64(cb, 0, 1)
+            dummy: syscall(202, cb, 1, 1, 0, 0, 0)
+            dummy: _sov_thread_exit()
+        if p < 0
+            ui: peek_i64(base, 64)
+            if ui >= 0
+                if ui < 16
+                    if g_ctx_tab is not 0
+                        poke_i64(g_ctx_tab + ui * 64 + 8, 0, 0)
+            return p
+    return base
+stack_pointer:
+    return sp()
+_sov_thread_entry_stack:
+    s: stack_pointer()
+    cb: s - 262272
+    dummy: _sov_ctx_setup(cb)
+    f: peek_i64(cb, 8)
+    dummy: cfunc(f, peek_i64(cb, 16), peek_i64(cb, 24), peek_i64(cb, 32), peek_i64(cb, 40), peek_i64(cb, 48), peek_i64(cb, 56))
+    poke_i64(cb, 0, 1)
+    dummy: syscall(202, cb, 1, 1, 0, 0, 0)
+    dummy: _sov_thread_exit()
+_sov_thread_entry_param base:
+    dummy: _sov_ctx_setup(base)
+    f: peek_i64(base, 8)
+    dummy: cfunc(f, peek_i64(base, 16), peek_i64(base, 24), peek_i64(base, 32), peek_i64(base, 40), peek_i64(base, 48), peek_i64(base, 56))
+    poke_i64(base, 0, 1)
+    dummy: syscall(202, base, 1, 1, 0, 0, 0)
+_sov_thread_join h:
+    # fork-fallback handles carry a pid at +72; real threads wait on
+    # the futex word at +0.
+    if peek_i64(h, 72) > 0
+        pid: peek_i64(h, 72)
+        if pid > 0
+            st2: _sov_meta_take(64)
+            dummy: syscall(61, pid, st2, 0, 0, 0, 0)
+        return 0
+    s: peek_i64(h, 0)
+    g: 1
+    as long as g is 1
+        if s is 1
+            g: 0
+        if not
+            dummy: syscall(202, h, 0, s, 0, 0, 0)
+            s: peek_i64(h, 0)
+    dummy: _sov_ctx_retire(h)
+_sov_probe9:
+    return 4242

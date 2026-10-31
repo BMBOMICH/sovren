@@ -1,0 +1,42 @@
+use sys
+rand_bytes_into p n:
+    # Fill exactly n bytes or die loudly.  Every caller (keys, salts,
+    # nonces, tokens) is silently broken by short/failed entropy -
+    # on a target whose syscall bridge lacks getrandom this used to
+    # return zeros forever (audit F-58).
+    off: 0
+    bad: 0
+    as long as off < n
+        r: sys_getrandom(p + off, n - off)
+        if r > 0
+            off: off + r
+            bad: 0
+        if not
+            bad: bad + 1
+            if bad > 7
+                print "FATAL: getrandom failed"
+                sys_exit(1)
+    return n
+rand_bytes n:
+    buf: _sov_alloc(n + 1)
+    dummy_rb: rand_bytes_into(buf, n)
+    poke_byte(buf, n, 0)
+    return buf
+rand_u8:
+    b: rand_bytes(1)
+    return peek_byte(b, 0)
+rand_u32:
+    b: rand_bytes(4)
+    return peek_byte(b, 0) + peek_byte(b, 1) * 256 + peek_byte(b, 2) * 65536 + peek_byte(b, 3) * 16777216
+rand_below n:
+    if n < 2 -> return 0
+    # Rejection sampling: no modulo bias, no 256 ceiling (audit F-15).
+    lim: 4294967296 - 4294967296 % n
+    v: rand_u32()
+    as long as v >= lim
+        v: rand_u32()
+    return v % n
+rand_range lo hi:
+    span: hi - lo + 1
+    if span < 1 -> return lo
+    return lo + rand_below(span)

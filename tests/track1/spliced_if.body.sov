@@ -1,0 +1,9 @@
+# spliced-if trap OVERLAY: the gate harness splices
+# tests/track1/inc/tf01.sov + this file (include-directive resolution is a
+# separate latent repair; the trap guards `if` dispatch across a splice seam).
+main:
+    z: 30
+    if is_big(z) = 1 -> print 'spliced-if-ok'
+    if not -> print 'spliced-if-fail'
+    print mul3(7)
+    print 'done'

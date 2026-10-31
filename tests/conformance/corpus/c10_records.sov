@@ -1,0 +1,14 @@
+REC: 32
+rec_get r off:
+    return peek_i64(r, off)
+rec_set r off v:
+    poke_i64(r, off, v)
+    return 0
+main:
+    a: _sov_alloc(REC)
+    b: _sov_alloc(REC)
+    rec_set(a, 0, 111)
+    rec_set(a, 8, 22)
+    rec_set(b, 0, rec_get(a, 0) * 2)
+    print rec_get(b, 0)
+    print rec_get(a, 8) + rec_get(b, 0)

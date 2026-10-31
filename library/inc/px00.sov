@@ -1,0 +1,4079 @@
+%1: %2
+%3: %4
+%5: %6
+%7: %8
+
+%1
+%2
+%3
+%4
+
+%1()
+%2()
+%3()
+%4()
+%5()
+%6()
+
+if b = %1 -> if x = %2
+        if v = %3
+            emit(%4)
+            emit(136)
+            emit(%5)
+            emit(%6)
+if b = %7 -> if x = %8
+        if v = %9
+
+if seq(name, '%1') = 1 -> return '%2 OK'
+if seq(name, '%3') = 1 -> return '%4 OK'
+if seq(name, '%5') = 1 -> return '%6 OK'
+if seq(name, '%7') = 1 -> return '%8 OK'
+
+%1(%2)
+%3(%4)
+%5(%6)
+%7(%8)
+
+m: put 0 + i: 102 15 %1 203
+go(m, 4)
+if x_xlo(m, 1) != %2 -> return bad('%3 %4 lo', x_xlo(m, 1), %5)
+return is_eq('%6 %7 hi', x_xhi(m, 1), %8)
+
+%1:
+    push_all()
+    poke_raw64(CURVEC, 0, %2)
+    pop_all()
+    as long as 1 = 1 -> hlt()
+
+sc(10)
+sputs('%1 %2 ')
+%3: 0
+as long as %4 < %5 -> snum(peek_byte(%6 + %7, 0))
+    sc(44)
+    %8: %9 + 1
+
+main:
+    sinit()
+    sputs("SOVREN %1\n")
+    %2: %3
+
+# unsafe-module
+use %1
+%2: %3
+%4 %5, %6:
+
+main:
+    sinit()
+    sputs("SOVREN %1\n")
+    atomic_store(%2, %3)
+    atomic_store(%4, %5)
+
+%1: here()
+%2(0)
+addp(%3, '%4', %5)
+emit:
+
+m: put 0 + i: %1 15 %2 %3 %4 144
+go(m, 6)
+if x_xlo(m, 1) != %5 -> return bad('%6 lo', x_xlo(m, 1), %7)
+return is_eq('%8 hi', x_xhi(m, 1), %9)
+
+main:
+    sinit()
+    sputs("SOVREN %1 %2\n")
+    atomic_store(%3, %4)
+    atomic_store(%5, %6)
+    atomic_store(%7, %8)
+
+if peek_raw64(%1 + %2, 0) != %3 -> ok: 0
+    sputs("%4 %5 %6\n")
+if ok = 1 -> sputs("%7 OK\n")
+if not -> sputs("%8 FAIL\n")
+as long as 1 = 1 -> hlt()
+
+b0: peek_byte(%1 + %2, 0)
+b1: peek_byte(%3 + %4 + 1, 0)
+b2: peek_byte(%5 + %6 + 2, 0)
+b3: peek_byte(%7 + %8 + 3, 0)
+%9: bor(bor(bor(b0, bshl(b1, 8)), bshl(b2, 16)), bshl(b3, 24))
+
+main:
+    %1()
+    sputs("SOVREN %2\n")
+    %3()
+
+# unsafe-module
+use ktest_b
+%1: %2
+%3 %4:
+
+r: ci % ns
+if r = sh -> %1()
+ci: ci + 1
+r: ci % ns
+if r = sh -> %2()
+ci: ci + 1
+
+if b = %1 -> if x = %2
+            emit:
+                %3 198 4 %4
+                v % 256
+
+%1:
+    %2
+    %3
+%4: %5
+
+if %1 = %2 -> if %3 = %4
+        emit:
+            %5 %6 %7
+        return
+
+if number = %1 -> return "%2"
+if number = %3 -> return "%4"
+if number = %5 -> return "%6"
+if number = %7 -> return "%8"
+
+poke_byte(expd, k - %1, %2)
+poke_byte(expd, k - %3, %4)
+poke_byte(expd, k - %5, %6)
+poke_byte(expd, k - %7, %8)
+
+main:
+    sinit()
+    sputs("SOVREN %1\n")
+    %2(%3, 0, %4)
+
+%1: here()
+br_at: _sov_list_add(br_at, %2)
+br_pv: _sov_list_add(br_pv, pad_ver)
+br_id: _sov_list_add(br_id, %3)
+br_st: _sov_list_add(br_st, 0)
+emit4(%4)
+
+if b = %1 -> if x = %2
+            emit:
+                %3 15 182 4 %4
+if b = %5 -> if x = %6
+            emit:
+                %7 15 182 4 %8
+
+snum(%1)
+sputs(' %2 ')
+snum(%3)
+sc(10)
+
+m: put 0 + i: 102 15 58 99 202 %1 144
+go(m, 7)
+if x_reg(m, 1) != %2 -> return bad('%3 idx', x_reg(m, 1), %4)
+if x_zf(m) != %5 -> return bad('%6 zf', x_zf(m), %7)
+
+%1 %2:
+    if %3 = 0 -> return %4
+    return peek_raw64(%5 + %6, 0)
+%7 %8:
+
+if %1 = %2
+    emit(%3)
+    emit(%4)
+    emit(%5)
+    emit(return)
+if %6 = %7
+
+%1: %2(m)
+poke_i64(m, 976, %3)
+poke_i64(m, 944, %4)
+%5: x_gf_mul1(m)
+poke_i64(m, 976, %6)
+
+if peek_raw64(%1 + %2, 0) != %3 -> ok: 0
+    sputs("%4-%5 %6 wrong\n")
+if ok = 1 -> sputs("%7 OK\n")
+if not -> sputs("%8 FAIL\n")
+as long as 1 = 1 -> hlt()
+
+m: put 0 + i: 102 15 %1 203
+go(m, 4)
+if x_xlo(m, 1) != 0 - %2 -> return bad('%3 %4 lo', x_xlo(m, 1), 0 - %5)
+return is_eq('%6 %7 hi', x_xhi(m, 1), 0 - %8)
+
+m: put 0 + i: 102 15 %1 %2 203 %3 144
+go(m, 7)
+if x_xlo(m, 1) != %4 -> return bad('%5 lo', x_xlo(m, 1), %6)
+return is_eq('%7 hi', x_xhi(m, 1), %8)
+
+if %1 < USER_DATA_VA -> poke_raw64(frame + 112, 0, 0 - 14)
+    pop_all()
+    iretq()
+if %2 > USER_DATA_VA + 4096 - %3 -> poke_raw64(frame + 112, 0, 0 - 14)
+    pop_all()
+    iretq()
+
+%1:
+    %2
+    %3
+as long as %4 < %5 -> %6: %7(%8, %9)
+
+%1: %2
+%3:  %4
+%5: %6
+%7: %8
+
+poke_raw64(%1, 0, %2)
+poke_raw64(%3, 0, 0)
+poke_raw64(%4, 0, 0)
+return %5
+
+if peek_raw64(%1 + %2, 0) != %3 -> ok: 0
+    sputs("%4 %5 %6 %7\n")
+if ok = 1 -> sputs("%8 OK\n")
+if not -> sputs("%9 FAIL\n")
+as long as 1 = 1 -> hlt()
+
+m: x_setr 0 + 2 * i: %1 %2
+m: put 0 + i: 102 15 58 97 202 %3 144
+go(m, 7)
+if x_reg(m, 1) != %4 -> return bad('%5 idx', x_reg(m, 1), %6)
+if x_reg(m, 0) != %7 -> return bad('%8 eax', x_reg(m, 0), %9)
+
+%1:
+    %2
+    %3
+%4 %5:
+
+# unsafe-module
+use %1
+%2: %3
+%4: %5
+%6: %7
+%8:
+
+%1:
+    m: new_at()
+    m: x_setr 0 + 3 * i: %2 %3
+    m: put 0 + i: 72 %4 216
+    go(m, 3)
+
+%1:
+    %2
+    %3
+%4:
+
+%1:
+    %2(%3)
+%4:
+    %5(%6)
+
+%1 h:
+    if h = 0 -> return 0
+    if peek_i64(h, 0) = WD_X11 -> return %2(peek_i64(h, 8))
+    return %3(peek_i64(h, 8))
+
+if seq(name, '%1') = 1 -> return %2
+if seq(name, '%3') = 1 -> return %4
+if seq(name, '%5') = 1 -> return %6
+if seq(name, '%7') = 1 -> return %8
+
+%1:
+    m: new_at()
+    %2: X_AT + %3
+    %4(m, %5, %6)
+
+m: put 0 + i: 102 15 58 %1 203 %2 144
+go(m, 7)
+if x_xlo(m, 1) != %3 -> return bad('%4 lo', x_xlo(m, 1), %5)
+return is_eq('%6 hi', x_xhi(m, 1), 0 - %7)
+
+%1:
+    m: new_at()
+    m: x_setr 0 + 3 * i: %2 %3
+    m: put 0 + i: 242 15 56 %4 195 144
+    go(m, 6)
+    return is_eq('%5', x_reg(m, 0), %6)
+
+0:
+    %1
+    %2
+as long as %3 < %4(%5) -> %6: %7(%8, %9)
+
+0:
+    %1
+    %2
+    %3
+as long as %4 < %5 -> %6: %7(%8, %9)
+
+if %1 = %2
+    emit(%3)
+    emit(57)
+    emit(%4)
+if %5 = %6
+    emit(%7)
+    emit(57)
+    emit(%8)
+
+%1: _sov_heap_alloc(16)
+%2: 0
+%3: aadd(%4, %5, '/bin/sh')
+%6: aadd(%7, %8, '-c')
+
+if %1 > %2
+    emit(65)
+    emit(%3)
+if %4 > %5
+    emit(65)
+    emit(%6)
+
+emit:
+    %1 %2 %3
+%4: %5()
+%6(%7)
+
+i: 0
+as long as i < %1 -> if peek_byte(%2, i) != peek_byte(%3, i)
+        return 0
+    i: i + 1
+
+if op = %1 -> return %2(m)
+if op = %3 -> return %4(m)
+if op = %5 -> return %6(m)
+if op = %7 -> return %8(m)
+
+%1: %2(m)
+m: poke_i64 984 + 8 * i: %3 %4
+%5: x_xor1(m)
+m: poke_i64 984 + 8 * i: %6 %7
+
+# unsafe-module
+use ktest_b
+%1: %2
+%3 %4, %5, %6:
+
+%1: 0
+as long as %2 < 1000000 -> if band(%3(%4 + %5, 0), %6) = %7
+        leave
+    %8: %9 + 1
+
+sputs('%1 ')
+phex(%2, 32)
+sputs('%3 ')
+phex(%4, %5)
+
+poke_raw64(VTH + %1 * 8, 0, fn_addr('%2'))
+poke_raw64(VTH + %3 * 8, 0, fn_addr('%4'))
+poke_raw64(VTH + %5 * 8, 0, fn_addr('%6'))
+poke_raw64(VTH + %7 * 8, 0, fn_addr('%8'))
+
+m: put 0 + i: 102 15 58 %1 202 %2 144
+go(m, 7)
+if x_xlo(m, 0) != %3 -> return bad('%4 mask lo', x_xlo(m, 0), %5)
+if x_xhi(m, 0) != 0 -> return bad('%6 mask hi', x_xhi(m, 0), 0)
+
+%1:
+    m: new_at()
+    x_setr(m, %2, %3)
+    m: put 0 + i: %4 %5 %6
+    go(m, 3)
+
+%1:
+    m: new_at()
+    x_xset(m, %2, %3, 0)
+    m: put 0 + i: %4 %5 %6 %7 %8
+    go(m, 5)
+
+%1:
+    fn_names: _sov_list_add(fn_names, '%2')
+    fn_offs: _sov_list_add(fn_offs, here())
+    emit:
+
+%1(%2)
+emit:
+    %3 %4
+%5(%6)
+
+%1:
+    %2(%3, %4)
+%5:
+    %6(%7, %8)
+
+%1()
+loadv(%2)
+%3()
+%4(%5)
+
+i: 0
+as long as i < %1 -> poke_byte(%2, i, 0)
+    i: i + 1
+%3: %4 %5 + %6 * i: %7 %8
+
+if number = %1 -> return -1
+if number = %2 -> return -1
+if number = %3 -> return -1
+if number = %4 -> return -1
+
+0:
+    %1
+    %2
+as long as i < %3 - %4 -> if peek_byte(%5, i) = %6
+
+%1: x86_new()
+if x86_load(%2, "/tmp/sov-%3.out") = 1 -> x86_run(%4)
+    %5: 1
+    if x86_why(%6) != 1 -> %7: 0
+
+0:
+    %1
+    %2
+%3: %4 + %5
+
+main:
+    sinit()
+    sputs("SOVREN %1 %2\n")
+    %3: %4
+
+0:
+    %1
+    %2
+as long as %3 < %4 -> %5: peek_raw64(%6 + %7 * %8, 0)
+
+%1: here()
+emitw(%2)
+emitw(%3)
+emitw(%4)
+%5: here()
+
+%1:
+    %2
+    %3
+    %4
+%5 %6:
+
+x_xd_set(m, n, %1, %2)
+x_xd_set(m, n, %3, %4)
+x_xd_set(m, n, %5, %6)
+x_xd_set(m, n, %7, %8)
+return x_go(m, q)
+
+main:
+    sinit()
+    sputs("SOVREN %1\n")
+    atomic_store(%2 + 0, %3)
+    atomic_store(%4 + 8, %5)
+
+atomic_store(%1, %2)
+i: 0
+as long as i != %3 -> atomic_store(%4 + (i * %5) + 0, 0)
+    atomic_store(%6 + (i * %7) + 8, 0)
+    atomic_store(%8 + (i * %9) + 16, 0)
+
+ledit_key(%1, LINEBUF + 63)
+ledit_key(%2, LINEBUF + 63)
+ledit_key(%3, LINEBUF + 63)
+ledit_key(%4, LINEBUF + 63)
+%5(%6, LINEBUF + %7)
+
+%1:
+    m: new_at()
+    m: x_setr 0 + 3 * i: %2 %3
+    m: put 0 + i: 72 15 %4 %5
+    go(m, 4)
+
+%1:
+    m: new_at()
+    x_setr(m, 3, %2)
+    m: put 0 + i: %3 %4 %5 %6 %7
+    go(m, 5)
+
+%1(%2)
+%3(%4)
+%5()
+%6(%7)
+
+%1:
+    %2
+    %3
+%4 %5 %6:
+
+%1: 0
+as long as %2 < %3 -> %4: %5 * %6
+    %7: %8 + 1
+return %9
+
+%1(%2):
+    %3
+    %4
+%5: %6
+
+cs_add("%1", addr_of %2)
+cs_add("%3", addr_of %4)
+cs_add("%5", addr_of %6)
+cs_add("%7", addr_of %8)
+
+if sl = %1
+    emit(%2)
+    emit(%3)
+    emit(%4)
+    emit(return)
+    emit(0)
+if sl = %5
+    emit(73)
+    emit(%6)
+    emit(%7)
+    emit(return)
+    emit(0)
+
+if sl = %1
+    emit(%2)
+    emit(131)
+    emit(%3)
+    emit(v)
+    emit(%)
+    emit(256)
+if sl = %4
+    emit(73)
+    emit(131)
+    emit(%5)
+    emit(v)
+    emit(%)
+    emit(256)
+
+if sl = %1
+    emit(%2)
+    emit(129)
+    emit(%3)
+    emit4(v)
+if sl = %4
+    emit(73)
+    emit(129)
+    emit(%5)
+    emit4(v)
+
+if lb = 216 -> dummy: ocset(oc_n - 1, %1)
+if lb = 224 -> dummy: ocset(oc_n - 1, %2)
+if lb = 232 -> dummy: ocset(oc_n - 1, %3)
+if lb = 240 -> dummy: ocset(oc_n - 1, %4)
+if lb = 248 -> dummy: ocset(oc_n - 1, %5)
+return 0
+
+%1 %2:
+    emit:
+        %3(%4)
+        %5
+
+if %1 = %2 -> %3(%4)
+    return 0
+if %5 = %6 -> %7(%8)
+    return 0
+
+%1 registry capacity device_id:
+    p: _kblk_device_ptr(registry, capacity, device_id)
+    if p = 0 -> return 0
+    return peek_raw64(p + %2, 0)
+
+%1 table capacity vector:
+    entry: _kirq_entry(table, capacity, vector)
+    if entry = 0 -> return 0
+    return atomic_load(entry + %2)
+
+%1 fds:
+    return peek_i64(fds, 0) % 4294967296
+%2 fds:
+    return peek_i64(fds, 0) / 4294967296
+
+if %1 = %2 -> return %3
+if %4 = %5 -> return %6
+if %7 = %8 -> return %9
+return 0 - 1
+
+%1: peek_i64(%2, 216)
+%3: 0
+as long as %4 < 65536 -> if x86_peek_q(%5, %6 + %7) = %8
+        %9: 0
+
+%1: %2
+%3: %4
+%5 %6 %7:
+    %8: %9
+
+if %1 < %2 -> poke_raw64(frame + 112, 0, 0 - 22)
+    pop_all()
+    iretq()
+if %3 > %4 -> poke_raw64(frame + 112, 0, 0 - %5)
+    pop_all()
+    iretq()
+
+if not -> sputs("%1 wrong\n")
+%2(%3, %4)
+atomic_store(%5, %6)
+atomic_store(%7, %8)
+
+%1 v:
+    return band(bshr(v, %2) + band(v, %3) * %4, 4294967295)
+%5 v:
+    return band(bshr(v, %6) + band(v, %7) * %8, 4294967295)
+
+sc(10)
+sputs('CB %1 ')
+cq: 0
+as long as cq < 12 -> snum(peek_byte(%2 - 10 + cq, 0))
+    sc(44)
+    cq: cq + 1
+
+t(%1, %2)
+t(0 - %3, %4)
+t(%5, %6)
+t(0 - %7, %8)
+
+%1:
+    m: new_at()
+    x_setr(m, 3, %2)
+    m: put 0 + i: 243 72 15 %3 195 144
+    go(m, 6)
+    if x_reg(m, 0) != %4 -> return bad('%5', x_reg(m, 0), %6)
+
+%1:
+    m: new_at()
+    x_xset(m, 1, %2, %3)
+    x_xset(m, %4, %5, %6)
+
+%1:
+    m: new_at()
+    x_xset(m, 1, 4822678189205111, 0 - 8603657889541918977)
+    x_setr(m, 3, %2)
+
+m: put 0 + i: 102 15 %1 %2 %3 144
+go(m, 6)
+if x_xlo(m, 1) != %4 -> return bad('%5 lo', x_xlo(m, 1), %6)
+return is_eq('%7 hi', x_xhi(m, 1), 0 - %8)
+
+%1: here()
+emitw(%2)
+emitw(%3)
+%4: here()
+emitw(%5)
+
+poke4(flat, %1 + at, 3531603968 + (%2 % 65536) * 32)
+poke4(flat, %3 + at + 4, 4070572032 + ((%4 / 65536) % 65536) * 32)
+poke4(flat, %5 + at + 8, 4072669184 + ((%6 / 4294967296) % 65536) * 32)
+poke4(flat, %7 + at + 12, 4074766336 + ((%8 / 281474976710656) % 65536) * 32)
+
+t: peek_byte(st, %1)
+poke_byte(st, %2, peek_byte(st, %3))
+poke_byte(st, %4, peek_byte(st, %5))
+poke_byte(st, %6, peek_byte(st, %7))
+poke_byte(st, %8, t)
+
+%1:
+    %2
+    %3
+%4 %5 %6 %7:
+
+i: %1
+as long as i < %2 -> %3: %4(%5, %6)
+    i: i + %7
+return %8
+
+if _sov_str_eq(name, "%1") = 1 -> cflush_globs()
+    emitw(%2)
+    return
+if _sov_str_eq(name, "%3") = 1 -> cflush_globs()
+    emitw(%4)
+
+%1:
+    %2
+    %3
+    %4
+%5 %6 %7:
+
+if b = 2 -> if x = %1
+            emit:
+                %2 198 68 %3 0
+                v % 256
+
+%1: _sov_heap_alloc(%2)
+i: 0
+as long as i < %3 -> poke_byte(%4, i, %5)
+    i: i + 1
+%6: %7
+
+0:
+    %1
+    %2
+as long as %3 < %4 -> %5: %6
+
+%1: _sov_heap_alloc(%2)
+%3(%4, %5, %6)
+%7: _sov_heap_alloc(%8)
+%9: 0
+
+if not -> if %1 = %2
+        %3: %4 + 1
+    if not -> if %5 = %6
+            %7: %8 + 1
+
+%1: %2(%3 + %4, 0)
+%5:
+    %6
+    %7
+
+%1 w:
+    v: peek_i64(w, %2)
+    poke_i64(w, %3, 0)
+    return v
+%4 %5:
+
+%1 %2:
+    %3(%4, %5)
+    return %6
+%7 %8:
+
+# unsafe-module
+%1: %2
+%3: %4
+use ktest_e
+
+%1 %2:
+    if peek_raw64(%3 + (%4 * %5), %6) = %7 -> RES: %8
+        return 0
+    RES: %9
+
+mem_zero(%1, %2 * %3)
+poke_raw64(%4, 0, %5)
+poke_raw64(%6, 0, %7)
+poke_raw64(%8, 0, %9)
+
+if kio_dma_map_init(%1) != 1 -> xhci_core_dma_unmap()
+    return 0
+if kernel_dma_map(%2, PCI_DRIVER_XHCI, peek_raw64(context + %3, 0), 4096, %4, XHCI_DMA_LIMITS) != 1 -> xhci_core_dma_unmap()
+    return 0
+
+%1: %2(%3, %4, %5)
+poke_raw64(frame + 112, 0, %6)
+pop_all()
+iretq()
+
+%1:
+    if atomic_load(%2) = %3 -> return 0
+    %4(%5, %6)
+    return %7
+
+%1: -%2
+%3: %4
+%5: -%6
+%7: %8
+
+main:
+    _sov_heap_alloc(%1):
+        %2
+        %3
+    %4(%5, %6, %7)
+
+%1:
+    m: new_at()
+    x_setr(m, %2, %3)
+    m: put 0 + i: 72 %4 %5 %6
+    go(m, 4)
+
+m: put 0 + i: 102 15 %1 203
+go(m, 4)
+if x_xlo(m, 1) != %2 -> return bad('%3 %4 lo', x_xlo(m, 1), %5)
+return is_eq('%6 %7 hi', x_xhi(m, 1), 0 - %8)
+
+%1:
+    m: new_at()
+    x_xset(m, 1, %2, %3)
+    x_xset(m, %4, %5, 0 - %6)
+
+m: put 0 + i: %1 15 %2 203 144
+go(m, 5)
+if x_xlo(m, 1) != %3 -> return bad('%4 lo', x_xlo(m, 1), %5)
+return is_eq('%6 hi', x_xhi(m, 1), %7)
+
+m: put 0 + i: 102 15 56 %1 203 144
+go(m, 6)
+if x_xlo(m, 1) != 0 - %2 -> return bad('%3 lo', x_xlo(m, 1), 0 - %4)
+return is_eq('%5 hi', x_xhi(m, 1), %6)
+
+m: put 0 + i: 196 %1 %2 %3 203
+go(m, 5)
+if x_xlo(m, 1) != %4 -> return bad('%5 lo', x_xlo(m, 1), %6)
+if x_xhi(m, 1) != %7 -> return bad('%8 hi', x_xhi(m, 1), %9)
+
+if _sov_str_eq(name, '%1') = 1
+    emit(%2)
+    emit(%3)
+    emit(%4)
+    emit(return)
+if _sov_str_eq(name, '%5') = 1
+    emit(15)
+    emit(%6)
+    emit(%7)
+    emit(return)
+
+if b > 47 -> if b < 58
+        %1: 1
+if b > 64 -> if b < 91
+        %2: 1
+if b > 96 -> if b < 123
+        %3: 1
+
+if v = %1
+    emit(72)
+    emit(%2)
+    emit(%3)
+    emit(%4)
+    emit(return)
+    emit(0)
+if v = %5
+    emit(72)
+    emit(%6)
+    emit(%7)
+    emit(%8)
+    emit(return)
+    emit(0)
+
+%1: jz()
+align32()
+%2: here()
+emit:
+    98 241 253 72 %3 %4 98 241 253 72
+    %5 %6 1 98 241 253 72 %7 %8 2
+
+if _sov_str_eq(op, "%1") = 1 -> if inv = 1
+        return %2()
+    return %3()
+if _sov_str_eq(op, "%4") = 1 -> if inv = 1
+        return %5()
+    return %6()
+
+%1:
+    emit:
+        72 137 %2
+%3:
+    emit:
+        72 137 %4
+
+%1 %2 capacity:
+    if %3 = 0 -> return 0
+    if capacity < 1 -> return 0
+    if capacity > %4 -> return 0
+    %5: 0
+    as long as %6 < capacity -> record: %7 + %8 * %9
+
+as long as n >= %1 -> o: str_cat(o, "%2")
+    n: n - %3
+if n >= %4 -> o: str_cat(o, "%5")
+    n: n - %6
+if n >= %7 -> o: str_cat(o, "%8")
+    n: n - %9
+
+if map = %1 -> if b = %2
+        return 1
+    if b = %3 -> return 1
+    if b = %4 -> return 1
+    if b = %5 -> return 1
+    if b = %6 -> return 1
+
+i: 0
+as long as i < %1 -> if %2 < X_OUT - 2
+        poke_byte(%3, %4, peek_byte(%5, i))
+        %6: %7 + 1
+    i: i + 1
+poke_byte(%8, %9, 0)
+
+write_out(num_text(%1))
+write_out(' %2, ')
+write_out(num_text(%3))
+write_out(" %4\n")
+if %5 = 0 -> write_out("%6 %7 passed\n")
+    sys_exit(0)
+
+main argc argv:
+    if argc < 3 -> write_out("use: %1 <%2.img> <%3.%4>\n")
+        stop
+    %5: as text peek_ptr(argv, 1)
+    %6: as text peek_ptr(argv, 2)
+    %7: file_read_all(%8)
+
+poke_raw64(%1, 0, %2)
+poke_raw64(%3, 0, 0)
+poke_raw64(%4, 0, 0)
+poke_raw64(%5, 0, 0)
+poke_raw64(%6, 0, 0)
+mem_zero(%7, %8 * %9)
+
+%1: peek_raw64(KERNEL_IRQ_TABLE_PTR, 0)
+vector: kirq_allocate(%2, KERNEL_IRQ_CAPACITY, %3, %4)
+if vector < 32 -> return 0
+generation: kirq_generation(%5, KERNEL_IRQ_CAPACITY, vector)
+poke_raw64(%6, 0, vector)
+poke_raw64(%7, 0, generation)
+
+0:
+    %1
+    att
+as long as att < %2 -> if %3 = 1
+        leave
+    rlen: rx_poll()
+
+if n = %1 -> %2: file_caps_bit()
+    if %3 < 0 -> poke_raw64(frame + 112, 0, %4)
+        pop_all()
+        iretq()
+    if band(%5, 1) = 0 -> poke_raw64(frame + 112, 0, 0 - 1)
+        pop_all()
+
+%1: alloc_contig(3)
+%2: alloc_frame()
+if %3 = 0 -> return 0
+if %4 = 0 -> if free_user_code(%5) != 1
+        return 0
+    return 0
+
+mem_zero(%1, 12288)
+mem_zero(%2, 4096)
+poke_raw64(SXE_DATA_DEST, 0, %3)
+if external_sxe_load(mpstage, %4, %5) != 12288 -> return 0
+if peek_raw64(SXE_DATA_LEN, 0) > 4096 -> return 0
+if peek_raw64(SXE_RO_LEN, 0) != 0 -> return 0
+
+%1:
+    m: new_at()
+    x_xset(m, 1, 4822678189205111, 0 - 8603657889541918977)
+    m: put 0 + i: 102 15 58 %2 203 %3 144
+    go(m, 7)
+    return is_eq('%4', x_reg(m, 3), %5)
+
+if _sov_str_eq(name, '%1') = 1
+    emit(72)
+    emit(137)
+    emit(%2)
+    emit(%3)
+    emit(%4)
+    emit(%5)
+    emit(return)
+if _sov_str_eq(name, '%6') = 1
+
+if not -> if _sov_str_eq(%1, '--%2') = 1
+        %3: %4
+    if not -> if _sov_str_eq(%5, '--%6') = 1
+            %7: %8
+
+%1:
+    return %2
+%3:
+    return %4
+
+emit:
+    %1 %2 %3
+%4(%5)
+return
+
+if s = %1 -> return '%2'
+if s = %3 -> return '%4'
+if s = %5 -> return '%6'
+if s = %7 -> return '%8'
+
+if n = %1 -> hi: b / %2
+    lo: b * %3
+    if lo >= 256 -> lo: lo - 256
+    return wxor(hi, lo)
+
+%1: %2
+%3: %4
+%5:
+    %6: %7(%8)
+
+%1 m v:
+    poke_i64(m, %2, v)
+%3 m:
+    return peek_i64(m, %4)
+
+if %1 = 1 -> arm_set(m, rd, %2(m, %3))
+if not -> %4(m, %5, arm_rz(m, rd))
+arm_set_pc(m, nx)
+return 1
+
+%1 %2:
+    return peek_i64(%3, %4)
+%5 %6 i:
+    if i < 0 -> return %7
+
+i: 0
+as long as i < %1 -> poke_byte(%2, %3 + i, peek_byte(%4, i))
+    i: i + 1
+%5(%6, %7, %8 + %9)
+
+%1 %2:
+    %3: %4(%5)
+    %6: %7
+    %8: %9
+
+%1: %2(%3 + %4)
+i: 0
+as long as i < %5 -> poke_byte(%6, i, %7)
+    i: i + 1
+
+%1(%2, %3)
+emitw(%4)
+%5(%6)
+%7(%8, %9)
+
+0:
+    %1
+    %2
+%3: %4(%5)
+
+%1:
+    return %2(%3)
+%4:
+    return %5(%6)
+
+%1()
+%2(%3)
+%4(%5)
+%6()
+
+if %1 >= %2 -> if %3 < %4
+        dl_len: %5
+        dl_dst: %6 - %7 + 8
+        %8: %9
+
+i: 0
+as long as i < list_len(%1) -> if str_eq(list_get(%2, i), %3) = 1
+        return %4
+    i: i + 1
+
+%1 %2 %3:
+    %4: %5(%6)
+    out: %7()
+    %8: 0
+
+%1: _sov_heap_alloc(%2)
+%3(%4, %5)
+%6: _sov_heap_alloc(%7)
+%8: %9
+
+if %1 = 0 -> return 0
+if %2 = 0 -> return 0
+if %3 < %4 -> return 0
+if %5 > %6 -> return 0
+
+%1: %2
+%3: %4
+%5 %6:
+    if %7 < %8 -> return %9
+
+if %1 = 0 -> return 0 - 1
+if %2 < 0 -> return 0 - 1
+if %3 > 65535 -> return 0 - 1
+%4: 0
+
+%1: %2
+%3: "%4"
+%5: "%6"
+%7: %8
+
+if x86_load(%1, "/tmp/sov-%2.%3") = 1 -> x86_run(%4)
+    %5: x86_out(%6)
+if str_has(%7, "42") = 1 -> ran: ran + %8
+%9: x86_new()
+
+%1:
+    file_write_all("/tmp/sov-%2.sov", "hold n:\n    private\n    a: n + 1\n    return a\n\nmain:\n    print hold(1)\n")
+    msg: tr_build_for("/tmp/sov-%3.sov", "/tmp/sov-%4.%5", "--%6")
+    if str_has(msg, "Error") = 1 -> return tr_bad("%7 %8 %9", msg, "a clean build")
+
+%1 %2 %3 %4:
+    0:
+        %5
+        %6
+
+t: %1(m, %2)
+%3(m, %4, %5(m, %6))
+%7(m, %8, t)
+return x_go(m, %9)
+
+%1: _sov_heap_alloc(%2)
+i: 0
+as long as i < %3 -> %4(%5 + i, 0, %6)
+    i: i + 1
+
+# unsafe-module
+use ktest_b
+%1: %2
+%3 %4, %5, %6, %7:
+
+as long as i != %1 -> atomic_store(%2 + (i * %3), 0)
+    i: i + 1
+atomic_store(%4, 0)
+atomic_store(%5, %6)
+
+%1:
+    %2(%3, %4)
+    return 1
+%5:
+
+0:
+    %1
+    %2
+as long as %3 < %4 -> %5: %6 + %7 * %8
+
+set_task(%1, %2, fn_addr('%3'))
+set_task(BTCB, %4, fn_addr('%5'))
+poke_raw64(%6, 0, %7)
+poke_raw64(%8, 0, 0)
+
+poke_raw64(%1 + %2, 0, 43)
+poke_raw64(%3 + %4, 0, 514)
+poke_raw64(%5 + %6, 0, USER_DATA_VA + 4096 - 16)
+poke_raw64(%7 + %8, 0, 51)
+
+%1: peek_raw64(frame + %2, 0)
+if %3 = 0 -> poke_raw64(frame + 112, 0, 0 - 14)
+    pop_all()
+    iretq()
+
+if %1(%2) != 1 -> return 0
+if %3(%4) != 1 -> return 0
+if %5(%6) != 1 -> return 0
+if %7(%8) != %9 -> return 0
+
+%1: %2(%3)
+if %4 = 0 -> syscall_result(frame, 0 - %5)
+    pop_all()
+    iretq()
+
+%1:
+    %2: str_cat(KERNS, '/../userspace/%3.sov')
+    %4: str_cat(ARTD, '/%5-%6.sxe')
+    if compile_compact_user(%7, %8) != 1 -> return 0
+
+%1 i:
+    if band(peek_raw64(PTE + (i * 16), 0), %2) != 0 -> RES: 1
+        return 0
+    RES: 0
+
+main:
+    %1: _sov_heap_alloc(%2)
+    %3: poke_i64:
+        0 -> %4
+
+file_write_all('/tmp/sov-%1.sov', src)
+r: cr_build('/tmp/sov-%2.sov', '/tmp/sov-%3', '')
+if r != 0 -> cr_bad('could not build the %4 check')
+    return 0
+
+m: put 0 + i: 102 15 56 %1 203 144
+go(m, 6)
+if x_xlo(m, 1) != 0 - %2 -> return bad('%3 lo', x_xlo(m, 1), 0 - %4)
+return is_eq('%5 hi', x_xhi(m, 1), 0 - %6)
+
+%1: jnz()
+emit:
+    129 124 36 %2
+emit4(4096)
+%3: jnz()
+
+%1: 0
+i: 1
+as long as i < n -> if str_eq(as text arg_at(i), '--%2') = 1
+        %3: %4
+    i: i + 1
+
+%1: 1
+as long as %2 = 1 -> if %3 >= n
+        %4: 0
+    if not -> if peek_byte(%5, %6) = %7
+            %8: %9
+
+if v < 0 -> v: v + 4294967296
+%1: 0
+as long as %2 < 4 -> dummy: ocset(%3 + %4, v % 256)
+    v: v / 256
+    %5: %6 + 1
+
+if _sov_str_eq(op, "%1") = 1 -> if is_imm(R) = 1
+        pop_rax()
+        if arith_imm("%2", num_of(R)) = 0 -> chk_ov()
+            return
+        push_rax()
+
+if not -> if c = %1
+        poke_byte(out, j, 38)
+        poke_byte(out, j + 1, %2)
+        poke_byte(out, j + 2, %3)
+        poke_byte(out, j + 3, %4)
+
+%1 %2:
+    if %3 = 0 -> return 0
+    return 1
+%4 %5:
+    return peek_i64(%6, %7)
+
+if i < %1 -> if wand(i, 3) = 0
+        return %2
+    if wand(i, 3) = 1 -> return %3
+    if wand(i, 3) = 2 -> return %4
+    return %5
+
+if number = %1 -> return %2
+if number = %3 -> return %4
+if number = %5 -> return -1
+if number = %6 -> return -1
+if number = %7 -> return %8
+
+0:
+    %1
+    %2
+as long as %3 < %4 -> if peek_byte(%5, %6) != peek_byte(%7, %8)
+        %9: 1
+
+if r = 0 -> return 0
+hlen: tl_hslen
+r: %1(%2, %3, hs, hlen)
+if r = 0 -> return 0
+hlen: tl_hslen
+
+%1 secret out:
+    info: _sov_heap_alloc(32)
+    tl13_info0(info, %2, "%3")
+    n: tl13_ln
+    hkdf_expand(secret, info, n, %4, out)
+
+%1: _sov_heap_alloc(16)
+%2: _sov_heap_alloc(12)
+tl13_key(%3, %4)
+tl13_iv(%5, %6)
+%7: %8(%9)
+
+x_unpack(m, %1)
+%2: x_up_kind(m)
+%3: x_up_sign(m)
+%4: x_up_exp(m)
+%5: x_up_frac(m)
+
+if op = %1 -> return %2(m)
+if op = %3 -> poke_i64(m, 888, %4)
+    return x_vbroadcast(m)
+if op = %5 -> poke_i64(m, 888, %6)
+    return x_vbroadcast(m)
+
+if which = %1 -> if c = %2
+        return %3
+    return %4
+if which = %5 -> if c = %6
+        return %7
+
+if n = %1 -> if a = 0
+        zm_store_res(0)
+        return 0
+    zm_store_res(%2(a, b))
+    return 0
+
+print ''
+write_out(num_text(%1))
+write_out(' passed, ')
+write_out(num_text(%2))
+print ' failed'
+
+as long as i < %1 -> poke_raw64(%2 + i * 8, 0, 0)
+    poke_raw64(%3 + %4 + i * 8, 0, 0)
+    i: i + 1
+poke_raw64(%5 + %6, 0, 0)
+poke_raw64(%7 + %8, 0, 0)
+
+%1 name:
+    i: 0
+    as long as i != %2 -> if atomic_load(%3 + (i * %4) + 0) = name
+            return atomic_load(%5 + (i * %6) + %7)
+        i: i + 1
+
+%1:
+    write_cr0(1)
+%2:
+    poke_raw64(%3, 0, %4)
+    int80()
+
+# unsafe-module
+use %1
+%2: %3
+%4:
+    i: 0
+
+poke_raw32(stream, 0, %1)
+%2: 0
+as long as %3 < 100000 -> if band(peek_raw32(stream, 0), %4) = %5
+        leave
+    %6: %7 + 1
+
+snum(peek_raw64(%1, 0))
+sputs(' %2 ')
+snum(peek_raw64(%3, 0))
+sputs(' %4 ')
+snum(peek_raw64(%5, 0))
+
+%1: peek_raw64(%2, 0)
+if %3 = 0 -> return 0
+poke_raw64(NET_TCP_PORT, 0, %4)
+if connected_fetch('/%5-app.sxe', %6, %7, 1) != 1 -> return 0
+poke_raw64(%8, 0, peek_raw64(NET_DL_RAW, 0))
+
+poke_raw32(mmio, 20, %1)
+%2: 0
+as long as %3 < %4 -> if band(peek_raw32(mmio, 28, 0), 1) = %5
+        leave
+    %6: %7 + 1
+
+direction: KIO_DMA_FROM_DEVICE
+if %1 = 1 -> direction: KIO_DMA_TO_DEVICE
+if kio_dma_limits_init(%2, %3, 4096, 4294967295) != 1 -> return 0
+if kio_dma_map_init(%4) != 1 -> return 0
+if kernel_dma_map(%5, %6, %7, 512, direction, %8) != 1 -> return 0
+
+poke_raw64(pdpt + 8, 0, %1 + 7)
+poke_raw64(%2, 0, %3 + 7)
+poke_raw64(%4, 0, %5 + 5)
+poke_raw64(%6 + 8, 0, %7 + 4096 + 5)
+poke_raw64(%8 + 16, 0, %9 + 8192 + 5)
+
+%1(%2, %3)
+%4(%5, %6)
+poke_raw64(%7, 0, 0)
+poke_raw64(%8, 0, 0)
+poke_raw64(%9, 0, 0)
+
+as long as i < 512 -> poke_raw64(%1, i * 8, pb + 135)
+    pb: pb + 2097152
+    i: i + 1
+poke_raw64(%2, 8 * 8, %3 + 3)
+poke_raw64(%4, 0, %5 + 135)
+
+poke_raw64(raw + %1 * 8, 0, %2)
+poke_raw64(raw + %3 * 8, 0, %4)
+poke_raw64(raw + %5 * 8, 0, %6)
+wb: wb_count(raw, %7)
+if wb != %8 -> ok: 0
+
+a: _sov_heap_alloc(%1)
+poke_i64(a, 0, '/tmp/sov-%2')
+poke_i64(a, 8, '/tmp/%3-%4.%5')
+poke_i64(a, 16, 0)
+cr_run('/tmp/sov-%6', a, 0, %7)
+
+file_write_all('/tmp/sov-%1.sov', src)
+cr_build('/tmp/sov-%2.sov', '/tmp/sov-%3.exe', '--windows')
+cr_wine_run(wine, '/tmp/sov-%4.exe', envp)
+if str_eq(cr_trim(cr_out), '%5') = 1 -> cr_ok('windows-%6')
+if not -> cr_bad('windows-%7')
+
+%1:
+    m: new_at()
+    return is_eq('%2 %3 %4', %5(m, %6, %7), %8)
+%9:
+    m: new_at()
+
+flat: poke4 %1 + 4 * i: %2 %3
+poke8(flat, %4, %5)
+poke8(flat, %6, BASE + %7)
+poke8(flat, %8, BASE + %9)
+
+if n > %1
+    emit(%2)
+    emit(137)
+    emit(%3)
+if n > %4
+    emit(%5)
+    emit(137)
+    emit(%6)
+
+emit:
+    72 %1 %2
+emit4(0 - %3)
+emit:
+
+%1(0 - %2)
+emit:
+    %3 %4
+%5(%6)
+
+t: _sov_list_add(t, '--%1')
+t: _sov_list_add(t, '%2')
+t: _sov_list_add(t, '--%3')
+t: _sov_list_add(t, '%4')
+
+i: 0
+as long as i < %1 -> poke_byte(%2, i, 0)
+    i: i + 1
+poke_i64(m, %3, mem_new(%4))
+
+if %1 < 1 -> print "%2: refused - no %3 %4"
+    return 0
+if %5 > %6 -> print "%7: refused - absurd %8 %9 count"
+    return 0
+
+if op = %1 -> %2: arm_rz(m, rm) % 64
+    arm_set(m, rd, %3(arm_rz(m, rn), %4))
+    arm_set_pc(m, nx)
+    return 1
+
+%1: str_find(line, "|")
+if %2 < 0 -> return %3
+rest: str_cut(line, %4 + 1, str_len(line))
+%5: str_find(rest, "|")
+
+%1: 0
+as long as %2 < %3 -> %4: %5 / 2
+    %6: %7 + 1
+return %8
+
+%1: 1
+as long as %2 = 1 -> if %3 >= n
+        %4: 0
+    if not -> %5: %6(%7, %8)
+
+if %1 = 32 -> %2: %3 + 1
+if not -> if %4 = 9
+        %5: %6 + 1
+    if not -> %7: 0
+
+if _sov_str_eq(op, "%1") = 1 -> emitw(%2)
+    return
+if _sov_str_eq(op, "%3") = 1 -> emitw(%4)
+    return
+
+%1:
+    at: here()
+    emitw(%2)
+    return at
+
+if _sov_str_eq(t, '%1:') = 1 -> done: 1
+    blk: 2
+    bind: ind
+    bfn: '%2'
+
+if not -> if %1 = %2
+        %3: %4
+    if not -> if %5 = %6
+            %7: %8
+
+if %1 > 0 -> rx: rx + %2
+emit:
+    rx
+    %3
+
+if %1 >= %2 -> if %3 < %4
+        dl_len: %5
+        dl_dst: %6 - %7
+        %8: %9
+
+if ai = %1 -> if try_lea_arg(ag, %2) = 0
+        expr(ag)
+        emit:
+            %3 137 %4
+
+if _sov_str_eq(op, "%1") = 1
+    emit(15)
+    emit(%2)
+    emit(192)
+if _sov_str_eq(op, "%3") = 1
+    emit(15)
+    emit(%4)
+    emit(192)
+
+%1: %2
+%3: %4
+%5()
+%6: %7
+
+%1(%2)
+%3(%4)
+%5: %6
+%7: %8
+
+%1 %2:
+    n: %3(%4)
+    if n = 0 -> return 0
+    return %5(%6, n - 1)
+
+%1 %2:
+    if vec_len(%3) = 0 -> return 0
+    return vec_get(%4, 0)
+%5 %6:
+
+fe_copy(%1, %2)
+fe_copy(%3 + 80, %4 + 80)
+fe_copy(%5 + 160, %6 + 160)
+fe_copy(%7 + 240, %8 + 240)
+
+%1: 0
+as long as %2 < %3 -> poke_i64(%4, %5 * 8, 0)
+    %6: %7 + 1
+%8: 0
+
+if %1 < %2 -> poke_byte(buf, 0, 0)
+    return as text buf
+poke_byte(buf, %3, 0)
+return as text buf
+
+if filter_has(text, "%1") = 1 -> return 1
+if filter_has(text, "%2") = 1 -> return 1
+if filter_has(text, "%3") = 1 -> return 1
+if filter_has(text, "%4") = 1 -> return 1
+
+%1 %2:
+    if %3 < 10 -> return %4 + %5
+    return %6 + %7
+%8 %9:
+
+%1 %2:
+    return %3(%4)
+%5 %6:
+    return %7(%8)
+
+%1 %2 %3:
+    if %4 = 0 -> return 0
+    if %5 < 1 -> return 0
+    if %6(%7) != %8 -> return 0
+
+%1 request %2:
+    if request = 0 -> return 0
+    if kio_req_state(request) != %3 -> return 0
+    if %4 < 0 -> return 0
+
+%1 %2 %3 %4:
+    if %5 = 0 -> return 0
+    if %6 < 0 -> return 0
+    if %7 >= %8 -> return 0
+
+if %1(%2) != %3 -> return 0
+if %4(%5) != %6 -> return 0
+poke_raw64(%7 + 8, 0, %8)
+return 1
+
+status: peek_raw32(base + 28, 0)
+persistent: band(status, %1)
+poke_raw32(base + 24, 0, bor(persistent, %2))
+return kiommu_wait32(base + 28, %3, %4, limit)
+
+i: 0
+as long as i < %1 -> if %2(%3(%4, %5), %6) = %7
+        return %8
+    i: i + 1
+
+%1: _sov_heap_alloc(2)
+%2: poke_byte 0 + i: 10 0
+%3(%4, %5, 1)
+return 1
+
+%1(%2):
+    %3
+    %4
+%5: %6(%7)
+
+%1 %2:
+    %3: %4(%5)
+    %6: %7(%8)
+    i: %9
+
+pid: %1()
+if pid = 0 -> sys_dup2(%2(%3), 1)
+    sys_close(%4(%5))
+    argv: _sov_heap_alloc(%6)
+
+0:
+    %1
+    %2
+as long as %3 < %4 -> %5: %6(%7, %8 + %9)
+
+if str_has(msg, "Error") = 1 -> tr_bad("%1 private build %2 %3 %4", msg, "a clean build")
+    return 0
+d: file_read_all("/tmp/sov-%5.%6")
+%7: file_size("/tmp/sov-%8.%9")
+
+if lv != fv -> if lv > 1099511627776
+        %1: lv
+    if lv < 0 - 1099511627776 -> %2: lv
+%3: %4 + 8
+
+if not -> poke_i64(t, 24, pos + 1)
+    poke_i64(t, 104, %1)
+    poke_i64(t, 96, 1)
+    return 1
+
+%1: %2
+%3: "%4"
+%5: "%6%7"
+%8: %9
+
+0:
+    %1
+    %2
+%3 %4 %5 %6 %7 %8 %9:
+
+if r = 0 -> return 0
+%1: %2
+r: %3(%4, %5, %6, %7, %8, %9)
+if r = 0 -> return 0
+
+%1 a b:
+    if a = b -> return %2
+    if a = 0 -> return %3
+    if b = 0 -> return %4
+
+poke_i64(m, 920, %1(m, %2))
+poke_i64(m, 928, %3(m))
+poke_i64(m, %4, %5(%6, %7))
+%8: %9(m)
+
+if op = %1 -> im: x_r8(m, q)
+    return %2(m, q + 1, n, im, %3, %4)
+if op = %5 -> im: x_r8(m, q)
+    return %6(m, q + 1, n, im)
+
+rmi: peek_i64(m, 376)
+%1: x_xd(m, rmi, %2)
+%3: x_xd(m, rmi, %4)
+%5: x_xd(m, %6, %7)
+
+if nxt = %1 -> x_st_push(m, %2)
+    return x_go(m, q)
+if nxt = %3 -> x_st_push(m, %4)
+    return x_go(m, q)
+
+if b = %1 -> %2: %3(m, n)
+    %4: %5(m)
+    x_xset(m, n, %6, %7)
+    return x_go(m, q)
+
+keep: x_sub(t, x_shl64(x_mask(x_shr64(t, (lane % %1) * %2), %3), (lane % %4) * %5))
+t2: x_add(keep, x_shl64(x_mask(v, %6), (lane % %7) * %8))
+if lane >= %9 -> x_xset(m, n, x_xlo(m, n), t2)
+if not -> x_xset(m, n, t2, x_xhi(m, n))
+
+if %1 = %2 -> if %3 = %4
+        return X_QNAN
+    return x_bits_of(sg, 2047, 0)
+if %5 = %6 -> return x_bits_of(sg, 0, 0)
+
+as long as i >= 0 -> if x_bit(%1, i) = 1
+        %2: i + %3
+        i: 0 - 1
+    if not -> i: i - 1
+
+%1: %2(d, %3 + %4)
+k: 0
+as long as k < %5 -> x_w8(m, %6 + %7 + k, peek_byte(d, %8 + k))
+    k: k + 1
+
+i: 0
+as long as i < n -> x_w8(m, %1 + i, peek_byte(%2, i))
+    i: i + 1
+x_w8(m, %3 + n, 0)
+
+%1 n v:
+    if ZM_VER < 4 -> poke_byte(ZM_M, zm_obj_at(n) + %2, v)
+        return 0
+    zm_put_word(zm_obj_at(n) + %3, v)
+
+if wand(%1 / 4, 3) != 3 -> %2: zm_operand(wand(%3 / 4, 3))
+    ZM_NOPS: %4
+if wand(%5, 3) != 3 -> %6: zm_operand(wand(%7, 3))
+    ZM_NOPS: %8
+
+chk('%1 s440', samp(p, 440), %2)
+p: aud_new(1000000)
+%3(p, 0, 1000000, %4, 1000000)
+chk('%5 s0', samp(p, 0), %6)
+
+%1:  %2
+%3:  %4
+%5:  %6
+%7: %8
+
+%1: %2
+%3:   %4
+%5:   %6
+%7:  %8
+
+if %1 = %2 -> found: 1
+    bar: pci_r32(d * 2048, %3)
+    mmio: band(bar, 4294967280)
+    leave
+
+i: 0
+as long as i < %1 -> if peek_byte(%2 + %3, %4) != %5(%6, %7)
+        %8: 0
+    i: i + 1
+
+balloc(%1)
+%2: RES
+if %3 = 0 -> ok: 0
+    sputs("%4 %5\n")
+
+poke_raw64(%1 + %2, 0, 1)
+if %3(%4) != 0 -> ok: 0
+    sputs("granted %5 %6 refused\n")
+if peek_raw64(%7 + %8, 0) != 1 -> ok: 0
+
+%1:  %2
+%3:   %4
+%5:   %6
+%7:  %8
+
+%1:  %2
+%3:  %4
+%5:  %6
+%7:
+
+damage_note()
+present_flip()
+fill_rect(%1, %2, %3, %4, WBRD)
+fill_rect(%5, %6, %7, %8, %9)
+
+i: 0
+as long as i < %1 -> poke_byte(MSG + i, 0, bxor(peek_byte(KEY, i), %2))
+    i: i + 1
+i: %3
+
+%1: peek_raw64(bs + %2, 0)
+%3: cfunc(BRIDGE5, lhb, %4, %5, 0, NH_AT, BUFP_AT)
+%6: %7(NH_AT, 0)
+%8: peek_raw64(BUFP_AT, 0)
+
+%1: read_sect(bestbio, bestmid, %2, SECT2)
+if %3 != 0 -> bad: bad + 1
+if peek_byte(SECT2, %4, 0) != %5 -> bad: bad + 1
+if %6(SECT2, %7, 0) != %8 -> bad: bad + 1
+
+%1: 0
+as long as %2 < %3 -> record: %4 + %5 * %6
+    if peek_raw64(record, 0) = %7 -> return record
+    %8: %9 + 1
+
+%1:
+    poke_raw64(%2, 0, %3)
+    poke_raw64(%4, 0, %5)
+    %6()
+
+if %1 = 0 -> return 0
+if %2 = %3 -> return 0
+%4(%5, 0, %6)
+%7(%8, 0, %9)
+
+if peek_raw64(%1, 0) != %2 -> return 0 - 8
+if peek_raw64(%3 + 8, 0) != 1 -> return 0 - 8
+%4: peek_raw64(%5 + 16, 0)
+%6: peek_raw64(%7 + 24, 0)
+
+%1:
+    %2: 0
+    as long as %3 < %4 -> if band(%5(%6), %7) = 0
+            return 1
+
+verb_status: hda_ring_verb(mmio, %1)
+if verb_status != 0 -> poke_raw64(HDA_STREAM_DETAIL, 0, verb_status)
+    return 0
+poke_raw64(HDA_STREAM_STAGE, 0, %2)
+
+if result = 1 -> if kio_req_state(HDA_STREAM_REQUEST) != %1
+        result: 0
+if result = 1 -> if %2(HDA_STREAM_REQUEST) != %3
+        result: 0
+
+cleared: _sov_mem_set(data, 0, %1)
+next_event: next_event + %2
+if %3(doorbell, event, next_event, slot, buffer, %4, 0) != 1 -> return 0
+i: 0
+
+%1: peek_raw64(%2 + %3, 0)
+%4: peek_raw64(%5 + %6, 0)
+%7: peek_raw64(%8 + %9, 0)
+i: 0
+
+if rlen = 0 -> spin(%1)
+    att: att + 1
+if not -> ri: peek_raw64(RXI_STATE, 0)
+    %2: RXBUF + ri * 2048
+
+poke_raw8(RQ + %1 + n, 0, %2)
+poke_raw8(RQ + %3 + n, 0, %4)
+poke_raw8(RQ + %5 + n, 0, %6)
+poke_raw8(RQ + %7 + n, 0, %8)
+
+%1: %2(%3, %4)
+poke_raw64(frame + 112, 0, %5)
+pop_all()
+iretq()
+
+%1():
+    %2
+    %3
+%4: %5(%6)
+
+%1: 0
+as long as %2 < %3 -> if free_frame(%4 + %5 * 4096) != 1
+        return 0 - 5
+    %6: %7 + 1
+
+%1: %2(%3, %4)
+if %5 = 0 -> syscall_result(frame, 0 - %6)
+    pop_all()
+    iretq()
+
+poke_raw64(%1, 0, 0)
+syscall_result(frame, 0 - %2)
+pop_all()
+iretq()
+
+if %1(%2) != %3 -> return 0
+i: 0
+as long as i < %4 -> if %5(%6 + i * %7) != %8
+        return 0
+
+i: 0
+as long as i < %1 -> atomic_store(%2 + i * 8, 0)
+    atomic_store(%3 + i * 8, 0)
+    i: i + 1
+
+mem_zero(verify0, 8192)
+if common_block_nvme_pair(KBLK_READ, pair_lba, verify0, pair_lba + 1, verify1) != 1 -> fail('NVMe %1 %2 read')
+if mem_equal(%3, verify0, 512) != 1 -> fail('NVMe %4 first %5')
+if mem_equal(%6, verify1, 512) != 1 -> fail('NVMe %7 second %8')
+
+%1: %2
+%3:  %4
+%5:  %6
+%7:  %8
+
+%1(%2)
+if ok = 1 -> sputs("%3 OK\n")
+if not -> sputs("%4 FAIL\n")
+as long as 1 = 1 -> hlt()
+
+%1: %2
+%3:  %4
+%5: %6
+%7 %8:
+
+WVAL: %1
+write_byte()
+WVAL: %2
+write_byte()
+
+sys_unlink(%1)
+%2: _sov_heap_alloc(64)
+%3: 0
+%4: aadd(%5, %6, str_cat(%7, '/%8'))
+
+if %1() != 1 -> write_out("integrated_kernel: %2 %3 %4 FAIL\n")
+    return 0
+if %5() != 1 -> write_out("integrated_kernel: %6 %7 BUILD FAIL\n")
+    return 0
+
+trunc16(%1)
+n3: aadd(av3, n3, '-device')
+n3: aadd(av3, n3, '%2-%3,id=%4')
+n3: aadd(av3, n3, '-%5')
+
+s: str_cat(str_cat(s, ' '), %1)
+s: str_cat(str_cat(s, ' '), %2)
+s: str_cat(str_cat(s, ' '), %3)
+s: str_cat(str_cat(s, ' '), %4)
+
+sha256(MSG, %1)
+sputs('sha256(%2) = ')
+digout(DIG)
+sc(10)
+
+%1: _sov_heap_alloc(%2)
+poke_i64(ABUF, 0, %3)
+sputs('%4 ')
+phex(ABUF, 8)
+
+snum(%1)
+sc(10)
+%2: peek_raw64(%3 + %4, 0)
+poke_raw64(%5, 0, %6)
+
+poke_raw64(%1, 0, 0)
+IDT: 2097152
+d: IDT + %2 * 16
+hoff: fn_addr('%3')
+
+poke_raw64(bs + %1, 0, %2)
+%3: peek_raw64(bs + %4, 0)
+poke_raw64(%5, 0, %6)
+poke_raw64(bs + %7, 0, %8)
+
+if not -> %1: peek_byte(s, i + %2)
+    if band(%3, 192) != 128 -> cp: 65533
+        bl: %4
+        poke_raw64(errs, 0, peek_raw64(errs, 0) + 1)
+
+if b0 < %1 -> if n < %2
+        poke_raw64(LASTERR + (0) * 8, 0, 2)
+        return 0
+    b1: peek_byte(s, 1)
+
+%1: _sov_heap_alloc(%2)
+%3: (%4 + 4095) / 4096 * 4096
+%5: _sov_heap_alloc(KIOMMU_POOL_STRIDE)
+%6: _sov_heap_alloc(1)
+
+main:
+    %1: _sov_heap_alloc(8000)
+    %2: %3
+    poke_raw64(%4, %5 * 8, %6)
+
+as long as i < %1 -> %2: %3 + %4
+    %5: %6 + 1
+print %7
+print %8
+
+poke_i64(%1, 32, '/tmp/sov-%2')
+poke_i64(%3, 40, '/tmp/sov-%4.c')
+poke_i64(%5, 48, 0)
+cr_run(gcc, %6, 0, 120)
+
+%1:
+    src: cr_line('', 'use %2')
+    src: cr_line(src, 'use %3')
+    src: cr_line(src, 'main:')
+
+a: _sov_heap_alloc(16)
+poke_i64(a, 0, '/tmp/sov-%1')
+poke_i64(a, 8, 0)
+cr_run('/tmp/sov-%2', a, envp, %3)
+
+%1:
+    m: new_at()
+    m: x_setr 0 + 3 * i: %2 %3
+    poke_i64(m, %4, 1)
+
+%1:
+    m: new_at()
+    x_setr(m, 0, 0 - %2)
+    x_setr(m, 3, %3)
+
+%1:
+    m: new_at()
+    x_setr(m, 0, %2)
+    m: %3 %4 + i: %5 %6
+
+%1(m, %2, %3)
+x_setr(m, %4, %5)
+m: put 0 + i: %6 %7 %8
+go(m, 3)
+
+m: put 0 + i: %1 15 %2 203 144
+go(m, 5)
+if x_xlo(m, 1) != %3 -> return bad('%4 lo', x_xlo(m, 1), %5)
+return is_eq('%6 hi', x_xhi(m, 1), 0 - %7)
+
+m: put 0 + i: 102 15 56 23 203 144
+go(m, 6)
+if x_zf(m) != %1 -> return bad('%2 zf', x_zf(m), %3)
+return is_eq('%4 cf', x_cf(m), %5)
+
+m: put 0 + i: 197 %1 %2 203
+go(m, 4)
+if x_xlo(m, 1) != 0 - %3 -> return bad('%4 lo', x_xlo(m, 1), 0 - %5)
+if x_xhi(m, 1) != 1089357896855742840 -> return bad('%6 hi', x_xhi(m, 1), 1089357896855742840)
+
+m: put 0 + i: 196 3 109 %1 203 %2
+go(m, 6)
+if x_xlo(m, 1) != 0 - %3 -> return bad('%4 lo', x_xlo(m, 1), 0 - %5)
+if x_xhi(m, 1) != %6 -> return bad('%7 hi', x_xhi(m, 1), %8)
+
+%1: here()
+emit8(0)
+addp(%2, 'gwstr_a', intern_nz('%3'))
+emit:
+    255 16 72 133 192
+%4: jz()
+
+%1: str_cat(src, ' ')
+%2: str_cat:
+    %3
+    ' --%4'
+lc_job(str_cat(root, '/compilers/'), %5, uargv)
+if RES != 0 -> write_out("Error: the %6 slice failed to build\n")
+
+i: 0
+as long as i < %1 -> poke_byte(%2, %3 + i, peek_byte(%4, i))
+    i: i + 1
+i: 0
+as long as i < %5 -> poke_byte(%6, %7 + i, peek_byte(%8, i))
+    i: i + 1
+
+poke_i64(argv, %1 * 8, 0)
+if str_ends(path, '.exe') = 1 -> _sov_win_exec(path, argv)
+    print 'Error: could not start the %2'
+    return 1
+syscall(59, path, argv, 0, 0, 0, 0)
+print 'Error: could not start the %3'
+
+%1 m:
+    return as text peek_i64(m, 296)
+%2 m:
+    return peek_i64(m, %3)
+%4 m:
+    return peek_i64(m, %5)
+
+if phoff + phnum * phsz > fszn -> print "%1: refused - program header table runs past the file"
+    return 0
+%2: peek_i64(d, 40)
+%3: peek_byte(d, 60) + peek_byte(d, 61) * 256
+if %4 > 0 -> if %5 + %6 * 64 > fszn
+        print "%7: refused - section header table runs past the file"
+
+fsz2: peek_i64(d, %1 + 32)
+msz2: peek_i64(d, %2 + 40)
+if off2 + fsz2 > fszn -> print "%3: refused - a load piece runs past the file"
+    return 0
+if msz2 < fsz2 -> print "%4: refused - a piece maps more file than memory"
+    return 0
+
+%1 m a n:
+    %2: %3(n + 1)
+    i: 0
+    as long as i < n -> poke_byte(%4, i, %5(m, a + i))
+        i: i + 1
+    poke_byte(%6, %7, 0)
+
+use:
+    %1
+    %2
+    %3
+%4: %5
+%6:
+
+s: vec_get(%1, 0) + %2(%3, i)
+vec_set(%4, 0, s % 10000)
+if s >= 10000 -> j: 1
+    as long as j < bi_len(%5) -> s2: vec_get(%6, j) + 1
+        vec_set(%7, j, s2 % 10000)
+        if s2 < 10000 -> j: bi_len(%8)
+
+if _sov_str_eq(op, "%1") = 1 -> %2()
+    chk_ov()
+    return
+if _sov_str_eq(op, "%3") = 1 -> %4()
+    %5()
+    return
+
+movk_x(0, 0, 3)
+addp(%1, "%2", 0)
+%3: here()
+movz_x(1, 0, 0)
+addp(%4, "%5", 0)
+%6: here()
+
+if look(slc, '%1') > 0 - 1 -> 1:
+        uraw
+        ubare
+if look(slc, '%2') > 0 - 1 -> 1:
+        uraw
+        ubare
+
+%1 f a:
+    return cfunc(f, a, 0, 0, 0, 0, 0)
+%2 f a b:
+    return cfunc(f, a, b, 0, 0, 0, 0)
+%3 f a b c:
+    return cfunc(f, a, b, c, 0, 0, 0)
+
+as long as i < %1 -> poke_byte(md, base + i, peek_byte(ct, i))
+    i: i + 1
+i: %2
+as long as i < %3 + 16 - %4 % 16 -> poke_byte(md, base + i, 0)
+    i: i + 1
+base: base + %5 + 16 - %6 % 16
+
+o: _sov_heap_alloc(n * %1 + 3)
+poke_byte(o, 0, %2)
+j: 1
+i: 0
+as long as i < n -> c: peek_byte(%3, i)
+    if c = %4 -> poke_byte(o, j, %5)
+
+%1 %2 n:
+    out: _sov_heap_alloc(n * %3 + 1)
+    i: 0
+    as long as i < n -> b: peek_byte(%4, i)
+        poke_byte(out, i * %5, %6(b / 16))
+        poke_byte(out, i * %7 + 1, %8(b % 16))
+
+0:
+    %1
+    %2
+if %3 = %4 -> %5:
+        %6
+        %7
+
+bln: collect_body(lines, i + 1, ind)
+filw: 0
+if try_opt_while(cut(s, %1, length(s)), bln) = 1 -> filw: 1
+if not -> if try_fill_while(cut(s, %2, length(s)), bln, lines, i) = 1
+        filw: 1
+if filw = 0 -> if try_count_while(cut(s, %3, length(s)), bln, lines, i) = 1
+
+if filw = 0 -> if try_patfill_while(cut(s, %1, length(s)), bln, lines, i) = 1
+        filw: 1
+if filw = 1 -> i: skip_body(lines, i + 1, ind)
+    i: i - 1
+if not -> cflush_all()
+    %2: cut(s, %3, length(s))
+
+if %1 > 0 - 1 -> 0:
+        %2
+        dl_m
+    as long as dl_m < _sov_list_len(dl_live) -> if peek_i64(dl_live, 16 + dl_m * 8) = %3
+            %4: 1
+        dl_m: dl_m + 1
+
+if is_imm(%1) = 1 -> if is_imm(%2) = 0
+        sl: bin_rslot(%3)
+        if sl > 0 - 1 -> cflush(%4)
+            cmp_reg_imm(sl, num_of(%5))
+        if not -> expr(%6)
+            cmp_rax_imm(num_of(%7))
+
+if b = 2 -> if x = %1
+            emit:
+                %2 15 182 68 %3 0
+if b = 2 -> if x = %4
+            emit:
+                75 15 182 68 %5 0
+
+emit:
+    243 15 %1
+if o = 0 -> emit(%2)
+if not -> if o < 128
+        emit:
+            %3
+
+%1(l2)
+kk: sg * num_of(r2)
+if kk != 0
+    emit(72)
+    emit(131)
+    emit(%2)
+    emit(kk)
+    emit(%)
+    emit(256)
+return 1
+
+use vec
+%1:
+    return vec_new(8)
+%2 %3:
+    return vec_len(%4)
+%5 %6 x:
+
+i: i + 1
+slots: peek_i64(%1, %2)
+depth: 0
+start: 0 - 1
+as long as i < str_len(r) -> c: peek_byte(r, i)
+    if c = 123 -> if depth = 0
+
+%1 %2:
+    return (%3 / 65536) % 256
+%4 %5:
+    return (%6 / 256) % 256
+%7 %8:
+    return %9 % 256
+
+lo: %1
+hi: %2
+if %3 < %4 -> lo: %5
+    hi: %6
+%7: lo
+as long as %8 <= hi -> draw_dot(im, x, y, c)
+
+b: _sov_heap_alloc(320)
+ed_pbase(b)
+%1: _sov_heap_alloc(320)
+ed_pmul(%2, b, %3)
+out: _sov_heap_alloc(%4)
+ed_penc(out, %5)
+
+%1 a b:
+    if a < b -> return a
+    return b
+%2 a b:
+    if a > b -> return a
+    return b
+
+mem_copy(%1, iv, 12)
+%2: poke_byte 12 + i: 0 0 0 1
+%3: %4
+mem_copy(%5, %6, %7)
+%8: 2
+%9: 0
+
+if %1 < %2 -> return %3
+length: peek_raw32(%4 + %5, 0)
+if length < %6 -> return 0
+if length > %7 -> return 0
+if kacpi_sum(%8, length) != 0 -> return 0
+return 1
+
+%1: %2
+%3 %4:
+    if %5 = 0 -> return 0
+    generation: peek_raw64(%6, 0) + 1
+    if generation = 0 -> generation: 1
+    poke_raw64(%7, 0, generation)
+
+if state = KIO_REQ_QUEUED -> poke_raw64(request + 48, 0, 0 - %1)
+    %2(request, %3)
+    poke_raw64(request + 8, 0, %4)
+    return 1
+%5(request, %6)
+return 1
+
+free_slot: 0 - 1
+slot: 0
+as long as slot < capacity -> record: registry + slot * %1
+    state: peek_raw64(record + 8, 0)
+    if state != %2 -> if peek_raw64(record + 16, 0) = %3
+            return 0 - 1
+
+%1 registry capacity slot generation:
+    if registry = 0 -> return %2
+    if slot < 0 -> return %3
+    if slot >= capacity -> return %4
+    record: registry + slot * %5
+    if peek_raw64(record, 0) != generation -> return %6
+
+%1 s:
+    i: 0
+    n: _sov_strlen(s)
+    as long as i < n -> if %2(peek_byte(s, i)) = 1
+            return 1
+        i: i + 1
+
+%1 fds:
+    a: peek_byte(fds, %2)
+    b: peek_byte(fds, %3)
+    c: peek_byte(fds, %4)
+    d: peek_byte(fds, %5)
+    return a + b * 256 + c * 65536 + d * 16777216
+
+h4: %1(d4, 67108863)
+h0: h0 + c * 5
+c: %2(h0, 26)
+h0: %3(h0, 67108863)
+h1: h1 + c
+%4: %5 + 16
+
+%1 a b:
+    r: set_new()
+    i: 0
+    as long as i < set_len(a) -> if set_has(b, set_get(a, i)) = %2
+            r: set_add(r, set_get(a, i))
+        i: i + 1
+
+if str_has(msg, "Error") = 1 -> tr_bad("%1 build says %2", msg, "a clean build")
+    return 0
+d: file_read_all("/tmp/sov-%3.%4")
+if d = 0 -> tr_bad("%5 build says %6", "no file", "a macho")
+    return 0
+if wand(peek_byte(d, 26), 32) = 32 -> tr_bad("%7 build leaves MH_PIE off", "flag on", "off")
+
+wv: 0
+if %1 >= fp -> if %2 < fp + fn * 4
+        wv: A
+if wv = 0 -> if %3 >= ap
+        if %4 < ap + an * 4 -> wv: aa
+if wv = 0 -> if arm_r32(m, base + %5) != pie_w32(d, %6)
+
+%1:
+    src: "x: 41\nmain argc argv:\n    y: x\n    print y\n"
+    file_write_all("/tmp/sov-dbg.sov", src)
+    msg: tr_shell("./sovren /tmp/sov-dbg.sov -o /tmp/sov-dbg-%2 2>&1")
+    if str_has(msg, "Error") = 1 -> return tr_bad("debug %3 %4 %5", msg, "a clean build")
+    msg: tr_shell("./compilers/linux/compiler /tmp/sov-dbg.sov --debug -o /tmp/sov-dbg-%6 2>&1")
+
+endp: %1 + %2 + listlen
+p: %3 + %4
+n: 0
+as long as n < 8 -> if p + %5 > endp
+        leave
+    %6: peek_byte(p, 0) * 65536 + peek_byte(p, 1) * 256 + peek_byte(p, 2)
+
+poke_byte(ch, at + %1, %2)
+poke_byte(ch, at + %3, 0)
+poke_byte(ch, at + %4, %5)
+i: 0
+as long as i < %6 -> poke_byte(ch, at + %7 + i, peek_byte(%8, i))
+    i: i + 1
+
+tl13_derive(%1, lab, %2)
+i: 0
+as long as i < 13 -> poke_byte(lab, i, peek_byte("s %3 traffic", i))
+    i: i + 1
+poke_byte(lab, 13, 0)
+tl13_derive(%4, lab, %5)
+
+if r = 0 -> return 0
+r: %1(%2, %3, %4)
+if r = 0 -> return 0
+r: %5(%6, %7, out, outmax)
+tl_len: tl_gtot
+return tl_gtot
+
+poke_byte(macin, 11, %1 / 256)
+poke_byte(macin, 12, %2 % 256)
+j: 0
+as long as j < %3 -> poke_byte(macin, 13 + j, peek_byte(%4, j))
+    j: j + 1
+mac: _sov_heap_alloc(20)
+
+%1:
+    write_out(str_cat(tui_csi(), "?%2%3"))
+    return 1
+%4:
+    write_out(str_cat(tui_csi(), "?%5%6"))
+    return 1
+
+%1:
+    write_out(str_cat(tui_csi(), "%2m"))
+    return 1
+%3:
+    write_out(str_cat(tui_csi(), "%4m"))
+    return 1
+
+%1 w x y width height rgb:
+    %2(w, x, y, width, 1, rgb)
+    %3(w, x, y + height - 1, width, 1, rgb)
+    %4(w, x, y, 1, height, rgb)
+    %5(w, x + width - 1, y, 1, height, rgb)
+%6 w x y rgb:
+
+i: 0
+as long as i < 20 -> poke_byte(%1, i, 0)
+    i: i + 1
+poke_byte(%2, 0, 56)
+poke_u16(%3, 2, 4)
+poke_u32(%4, 4, peek_i64(w, 16))
+
+%1: x_and(x_shr64(%2, 7), 1)
+vv: x_and(x_shr64(%3, 3), 15)
+l: x_and(x_shr64(%4, 2), 1)
+pp: x_and(%5, 3)
+op: x_r8(m, at + %6)
+fin: at + %7
+
+poke_i64(m, 920, %1(m, vv))
+poke_i64(m, 936, %2(m))
+a: x_vshift_2(m)
+poke_i64(m, 920, %3(m, vv))
+poke_i64(m, 936, %4(m))
+b: x_vshift_2(m)
+
+poke_i64(m, 920, x_f2d(m, x_mask(%1(m, vv), 4)))
+poke_i64(m, 928, x_f2d(m, x_mask(%2(m), 4)))
+poke_i64(m, 936, x_f2d(m, x_mask(%3(m, n), 4)))
+%4: x_fma_lane(m)
+poke_i64(m, 920, x_f2d(m, x_mask(x_shr64(%5(m, vv), 32), 4)))
+poke_i64(m, 928, x_f2d(m, x_mask(x_shr64(%6(m), 32), 4)))
+
+if %1 = 249 -> return x_padd(m, q, n, 2, 1)
+if %2 = 250 -> return x_padd(m, q, n, 4, 1)
+if %3 = 251 -> return x_padd(m, q, n, 8, 1)
+if %4 = 216 -> return x_padd_sat(m, q, n, 1, 1, 0)
+if %5 = 217 -> return x_padd_sat(m, q, n, 2, 1, 0)
+if %6 = 220 -> return x_padd_sat(m, q, n, 1, 1, 1)
+
+if %1 = 232 -> return x_padd_sat(m, q, n, 1, 2, 0)
+if %2 = 233 -> return x_padd_sat(m, q, n, 2, 2, 0)
+if %3 = 236 -> return x_padd_sat(m, q, n, 1, 2, 1)
+if %4 = 237 -> return x_padd_sat(m, q, n, 2, 2, 1)
+if %5 = 224 -> return x_pavg(m, q, n, 1)
+if %6 = 227 -> return x_pavg(m, q, n, 2)
+
+if %1 = 243 -> return x_pshift_xmm(m, q, n, 8, 0)
+if %2 = 225 -> return x_pshift_xmm(m, q, n, 2, 2)
+if %3 = 226 -> return x_pshift_xmm(m, q, n, 4, 2)
+if %4 = 234 -> return x_pminmax_w(m, q, n, 0)
+if %5 = 238 -> return x_pminmax_w(m, q, n, 1)
+if %6 = 213 -> return x_pmul_low(m, q, n)
+
+if %1 = 229 -> return x_pmul_high(m, q, n, 1)
+if %2 = 244 -> return x_pmuludq(m, q, n)
+if %3 = 245 -> return x_pmaddwd(m, q, n)
+if %4 = 246 -> return x_psadbw(m, q, n)
+if %5 = 247 -> return x_maskmov(m, q, n)
+if %6 = 99 -> return x_packv(m, q, n, 1, 1)
+
+if %1 = 115 -> %2: n % 8
+    by: x_r8(m, q)
+    t: peek_i64(m, 376)
+    if %3 = 7 -> x_pslldq(m, t, by)
+        return x_go(m, q + 1)
+    if %4 = 3 -> x_psrldq(m, t, by)
+
+if %1 = 19 -> %2: x_xlo(m, n)
+    %3: x_xrm_hi(m)
+    x_xrm_set(m, %4, %5)
+    return x_go(m, q)
+if %6 = 23 -> %7: x_xrm_lo(m)
+    %8: x_xhi(m, n)
+
+%1 m a b size:
+    ua: x_mask(a, size)
+    ub: x_mask(b, size)
+    r: x_mask(%2(ua, ub), size)
+    x_set_zs(m, r, size)
+    c: 0
+
+0:
+    o
+    i
+as long as i < %1 -> o: x_or(x_shl64(o, 8), x_mask(x_shr64(v, i * 8), 1))
+    i: i + 1
+x_rset(m, %2, %3, o)
+
+if b = %1 -> p: x_modrm(m, p, rex, 0)
+    a: x_rm_get(m, %2)
+    bb: x_reg_get(m, %3)
+    x_reg_set(m, %4, a)
+    x_rm_set(m, %5, x_flags_add(m, a, bb, %6))
+    return x_go(m, p)
+
+if b = %1 -> q: x_modrm(m, p, rex, 1)
+    n: x_r8(m, q) % x_bits(size)
+    return x_shiftd(m, q + 1, size, n, %2)
+if b = %3 -> q: x_modrm(m, p, rex, 0)
+    n: x_mask(x_reg(m, 1), 1) % x_bits(size)
+    return x_shiftd(m, q, size, n, %4)
+
+%1 m q n by:
+    %2: %3(m, n)
+    a: x_mask(x_shr64(%4, 0), 2)
+    b: x_mask(x_shr64(%5, 16), 2)
+    c: x_mask(x_shr64(%6, 32), 2)
+    d: x_mask(x_shr64(%7, 48), 2)
+
+if str_starts(pn, "%1") = 1 -> %2: list_add(peek_i64(m, 288), "%3")
+    poke_i64(m, 288, %4)
+    %5: peek_i64(m, 312) + 1
+    poke_i64(m, 312, %6)
+    x_setr(m, 0, peek_i64(m, 280) + (%7 - 1) * 16)
+    return 1
+
+chk('%1 %2', samp(p, %3), %4)
+p: aud_new(1000000)
+aud_square(p, 0, 1000000, 1000000, 1000000)
+%5(p, 0, 1000000)
+chk('%6 s0', samp(p, 0), %7)
+chk('%8 s1102', samp(p, 1102), %9)
+
+if %1(registry, 2, device, device_generation, request, 0) != 1 -> bad('active %2 ack')
+if kio_req_state(request) != %3 -> bad('active %4 state')
+if kblk_device_inflight(registry, 2, device) != 0 -> bad('%5 ack accounting')
+if kblk_init(request, 44) != 1 -> bad('%6 request init')
+if kblk_prepare(request, KBLK_READ, %7, 1, 512, buffer, 4096) != 1 -> bad('%8 request prepare')
+if kblk_device_enqueue(registry, 2, device, device_generation, request) != 1 -> bad('%9 enqueue')
+
+%1 %2:
+    i: 0
+    as long as i < 4 -> if peek_raw64(%3 + 256 + i * 8, 0) = 0
+            poke_raw64(%4 + 256 + i * 8, 0, %5)
+            return 0
+        i: i + 1
+
+%1 %2 rn %3:
+    w: %4
+    w: w + (%5 * 65536)
+    w: w + (rn * 65536 * 32)
+    w: w + (%6 * 1024)
+    return w
+
+%1: 8388608
+%2: 8389000
+main:
+    sinit()
+    sputs("SOVREN %3\n")
+    poke_byte(%4 + 0, 0, %5)
+
+poke_byte(%1 + 0, 0, band(h0, 255))
+poke_byte(%2 + 1, 0, band(bshr(h0, 8), 255))
+poke_byte(%3 + 2, 0, band(bshr(h0, 16), 255))
+poke_byte(%4 + 3, 0, band(bor(bshr(h0, 24), bshl(h1, 2)), 255))
+poke_byte(%5 + 4, 0, band(bshr(h1, 6), 255))
+poke_byte(%6 + 5, 0, band(bshr(h1, 14), 255))
+
+poke_byte(%1 + 7, 0, band(bshr(h2, 4), 255))
+poke_byte(%2 + 8, 0, band(bshr(h2, 12), 255))
+poke_byte(%3 + 9, 0, band(bor(bshr(h2, 20), bshl(h3, 6)), 255))
+poke_byte(%4 + 10, 0, band(bshr(h3, 2), 255))
+poke_byte(%5 + 11, 0, band(bshr(h3, 10), 255))
+poke_byte(%6 + 12, 0, band(bshr(h3, 18), 255))
+
+as long as i != %1 -> atomic_store(%2 + (i * 16) + 0, %3)
+    atomic_store(%4 + (i * 16) + 8, 0)
+    i: i + 1
+atomic_store(%5, 0)
+atomic_store(%6, 0)
+atomic_store(%7, 0)
+
+as long as i < %1 -> poke_raw64(%2 + i * 16, 0, 0)
+    poke_raw64(%3 + i * 16 + 8, 0, 0)
+    poke_raw64(%4 + %5 + i * 8, 0, 0)
+    poke_raw64(%6 + %7 + i * 8, 0, 0)
+    i: i + 1
+poke_raw64(%8 + %9, 0, 0)
+
+%1 name:
+    i: 0
+    as long as i != %2 -> if atomic_load(%3 + (i * 24) + %4) = name
+            return i
+        i: i + 1
+    return 0 - 1
+
+%1 %2:
+    if band(peek_raw64(%3, 0), bshl(1, %4)) != 0 -> return 1
+%5:
+    i: 0
+    as long as i != %6 -> if band(peek_raw64(%7, 0), bshl(1, i)) = 0
+            atomic_store(%8, bor(peek_raw64(%9, 0), bshl(1, i)))
+
+%1 blk:
+    i: 0
+    as long as i != 4 -> poke_raw64(%2 + (i * 8), 0, peek_raw64(%3 + (i * 8), 0))
+        i: i + 1
+    poke_raw64(%4 + 32, 0, peek_raw64(%5 + 32, 0))
+    poke_raw64(%6 + 40, 0, peek_raw64(%7 + 40, 0))
+
+j: 0
+as long as j < %1 -> if %2(%3 + j) = %4
+        %5: 0
+        leave
+    j: j + 1
+if %6 = 1 -> j: 0
+
+c: keymap_char(codes)
+if c = 0 -> return 0
+l: peek_raw64(%1, 0)
+if l < %2 -> poke_byte(%3, l, c)
+    poke_byte(%4, l + 1, 0)
+    poke_raw64(%5, 0, l + 1)
+
+kj: 0
+as long as kj < 64 -> poke_byte(%1 + kj, 0, bxor(peek_byte(KEYBUF + kj, 0), %2))
+    kj: kj + 1
+kj: 0
+as long as kj < %3 -> poke_byte(%4 + 64 + kj, 0, peek_byte(%5 + kj, 0))
+    kj: kj + 1
+
+%1(%2, %3, %4, %5, %6)
+sputs('%7=')
+i: 0
+as long as i < %8 -> hexb(peek_byte(%9 + i, 0))
+    i: i + 1
+sputs("\n")
+
+%1 frame:
+    return band(peek_byte(%2, frame / 8), bshl(1, frame % 8))
+%3 frame:
+    w: frame / 8
+    m: bshl(1, frame % 8)
+    poke_byte(%4, w, bor(peek_byte(%5, w), m))
+
+sti()
+as long as peek_raw64(STOP_TASKS, 0) = 0 -> poke_raw64(%1, 0, peek_raw64(%2, 0) + 1)
+cli()
+poke_raw64(%3, 0, %4)
+poke_raw64(%5, 0, PS_ZOMBIE)
+poke_raw64(CUR, 0, 0)
+
+%1 lba buf:
+    started: blk_request_start(%2, lba, buf)
+    if started != 1 -> return started
+    result: 0 - 19
+    if peek_raw64(BLOCK_BACKEND, 0) = 1 -> result: %3(lba, buf)
+    if peek_raw64(BLOCK_BACKEND, 0) = 2 -> result: %4(lba, buf)
+
+%1 slot:
+    if slot = 0 -> return peek_raw64(%2, 0)
+    return peek_raw64(%3, 0)
+%4 slot:
+    if slot = 0 -> return peek_raw64(%5, 0)
+    return peek_raw64(%6, 0)
+
+%1: 0
+as long as %2 < FS_DIR_SLOTS -> alias: %3 + %4 * 64
+    if peek_raw64(alias, 0) = 1 -> if peek_raw64(alias + 16, 0) = lba
+            alias + 8: poke_raw64 i * 16, 0: length checksum
+    %5: %6 + 1
+if dir_write(%7) != 0 -> return 0 - 5
+
+%1:
+    spins: 0
+    as long as spins < %2 -> if band(port_in8(PS2_STATUS_PORT), 1) != 0
+            return port_in8(PS2_DATA_PORT)
+        spins: spins + 1
+    return 0 - 1
+
+poke_raw32(endpoint_context + 16, 0, 8)
+command: kio_ring_reserve(XHCI_SW_RING)
+if command = 0 -> return 0
+poke_raw64(command, 0, kernel_dma_address(XHCI_INPUT_DMA_MAP, input_context, 4096))
+poke_raw32(command + 8, 0, 0)
+poke_raw32(command + 12, 0, bshl(slot, 24) + %1)
+
+event_index: event_index + 1
+poke_raw64(interrupter + 24, 0, bor(event_device + event_index * 16, 8))
+if %1(doorbell, event_ring, event_index, slot, %2) != 1 -> return 0
+event_index: event_index + %3
+poke_raw64(interrupter + 24, 0, bor(event_device + event_index * 16, 8))
+if %4(doorbell, event_ring, event_index, slot, descriptor) != 1 -> return 0
+
+poke_raw8(dps + %1 + %2, 0, 0)
+poke_raw64(NET_TCP_PORT, 0, peek_raw64(NET_TCP_PORT, 0) + 1)
+if tcp_http_get(dps, stg) != 1 -> sputs("network: %3 download failed\n")
+    return 0
+if peek_raw64(NET_DL_RAW, 0) < %4 -> sputs("network: %5 file too short\n")
+    return 0
+
+atomic_store(%1, 0)
+irq_table: peek_raw64(KERNEL_IRQ_TABLE_PTR, 0)
+vector: peek_raw64(%2, 0)
+generation: peek_raw64(%3, 0)
+if kirq_quiesce_release(irq_table, KERNEL_IRQ_CAPACITY, vector, generation, %4, 64, 1000000) != 1 -> return 0
+if dmar_interrupt_release(%5) != 1 -> return 0
+
+%1:
+    if kio_dma_limits_init(NVME_DMA_LIMITS, 1, 4096, 4294967295) != 1 -> return 0
+    if kio_dma_map_init(%2) != 1 -> return 0
+    if kernel_dma_map(%3, PCI_DRIVER_NVME, %4, 4096, KIO_DMA_TO_DEVICE, NVME_DMA_LIMITS) != 1 -> return 0
+    if kio_dma_map_init(%5) != 1 -> kernel_dma_unmap(%6, PCI_DRIVER_NVME)
+        return 0
+
+NV_ASQ + %1: poke_byte i * 2, 0: %2 %3
+poke_raw64(NV_ASQ + %4 + 24, 0, kio_dma_device_address(%5))
+poke_raw32(NV_ASQ + %6, 40, 983041)
+poke_raw32(NV_ASQ + %7, 44, %8)
+if nvme_admin_queue_begin() != 1 -> return 0
+poke_raw32(mmio, 4096, %9)
+
+wait: 0
+as long as wait < 1000000 -> if band(peek_byte(NV_ACQ + %1 + 14, 0), 1) = 1
+        leave
+    wait: wait + 1
+if band(peek_byte(NV_ACQ + %2, 0), 1) != 1 -> return 0
+if nvme_admin_queue_reclaim() != 1 -> return 0
+
+poke_raw64(MP_PTS + %1 * 8, 0, pt)
+poke_raw64(MP_CODE + %2 * 8, 0, code)
+poke_raw64(MP_DATA + %3 * 8, 0, data)
+poke_raw64(MP_CTX + %4 * 8, 0, ctx)
+poke_raw64(MP_KBASE + %5 * 8, 0, kbase)
+poke_raw64(MP_KTOP + %6 * 8, 0, kbase + 16384)
+
+%1 + 8: poke_raw64 i * 8, 0: 1 parent_process 1
+if str_copy32(%2 + 32, %3) = 0 -> return 0
+poke_raw64(%4, 0, 1)
+if process_service_claim(parent_process) != 1 -> return 0
+%5: service_record_token(%6, %7)
+if process_ipc_claim(parent_process, %8) != 1 -> return 0
+
+%1 destination source length:
+    if %2 = 0 -> return 0
+    if length > USER_COPY_CAPACITY -> return 0
+    if user_range_access_ok(%3, length, %4) != 1 -> return 0
+    mem_copy(destination, source, length)
+    return 1
+
+pipe: peek_raw64(USER_PIPE_PTR, 0)
+%1: peek_raw64(%2, 0)
+i: 0
+as long as i < amount -> poke_byte(%3, %4, peek_byte(%5, %6))
+    %7: (%8 + 1) % 256
+    i: i + 1
+
+if fd = %1 -> if kh_lookup(table, 16, fd, %2, KH_RIGHT_POLL) = 0
+        return 0 - 9
+    return %3
+if fd = %4 -> if kh_lookup(table, 16, fd, %5, KH_RIGHT_POLL) = 0
+        return 0 - 9
+    return %6
+
+if %1(%2, service_token) != 1 -> syscall_result(frame, 0 - %3)
+    pop_all()
+    iretq()
+syscall_result(frame, %4)
+pop_all()
+iretq()
+
+loaded_len: external_sxe_load(%1, codep, %2)
+if loaded_len != 12288 -> fail('load compiler-produced %3 %4 SXE')
+j: 0
+as long as j < 6 -> if free_frame(%5 + j * 4096) != 1
+        fail('free %6 %7 SXE staging page')
+    j: j + 1
+
+if dmar_live_invalidate() != 1 -> page: first
+    as long as page <= last -> %1(owner, page, direction)
+        page: page + 4096
+    dmar_live_invalidate()
+    return 0
+return 1
+
+%1 %2:
+    cur: %3
+    as long as 1 = 1 -> got: 0
+        %4: atomic_load(%5 + %6 * 8)
+        %7: %8
+        q: 0
+
+as long as q < 4 -> %1: atomic_load(%2 + q * 8)
+    if %3 < %4 -> %5: %6
+    q: q + 1
+k: 0
+as long as k < 16 -> if %7 < %8 + 20001
+        t: cur + k
+
+if pcache_flush_all() != 0 -> fail('%1 %2 flush')
+sputs("journey: %3 application installed as APPS/%4.SXE\n")
+poke_raw64(JOURNEY_FILE_BUF, 0, %5)
+poke_raw64(JOURNEY_APP_LEN, 0, %6)
+if journey_spawn_app(1) != 1 -> fail('%7 application launch')
+if journey_reap_app(%8) != 1 -> fail('%9 application health')
+
+poke_raw64(FS_MOUNTED, 0, 0)
+if fs_format() != 0 -> fail('format through %1 block backend')
+if vfs_write('%2.BIN', src, 512) != 512 -> fail('VFS write through %3')
+if pcache_drop() != 0 -> fail('flush/drop %4 page cache')
+poke_raw64(FS_MOUNTED, 0, 0)
+if fs_mount() != 0 -> fail('%5 VFS remount')
+
+n: aadd(av, n, %1)
+n: aadd(av, n, %2)
+n: aadd(av, n, %3)
+n: aadd(av, n, %4)
+n: aadd(av, n, %5)
+aend(av, n)
+
+n3: aadd(av3, n3, '-device')
+n3: aadd(av3, n3, 'pcie-root-port,id=%1,slot=%2,chassis=%3')
+n3: aadd(av3, n3, '-netdev')
+n3: aadd(av3, n3, 'user,id=%4')
+n3: aadd(av3, n3, '-device')
+n3: aadd(av3, n3, 'e1000e,bus=%5,netdev=%6,mac=52:54:00:12:34:5%7')
+
+t: 0
+as long as atomic_load(APDONE) < want -> if t > %1
+        leave
+    t: t + 1
+sputs('%2 %3 %4: ')
+snum(atomic_load(APDONE))
+
+head: peek_raw64(HD + (%1) * 8, 0)
+h: 2654435761
+i: %2
+n: 0
+as long as n < peek_raw64(HD + (%3) * 8, 0) -> h: band(h * 33 + peek_raw64(RG + (i * 5) * 8, 0), 4294967295)
+    i: band(i + 1, 15)
+
+pit_one(%1)
+sti()
+as long as 1 = 1 -> if peek_raw64(%2, 0) = %3
+        leave
+    k: 0
+    as long as k < 1000 -> k: k + 1
+
+%1: cfunc(BRIDGE5, lhb, 2, %2, 0, NH_AT, BUFP_AT)
+%3: peek_raw64(NH_AT, 0)
+sputs('%4 ')
+snum(%5)
+sc(10)
+%6: peek_raw64(BUFP_AT, 0)
+
+ncp: cp
+drop: 0
+if %1 + 1 < %2 -> %3: peek_raw64(%4 + (%5 + 1) * 8, 0)
+    t: compose_find(cp, %6)
+    if t != 0 -> ncp: t
+        drop: 1
+
+zerofe(%1)
+poke_raw64(FE + %2 + 0 * 8, 0, %3)
+poke_raw64(FE + %4 + 1 * 8, 0, %5)
+poke_raw64(FE + %6 + 2 * 8, 0, 0)
+poke_raw64(FE + %7 + 3 * 8, 0, 0)
+poke_raw64(FE + %8 + 4 * 8, 0, 0)
+
+%1:
+    tg: der_next(%2)
+    %3: peek_raw64(DER_CS, 0)
+    %4: peek_raw64(DER_E, 0)
+    tbs: child_index(%5, %6, 0)
+    der_next(tbs)
+
+# unsafe-module
+use %1
+bad message:
+    print '%2 FAIL'
+    print message
+    stop
+
+%1: _sov_heap_alloc(64)
+poke_raw8(%2, 0, 9)
+poke_raw8(%3 + 1, 0, 2)
+poke_raw16(%4 + 2, 0, %5)
+poke_raw8(%6 + 4, 0, 1)
+poke_raw8(%7 + 5, 0, 1)
+
+g: _sov_heap_alloc(640)
+poke_i64(g, %1, %2)
+poke_i64(g, %3, %4)
+i: %5
+j: 2
+%6: peek_i64(g, j * 8) - peek_i64(g, i * 8)
+
+src: cr_line(src, 'use time')
+src: cr_line(src, 'main:')
+src: cr_line(src, "    %1: %2(%3, %4, \"%5\")")
+src: cr_line(src, '    if %6 is 0')
+src: cr_line(src, "        print \"nodisplay\"")
+src: cr_line(src, '        stop')
+
+src: cr_line(src, '    print list_get(l, %1)')
+file_write_all('/tmp/sov-%2.sov', src)
+cr_build('/tmp/sov-%3.sov', '/tmp/sov-%4.bin', '')
+cr_bin('/tmp/sov-%5.bin', 20)
+if str_eq(cr_trim(cr_out), '2') = 1 -> cr_ok('list-%6')
+if not -> cr_bad('list-%7')
+
+poke4(flat, so_symtab + %1, %2)
+dummy: _sov_set_byte(flat, so_symtab + %3, 18)
+poke2(flat, so_symtab + %4, 1)
+poke8(flat, so_symtab + %5, BASE + HDR + smoff)
+poke8(flat, so_symtab + %6, clen)
+
+if sd_live = 1 -> return
+sd_cut_at: 0
+sd_cut: %1
+if main_params_n > 0 -> sd_cut_at: %2
+    sd_cut: 26
+
+%1(%2)
+%3()
+emit:
+    72 133 192
+%4: jnz()
+
+if _sov_str_eq(kind, 'gwstr_n') = 1 -> poke4(flat, %1 + at, (sl + 7) / 8)
+if _sov_str_eq(kind, 'gwipe_a') = 1 -> poke8(flat, %2 + at, glob_addr)
+if _sov_str_eq(kind, 'gwipe_n') = 1 -> poke4(flat, %3 + at, _sov_list_len(glob_names))
+if _sov_str_eq(kind, 'glob') = 1 -> gx: idx(glob_names, val)
+    poke8(flat, %4 + at, glob_addr + gx * 8)
+
+%1: here()
+emit8(0)
+addp(%2, 'gwstr_a', intern_nz('%3.DLL'))
+emit:
+    255 16 72 137 193 72 184
+
+emit:
+    %1 %2
+%3: jmp()
+patch(%4)
+emit:
+
+%1 s:
+    i: 0
+    as long as i < _sov_list_len(imp_used) -> if peek_i64(imp_used, 16 + i * 8) = s
+            return %2
+        i: i + 1
+
+_sov_list_new():
+    %1
+    %2
+%3: 0
+as long as %4 < _sov_list_len(%5) -> %6: peek_i64(%7, 16 + (%8) * 8)
+
+dummy: _sov_set_byte(flat, %1, %2)
+dummy: _sov_set_byte(flat, %3, 0)
+poke4(flat, %4, %5)
+poke4(flat, %6, %7)
+poke4(flat, %8, %9)
+
+%1 %2:
+    i: %3
+    as long as i < %4 -> if %5(%6, i) = %7
+            return i
+        i: i + 1
+
+%1 m:
+    return %2(m, %3)
+%4 m limit:
+    n: 0
+    going: 1
+
+%1: 0
+if %2 >= 48 -> if %3 <= 57
+        %4: 1
+if %5 >= %6 -> if %7 <= %8
+        %9: 1
+
+%1 p %2 v:
+    poke_byte(p, %3, v % 256)
+    poke_byte(p, %4 + 1, (v / 256) % 256)
+    return %5
+%6 p %7 v:
+
+%1: %2:
+    "%3"
+    "%4"
+    "%5"
+    "%6"
+
+emitw(%1)
+emitw(%2)
+%3: here()
+emitw(2483027968)
+addp(%4, "rel26", "%5")
+
+if has_vm = 1 -> return
+used_tr: 1
+%1: here()
+emitw(%2)
+addp(%3, "cbz_trap", %4)
+
+if k > 0 -> if sg_wc(_sov_byte_at(%1, k - 1)) = 1
+        lp: 0
+if k < length(%2) - 1 -> if sg_wc(_sov_byte_at(%3, k + 1)) = 1
+        rp: 0
+if lp = 1 -> if rp = 1
+
+as long as %1 < %2 -> _sov_set_byte(out, w, _sov_byte_at(source, %3))
+    w: w + 1
+    %4: %5 + 1
+_sov_set_byte(out, w, %6)
+w: w + 1
+
+%1 name:
+    return store_load(%2(name))
+%3 name:
+    return store_clear(%4(name))
+%5 %6:
+
+%1 %2 %3 %4:
+    i: 0
+    as long as i < n -> poke_byte(%5, i, v)
+        i: i + 1
+    return %6
+
+i: 0
+as long as i < %1 -> %2: peek_byte(%3, i)
+    poke_byte(%4, i, %5)
+    if %6 = 0 -> return %7
+    i: i + 1
+
+%1()
+%2(%3)
+%4()
+%5()
+%6(%7)
+
+as long as dl_r < 8 -> if dl_n2 = 192 + dl_r * 9
+        dl_len: %1
+        dl_dst: dl_r
+        dl_rm: 1
+    dl_r: dl_r + 1
+
+put(%1, %2 - (%3 + 4))
+patch(%4)
+emit:
+    137 209 129 225 255 1 0 0
+%5: jz()
+
+if ai = %1 -> if is_imm(ag) = 1
+        expr(ag)
+        %2()
+    if not -> if try_lea_arg(ag, %3) = 0
+            %4(ag)
+
+emit(%1)
+if o = 0 -> emit(%2)
+if not
+    emit(%3)
+    emit(o)
+
+put(%1, %2 - (%3 + 4))
+lx: peek_i64(bx, 16 + last * 8)
+lxi: 0
+as long as lxi < _sov_list_len(lx) -> patch(peek_i64(lx, 16 + lxi * 8))
+    lxi: lxi + 1
+
+%1: sel_val(%2)
+if %3 < 0 -> return 0
+%4: %5
+if %6 = 1 -> %7: pk_g
+    %8: pk_x
+
+ss: reg_slot(%1)
+if ss < 0 -> return 0 - 1
+cflush(%2)
+%3(ss, ds)
+return 1
+
+%1 token:
+    %2: mem_new(64)
+    i: 0
+    as long as i < 64 -> poke_byte(%3, i, 0)
+        i: i + 1
+
+c: peek_i64(%1, 72) / 67108864
+poke_i64(%2, 72, peek_i64(%3, 72) % 67108864)
+poke_i64(%4, 0, peek_i64(%5, 0) + 608 * c)
+c: peek_i64(%6, 0) / 67108864
+poke_i64(%7, 0, peek_i64(%8, 0) % 67108864)
+
+%1: %2
+%3 width height title:
+    w: win_open(width, height, title)
+    if w = 0 -> return 0
+    %4: mem_new(%5)
+
+%1 %2:
+    c: %3(%4)
+    %5(%6, c)
+    return c
+%7 %8 %9:
+
+if %1 = %2 -> return %3
+i: json_scan(s, i)
+i: json_skip(s, i)
+if peek_byte(s, i) = 44 -> i: i + 1
+%4: %5 + 1
+
+json_next_seg(path)
+if jp_is_idx = 1 -> ni: json_arr_at(text, i, jp_idx)
+    return %1(text, ni, jp_rest)
+ni: json_obj_find(text, i, jp_key)
+return %2(text, ni, jp_rest)
+
+%1 table maximum:
+    if kacpi_sdt_valid(table, maximum) != 1 -> return 0
+    if kacpi_sig4(table, %2, %3, %4, %5) != 1 -> return 0
+    length: peek_raw32(table + 4, 0)
+    if length < %6 -> return 0
+
+if typ = %1 -> if size < %2
+        return 0
+    if kacpi_dmar_scope_list_valid(table + offset, size, %3) != 1 -> return 0
+    %4: %5
+    as long as %6 < size -> %7: peek_raw8(table + offset + %8, 0)
+
+if %1 = %2 -> return 0
+if peek_raw64(%3 + 8, 0) != %4 -> return 0
+generation: peek_raw64(%5, 0) + 1
+if generation = 0 -> generation: 1
+poke_raw64(%6, 0, generation)
+
+%1 request:
+    if request = 0 -> return 0
+    if kio_req_state(request) != KIO_REQ_ACTIVE -> return 0
+    if %2(request) != %3 -> return 0
+    return 1
+
+%1 ring:
+    if ring = 0 -> return 0
+    if peek_raw64(ring + 56, 0) != %2 -> return 0
+    %3: peek_raw64(ring + %4, 0)
+    capacity: peek_raw64(ring + 8, 0)
+
+%1: 0
+as long as %2 < %3 -> if %4(%5 + %6, 0) != 0
+        return 0
+    %7: %8 + %9
+return 1
+
+if %1 < %2 -> return 0
+if %3 > 65535 -> return 0
+if %4 < %5 -> return 0
+if %6 > %7 -> return 0
+entry: %8 + %9 * 16
+
+%1 base limit:
+    if base < KIOMMU_PAGE_SIZE -> return 0
+    status: peek_raw32(base + 28, 0)
+    poke_raw32(base + 24, 0, %2(status, %3))
+    return kiommu_wait32(base + 28, KIOMMU_GSTS_TES, %4, limit)
+
+%1: ksurf_damage_origin(surface)
+%2: ksurf_damage_extent(surface)
+%3: band(%4, 65535)
+%5: band(bshr(%6, 16), 65535)
+%7: band(%8, 65535)
+
+if (ctrl / %1(cnum)) % 2 = 1 -> poke_byte(out, o, peek_byte(p, i))
+    o: o + 1
+    i: i + 1
+if not -> t: peek_byte(p, i) + peek_byte(p, i + 1) * 256
+    i: i + 2
+
+0:
+    %1
+    %2
+as long as %3 < %4 -> %5: %6 + peek_i64(mb, %7 * 8)
+    %8: %9 + 1
+
+c: %1 / 67108864
+%2: wand(%3, 67108863)
+%4: %5 + c
+c: %6 / 67108864
+%7: wand(%8, 67108863)
+
+%1 text:
+    t: str_cat("<%2>", escape_html(text))
+    t: str_cat(t, "</%3>")
+    site_wrap(t)
+    return 1
+
+fd: sock_tcp()
+if fd < 0 -> return 0 - 1
+addr: sock_addr4(%1, %2, %3, %4, port)
+if %5(fd, addr, 16) < 0 -> sys_close(fd)
+    return 0 - 1
+
+%1 %2:
+    n: %3(%4)
+    if n = 0 -> return %5
+    %6: %7(%8)
+    i: 0
+
+%1:
+    file_write_all("/tmp/sov-%2.sov", "twice n:\n    return n * 2\n\nmain:\n    print twice(21)\n    print addr_of twice\n")
+    msg: tr_build_for("/tmp/sov-%3.sov", "/tmp/sov-%4.%5", "--%6")
+    if str_has(msg, "Error") = 1 -> tr_bad("%7 %8 build", msg, "a clean build")
+        return 0
+
+0:
+    %1
+    %2
+as long as %3 < 65536 -> if x86_peek_q(%4, %5 + %6) = %7
+        %8: 1
+
+%1 %2:
+    return syscall(%3, %4, 0, 0, 0, 0, 0)
+%5 a b:
+    return syscall(%6, a, b, 0, 0, 0, 0)
+%7 %8:
+
+%1:
+    p: _sov_heap_alloc(8)
+    p: poke_byte 0 + i: 27 91 63 50 53 %2 0
+    write_str(1, p)
+    return 1
+
+if peek_i64(t, 168) = 1 -> s: tk_escpre("[?%1l")
+    s: str_cat:
+        tk_escpre("[?1000%2")
+        tk_escpre("[?%3%4")
+        tk_escpre("[?%5h")
+
+if %1 != %2 -> dummy: tk_ob(t, 27)
+    dummy: tk_ob(t, 91)
+    dummy: tk_ob(t, %3)
+    dummy: tk_ob(t, 48 + %4)
+    dummy: tk_ob(t, 109)
+
+%1: 0
+%2 %3:
+    %4: %5
+    return %6
+%7:
+
+j: %1
+mem_copy(%2, %3, %4)
+j: 0
+as long as j < %5 -> poke_byte(%6, %7 + j, peek_byte(%8, j))
+    j: j + 1
+
+%1: _sov_heap_alloc(%2 + %3 + %4)
+j: 0
+as long as j < %5 -> poke_byte(%6, j, peek_byte(%7, j))
+    j: j + 1
+j: 0
+
+i: 0
+as long as i < %1 -> poke_byte(%2, i, peek_byte(raw, %3 + i))
+    i: i + 1
+%4: _sov_heap_alloc(%5)
+i: 0
+
+qlen: qlen + 1
+k: %1 - part
+as long as k < %2 -> poke_byte(q, qlen, peek_byte(host, k))
+    qlen: qlen + 1
+    k: k + 1
+
+%1: %2(%3)
+i: 0
+as long as i < %4 -> poke_byte(%5, i, 0)
+    i: i + 1
+%6: %7 0 + i: %8 %9
+
+if kind = %1 -> poke_i64(w, %2, peek_byte(b, 1))
+    poke_i64(w, 88, peek_byte(b, 24) + peek_byte(b, 25) * 256)
+    poke_i64(w, 96, peek_byte(b, 26) + peek_byte(b, 27) * 256)
+    w: poke_i64 104 + %3 * i: %4 1
+    return %5
+
+pre: 0
+if %1 = 2 -> pre: 1
+%2: peek_i64(m, 416)
+if %3 = 2 -> pre: 2
+if %4 = 1 -> pre: 3
+
+if %1 = 96 -> return x_punpck(m, q, n, 1, 0)
+if %2 = 97 -> return x_punpck(m, q, n, 2, 0)
+if %3 = 98 -> return x_punpck(m, q, n, 4, 0)
+if %4 = 106 -> return x_punpck(m, q, n, 4, 1)
+if %5 = %6 -> %7: %8(m, %9)
+
+if %1 = 18 -> %2: x_xrm_lo(m)
+    %3: x_xhi(m, n)
+    x_xset(m, n, %4, %5)
+    return x_go(m, q)
+if %6 = 22 -> %7: x_xlo(m, n)
+
+if %1 = 214 -> if peek_i64(m, 360) = 1
+        x_xset(m, peek_i64(m, 376), x_xlo(m, n), 0)
+        return x_go(m, q)
+    x_w64(m, peek_i64(m, 376), x_xlo(m, n))
+    return x_go(m, q)
+
+if op = %1 -> if peek_i64(m, 736) = 1
+        poke_i64(m, 888, x_r8(m, q))
+        poke_i64(m, 896, %2)
+        return x_vpermq(m)
+    return %3(m)
+
+if op = %1 -> im: x_r8(m, q)
+    return %2(m, q + 1, n, im)
+if op = %3 -> im: x_r8(m, q)
+    return %4(m, q + 1, n, im)
+if op = %5 -> poke_i64(m, 888, x_r8(m, q))
+
+%1 m op a b:
+    if op = 0 -> return x_fadd(m, a, b)
+    if op = 1 -> return %2(m, a, b)
+    if op = %3 -> return %4(m, a, b)
+    if op = %5 -> return %6(m, %7, %8)
+
+if r < 0 - %1 -> poke_i64(m, 168, X_FAULT)
+    return 0
+%2(m, 0, %3, x_mask(r, %4))
+%5(m, %6, %7, x_mask(n % d, %8))
+return x_go(m, q)
+
+if op = %1 -> v: x_rm_get(m, size)
+    c: x_cf(m)
+    x_rm_set(m, size, %2(m, v, 1, size))
+    poke_i64(m, 152, c)
+    return x_go(m, q)
+
+v: x_rm_get(m, size)
+poke_i64(m, 152, x_bit(x_mask(v, size), n))
+if op = %1 -> x_rm_set(m, size, x_or(v, x_shl(1, n, size)))
+if op = %2 -> x_rm_set(m, size, x_and(v, x_not(x_shl(1, n, size))))
+if op = %3 -> x_rm_set(m, size, x_xor(v, x_shl(1, n, size)))
+
+poke_i64(m, 936, %1)
+x_xbyte_set1(m)
+poke_i64(m, 928, i * 4 + %2)
+poke_i64(m, 936, %3)
+x_xbyte_set1(m)
+
+i: 0
+as long as i < 144 -> x_w8(m, %1 + i, 0)
+    i: i + 1
+x_w32(m, %2 + 24, 8630)
+x_w64(m, %3 + 48, 4096)
+
+if n = %1 -> %2: %3
+    return 0
+if n = %4 -> zm_new_line()
+    return 0
+if n = %5 -> return 0
+
+sputs("SOVREN %1 %2\n")
+atomic_store(%3, 0)
+i: 0
+as long as i != %4 -> poke_byte(%5 + i, 0, 0)
+    i: i + 1
+
+main:
+    sinit()
+    sputs("SOVREN %1\n")
+    atomic_store(%2, %3)
+    %4: 0
+
+i: 0
+as long as i < %1 -> %2(%3 + i, 0, %4)
+    %5(%6 + i, 0, %7)
+    i: i + 1
+%8: %9
+
+if %1 != %2 -> ok: 0
+    sputs("%3 %4 %5 %6\n")
+if ok = 1 -> sputs("%7 OK\n")
+if not -> sputs("%8 FAIL\n")
+as long as 1 = 1 -> hlt()
+
+%1: P + DATA * 512 + (%2 - 2) * 4096
+dname(img, %3 + 0, '.          ')
+dent(img, %4 + 0, 16, %5, 0)
+dname(img, %6 + 32, '..         ')
+dent(img, %7 + 32, 16, %8, 0)
+
+OUT: %1
+i: 0
+as long as i < %2 -> %3(OUT + i * 4, peek_raw64(%4 + i * 8, 0))
+    i: i + 1
+%5: %6
+
+ok: 1
+i: 0
+as long as i < %1 -> if peek_byte(%2 + i, 0) != peek_byte(%3 + i, 0)
+        ok: 0
+    i: i + 1
+
+0:
+    %1
+    %2
+    i
+as long as i < 4 -> %3: peek_raw64(%4 + i * %5, 0)
+
+atomic_store(%1, 0)
+atomic_store(%2, 0)
+%3(0)
+%4(1)
+%5(%6)
+
+port_out8(33, 254)
+sti()
+as long as peek_raw64(WAIT_TICKS, 0) < %1 -> hlt()
+cli()
+port_out8(33, 255)
+
+%1: %2
+main:
+    sinit()
+    sputs("SOVREN %3\n")
+    %4: poke_raw64 i * 8, 0: %5 %6 %7 %8 %9
+
+if not -> sputs("%1 wrong\n")
+if peek_raw64(%2, 0) = %3 -> sputs("%4 %5 %6: OK\n")
+if not -> sputs("%7 wrong\n")
+sputs("%8 OK\n")
+as long as 1 = 1 -> hlt()
+
+# unsafe-module
+use %1
+%2: %3
+%4:
+    %5(%6, 0, %7)
+
+poke_byte(%1, 6, band(bshr(%2, 32), 255))
+poke_byte(%3, 7, band(bshr(%4, 40), 255))
+poke_byte(%5, 8, band(bshr(%6, 48), 255))
+poke_byte(%7, 9, band(bshr(%8, 56), 255))
+lidt(%9)
+
+poke_raw64(%1, 0, 1)
+poke_raw64(sp() + 120, 0, fn_addr('report'))
+poke_raw64(sp() + 128, 0, 24)
+poke_raw64(sp() + 144, 0, KSTK)
+poke_raw64(sp() + 152, 0, 16)
+
+if not -> sputs("%1 wrong\n")
+l: %2
+0:
+    %3
+    %4
+
+cur: start
+as long as 1 = 1 -> if cur = 0
+        return %1
+    if cur = 65535 -> return %2
+    n: atomic_load(FAT + (cur * 8))
+
+as long as %1 != %2 -> if peek_raw64(%3 + (%4 * %5), 0) = %6
+        RES: %7
+        return 0
+    %8: %9 + 1
+RES: 0 - 1
+
+%1 %2:
+    0:
+        %3
+        %4
+        %5
+
+%1()
+%2()
+%3()
+%4()
+%5(%6, %7, %8)
+
+%1()
+%2: %3 / 64
+i: 0
+as long as i < %4 -> sha_block(%5 + i * 64)
+    i: i + 1
+
+sputs("%1\n")
+poke_byte(%2 + 0, 0, %3)
+poke_byte(%4 + 1, 0, %5)
+poke_byte(%6 + 2, 0, %7)
+poke_byte(%8 + 3, 0, %9)
+
+%1 c:
+    if c = 10 -> g_row: g_row + 1
+        g_col: 0
+        %2()
+        return 0
+
+i: 0
+as long as i < %1 -> if free_frame(%2 + i * 4096) != 1
+        return 0
+    i: i + 1
+return 1
+
+%1 %2:
+    heap_acquire()
+    %3: %4(%5)
+    heap_release()
+    return %6
+
+if pid = %1 -> if peek_raw64(%2, 0) != PS_ZOMBIE
+        return 0 - 11
+    rv: peek_raw64(%3, 0)
+    poke_raw64(%4, 0, PS_FREE)
+    return rv
+
+status: 0 - 5
+blocks_done: 0
+if %1 = 1 -> status: 0
+    blocks_done: %2
+if kblk_device_complete(%3, %4, device, generation, %5, status, blocks_done) != 1 -> return 0
+
+p: pcache_ptr(slot)
+i: 0
+as long as i < 8 -> if %1(base + i, p + i * 512) != 0
+        return 0 - 5
+    i: i + 1
+
+%1 db:
+    s: 0
+    as long as s < FS_DIR_SECTORS -> if %2(FS_DIR_LBA + s, db + s * 512) != 0
+            return 0 - 5
+        s: s + 1
+
+%1:
+    %2: peek_raw64(%3, 0)
+    %4: peek_raw64(DIRBUF, 0)
+    if %5 = 0 -> return 0 - 12
+    if %6 = 0 -> return 0 - 12
+
+if band(%1, 16) != 0 -> %2: 2
+if band(%3, 32) != 0 -> %4: 16
+    %5: 1
+if band(%6, 64) != 0 -> %7: 256
+    %8: 2
+
+%1: alloc_frame()
+if %2 = 0 -> return 0
+%3: alloc_frame()
+if %4 = 0 -> free_frame(%5)
+    return 0
+
+%1: peek_raw64(%2, 0)
+%3: peek_raw64(%4, 0)
+if %5 = 0 -> return 0
+if %6 = 0 -> return 0
+poke_raw32(%7 + %8, 0, %9)
+
+%1: kio_ring_reserve(ring)
+if %2 = 0 -> return 0
+poke_raw64(%3, 0, kernel_dma_address(XHCI_DESCRIPTOR_DMA_MAP, buffer, length))
+%4 + 8: poke_raw32 i * 4, 0: length %5
+if kio_ring_commit(ring) != 1 -> return 0
+
+%1 doorbell event event_index slot buffer:
+    cleared: _sov_mem_set(buffer, 0, 3584)
+    buffer + 15: poke_raw8 i * 4, 0: %2 %3
+    if xhci_storage_bot(doorbell, event, event_index, slot, buffer, %4, 1537) != 1 -> return 0
+    %5: buffer + 64
+
+if kio_ring_init(%1, %2, 255, 16) != 1 -> return 0
+poke_raw64(%3 + 4080, 0, %4)
+%5 + 4088: poke_raw32 i * 4, 0: 0 6147
+if kio_ring_init(%6, %7, 255, 16) != 1 -> return 0
+poke_raw64(%8 + 4080, 0, %9)
+
+poke_raw32(doorbell, 0, 0)
+%1: xhci_wait_event(event_ring, event_index, 33)
+if %2 != slot -> return 0
+if xhci_ring_dma_reclaim(XHCI_SW_RING, 16) != 1 -> return 0
+if kernel_dma_device_reclaim(XHCI_INPUT_DMA_MAP, PCI_DRIVER_XHCI, 4096) != 1 -> return 0
+
+if wait_timer_route_start() != 1 -> return 0
+sti()
+as long as peek_raw64(WAIT_TICKS, 0) < %1 -> hlt()
+if wait_timer_route_stop() != 1 -> return 0
+return 1
+
+i: 0
+as long as i < 16 -> poke_raw64(%1 + i * 8, 0, %2(%3 + i * 4))
+    i: i + 1
+i: 16
+as long as i < 64 -> %4: peek_raw64(%5 + (i - 15) * 8, 0)
+
+i: 0
+as long as i < 6 -> poke_raw8(%1 + i, 0, peek_raw8(%2 + i, 0))
+    poke_raw8(%3 + 6 + i, 0, peek_raw8(%4 + i, 0))
+    i: i + 1
+%5 + 12: poke_raw8 i, 0: 8 0
+
+%1: 0
+as long as 1 = 1 -> %2: peek_byte(path, %3)
+    if %4 = 0 -> leave
+    poke_raw8(dps + %5, 0, %6)
+    %7: %8 + 1
+
+ring: peek_raw64(SYSLOG_RING, 0)
+%1: ring + %2 * SYSLOG_RECORD
+i: 0
+as long as i < SYSLOG_RECORD -> poke_byte(%3 + i, 0, peek_byte(%4 + i, 0))
+    i: i + 1
+
+if kernel_dma_unmap(%1, %2) != 1 -> return 0
+if kernel_dma_unmap(%3, %4) != 1 -> return 0
+if kernel_dma_unmap(%5, %6) != 1 -> return 0
+if kernel_dma_unmap(%7, %8) != 1 -> return 0
+poke_raw64(%9, 0, 0)
+
+%1:
+    if kernel_dma_device_begin(%2, PCI_DRIVER_NVME) != 1 -> return 0
+    if kernel_dma_device_begin(%3, PCI_DRIVER_NVME) != 1 -> kernel_dma_device_reclaim(%4, PCI_DRIVER_NVME, 0)
+        return 0
+    return 1
+
+bdf: pci_find_class(1, %1, %2)
+if bdf < 0 -> return 0
+if pci_claim(bdf, %3) != 1 -> return 0
+mmio: pci_mmio_base(bdf, %4)
+if mmio = 0 -> return 0
+
+%1(%2, %3, %4)
+poke_raw64(%5, 0, 0)
+poke_raw64(%6, 0, 0)
+poke_raw64(%7, 0, %8)
+%9: 0
+
+poke_byte(%1, 0, opcode)
+poke_raw16(%2 + 2, 0, %3)
+poke_raw32(%4, 4, 1)
+poke_raw64(%5 + 24, 0, kio_dma_device_address(%6))
+poke_raw32(%7, 40, %8)
+
+poke_raw64(%1, 0, target)
+poke_raw64(%2 + 8, 0, peek_raw64(%3 + 24, 0))
+poke_raw64(%4 + 16, 0, peek_raw64(%5, 0))
+poke_raw64(%6 + 24, 0, peek_raw64(%7 + PROCESS_CREDENTIAL_ID, 0))
+poke_raw64(%8 + 32, 0, peek_raw64(%9 + PROCESS_NAMESPACE_ID, 0))
+
+if record = 0 -> return 0 - 3
+root: peek_raw64(record + %1, 0)
+if root = 0 -> return 0 - 5
+count: peek_raw64(root, 0)
+if count > %2 -> return 0 - 5
+
+as long as %1 < MP_CONTEXT_COUNT -> if %2 < 0
+        if peek_raw64(MP_PROCESS_TOKENS + %3 * 8, 0) = 0 -> if peek_raw64(MP_STATE + %4 * 8, 0) = 3
+                %5: %6
+    %7: %8 + 1
+if %9 < 0 -> return 0 - 11
+
+%1: service_queue_for_slot(%2)
+if %3 = 0 -> ok: 0
+if %4 != 0 -> if peek_raw64(%5 + 16, 0) != 0
+        ok: 0
+    if peek_raw64(%6 + SERVICE_QUEUE_HEADER, 0) != 0 -> ok: 0
+
+%1 %2 length %3:
+    if %4 < 0 -> return 0
+    if length < %5 -> return 0
+    if %6 > 9223372036854775807 - length -> return 0
+    if %7 < %8 -> return 0
+
+audit_finish(status)
+user_boundary_release(frame)
+top: peek_raw64(USER_KSTACK, 0)
+poke_raw64(top - 40, 0, fn_addr('%1'))
+poke_raw64(top - 32, 0, 24)
+
+poke_raw64(%1, 0, %2)
+poke_raw64(%3, 0, %4)
+poke_raw64(%5, 0, %6)
+poke_raw64(%7, 0, %8)
+write_cr3(%9)
+
+atomic_store(%1 + t * 32 + 16, %2)
+atomic_store(%3 + t * 32, 2)
+atomic_add(%4 + %5 * 8, 1)
+atomic_add(%6 + %7 * 8, %8)
+atomic_add(%9, 1)
+
+myid: band(bshr(peek_raw32(%1 + 32, 0), 24), 255)
+slot: 0
+as long as slot < 3 -> if band(atomic_load(%2 + slot * 8), 255) = myid
+        leave
+    slot: slot + 1
+
+poke_raw64(%1, 0, %2)
+%3: alloc_contig(6)
+if %4 = 0 -> fail('network %5-app staging')
+poke_raw64(%6, 0, %7)
+%8: alloc_contig(6)
+
+%1: 0
+as long as %2 < 96 -> poke_byte(klogbuf + %3, 0, 0)
+    %4: %5 + 1
+%6: 'kernel: init service %7'
+%8: 0
+
+i: 0
+as long as i < %1 -> irq_event(%2)
+    i: i + 1
+if peek_raw64(IS + %3, 0) != %4 -> ok: 0
+    sputs("%5 %6 quarantined\n")
+
+%1:
+    atomic_store(%2, 0)
+%3:
+    v: atomic_load(CRIT)
+    atomic_store(CRIT, v + 1)
+
+# unsafe-module
+use ktest_b
+%1: %2
+%3: %4
+%5 a, %6:
+
+b0: peek_byte(%1, 0)
+b1: peek_byte(%2 + 1, 0)
+b2: peek_byte(%3 + 2, 0)
+b3: peek_byte(%4 + 3, 0)
+%5: bor(bor(bor(b0, bshl(b1, 8)), bshl(b2, 16)), bshl(b3, 24))
+
+h0: h0 + band(%1, 67108863)
+h1: h1 + band(bor(bshr(%2, 26), bshl(%3, 6)), 67108863)
+h2: h2 + band(bor(bshr(%4, 20), bshl(%5, 12)), 67108863)
+h3: h3 + band(bor(bshr(%6, 14), bshl(%7, 18)), 67108863)
+h4: h4 + (band(bshr(%8, 8), 67108863) + 16777216)
+
+%1: %2
+main:
+    sinit()
+    sputs("SOVREN %3\n")
+    %4: poke_raw64 i * 8, 0: %5 %6 %7
+
+int80()
+if peek_raw64(SC_RES, 0) = %1 -> sputs("  %2 %3 OK\n")
+if not -> sputs("  %4 WRONG\n")
+sputs("guest: %5...\n")
+poke_raw64(SCFRAME, 0, %6)
+
+H: poke_raw64 i * 8, 0: %1 %2 %3 %4 %5 %6 %7 %8
+i: 0
+as long as i < %9 -> poke_raw64(MSG + i * 8, 0, 0)
+    i: i + 1
+MSG: poke_byte i, 0: 97 98 99 128
+
+push_all()
+poke_raw64(%1, 0, %2)
+poke_raw64(sp() + 120, 0, fn_addr('%3'))
+pop_all()
+iretq()
+
+poke_raw64(%1, 0, 0)
+do_syscall()
+%2: peek_raw64(SC_RES, 0)
+if %3 = %4 -> sputs("  %5 returned %6 OK\n")
+if not -> sputs("  %7 WRONG\n")
+
+poke_raw64(NH_AT, 0, 0)
+poke_raw64(BUFP_AT, 0, 0)
+%1: cfunc(BRIDGE5, lhb, %2, %3, 0, NH_AT, BUFP_AT)
+%4: peek_raw64(NH_AT, 0)
+sputs('%5 %6 ')
+
+%1: 0
+as long as %2 < %3 -> %4: peek_raw64(%5 + %6 * 8, 0)
+    sputs('%7 ')
+    snum(%8)
+    sc(10)
+
+di: decomp_find(cp)
+if di >= 0 -> poke_raw64(%1 + %2 * 8, 0, decomp_base(di))
+    %3: %4 + 1
+    poke_raw64(%5 + %6 * 8, 0, decomp_mark(di))
+    %7: %8 + 1
+
+if cp = %1 -> return %2
+if cp = %3 -> return %4
+if cp = %5 -> return %6
+if cp >= %7 -> if cp < %8
+        return %9
+
+poke_raw64(VMA + %1 * 24, 0, 0)
+poke_raw64(VMA + %2 * 24 + 8, 0, 0)
+poke_raw64(VMA + %3 * 24 + 16, 0, 0)
+NVMAS: NVMAS - 1
+RES: %4
+
+der_next(%1)
+%2: peek_raw64(DER_CS, 0)
+%3: peek_raw64(DER_E, 0)
+%4: child_index(%5, %6, %7)
+%8: der_next(%9)
+
+%1: %2
+b: poke_i64:
+    %3 * 8 -> %4
+    %5 * 8 -> %6
+    %7 * 8 -> %8
+
+%1: peek_i64(g, %2)
+%3: peek_i64(g, %4)
+%5: peek_i64(g, %6)
+s: a * a + b * b + %7 * %8
+%9 s
+
+try
+    raise 'boom'
+except %1
+    print 41
+print 42
+
+src: cr_line(src, "    w: %1(%2, %3, \"x\")")
+src: cr_line:
+    '    if w is 0'
+    "        print \"%4\""
+    '        stop'
+
+%1:
+    m: new_at()
+    x_setr(m, 0, 0 - %2)
+    m: put 0 + i: 72 209 %3
+    go(m, 3)
+
+%1:
+    m: new_at()
+    x_xset(m, %2, %3, %4)
+    m: put 0 + i: %5 15 %6 %7
+    go(m, 4)
+
+%1:
+    m: new_at()
+    m: x_setr 0 + 3 * i: %2 %3
+    m: put 0 + i: %4 %5 15 56 241 195 144
+    go(m, 7)
+
+if not -> %1: as text tr_shell('/tmp/sov-boot-%2 compilers/linux/compiler.sov -o /tmp/sov-boot-%3 2>&1')
+    if str_has(%4, 'Error') = 1 -> print 'FAIL seed fixed point (%5)'
+        print %6
+        bo_fail: bo_fail + 1
+
+'%1'
+'%2'
+'%3'
+'%4'
+
+poke8(flat, so_dyn + %1, %2)
+poke8(flat, so_dyn + %3, %4)
+poke8(flat, so_dyn + %5, %6)
+poke8(flat, so_dyn + %7, BASE + %8)
+
+%1: load_file(%2)
+if %3 = 0 -> print 'Error: cannot read input'
+    fail()
+%4: %5(%6)
+
+if _sov_str_eq(kind, 'adr') = 1 -> sa: str_addr + val
+    rel: sa - (%1 + %2 + at)
+    if rel < 0 -> rel: rel + 2097152
+    poke4(flat, %3 + at, 268435456 + (rel % 4) * 536870912 + ((rel / 4) % 524288) * 32 + 1)
+
+if had_err = 1 -> return
+poke8(flat, %1 + %2 + pad, rel_n)
+ri: 0
+as long as ri < rel_n -> %3(flat, %4 + %5 + pad + 8 + ri * 8, hdr + peek_i64(rel_at, 16 + ri * 8))
+
+%1: %2
+%3: %4
+%5: wadd(%6, %7)
+%8: %9 + 1
+
+%1:
+    %2
+    %3
+%4: %5 - %6
+
+if _sov_str_eq(name, '%1') = 1 -> emit(%2)
+    return
+if _sov_str_eq(name, '%3') = 1 -> emit(%4)
+    return
+
+if vg = 1
+    emit(%1)
+    emit(%2)
+if not
+    emit(106)
+    emit(1)
+    emit(%3)
+
+if not -> %1:
+        %2
+        %3
+        %4
+
+put(%1, %2 - (%3 + 4))
+patch(_):
+    %4
+    %5
+
+emit:
+    %1 %2 %3
+%4(%5)
+emit:
+
+%1: 1
+as long as %2 = 1 -> 0:
+        %3
+        %4
+
+sg: 1
+as long as sg = 1 -> st: %1(%2(dig, %3 % 10, %4 % 10 + 1), st)
+    %5: %6 / 10
+    if %7 = 0 -> sg: 0
+
+%1: 0
+as long as %2 < n -> s: %3(s, ' ')
+    %4: %5 + 1
+return s
+
+call_args name argc direct:
+    if _sov_str_eq(name, 'cfunc') = 1
+        emit(65)
+        emit(89)
+        emit(65)
+        emit(88)
+        emit(89)
+        emit(90)
+        emit(94)
+        emit(95)
+        emit(65)
+        emit(%1)
+        emit(85)
+        emit(72)
+        emit(137)
+        emit(229)
+        emit(72)
+        emit(131)
+        emit(228)
+        emit(240)
+        emit(%2)
+        emit(%3)
+
+emit:
+    %1 %2 %3 %4 %5 %6 %7
+%8(%9)
+emit:
+
+i: 0
+as long as i < %1 -> if %2(%3, %4(%5, i)) = 1
+        return %6
+    i: i + %7
+
+%1 %2 %3 v:
+    poke_byte(%4, %5, (v / 16777216) % 256)
+    poke_byte(%6, %7 + 1, (v / 65536) % 256)
+    poke_byte(%8, %9 + 2, (v / 256) % 256)
+
+if str_eq(a, '--%1') = 1 -> %2()
+    stop
+if str_eq(a, '-%3') = 1 -> %4()
+    stop
+
+%1 %2:
+    n: %3(%4)
+    if n = 0 -> return %5
+    %6: 0
+
+i: 0
+as long as i < 16 -> poke_byte(st, i, ae_si(peek_byte(st, i)))
+    i: i + 1
+ae_addkey(st, rk, %1)
+
+use %1
+%2:
+    return %3()
+%4 %5:
+
+%1 m %2 n:
+    %3: %4(m, %5)
+    %6: peek_i64(m, %7)
+    %8: 0
+
+if %1 + %2 > fszn -> print "%3: refused - a segment runs past the file"
+    return 0
+if %4 < %5 -> print "%6: refused - a segment maps more file than memory"
+    return 0
+
+if %1(m, %2) = %3 -> arm_set_pc(m, pc + off)
+    return 1
+arm_set_pc(m, nx)
+return 1
+
+%1:
+    m: %2()
+    %3(m, %4, %5)
+    %6(m, %7)
+
+if %1 < %2 -> %3: %4
+k: 0
+as long as k < %5 -> %6(m, base + k, peek_byte(d, k))
+    k: k + 1
+
+i: 0
+as long as i < %1 -> if %2(%3, %4 + i) != peek_byte(%5, i)
+        return 0
+    i: i + 1
+
+poke_byte(b, %1, %2 % 256)
+poke_byte(b, %3, (%4 / 256) % 256)
+poke_byte(b, %5, (%6 / 65536) % 256)
+poke_byte(b, %7, %8 / 16777216)
+
+if c < 48 -> return %1
+if c > 57 -> return %2
+v: v * 10 + c - 48
+%3: %4 + 1
+
+%1 %2 %3:
+    %4: %5(%6)
+    %7: 0
+    n: %8(%9)
+
+%1: 0
+as long as %2 < %3(%4) -> 0:
+        %5
+        %6
+
+%1 a n:
+    if n >= 64 -> return 0
+    if n < 0 -> return a
+    return %2(a, n)
+
+n: %1(%2)
+dummy: bounds_ok("%3", i, n)
+if i < 0 -> return 0
+if i >= n -> return 0
+
+%1: str_len(%2)
+%3: %4
+%5: 0 - 1
+%6: %7
+
+%1 %2:
+    %3: %4
+    %5: 0
+    %6: 1
+
+%1 %2 a b:
+    return _sov_substring(%3, a, b)
+%4 %5 %6:
+    return %7(%8, %9)
+
+set_reg(%1, 0)
+set_reg(8, %2)
+sysc()
+return
+
+%1: here()
+emitw(%2)
+put_arm(%3, %4 - %5)
+%6(%7)
+
+emitw(%1)
+%2: here()
+emitw(%3)
+%4(%5, %6)
+
+addp(%1, "glob64", "heap_ptr")
+emitw(%2)
+%3(0, %4)
+ret()
+
+_sov_print(%1)
+err_line: file_ln(li)
+print err_line
+had_err: 1
+
+as long as i < n -> poke_byte(o, i, %1(peek_byte(s, i)))
+    i: i + 1
+poke_byte(o, n, 0)
+return as text o
+
+%1: ''
+i: 0
+n: length(%2)
+as long as i < n -> c: %3(%4, i)
+
+%1: %2(%3)
+%4: %5(%6)
+%7: %8(%9)
+out: _sov_list_new()
+
+if go = 1 -> if b = %1
+        if %2 = 1 -> %3: 0
+        if not -> if %4 = 0
+                %5: 1
+
+if %1 = 9 -> %2: %3 + 4
+    %4: %5 + 1
+if %6 != 32 -> if %7 != 9
+        %8: 1
+
+%1: %2
+if %3 = 1 -> %4: %5
+    %6: %7
+    %8: %9
+
+%1 %2:
+    i: 0
+    n: %3(%4)
+    as long as i < n -> %5: %6(%7, i)
+
+%1 %2:
+    return %3(%4, %5)
+%6 %7 %8:
+    if %9 = 0 -> return 0
+
+count: peek_i64(ch, 8)
+as long as count = %1 -> mutex_unlock(ch)
+    mutex_lock(ch)
+    %2: peek_i64(ch, %3)

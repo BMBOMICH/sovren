@@ -1,0 +1,12 @@
+use buf
+use string
+main:
+    p: buf_new(64)
+    i: 0
+    as long as i < 30000
+        p: buf_add_str(p, "abcdefgh")
+        i: i + 1
+    s: buf_text(p)
+    print str_len(s)
+    print buf_len(p)
+    return 0

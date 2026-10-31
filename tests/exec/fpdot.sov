@@ -1,0 +1,21 @@
+use f64
+use num
+main:
+    a: _sov_heap_alloc(80016)
+    b: _sov_heap_alloc(80016)
+    i: 0
+    as long as i < 10000
+        dummy: poke_i64(a, 16 + i * 8, f64_from_frac(i + 1, 7))
+        dummy: poke_i64(b, 16 + i * 8, f64_from_frac(i + 3, 11))
+        i: i + 1
+    acc: F64C_ONE
+    r: 0
+    as long as r < 300
+        s: 0
+        i: 0
+        as long as i < 10000
+            s: f64_add(s, f64_mul(peek_i64(a, 16 + i * 8), peek_i64(b, 16 + i * 8)))
+            i: i + 1
+        acc: f64_add(acc, s)
+        r: r + 1
+    print num_text(f64_to_i64(acc))

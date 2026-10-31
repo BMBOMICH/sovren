@@ -1,0 +1,100 @@
+# ceiling2: cost of each shape a front-end pass can take, in generated code.
+# usage: ./ceiling2 <probe 1..6> <reps>
+main argc argv:
+    p: peek_ptr(argv, 1)
+    which: num_of(p)
+    r: num_of(peek_ptr(argv, 2))
+    n: 368640
+    buf: _sov_heap_alloc(n + 16)
+    i: 0
+    as long as i < n -> poke_byte(buf, i, 65 + i % 26)
+        i: i + 1
+    acc: 0
+    rep: 0
+    as long as rep < r -> if which = 1 -> acc: acc + probe_byte(buf, n)
+        if which = 2 -> acc: acc + probe_swar(buf, n)
+        if which = 3 -> acc: acc + probe_line(buf, n)
+        if which = 4 -> acc: acc + probe_call(buf, n)
+        if which = 5 -> acc: acc + probe_alloc(buf, n, n)
+        if which = 6 -> acc: acc + probe_hash(buf, n)
+        rep: rep + 1
+    print acc
+num_of s:
+    v: 0
+    i: 0
+    go: 1
+    as long as go = 1 -> b: peek_byte(s, i)
+        if b >= 48 -> if b <= 57 -> v: v * 10 + b - 48
+            i: i + 1
+        if not -> go: 0
+    return v
+probe_byte p n:
+    # pure byte walk, one byte per iteration
+    s: 0
+    i: 0
+    as long as i < n -> s: s + peek_byte(p, i)
+        i: i + 1
+    return s
+probe_swar p n:
+    # 8 bytes per iteration
+    s: 0
+    i: 0
+    lim: n - 8
+    as long as i < lim -> s: s + peek_i64(p, i)
+        i: i + 8
+    return s
+probe_line p n:
+    # per-line dispatch shape: 3 compares + a 36-byte inner walk, no allocation
+    s: 0
+    i: 0
+    as long as i < n -> b: peek_byte(p, i)
+        if b = 65 -> s: s + 1
+        if b = 66 -> s: s + 2
+        if b = 67 -> s: s + 3
+        j: 0
+        as long as j < 36 -> c: peek_byte(p, i + j)
+            if c = 0 -> j: 36
+            j: j + 1
+        i: i + 36
+    return s
+probe_call p n:
+    # one cross-function call per line, no allocation inside
+    s: 0
+    i: 0
+    as long as i < n -> s: s + line_kind(p, i)
+        i: i + 36
+    return s
+probe_alloc p n cap:
+    # one call per line that allocates a fresh copy of the line and returns it
+    # (what cut/strip/sg_toks do today)
+    s: 0
+    i: 0
+    as long as i + 36 <= n -> s: s + line_copy(p, i, 36)
+        i: i + 36
+    return s
+probe_hash p n:
+    # one call per line that hashes the line's bytes (what intern does today)
+    s: 0
+    i: 0
+    as long as i + 36 <= n -> s: s + line_hash(p, i)
+        i: i + 36
+    return s
+line_kind p i:
+    b: peek_byte(p, i)
+    if b = 65 -> return 1
+    if b = 66 -> return 2
+    if b = 68 -> return 3
+    return 0
+line_copy p i len:
+    cp: _sov_heap_alloc(len + 8)
+    j: 0
+    as long as j < len -> poke_byte(cp, j, peek_byte(p, i + j))
+        j: j + 1
+    return peek_byte(cp, len - 1)
+line_hash p i:
+    h: 5381
+    j: 0
+    as long as j < 36 -> h: bxor(h * 33, peek_byte(p, i + j))
+        h: band(h, 72057594037927935)
+        j: j + 1
+    return band(h, 1023)

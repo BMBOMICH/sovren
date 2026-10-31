@@ -1,0 +1,11 @@
+use file
+main:
+    fdw: file_open_write('/tmp/sovren_conf.tmp')
+    sys_write(fdw, 'platform ok', 11)
+    file_close(fdw)
+    fdr: file_open_read('/tmp/sovren_conf.tmp')
+    buf: _sov_alloc(32)
+    got: sys_read(fdr, buf, 32)
+    file_close(fdr)
+    print got
+    print str_cut(buf, 0, 11)

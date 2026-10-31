@@ -1,0 +1,9 @@
+# unsafe-module
+mmio_w8 addr v:
+    return poke_raw8(addr, v)
+mmio_r8 addr:
+    return peek_raw8(addr)
+mmio_w64 addr v:
+    return poke_raw64(addr, v)
+mmio_r64 addr:
+    return peek_raw64(addr)

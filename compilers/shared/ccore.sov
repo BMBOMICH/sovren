@@ -1,0 +1,2134 @@
+# unsafe-module
+mk_num v:
+    # keys are 56-bit unsigned: negative hashes must not collapse to ''
+    v: band(v, 72057594037927935)
+    if v = 0 -> return '0'
+    b: _sov_heap_alloc(32)
+    w: 31
+    r: v
+    as long as r > 0 -> w: w - 1
+        poke_byte(b, w, 48 + r % 10)
+        r: r / 10
+    return b + w
+_sov_blit dst src n:
+    # bulk copy: qword body + byte tail (grammar-safe: no one-line chains)
+    i: 0
+    as long as i + 8 <= n
+        poke_i64(dst, i, peek_i64(src, i))
+        i: i + 8
+    as long as i < n
+        poke_byte(dst, i, peek_byte(src, i))
+        i: i + 1
+    return 0
+lof_first: 0
+pic_in cur a:
+    if length(cur) = 0 -> return a
+    return cur
+pic_io cur out a:
+    if length(cur) > 0 -> return a
+    return out
+digitb b:
+    if b >= 48 -> if b <= 57 -> return 1
+    return 0
+hexval s:
+    # s like "0x1F" or "0b101" or decimal: returns numeric value.
+    if cfind1(s, 46) > 0 - 1
+        print "Error: float literals are not supported yet"
+        _sov_print(s)
+        err_where()
+        had_err: 1
+        return 0
+    n: 0
+    i: 0
+    if peek_byte(s, 0) is 45
+        return 0 - _sov_atoi(cut(s, 1, length(s)))
+    if _sov_starts_with(s, "0x") is 1
+        i: 2
+        as long as i < length(s)
+            c: peek_byte(s, i)
+            v: 0 - 1
+            if c > 47
+                if c < 58
+                    v: c - 48
+            if v < 0
+                if c > 96
+                    if c < 103
+                        v: c - 87
+            if v < 0
+                if c > 64
+                    if c < 71
+                        v: c - 55
+            if v < 0
+                return n
+            n: n * 16 + v
+            i: i + 1
+        return n
+    if _sov_starts_with(s, "0b") is 1
+        i: 2
+        as long as i < length(s)
+            c: peek_byte(s, i)
+            if c is 48
+                n: n * 2
+            if c is 49
+                n: n * 2 + 1
+            i: i + 1
+        return n
+    return _sov_atoi(s)
+num_of s:
+    return hexval(s)
+
+lines_of_fast source:
+    n: length(source)
+    if n is 0
+        return _sov_list_new()
+    flat: _sov_heap_alloc(n + 1)
+    lst: _sov_heap_alloc(16 + (n + 1) * 8)
+    dummy: poke_i64(lst, 0, n + 1)
+    start: 0
+    k: 0
+    nlc: 72340172838076673 * 10
+    i: 0
+    # copy and split in one traversal: each qword is stored, then tested for a
+    # newline with the usual haszero mask; only a qword that contains one pays
+    # the per-byte walk.
+    as long as i + 8 <= n
+        q: peek_i64(source, i)
+        dummy: poke_i64(flat, i, q)
+        xq: bxor(q, nlc)
+        m: band(band(xq - 72340172838076673, bxor(xq, 0 - 1)), -9187201950435737472)
+        if m != 0
+            j: 0
+            as long as j < 8
+                if peek_byte(flat, i + j) = 10
+                    dummy: poke_byte(flat, i + j, 0)
+                    dummy: poke_i64(lst, 16 + k * 8, flat + start)
+                    k: k + 1
+                    start: i + j + 1
+                j: j + 1
+        i: i + 8
+    as long as i < n
+        qb: peek_byte(source, i)
+        dummy: poke_byte(flat, i, qb)
+        if qb = 10
+            dummy: poke_byte(flat, i, 0)
+            dummy: poke_i64(lst, 16 + k * 8, flat + start)
+            k: k + 1
+            start: i + 1
+        i: i + 1
+    dummy: poke_byte(flat, n, 0)
+    if start < n
+        dummy: poke_i64(lst, 16 + k * 8, flat + start)
+        k: k + 1
+    dummy: poke_i64(lst, 8, k)
+    return lst
+cfind1n t st lim ch:
+    # swar scan for one byte inside [st, lim).  the caller owns the bound, so
+    # there is no length() call and no full-string strlen per line.
+    if t = 0 -> return 0 - 1
+    i: st
+    nb: ch
+    nbc: nb * 72340172838076673
+    as long as i + 8 <= lim -> q: peek_i64(t, i)
+        xq: bxor(q, nbc)
+        m: band(band(xq - 72340172838076673, bxor(xq, 0 - 1)), -9187201950435737472)
+        if m != 0
+            j: 0
+            as long as j < 8 -> if peek_byte(t, i + j) = nb -> return i + j
+                j: j + 1
+        i: i + 8
+    as long as i < lim -> if peek_byte(t, i) = nb -> return i
+        i: i + 1
+    return 0 - 1
+pd_log a b c d:
+    if pd_report is 1
+        _sov_print(join(i2s(a), join(',', join(i2s(b), join(',', join(i2s(c), join(',', i2s(d))))))))
+    return 0
+
+next_evt s fr lim:
+    as long as fr < lim
+        b: peek_byte(s, fr)
+        if b is 34 -> return fr
+        if b is 40 -> return fr
+        if b is 41 -> return fr
+        if b is 44 -> return fr
+        if b is 92 -> return fr
+        fr: fr + 1
+    return 0 - 1
+
+cfind1 t ch:
+    # swar scan for one byte.  aligned 8-byte reads never cross a page.
+    if t = 0 -> return 0 - 1
+    n: length(t)
+    i: 0
+    nb: ch
+    nbc: nb * 72340172838076673
+    as long as i + 8 <= n -> q: peek_i64(t, i)
+        xq: bxor(q, nbc)
+        m: band(band(xq - 72340172838076673, bxor(xq, 0 - 1)), -9187201950435737472)
+        if m != 0 -> b0: band(q, 255)
+            if b0 = nb -> return i
+            b1: band(bshr(q, 8), 255)
+            if b1 = nb -> return i + 1
+            b2: band(bshr(q, 16), 255)
+            if b2 = nb -> return i + 2
+            b3: band(bshr(q, 24), 255)
+            if b3 = nb -> return i + 3
+            b4: band(bshr(q, 32), 255)
+            if b4 = nb -> return i + 4
+            b5: band(bshr(q, 40), 255)
+            if b5 = nb -> return i + 5
+            b6: band(bshr(q, 48), 255)
+            if b6 = nb -> return i + 6
+            b7: band(bshr(q, 56), 255)
+            if b7 = nb -> return i + 7
+        i: i + 8
+    as long as i < n -> if peek_byte(t, i) = nb -> return i
+        i: i + 1
+    return 0 - 1
+sf_cat6 a b c d e f:
+    # concatenate up to six strings into one fresh buffer. the old code
+    # chained str_cat, which allocated once per link and recopied every
+    # earlier piece into each intermediate result.
+    la: length(a) ;; lb: length(b) ;; lc: length(c)
+    ld: length(d) ;; le: length(e) ;; lf: length(f)
+    buf: _sov_heap_alloc(la + lb + lc + ld + le + lf + 1)
+    w: 0
+    k: 0
+    as long as k + 8 <= la -> poke_i64(buf, w, peek_i64(a, k))
+        w: w + 8 ;; k: k + 8
+    as long as k < la -> poke_byte(buf, w, peek_byte(a, k))
+        w: w + 1 ;; k: k + 1
+    k: 0
+    as long as k + 8 <= lb -> poke_i64(buf, w, peek_i64(b, k))
+        w: w + 8 ;; k: k + 8
+    as long as k < lb -> poke_byte(buf, w, peek_byte(b, k))
+        w: w + 1 ;; k: k + 1
+    k: 0
+    as long as k + 8 <= lc -> poke_i64(buf, w, peek_i64(c, k))
+        w: w + 8 ;; k: k + 8
+    as long as k < lc -> poke_byte(buf, w, peek_byte(c, k))
+        w: w + 1 ;; k: k + 1
+    k: 0
+    as long as k + 8 <= ld -> poke_i64(buf, w, peek_i64(d, k))
+        w: w + 8 ;; k: k + 8
+    as long as k < ld -> poke_byte(buf, w, peek_byte(d, k))
+        w: w + 1 ;; k: k + 1
+    k: 0
+    as long as k + 8 <= le -> poke_i64(buf, w, peek_i64(e, k))
+        w: w + 8 ;; k: k + 8
+    as long as k < le -> poke_byte(buf, w, peek_byte(e, k))
+        w: w + 1 ;; k: k + 1
+    k: 0
+    as long as k + 8 <= lf -> poke_i64(buf, w, peek_i64(f, k))
+        w: w + 8 ;; k: k + 8
+    as long as k < lf -> poke_byte(buf, w, peek_byte(f, k))
+        w: w + 1 ;; k: k + 1
+    poke_byte(buf, w, 0)
+    return buf
+sf_cat2 a b:
+    la: length(a) ;; lb: length(b)
+    buf: _sov_heap_alloc(la + lb + 1)
+    w: 0 ;; k: 0
+    as long as k + 8 <= la -> dummy: poke_i64(buf, w, peek_i64(a, k))
+        w: w + 8 ;; k: k + 8
+    as long as k < la -> dummy: poke_byte(buf, w, peek_byte(a, k))
+        w: w + 1 ;; k: k + 1
+    k: 0
+    as long as k + 8 <= lb -> dummy: poke_i64(buf, w, peek_i64(b, k))
+        w: w + 8 ;; k: k + 8
+    as long as k < lb -> dummy: poke_byte(buf, w, peek_byte(b, k))
+        w: w + 1 ;; k: k + 1
+    dummy: poke_byte(buf, w, 0)
+    return buf
+sf_cat3 a b c:
+    return sf_cat6(a, b, c, '', '', '')
+sf_cat4 a b c d:
+    la: length(a) ;; lb: length(b) ;; lc: length(c) ;; ld: length(d)
+    buf: _sov_heap_alloc(la + lb + lc + ld + 1)
+    w: 0 ;; k: 0
+    as long as k + 8 <= la -> dummy: poke_i64(buf, w, peek_i64(a, k))
+        w: w + 8 ;; k: k + 8
+    as long as k < la -> dummy: poke_byte(buf, w, peek_byte(a, k))
+        w: w + 1 ;; k: k + 1
+    k: 0
+    as long as k + 8 <= lb -> dummy: poke_i64(buf, w, peek_i64(b, k))
+        w: w + 8 ;; k: k + 8
+    as long as k < lb -> dummy: poke_byte(buf, w, peek_byte(b, k))
+        w: w + 1 ;; k: k + 1
+    k: 0
+    as long as k + 8 <= lc -> dummy: poke_i64(buf, w, peek_i64(c, k))
+        w: w + 8 ;; k: k + 8
+    as long as k < lc -> dummy: poke_byte(buf, w, peek_byte(c, k))
+        w: w + 1 ;; k: k + 1
+    k: 0
+    as long as k + 8 <= ld -> dummy: poke_i64(buf, w, peek_i64(d, k))
+        w: w + 8 ;; k: k + 8
+    as long as k < ld -> dummy: poke_byte(buf, w, peek_byte(d, k))
+        w: w + 1 ;; k: k + 1
+    dummy: poke_byte(buf, w, 0)
+    return buf
+sf_cat5 a b c d e:
+    return sf_cat6(a, b, c, d, e, '')
+sf_match_n t i s tn:
+    # the same test as sf_match with the length of t handed in. callers that
+    # walk t one position at a time used to pay for length(t) on every
+    # iteration, which turned a single scan into a quadratic one.
+    if peek_byte(s, 0) != 0 -> if peek_byte(t, i) != peek_byte(s, 0)
+            return 0
+    ls: length(s)
+    if i + ls > tn -> return 0
+    if ls = 0 -> return 1
+    k: 1
+    as long as k < ls -> if peek_byte(t, i + k) != peek_byte(s, k)
+            return 0
+        k: k + 1
+    return 1
+sf_match t i s:
+    # reject on the first byte before measuring anything: for a non-empty
+    # needle that is the whole answer, and it is what almost every position
+    # gets.  An empty needle must still answer 1, so it skips the fast path.
+    if peek_byte(s, 0) != 0 -> if peek_byte(t, i) != peek_byte(s, 0)
+            return 0
+    ls: length(s)
+    if i + ls > length(t) -> return 0
+    if ls = 0 -> return 1
+    k: 1
+    as long as k < ls -> if peek_byte(t, i + k) != peek_byte(s, k)
+            return 0
+        k: k + 1
+    return 1
+sf_trim l:
+    # strip() twin: same answer, but when the trailing bytes are clean the
+    # result is a pointer into l, not a fresh copy (every indented, ws-clean
+    # line skips its per-line allocation).  read-only uses only.
+    tr_n: length(l)
+    tr_t0: 0
+    tr_go: 1
+    as long as tr_go is 1
+        if tr_t0 < tr_n
+            if peek_byte(l, tr_t0) < 33
+                tr_t0: tr_t0 + 1
+            if not
+                tr_go: 0
+        if not
+            tr_go: 0
+    if tr_t0 = tr_n
+        return l + tr_t0
+    tr_t1: tr_n
+    tr_go: 1
+    as long as tr_go is 1
+        if tr_t1 > tr_t0
+            if peek_byte(l, tr_t1 - 1) < 33
+                tr_t1: tr_t1 - 1
+            if not
+                tr_go: 0
+        if not
+            tr_go: 0
+    if tr_t1 = tr_n
+        return l + tr_t0
+    return cut(l, tr_t0, tr_t1)
+
+sf_cmp t:
+    if cfind1(t, 61) < 0
+        if look(t, ' isnt ') < 0
+            return t
+    if look(t, ' = ') < 0
+        if look(t, ' != ') < 0
+            if look(t, ' isnt ') < 0
+                return t
+    include inc/px00.sov 975 4 (i ins n length t)
+    as long as i < n -> b: peek_byte(t, i)
+        esc: 0 ;; if b = 92 -> esc: 1
+        if esc = 1 -> i: i + 2 ;; if not -> q: 0
+            if b = 34 -> q: 1 ;; if q = 1 -> if ins = 0
+                    ins: 1
+                if not -> ins: 0 ;; i: i + 1
+            if not -> hit: 0
+                if ins = 0 -> if sf_match(t, i, ' isnt ') = 1
+                        hit: 1
+                        t: str_cat(str_cat(cut(t, 0, i), ' is not '), cut(t, i + 6, length(t)))
+                        n: length(t) ;; i: i + 8
+                    if sf_match(t, i, ' != ') = 1 -> hit: 1
+                        t: str_cat(str_cat(cut(t, 0, i), ' is not '), cut(t, i + 4, length(t)))
+                        n: length(t) ;; i: i + 8
+                    if not -> if sf_match(t, i, ' = ') = 1
+                            hit: 1
+                            t: str_cat(str_cat(cut(t, 0, i), ' is '), cut(t, i + 3, length(t)))
+                            n: length(t) ;; i: i + 4
+                if hit = 0 -> i: i + 1
+    return t
+sf_digits t:
+    include inc/inc04.sov 451 3 -5643167891641614475
+        k
+    as long as k < length(t) -> b: peek_byte(t, k)
+        dg: 0 ;; if b > 47 -> if b < 58
+                dg: 1
+        if dg = 0 -> k: length(t) ;; if not -> v: v * 10 + (b - 48)
+            got: 1
+        k: k + 1
+    if got = 0 -> return 0 - 1 ;; return v
+sf_pad3 v:
+    d: v
+    r: ''
+    if d = 0 -> r: '0'
+    as long as d > 0 -> r: join(cut('0123456789', d % 10, d % 10 + 1), r)
+        d: d / 10
+    if v < 10 -> return join('00', r)
+    if v < 100 -> return join('0', r)
+    return r
+sf_ind l:
+    include inc/px00.sov 289 4 (n k k length l b peek_byte l k)
+        if b = 32 -> n: n + 1 ;; if b = 9 -> n: n + 4
+        if b != 32 -> if b != 9
+                k: length(l)
+        k: k + 1
+    return n
+sf_sp n:
+    if n < 1 -> return ''
+    return sf_sp_make(n)
+
+sf_sp_make n:
+    s: _sov_heap_alloc(n + 1)
+    k: 0
+    as long as k < n -> poke_byte(s, k, 32)
+        k: k + 1
+    poke_byte(s, n, 0)
+    return s
+sf_bare t:
+    if peek_byte(t, 0) = 0 -> return 0
+    k: 0
+    as long as 1 -> b: peek_byte(t, k)
+        if b = 0 -> return 1
+        if b = 32 -> return 0
+        k: k + 1
+sf_word t:
+    c0: peek_byte(t, 0)
+    if c0 = 0 -> return 0
+    ok0: 0 ;; if c0 = 95 -> ok0: 1
+    if c0 > 64 -> if c0 < 91
+            ok0: 1
+    if c0 > 96 -> if c0 < 123
+            ok0: 1
+    if ok0 = 0 -> return 0 ;; k: 0 ;; tn: length(t)
+    as long as k < tn -> b: peek_byte(t, k)
+        ok: 0 ;; if b = 95 -> ok: 1
+        include inc/px00.sov 779 6 (ok ok ok)
+        if ok = 0 -> return 0 ;; k: k + 1
+    return 1
+sf_thresh t:
+    if _sov_str_eq(t, 'blank') = 1 -> return 1
+    if length(t) = 0 -> return 0 ;; k: 0
+    if peek_byte(t, 0) = 45 = 1 -> k: 1
+    if k = length(t) -> return 0 ;; d: 1
+    as long as k < length(t) -> b: peek_byte(t, k)
+        if b < 48 -> d: 0 ;; if b > 57 -> d: 0
+        k: k + 1
+    return d
+sf_len ls:
+    include inc/inc00.sov 1886 3 #-8960502868082893414
+    ln: _sov_list_len(ls)
+    as long as i < ln -> n: n + length(peek_i64(ls, 16 + i * 8)) + 1
+        i: i + 1
+    return n
+sf_text ls:
+    buf: _sov_heap_alloc(sf_len(ls) + 2)
+    include inc/inc04.sov 574 3 #4101069514821384881
+    ll: _sov_list_len(ls)
+    as long as i < ll -> ln: peek_i64(ls, 16 + i * 8)
+        kl: length(ln)
+        dummy: _sov_mem_copy(buf + w, ln, kl)
+        w: w + kl
+        poke_byte(buf, w, 10) ;; w: w + 1
+        i: i + 1
+    poke_byte(buf, w, 0) ;; return buf
+sf_wc b:
+    ok: 0 ;; if b = 95 -> ok: 1
+    include inc/px00.sov 779 6 (ok ok ok)
+    return ok
+sf_ph t:
+    k: 0 ;; as long as k < length(t) -> if peek_byte(t, k) = 95
+            1:
+                lp
+                rp
+            include inc/px00.sov 2891 5 (t t t)
+                    return 1
+        k: k + 1
+sf_sub h nm:
+    r: ''
+    k: 0 ;; as long as k < length(h) -> b: peek_byte(h, k)
+        ph: 0
+        if b = 95 -> 1:
+                lp
+                rp
+            include inc/px00.sov 2891 5 (h h h)
+                    ph: 1
+        if ph = 1 -> r: str_cat(r, nm)
+        if ph = 0 -> r: str_cat(r, letter(h, k))
+        k: k + 1
+    return r
+sf_unparen t:
+    if peek_byte(t, 0) != 40
+        return t
+    if length(t) > 1 -> if peek_byte(t, length(t) - 1) = 41 = 1 -> return cut(t, 1, length(t) - 1)
+    return t
+sf_stmt t:
+    if cfind1(t, 58) < 0
+        return 0
+    ep: find_col(t) ;; if ep > 0 - 1 -> if ep < length(t) - 1
+            if peek_byte(t, ep + 1) = 32 = 1 -> return 1
+    return 0
+sf_sqok l:
+    n: length(l) ;; 0: k dq sq
+    as long as k < n -> b: peek_byte(l, k)
+        if b = 92 -> k: k + 1 ;; if b != 92 -> if dq = 1
+                if b = 34 -> dq: 0
+            if not -> if sq = 1
+                    if b = 39 -> sq: 0
+                if not -> if b = 35
+                        k: n
+                    if b != 35 -> if b = 34
+                            dq: 1
+                        if b = 39 -> sq: 1
+        k: k + 1
+    ok: 1 ;; if dq = 1 -> ok: 0
+    if sq = 1 -> ok: 0 ;; return ok
+sf_sq2 l:
+    n: length(l) ;; buf: _sov_heap_alloc(n * 2 + 8)
+    0: w i dq sq ;; as long as i < n -> c: peek_byte(l, i)
+        if dq = 1 -> poke_byte(buf, w, c)
+            w: w + 1 ;; if c = 92 -> if i + 1 < n
+                    poke_byte(buf, w, peek_byte(l, i + 1)) ;; w: w + 1
+                    i: i + 1
+            if c != 92 -> if c = 34
+                    dq: 0
+        if not -> if sq = 1
+                if c = 39 -> poke_byte(buf, w, 34)
+                    w: w + 1 ;; sq: 0
+                if c != 39 -> if c = 92
+                        poke_byte(buf, w, c) ;; w: w + 1
+                        if i + 1 < n -> poke_byte(buf, w, peek_byte(l, i + 1))
+                            w: w + 1 ;; i: i + 1
+                    if c != 92 -> if c = 34
+                            poke_byte(buf, w, 92) ;; w: w + 1
+                        poke_byte(buf, w, c) ;; w: w + 1
+            if not -> if c = 35
+                    as long as i < n -> poke_byte(buf, w, peek_byte(l, i))
+                        w: w + 1 ;; i: i + 1
+                if c != 35 -> if c = 34
+                        dq: 1 ;; poke_byte(buf, w, c)
+                        w: w + 1
+                    if c != 34 -> if c = 39
+                            poke_byte(buf, w, 34) ;; w: w + 1
+                            sq: 1
+                        if c != 39 -> poke_byte(buf, w, c)
+                            w: w + 1
+        i: i + 1
+    poke_byte(buf, w, 0) ;; return buf
+sf_sqs t:
+    ls: lines_of(t) ;; out: _sov_list_new()
+    k: 0 ;; kl: _sov_list_len(ls) ;; as long as k < kl -> l: peek_i64(ls, 16 + k * 8)
+        sok: sf_sqok(l)
+        if sok = 1 -> out: _sov_list_add(out, sf_sq2(l))
+        if sok = 0 -> out: _sov_list_add(out, l)
+        k: k + 1
+    return sf_text(out)
+include inc/px00.sov 3830 4 (sf_num t length t 0 i)
+    as long as i < n -> b: peek_byte(t, i)
+        if b < 48 -> return 0 ;; if b > 57 -> return 0
+        i: i + 1
+    return 1
+sf_toks t:
+    out: _sov_list_new()
+    n: length(t)
+    i: 0
+    st: 0 - 1
+    nt: 0
+    as long as i < n -> c: peek_byte(t, i)
+        if c = 32 -> if st > 0 - 1
+                out: _sov_list_add(out, cut(t, st, i))
+                st: 0 - 1
+        if c != 32 -> if st < 0
+                st: i
+        i: i + 1
+    if st > 0 - 1 -> out: _sov_list_add(out, cut(t, st, n))
+    return out
+sf_one l:
+    # expand one line all the way: new lines made by sf_lists get the same
+    # treatment as lines that were written out by hand. the 'name = value'
+    # shape is a set, so it is settled before the compare words are touched.
+    t: l
+    if peek_byte(l, 0) < 33
+        t: sf_trim(l)
+    if _sov_starts_with(t, "#") = 1 -> return l
+    eqp: look(t, ' = ')
+    if eqp > 0 - 1 -> hd2: strip(cut(t, 0, eqp))
+        if sf_word(hd2) = 1 -> return sf_cat4(sf_sp(sf_ind(l)), hd2, ': ', cut(t, eqp + 3, length(t)))
+    gen: sf_lists(l) ;; if _sov_list_len(gen) > 0 -> if _sov_list_len(gen) = 1
+            if _sov_str_eq(peek_i64(gen, 16), l) = 1 -> return sf_cmp(l)
+        out: _sov_list_new() ;; gk: 0
+        gk_ln: _sov_list_len(gen)
+        as long as gk < gk_ln -> out: _sov_list_add(out, sf_one(peek_i64(gen, 16 + gk * 8)))
+            gk: gk + 1
+        return sf_text(out)
+    return sf_cmp(l)
+# a call run: one line standing for a whole family of calls.
+#   RECV: FN 4 + i: 1 2 3        ->  FN(RECV, 4, 1)  FN(RECV, 5, 2)  FN(RECV, 6, 3)
+#   RECV: FN 4 + i, 0: 1 2 3     ->  FN(RECV, 4, 0, 1)  FN(RECV, 5, 0, 2) ...
+#   RECV: FN i, 0: 1 2 3         ->  FN(RECV + 0, 0, 1)  FN(RECV + 1, 0, 2) ...
+# the address (or the receiver) steps by one for each value on the line.
+sf_numt n:
+    if n < 1 -> return '0'
+    buf: _sov_heap_alloc(32)
+    w: 30
+    v: n
+    as long as v > 0 -> w: w - 1
+        poke_byte(buf, w, 48 + v % 10)
+        v: v / 10
+    poke_byte(buf, 31, 0)
+    return buf + w
+sf_run_head t:
+    out: _sov_list_new()
+    q: look(t, ': ')
+    if q < 0 -> return out ;; recv: strip(cut(t, 0, q))
+    rword: recv
+    rstart: '0'
+    if sf_word(recv) = 0 -> ap: look(recv, ' + ')
+        if ap < 0 -> return out ;; if sf_word(strip(cut(recv, 0, ap))) = 0 -> return out
+        if sf_num(strip(cut(recv, ap + 3, length(recv)))) = 0 -> return out ;; rword: strip(cut(recv, 0, ap))
+        rstart: strip(cut(recv, ap + 3, length(recv)))
+    rest: cut(t, q + 2, length(t))
+    cp: look(rest, ': ')
+    if cp < 0 -> return out ;; head: strip(cut(rest, 0, cp))
+    sp1: look(head, ' ')
+    if sp1 < 0 -> return out ;; vtext: strip(cut(rest, cp + 2, length(rest)))
+    vals: sf_toks(vtext) ;; if _sov_list_len(vals) < 2 -> return out
+    k: 0
+    k_ln: _sov_list_len(vals)
+    as long as k < k_ln
+        if look(peek_i64(vals, 16 + k * 8), ' ') > 0 - 1 -> return out
+        k: k + 1
+    out: _sov_list_add(out, recv) ;; out: _sov_list_add(out, cut(head, 0, sp1))
+    out: _sov_list_add(out, strip(cut(head, sp1 + 1, length(head)))) ;; out: _sov_list_add(out, vtext)
+    out: _sov_list_add(out, rword) ;; out: _sov_list_add(out, rstart)
+    return out
+# reads the stepping argument of a call run.  returns an empty list when the line is not a run.
+#   i            receiver steps by 1        (args: RECV + k ...)
+#   i * 8        receiver steps by 8
+#   4 + i        the address argument starts at 4 and steps by 1
+#   16 + 4 * i   starts at 16, steps by 4
+# anything after a comma is kept and written into every generated call.
+include inc/px00.sov 3922 4 (sf_step_expr a shape 0 base step)
+    extras: ''
+    tail: ''
+    if _sov_starts_with(a, 'i') = 1 -> shape: 2
+        tail: strip((a + 1))
+        if _sov_starts_with(tail, '*') = 1 -> tail: strip((tail + 1))
+            cm: look(tail, ',')
+            npart: tail
+            rest2: ''
+            if cm > 0 - 1 -> npart: strip(cut(tail, 0, cm))
+                rest2: cut(tail, cm, length(tail))
+            if sf_num(npart) = 1 -> step: str_num(npart)
+                tail: rest2
+            if not -> shape: 0
+    if shape = 0 -> ri: look(a, ' + ')
+        if ri > 0 - 1 -> if sf_num(strip(cut(a, 0, ri))) = 1
+                base: str_num(strip(cut(a, 0, ri))) ;; tail: cut(a, ri + 3, length(a))
+                if _sov_starts_with(tail, 'i') = 0 -> mt: look(tail, ' * i')
+                    if mt < 0 -> return _sov_list_new() ;; if sf_num(strip(cut(tail, 0, mt))) = 0 -> return _sov_list_new()
+                    step: str_num(strip(cut(tail, 0, mt))) ;; tail: cut(tail, mt + 4, length(tail))
+                if not -> tail: (tail + 1) ;; shape: 1
+    if shape = 0 -> return _sov_list_new() ;; tail: strip(tail)
+    if length(tail) > 0
+        if _sov_starts_with(tail, ',') = 0 -> return _sov_list_new()
+        extras: tail
+    if step < 1 -> step: 1 ;; ok: _sov_list_new()
+    ok: _sov_list_add(ok, shape) ;; ok: _sov_list_add(ok, base)
+    ok: _sov_list_add(ok, step) ;; ok: _sov_list_add(ok, extras)
+    return ok
+sf_run l, out:
+    t: strip(l) ;; h: sf_run_head(t)
+    if _sov_list_len(h) = 0 -> return out ;; rbase: peek_i64(h, 16)
+    rword: peek_i64(h, 48) ;; rstart: str_num(peek_i64(h, 56))
+    fn: peek_i64(h, 24) ;; e: sf_step_expr(peek_i64(h, 32))
+    if _sov_list_len(e) = 0 -> return out ;; shape: peek_i64(e, 16)
+    base: peek_i64(e, 24) ;; step: peek_i64(e, 32)
+    extras: peek_i64(e, 40) ;; vals: sf_toks(peek_i64(h, 40))
+    sp: sf_sp(sf_ind(l)) ;; k: 0
+    k_ln: _sov_list_len(vals)
+    as long as k < k_ln -> at: base + step * k
+        line: sf_cat4(sp, fn, '(', '')
+        if shape = 2 -> line: str_cat(line, str_cat(rword, str_cat(' + ', sf_numt(rstart + at))))
+        if shape = 1 -> line: str_cat(line, str_cat(rbase, str_cat(', ', sf_numt(at))))
+        if length(extras) > 0 -> line: str_cat(line, extras)
+        line: str_cat(line, str_cat(', ', str_cat(peek_i64(vals, 16 + k * 8), ')')))
+        out: _sov_list_add(out, line) ;; k: k + 1
+    return out
+sf_run_count t:
+    q1: look(t, ': ') ;; if q1 < 0 -> return 0
+    if _sov_find_text(t + q1 + 2, ': ') < 0 -> return 0
+    h: sf_run_head(t) ;; if _sov_list_len(h) = 0 -> return 0
+    if _sov_list_len(sf_step_expr(peek_i64(h, 32))) = 0 -> return 0 ;; return _sov_list_len(sf_toks(peek_i64(h, 40))) - 1
+sf_lists l:
+    # three line-kinds that stand for several lines.
+    #   if x = y -> print z          ->  if x = y  +  indented print z
+    #   as long as x -> y            ->  same shape
+    #   0: STP BOK BBAD RES          ->  STP: 0  BOK: 0  BBAD: 0  RES: 0
+    #   m: poke_byte 4 + i: 1 2 3    ->  poke_byte(m, 4, 1) poke_byte(m, 5, 2) ...
+    #   see sf_run for the general call run form
+    t: l
+    if peek_byte(l, 0) < 33
+        t: sf_trim(l)
+    out: _sov_list_new()
+    q1: look(t, ': ')
+    if q1 < 0
+        return out
+    if _sov_find_text(t + q1 + 2, ': ') > 0 - 1
+        out: sf_run(l, out)
+        if _sov_list_len(out) > 0
+            return out
+    left: strip(cut(t, 0, q1))
+    if sf_num(left) = 0
+        return out
+    right: strip(cut(t, q1 + 2, length(t)))
+    toks: sf_toks(right)
+    okv: 1
+    k: 0
+    k_ln: _sov_list_len(toks)
+    as long as k < k_ln
+        if sf_word(peek_i64(toks, 16 + k * 8)) = 0
+            okv: 0
+        k: k + 1
+    if okv = 0
+        return out
+    if k_ln < 2
+        return out
+    sp: sf_sp(sf_ind(l))
+    k: 0
+    as long as k < k_ln
+        out: _sov_list_add(out, sf_cat4(sp, peek_i64(toks, 16 + k * 8), ': ', left))
+        k: k + 1
+    return out
+sf_extra t:
+    # how many lines the standard forms turn this line into, minus one. the
+    # compiler marks where the user's own file starts by counting lines, so
+    # every line the forms grow has to be counted the same way here.
+    ps: t
+    np: 1
+    # a line with no pack mark cannot split, so skip the byte-walk.
+    if _sov_find_text(t, ';;') > 0 - 1
+        ps: sf_cuts(t)
+        np: _sov_list_len(ps)
+    if np > 1 -> r: np - 1
+        pk: 0 ;; as long as pk < np -> r: r + sf_extra(peek_i64(ps, 16 + pk * 8))
+            pk: pk + 1
+        return r
+    if sf_arrow(t) = 1
+        pp: look(t, ' -> ')
+        return 1 + sf_extra(strip(cut(t, pp + 4, length(t))))
+    e: sf_run_count(t) ;; if e > 0 -> return e
+    include inc/inc01.sov 1316 10 #-8141615725620813989
+                    return _sov_list_len(toks) - 1
+    return 0
+include inc/px00.sov 960 4 (sf_extra_all src ls lines_of src ins 0 d 0)
+    include inc/inc04.sov 577 3 -1974219725578864786
+        if ins = 0 -> d: d + sf_extra(strip(l)) ;; ins: sf_qend(l, ins)
+        i: i + 1
+    return d
+sf_arrow t:
+    # is this line a one-line 'if ...' / 'as long as ...' with a ' -> ' body?
+    pp: look(t, ' -> ')
+    if pp < 0 -> return 0 ;; if length(strip(cut(t, pp + 4, length(t)))) = 0 -> return 0
+    hd: strip(cut(t, 0, pp))
+    if _sov_starts_with(hd, 'if ') = 1 -> return 1
+    if _sov_starts_with(hd, 'as long as ') = 1 -> return 1
+    return 0
+sf_qend l inp:
+    # inside a quoted string, so the next line is still string text.
+    # cfind1 is a native scan in the self-hosted compiler; avoid per-byte work
+    # on the overwhelmingly common quote-free line without changing escapes.
+    if cfind1(l, 34) < 0 -> return inp
+    ins: inp ;; i: 0
+    n: length(l) ;; as long as i < n -> b: peek_byte(l, i)
+        if b = 92 -> i: i + 1 ;; if not -> if b = 34
+                ins: 1 - ins
+        i: i + 1
+    return ins
+sf_cut_at l start:
+    # Next unquoted pack delimiter. start is 0 or just after a previous
+    # twin; this body is the portable reference used by other backends.
+    n: length(l)
+    k: start
+    0: dq sq go
+    as long as k < n -> b: peek_byte(l, k)
+        go: 1 ;; if b = 92 -> go: 0
+            k: k + 1
+        include inc/px00.sov 3972 4 (34 dq dq sq dq)
+        include inc/px00.sov 3972 4 (39 sq sq dq sq)
+        if go = 1 -> if b = 59
+                if dq = 0 -> if sq = 0
+                        if k + 1 < n -> if peek_byte(l, k + 1) = 59
+                                return k
+        k: k + 1
+    return 0 - 1
+sf_cuts l:
+    # Each found delimiter is outside quotes; restarting there preserves
+    out: _sov_list_new() ;; n: length(l)
+    start: 0
+    k: sf_cut_at(l, start)
+    as long as k > 0 - 1
+        out: _sov_list_add(out, cut(l, start, k))
+        start: k + 2
+        k: sf_cut_at(l, start)
+    out: _sov_list_add(out, cut(l, start, n)) ;; return out
+sf_starts_at t a p:
+    # does the prefix p sit at offset a of t?  scan only, no copies.
+    k: 0
+    as long as 1 -> cp: peek_byte(p, k)
+        if cp = 0 -> return 1
+        if peek_byte(t, a + k) != cp -> return 0
+        k: k + 1
+sf_seg s a b ind:
+    # sp(ind) + s[a..b) in one allocation: the hot path of the arrow split
+    # (indent slice + trimmed piece) without cut/strip intermediates.
+    sn: b - a
+    buf: _sov_heap_alloc(ind + sn + 1)
+    sp2: sf_sp(ind)
+    # Both spans already have proven bounds at the arrow split call sites.
+    # Copy them in bulk instead of calling peek/poke for every byte.
+    if ind > 0 -> dummy6: _sov_mem_copy(buf, sp2, ind)
+    if sn > 0 -> dummy6: _sov_mem_copy(buf + ind, s + a, sn)
+    dummy6: poke_byte(buf, ind + sn, 0)
+    return buf
+sf_exp_push out, l, ind, keep:
+    # one line of the long form: a one-line if becomes two lines.  a piece of
+    # a packed line is put back at the indent of the line it came from; a line
+    # that was not packed is handed on exactly as it was written, so odd
+    # spacing still reaches the part of the compiler that judges it.
+    if cfind1(l, 62) < 0
+        if keep = 1 -> out: _sov_list_add(out, l)
+            return out
+        t: l
+        if peek_byte(l, 0) < 33
+            t: sf_trim(l)
+        out: _sov_list_add(out, sf_cat2(sf_sp(ind), t))
+        return out
+    t: l
+    if peek_byte(l, 0) < 33
+        t: sf_trim(l)
+    # fused arrow test + split: one ' -> ' probe, bound scans for the two
+    # trimmed halves, two single-allocation pieces.  Same verdict as
+    # sf_arrow (header must start with 'if ' / 'as long as ', body must not
+    # be empty) with the cut/strip round trips gone.
+    pp: look(t, ' -> ')
+    if pp > 0 - 1
+        a0: 0
+        ah: pp
+        as long as a0 < pp
+            if peek_byte(t, a0) < 33
+                a0: a0 + 1
+            if not
+                ah: a0
+                a0: pp
+        a1: pp
+        ad: 0
+        as long as ad = 0
+            if a1 > ah
+                if peek_byte(t, a1 - 1) < 33
+                    a1: a1 - 1
+                if not
+                    ad: 1
+            if not
+                ad: 1
+        b0: pp + 4
+        bn: length(t)
+        bh: b0
+        as long as bh < bn
+            if peek_byte(t, bh) < 33
+                bh: bh + 1
+            if not
+                b0: bh
+                bh: bn
+        b1: bn
+        ad: 0
+        as long as ad = 0
+            if b1 > b0
+                if peek_byte(t, b1 - 1) < 33
+                    b1: b1 - 1
+                if not
+                    ad: 1
+            if not
+                ad: 1
+        if a1 > ah -> if b1 > b0
+            k1: sf_starts_at(t, ah, 'if ')
+            k2: 0
+            if k1 = 0 -> k2: sf_starts_at(t, ah, 'as long as ')
+            if k1 = 1
+                out: _sov_list_add(out, sf_seg(t, ah, a1, ind))
+                out: _sov_list_add(out, sf_seg(t, b0, b1, ind + 4))
+                return out
+            if k2 = 1
+                out: _sov_list_add(out, sf_seg(t, ah, a1, ind))
+                out: _sov_list_add(out, sf_seg(t, b0, b1, ind + 4))
+                return out
+    if keep = 1 -> out: _sov_list_add(out, l)
+        return out
+    out: _sov_list_add(out, sf_cat2(sf_sp(ind), t)) ;; return out
+u2_conv c:
+    # chained one-liner arrows: split each piece once more, in order, the
+    # way the old second whole-text pass did.  input list is consumed; the
+    # (possibly fresh) result list comes back.
+    cn: _sov_list_len(c)
+    if cn < 2 -> return c
+    cx: _sov_list_new()
+    ck: 0
+    as long as ck < cn -> cp: peek_i64(c, 16 + ck * 8)
+        if cfind1(cp, 62) > 0 - 1
+            ct: sf_exp_push(_sov_list_new(), cp, sf_ind(cp), 1)
+            if _sov_list_len(ct) = 2
+                cx: _sov_list_add(cx, peek_i64(ct, 16))
+                cx: _sov_list_add(cx, peek_i64(ct, 24))
+            if not
+                cx: _sov_list_add(cx, cp)
+        if not
+            cx: _sov_list_add(cx, cp)
+        ck: ck + 1
+    return cx
+
+sf_exp src:
+
+    # put a packed line back on several lines before anything else looks at
+    # the text, so a packed line and the hand-written long form take exactly
+    # here as well.
+    ls: lines_of(src) ;; out: _sov_list_new()
+    ins: 0
+    include inc/inc04.sov 577 3 -1974219725578864786
+        if ins = 1 -> out: _sov_list_add(out, l) ;; if ins = 0 -> ps: sf_cuts(l)
+            np: _sov_list_len(ps) ;; if np = 1 -> out: sf_exp_push(out, l, sf_ind(l), 1)
+            if np > 1 -> pk: 0
+                as long as pk < np -> out: sf_exp_push(out, peek_i64(ps, 16 + pk * 8), sf_ind(l), 0)
+                    pk: pk + 1
+        ins: sf_qend(l, ins) ;; i: i + 1
+    return sf_text(out)
+sf_marks l:
+    # three stage-A/B marks does this line hold?  bit 0 = ';;', bit 1 = '>',
+    # bit 2 = apostrophe.  The self-hosted compiler replaces this body with
+    # hand-written machine code (see emit_nt_sg_marks); this source is the
+    # exact same answer for every other build.
+    mk: 0
+    if cfind1(l, 62) > 0 - 1 -> mk: mk + 2
+    if cfind1(l, 39) > 0 - 1 -> mk: mk + 4
+    if look(l, ";;") > 0 - 1 -> mk: mk + 1
+    return mk
+
+pu_lines src:
+    # caller holds the exact text it came from.  the caller gets a FRESH list
+    # holding the same line strings (mutation-safe), and the stash is consumed
+    # by the serve, so no later caller can ever see a stale pairing.
+    if sf_pu_txt != 0
+        if src is sf_pu_txt
+            n2: _sov_list_len(sf_pu_ls)
+            # Copy the pointer vector, not its strings.  Reserve one spare slot
+            # so even an empty result remains a growable, nonzero-capacity list.
+            out2: _sov_heap_alloc(24 + n2 * 8)
+            poke_i64(out2, 0, n2 + 1)
+            poke_i64(out2, 8, n2)
+            dummy: _sov_mem_copy(out2 + 16, sf_pu_ls + 16, n2 * 8)
+            sf_pu_txt: 0
+            sf_pu_ls: 0
+            return out2
+    return lines_of(src)
+
+sf_plain src:
+    if look(src, ': ') > 0 - 1 -> return 0
+    if look(src, ' = ') > 0 - 1 -> return 0
+    if look(src, ';;') > 0 - 1 -> return 0
+    # != and #: probes cut: != is natively fused, #: never marks a form header
+    if look(src, join(' -', '> ')) > 0 - 1 -> return 0
+    if look(src, ' isnt ') > 0 - 1 -> return 0
+    if look(src, '0:') > 0 - 1 -> return 0
+    if look(src, '1:') > 0 - 1 -> return 0
+    if look(src, '2:') > 0 - 1 -> return 0
+    if look(src, '3:') > 0 - 1 -> return 0
+    if look(src, '4:') > 0 - 1 -> return 0
+    if look(src, '5:') > 0 - 1 -> return 0
+    if look(src, '6:') > 0 - 1 -> return 0
+    if look(src, '7:') > 0 - 1 -> return 0
+    if look(src, '8:') > 0 - 1 -> return 0
+    if look(src, '9:') > 0 - 1 -> return 0
+    if look(src, 'blank:') > 0 - 1 -> return 0
+    if look(src, 'use:') > 0 - 1 -> return 0
+    if look(src, 'print:') > 0 - 1 -> return 0
+    if look(src, 'emit:') > 0 - 1 -> return 0
+    # emit4:/emit8: contain 4:/8: so the digit probes above already fire
+    if look(src, '):') > 0 - 1 -> return 0
+    q39: _sov_heap_alloc(2)
+    poke_byte(q39, 0, 39)
+    poke_byte(q39, 1, 0)
+    if look(src, q39) > 0 - 1 -> return 0
+    return 1
+sf_pu_txt: 0
+sf_pu_ls: 0
+
+std_forms source:
+    return std_forms_part(source)
+
+std_forms_part source:
+    ls: lines_of(source)
+    # stage A is a pure pass-through unless the text contains an apostrophe
+    # (the quote logic below only ever fires on lines that have one), so one
+    # whole-text probe decides whether the per-line scan can change anything.
+    u_q39: look(source, "'")
+    u_qskip: 0
+    if u_q39 < 0 -> u_qskip: 1
+    # the three passes run fused in one walk: every line is quote-fixed,
+    # expanded and dispatched in the same iteration, and the worklist `sls`
+    # cost is paid once instead of once per whole-file pass.
+    out: _sov_list_new()
+    sls: _sov_list_new()
+    uqc: 0
+    ins: 0
+    0:
+        include inc/px00.sov 6 4 (blk bind gen gk)
+    bval: ''
+    bfn: ''
+    bhd: ''
+    btgt: ''
+    k: 0
+    kl: _sov_list_len(ls)
+    as long as k < kl -> q: peek_i64(ls, 16 + k * 8)
+        # stage A, inline: quote normalization only fires on lines that
+        # actually hold an apostrophe (sf_sqok guards the rewrite).  sf_marks
+        # answers the three existence probes of stages A and B in one pass;
+        # when a rewrite changed the line the marks are re-asked for it.
+        sq2v: q
+        mkq: sf_marks(q)
+        if u_qskip = 0
+            if mkq > 3
+                sok: sf_sqok(q)
+                if sok = 1
+                    sq2v: sf_sq2(q)
+                    if _sov_str_eq(sq2v, q) = 0
+                        uqc: 1
+                        mkq: sf_marks(sq2v)
+        # stage B, inline: the line lands on the worklist either raw (string
+        # by sf_exp_push exactly as the two-pass form expanded it.  mk4 holds
+        # the two stage-B bits: 1 = ';;', 2 = '>'.
+        e0: _sov_list_len(sls)
+        if ins = 1
+            sls: _sov_list_add(sls, sq2v)
+        if not
+            mk4: mkq - 4 * (mkq / 4)
+            nsc: 0
+            if mk4 - 2 * (mk4 / 2) = 0 -> nsc: 1
+            nar: 0
+            if mk4 < 2 -> nar: 1
+            if nsc = 1
+                if nar = 1
+                    sls: _sov_list_add(sls, sq2v)
+                if not
+                    u2_c: _sov_list_new()
+                    u2_c: sf_exp_push(u2_c, sq2v, sf_ind(sq2v), 1)
+                    u2_c: u2_conv(u2_c)
+                    u2_k: 0
+                    u2_n: _sov_list_len(u2_c)
+                    as long as u2_k < u2_n -> sls: _sov_list_add(sls, peek_i64(u2_c, 16 + u2_k * 8))
+                        u2_k: u2_k + 1
+            if nsc = 0
+                ps: sf_cuts(sq2v)
+                np: _sov_list_len(ps)
+                uind: sf_ind(sq2v)
+                u2_c: _sov_list_new()
+                if np = 1 -> u2_c: sf_exp_push(u2_c, sq2v, uind, 1)
+                if np > 1 -> pk: 0
+                    as long as pk < np -> u2_c: sf_exp_push(u2_c, peek_i64(ps, 16 + pk * 8), uind, 0)
+                        pk: pk + 1
+                # Split pieces cannot gain an arrow when the input has none.
+                if nar = 0 -> u2_c: u2_conv(u2_c)
+                u2_k: 0
+                u2_n: _sov_list_len(u2_c)
+                as long as u2_k < u2_n -> sls: _sov_list_add(sls, peek_i64(u2_c, 16 + u2_k * 8))
+                    u2_k: u2_k + 1
+        # stage C, unchanged staircase, now fed from the worklist region
+        # this line just produced instead of a second whole-file pass.
+        ne: _sov_list_len(sls)
+        i: e0
+        as long as i < ne -> l: peek_i64(sls, 16 + i * 8)
+            t: l
+            if peek_byte(l, 0) < 33
+                t: sf_trim(l)
+            ind: sf_ind(l)
+            done: 0 ;; if blk > 0 -> bl_ok: 0
+                tn: sf_unparen(t) ;; stl: sf_stmt(t)
+                if length(t) > 0 -> if ind > bind
+                        bl_ok: 1
+                if bl_ok = 1 -> if _sov_starts_with(t, "#") = 1
+                        bl_ok: 0
+                if bl_ok = 1 -> if stl = 0
+                        if blk = 1 -> if sf_bare(tn) = 0
+                                bl_ok: 0
+                        if blk = 3 -> if sf_bare(tn) = 0
+                                bl_ok: 0
+                        if blk = 5 -> if sf_bare(tn) = 0
+                                bl_ok: 0
+                if bl_ok = 1 -> if stl = 1
+                        done: 1 ;; out: _sov_list_add(out, sf_cat2(sf_sp(ind), t))
+                if bl_ok = 1 -> if stl = 0
+                        done: 1
+                        if blk = 1 -> out: _sov_list_add(out, sf_cat4(sf_sp(bind), 'use ', tn, ''))
+                        if blk = 2 -> # a block line of plain numbers becomes one call per number, so a
+                            # long list of byte values can be packed onto fewer lines.  a line
+                            # holding an expression keeps its old meaning and stays whole.
+                            tv: sf_toks(tn) ;; tv_ok: 1
+                            tz: 0
+                            tv_ln: _sov_list_len(tv)
+                            as long as tz < tv_ln
+                                if sf_num(peek_i64(tv, 16 + tz * 8)) = 0 -> tv_ok: 0 ;; tz: tz + 1
+                            if tv_ok = 1 -> tz: 0
+                                tz_ln: _sov_list_len(tv)
+                                as long as tz < tz_ln -> out: _sov_list_add(out, sf_cat5(sf_sp(bind), bfn, '(', peek_i64(tv, 16 + tz * 8), ')'))
+                                    tz: tz + 1
+                            if tv_ok = 0 -> out: _sov_list_add(out, sf_cat5(sf_sp(bind), bfn, '(', tn, ')'))
+                        if blk = 3 -> out: _sov_list_add(out, sf_cat4(sf_sp(bind), tn, ': ', bval))
+                        if blk = 4 -> rv: sf_digits(tn)
+                            if rv > 0 - 1 -> out: _sov_list_add(out, str_cat(sf_sp(bind), str_cat(str_cat(bfn, sf_pad3(rv)), str_cat(": \"", str_cat(tn, "\"")))))
+                        if blk = 5 -> ph5: sf_ph(bhd)
+                            if ph5 = 1
+                                out: _sov_list_add(out, sf_cat2(sf_sp(bind), sf_sub(bhd, tn)))
+                            if ph5 = 0 -> out: _sov_list_add(out, sf_cat4(sf_sp(bind), tn, ': ', bhd))
+                        if blk = 7 -> out: _sov_list_add(out, sf_cat4(sf_sp(bind), 'print ', tn, ''))
+                        if blk = 6
+                            pp6: look(t, ' -> ')
+                            ea6: t
+                            eb6: ''
+                            if pp6 > 0 - 1 -> ea6: cut(t, 0, pp6)
+                                eb6: cut(t, pp6 + 4, length(t))
+                            acc6: sf_cat5(sf_sp(bind), btgt, ': ', bfn, '(')
+                            acc6: str_cat(acc6, str_cat(btgt, str_cat(', ', ea6)))
+                            if length(eb6) > 0 -> acc6: str_cat(acc6, str_cat(', ', eb6))
+                            acc6: str_cat(acc6, ')')
+                            out: _sov_list_add(out, acc6)
+                if bl_ok = 0 -> blk: 0
+                    if length(t) = 0 -> done: 1
+                        out: _sov_list_add(out, l)
+                    if _sov_starts_with(t, "#") = 1 -> done: 1
+                        out: _sov_list_add(out, l)
+            if done = 0 -> if length(t) > 0
+                if peek_byte(t, length(t) - 1) is 58
+                        if _sov_str_eq(t, 'use:') = 1 -> 1:
+                                done
+                                blk
+                            bind: ind
+                        if _sov_str_eq(t, 'print:') = 1 -> done: 1
+                            blk: 7 ;; bind: ind
+                        include inc/px00.sov 1399 4 (emit emit)
+                        include inc/px00.sov 1399 4 (emit4 emit4)
+                        include inc/px00.sov 1399 4 (emit8 emit8)
+                        if done = 0 -> if length(t) > 1
+                                if peek_byte(t, length(t) - 2) = 35 = 1 -> if peek_byte(t, length(t) - 1) = 58 = 1
+                                        hd9: cut(t, 0, length(t) - 2) ;; if length(hd9) > 0 -> if sf_word(hd9) = 1
+                                                if peek_byte(hd9, length(hd9) - 1) = 95 = 1 -> done: 1
+                                                    blk: 4 ;; bind: ind
+                                                    bfn: hd9
+                    if done = 0 -> ep: 0 - 1
+                        if length(t) > 0
+                            if peek_byte(t, length(t) - 1) = 58
+                                ep: find_col(t)
+                        if ep > 0 - 1 -> if ep = length(t) - 1
+                                hd: strip(cut(t, 0, ep)) ;; if sf_thresh(hd) = 1 -> done: 1
+                                    blk: 3 ;; bind: ind
+                                    bval: hd
+                    if done = 0 -> if length(t) > 0
+                            if peek_byte(t, length(t) - 1) = 58 = 1 -> hd6: strip(cut(t, 0, length(t) - 1))
+                                q6: look(hd6, ': ')
+                                if q6 > 0 - 1 -> lt6: strip(cut(hd6, 0, q6))
+                                    rt6: strip(cut(hd6, q6 + 2, length(hd6))) ;; if sf_word(lt6) = 1 -> if sf_word(rt6) = 1
+                                            include inc/px00.sov 1 4 (done 1 blk 6 bind ind btgt lt6)
+                                            bfn: rt6
+                    if done = 0 -> ep5: 0 - 1
+                        if length(t) > 0
+                            if peek_byte(t, length(t) - 1) = 58
+                                ep5: find_col(t)
+                        if ep5 > 0 - 1 -> if ep5 = length(t) - 1
+                                hd5: strip(cut(t, 0, ep5)) ;; if length(hd5) > 0 -> if sf_bare(hd5) = 1
+                                        if peek_byte(hd5, length(hd5) - 1) = 41 = 1 -> done: 1
+                                            blk: 5 ;; bind: ind
+                                            bhd: hd5
+                    if done = 0 -> eqp: look(t, ' = ')
+                        if eqp > 0 - 1 -> hd2: strip(cut(t, 0, eqp))
+                            if sf_word(hd2) = 1 -> done: 1
+                                out: _sov_list_add(out, sf_cat4(sf_sp(ind), hd2, ': ', cut(t, eqp + 3, length(t))))
+                if done = 0 -> if _sov_starts_with(t, "#") = 1
+                        out: _sov_list_add(out, l)
+                    if not -> if look(t, ': ') < 0
+                            out: _sov_list_add(out, sf_cmp(l))
+                        if not -> gen: sf_lists(l)
+                            if _sov_list_len(gen) > 0 -> gk: 0
+                                gk_ln: _sov_list_len(gen)
+                                as long as gk < gk_ln -> out: _sov_list_add(out, sf_one(peek_i64(gen, 16 + gk * 8)))
+                                    gk: gk + 1
+                            if _sov_list_len(gen) = 0 -> out: _sov_list_add(out, sf_cmp(l))
+            i: i + 1
+        ins: sf_qend(sq2v, ins)
+        k: k + 1
+    # when every line came through untouched the joined text is the source
+    # that came in, byte for byte, so hand that back instead of allocating a
+    # fresh multi-hundred-kilobyte buffer and copying the whole program into
+    # it one more time. the pointer walk proves no line was rewritten and the
+    # length check proves the join is an exact inverse of the split.
+    un: _sov_list_len(sls)
+    if _sov_list_len(out) = un -> usame: 1
+        uj: 0
+        as long as uj < un -> if peek_i64(out, 16 + uj * 8) != peek_i64(sls, 16 + uj * 8)
+                usame: 0
+            uj: uj + 1
+        if uqc = 1 -> usame: 0
+        if usame = 1 -> if sf_len(out) = length(source)
+                sf_pu_txt: source
+                sf_pu_ls: out
+                return source
+    sf_pu_txt: sf_text(out)
+    sf_pu_ls: out
+    return sf_pu_txt
+u_prep source:
+    if look(source, 'unsafe:') < 0 -> return source
+    # Exact second gate, in place (no lines_of allocation): only a line whose
+    # first non-blank bytes spell 'unsafe:' can make the rewrite below change
+    # anything; an occurrence inside a string or comment makes the byte pass
+    # reproduce the text unchanged.  The scan can only over-match (a garbage
+    # read past a short line at worst sends us down the original path), never
+    # under-match.  Line starts come from a swar newline walk, so a source
+    # that merely CONTAINS the text 'unsafe:' (error strings) skips the
+    # expensive rewrite path instead of paying a full line split per compile.
+    up_n2: length(source)
+    up_i: 0
+    up_hit: 0
+    as long as up_i < up_n2
+        if up_hit = 0
+            up_j: up_i
+            up_go: 1
+            as long as up_go = 1 -> up_b: peek_byte(source, up_j)
+                if up_j >= up_n2 -> up_go: 0
+                if up_go = 1 -> if up_b = 32 -> up_j: up_j + 1
+                if up_go = 1 -> if up_b = 9 -> up_j: up_j + 1
+                if up_b != 32 -> if up_b != 9 -> up_go: 0
+                if up_j - up_i > 15 -> up_go: 0
+            if peek_byte(source, up_j) = 117 -> if peek_byte(source, up_j + 1) = 110
+                    if peek_byte(source, up_j + 2) = 115 -> if peek_byte(source, up_j + 3) = 97
+                            if peek_byte(source, up_j + 4) = 102 -> if peek_byte(source, up_j + 5) = 101
+                                    if peek_byte(source, up_j + 6) = 58 -> up_hit: 1
+        up_i: cfind1n(source, up_i, up_n2, 10)
+        if up_i < 0 -> up_i: up_n2
+        if not -> up_i: up_i + 1
+    if up_hit = 0 -> return source
+    n: length(source) ;; out: _sov_heap_alloc(n * 2 + 16)
+    include inc/inc04.sov 574 3 #4101069514821384881
+        p_at
+        p_ind
+    as long as i < n -> l: i
+        e: l ;; eok: 0
+        as long as eok = 0 -> if e >= n
+                eok: 1
+            if eok = 0 -> if peek_byte(source, e) = 10
+                    eok: 1
+            if eok = 0 -> e: e + 1
+        sind: 0 ;; k: l
+        dok: 0 ;; as long as dok = 0 -> if k >= e
+                dok: 1
+            if dok = 0 -> kb: peek_byte(source, k)
+                if kb = 32 -> sind: sind + 1
+                    k: k + 1
+                include inc/px00.sov 3977 4 (kb sind sind k k kb kb dok)
+        is_u: 0 ;; if e - k = 7 -> if peek_byte(source, k) = 117
+                if peek_byte(source, k + 1) = 110 -> if peek_byte(source, k + 2) = 115
+                        if peek_byte(source, k + 3) = 97 -> if peek_byte(source, k + 4) = 102
+                                if peek_byte(source, k + 5) = 101 -> if peek_byte(source, k + 6) = 58
+                                        is_u: 1
+        empty: 0 ;; if k >= e -> empty: 1
+        is_c: 0 ;; if is_u = 0 -> if k < e
+                if peek_byte(source, k) = 35 -> is_c: 1
+        include inc/px00.sov 3982 4 (deind 0 is_u p_at 1 p_ind sind k2 l)
+            include inc/px00.sov 2897 5 (k2 k k2 k2 k2 35)
+            poke_byte(out, w, 32) ;; w: w + 1
+            poke_byte(out, w, 117) ;; w: w + 1
+            poke_byte(out, w, 110) ;; w: w + 1
+            poke_byte(out, w, 115) ;; w: w + 1
+            poke_byte(out, w, 97) ;; w: w + 1
+            poke_byte(out, w, 102) ;; w: w + 1
+            poke_byte(out, w, 101) ;; w: w + 1
+            poke_byte(out, w, 45) ;; w: w + 1
+            poke_byte(out, w, 98) ;; w: w + 1
+            poke_byte(out, w, 108) ;; w: w + 1
+            poke_byte(out, w, 111) ;; w: w + 1
+            poke_byte(out, w, 99) ;; w: w + 1
+            poke_byte(out, w, 107) ;; w: w + 1
+            poke_byte(out, w, 10) ;; w: w + 1
+        if is_u = 0 -> if p_at = 1
+                if empty = 0 -> if is_c = 0
+                        if sind <= p_ind -> p_at: 0 ;; if sind > p_ind -> deind: 1
+        if is_u = 0 -> skip: 0
+            if deind = 1 -> dc: 0
+                k3: l ;; dok3: 0
+                as long as dok3 = 0 -> if dc >= p_ind
+                        dok3: 1
+                    if k3 >= e -> dok3: 1 ;; if dok3 = 0 -> kb3: peek_byte(source, k3)
+                        if kb3 = 32 -> dc: dc + 1
+                            k3: k3 + 1
+                        include inc/px00.sov 3977 4 (kb3 dc dc k3 k3 kb3 kb3 dok3)
+                skip: k3 - l
+            c: l + skip
+            include inc/px00.sov 2897 5 (c e c c c 10)
+        i: e + 1
+    poke_byte(out, w, 0) ;; return out
+u_san ln:
+    if cfind1(ln, 34) < 0 -> return ln
+    # blank out the inside of string literals. the old body grew the result
+    # with one str_cat per character, which is quadratic in the line length;
+    # this writes into one buffer sized from length(ln) up front instead.
+    n: length(ln)
+    buf: _sov_heap_alloc(n + 1)
+    0:
+        instr
+        esc
+        usi
+        w
+    as long as usi < n -> b: peek_byte(ln, usi)
+        ob: b ;; if b = 92 -> if esc = 0
+                esc: 1
+            if not -> esc: 0
+        if not -> if b = 34
+                if esc = 0 -> if instr = 0
+                        instr: 1
+                    if not -> instr: 0
+            esc: 0
+        if instr = 1 -> ob: 32
+        poke_byte(buf, w, ob) ;; w: w + 1
+        usi: usi + 1
+    poke_byte(buf, w, 0)
+    return buf
+u_scan source:
+    # The gate used to be three sequential _sov_find_text probes (peek_/poke_/
+    # port_, ~0.7 ms each on a t1-scale source).  One fused pass does it: hunt
+    # every 'p' with cfind1n (memchr speed) and byte-check the 4 followers
+    # against the three prefixes, discriminating on the second byte.  The
+    # predicate is unchanged: a prefix matches here iff it matched before, so
+    # the walk still runs exactly when it has a counted token to find.
+    # whole-text gate: three native substring probes (peek_ / poke_ / port_)
+    # answer exactly what the interpreted every-'p' hunt answered — uskip
+    # stays 1 iff the text contains none of the three prefixes — at memmem
+    # speed instead of one interpreted step per 'p' in the source.
+    uskip: 1
+    if look(source, 'peek_') > 0 - 1 -> uskip: 0
+    if look(source, 'poke_') > 0 - 1 -> uskip: 0
+    if look(source, 'port_') > 0 - 1 -> uskip: 0
+    if uskip = 1 -> return 0
+    us_n: length(source)
+    us_i: 0
+    sls: lines_of(source)
+    0:
+        include inc/px00.sov 6 4 (si smod smark sbad)
+        blk_at
+        blk_ind
+    si_ln: _sov_list_len(sls)
+    as long as si < si_ln -> osl: peek_i64(sls, 16 + si * 8)
+        sl: strip(osl)
+        include inc/px00.sov 289 4 (sind ck ck length osl cb peek_byte osl ck)
+            if cb = 32 -> sind: sind + 1 ;; if cb = 9 -> sind: sind + 4
+            ck: ck + 1 ;; if cb != 32 -> if cb != 9
+                    ck: length(osl)
+        blk_new: 0
+        if _sov_str_eq(sl, 'unsafe:') = 1 -> blk_new: 1
+        if blk_new = 1 -> blk_at: 1
+            blk_ind: sind
+        in_blk: 0 ;; if blk_at = 1 -> if sind > blk_ind
+                in_blk: 1
+            if sind <= blk_ind -> dd: 1
+                if blk_new = 1 -> dd: 0 ;; if length(sl) = 0 -> dd: 0
+                if _sov_starts_with(sl, "#") = 1 -> dd: 0
+                if dd = 1 -> blk_at: 0
+        if length(sl) > 0 -> cm: 0
+            if _sov_starts_with(sl, "#") = 1 -> cm: 1
+            if cm = 1 -> if _sov_starts_with(sl, "# unsafe-module") = 1
+                    smod: 1
+                if _sov_str_eq(sl, "# unsafe") = 1 -> smark: 1
+            if cm = 0 -> if smod = 0
+                    if in_blk = 0 -> if cfind1(sl, 112) >= 0
+                            slc: u_san(sl)
+                            0:
+                                uraw
+                                ubare
+                            # fused probe scan: all six needles start with 'p',
+                            # so one cfind1n walk replaces six whole-line look
+                            # scans; byte-exact on every needle (bounds per
+                            # needle length; reads past bounds never happen
+                            # because the terminator NUL matches nothing).
+                            us2_n: length(slc)
+                            us2_i: 0
+                            us2_go: 1
+                            as long as us2_go = 1
+                                us2_i: cfind1n(slc, us2_i, us2_n, 112)
+                                if us2_i < 0 -> us2_go: 0
+                                if not
+                                    u2r: 0 ;; u2b: 0
+                                    us2_c1: peek_byte(slc, us2_i + 1)
+                                    if us2_c1 = 101
+                                        if us2_i + 10 <= us2_n
+                                            if peek_byte(slc, us2_i + 2) = 101
+                                                if peek_byte(slc, us2_i + 3) = 107
+                                                    if peek_byte(slc, us2_i + 4) = 95
+                                                        if peek_byte(slc, us2_i + 5) = 98
+                                                            if peek_byte(slc, us2_i + 6) = 121
+                                                                if peek_byte(slc, us2_i + 7) = 116
+                                                                    if peek_byte(slc, us2_i + 8) = 101
+                                                                        if peek_byte(slc, us2_i + 9) = 40 -> u2r: 1
+                                        if us2_i + 8 <= us2_n
+                                            if peek_byte(slc, us2_i + 2) = 101
+                                                if peek_byte(slc, us2_i + 3) = 107
+                                                    if peek_byte(slc, us2_i + 4) = 95
+                                                        if peek_byte(slc, us2_i + 5) = 114
+                                                            if peek_byte(slc, us2_i + 6) = 97
+                                                                if peek_byte(slc, us2_i + 7) = 119 -> u2r: 1 ;; u2b: 1
+                                    if us2_c1 = 111
+                                        if us2_i + 10 <= us2_n
+                                            if peek_byte(slc, us2_i + 2) = 107
+                                                if peek_byte(slc, us2_i + 3) = 101
+                                                    if peek_byte(slc, us2_i + 4) = 95
+                                                        if peek_byte(slc, us2_i + 5) = 98
+                                                            if peek_byte(slc, us2_i + 6) = 121
+                                                                if peek_byte(slc, us2_i + 7) = 116
+                                                                    if peek_byte(slc, us2_i + 8) = 101
+                                                                        if peek_byte(slc, us2_i + 9) = 40 -> u2r: 1
+                                        if us2_i + 8 <= us2_n
+                                            if peek_byte(slc, us2_i + 2) = 107
+                                                if peek_byte(slc, us2_i + 3) = 101
+                                                    if peek_byte(slc, us2_i + 4) = 95
+                                                        if peek_byte(slc, us2_i + 5) = 114
+                                                            if peek_byte(slc, us2_i + 6) = 97
+                                                                if peek_byte(slc, us2_i + 7) = 119 -> u2r: 1 ;; u2b: 1
+                                        if us2_i + 8 <= us2_n
+                                            if peek_byte(slc, us2_i + 2) = 114
+                                                if peek_byte(slc, us2_i + 3) = 116
+                                                    if peek_byte(slc, us2_i + 4) = 95
+                                                        if peek_byte(slc, us2_i + 5) = 111
+                                                            if peek_byte(slc, us2_i + 6) = 117
+                                                                if peek_byte(slc, us2_i + 7) = 116 -> u2r: 1 ;; u2b: 1
+                                        if us2_i + 7 <= us2_n
+                                            if peek_byte(slc, us2_i + 2) = 114
+                                                if peek_byte(slc, us2_i + 3) = 116
+                                                    if peek_byte(slc, us2_i + 4) = 95
+                                                        if peek_byte(slc, us2_i + 5) = 105
+                                                            if peek_byte(slc, us2_i + 6) = 110 -> u2r: 1 ;; u2b: 1
+                                    if u2r = 1 -> uraw: 1
+                                    if u2b = 1 -> ubare: 1
+                                    us2_i: us2_i + 1
+                            if uraw = 1 -> if smark = 1
+                                    uraw: 0
+                            if uraw = 1 -> sbad: sbad + 1
+                                if ubare = 1 -> u_bare_total: u_bare_total + 1
+                                if u_listing = 1 -> print 'unsafe lint: unmarked raw memory/io line:'
+                                    _sov_print(sl)
+                smark: 0
+        si: si + 1
+    return sbad
+nhash s:
+    h: 0
+    i: 0
+    go: 1
+    as long as go is 1
+        # Eight bytes per step while the qword holds no NUL.  The per-byte chain
+        # (h*33 xor b, truncated to 56 bits) is applied in exactly the same
+        # order, so the hash value is unchanged; the reads stay 8-aligned
+        # because i only advances by 8 on this path.
+        q: peek_i64(s, i)
+        z: band(band(q - 72340172838076673, bxor(q, 0 - 1)), -9187201950435737472)
+        if z = 0
+            h: band(bxor(h * 33, band(q, 255)), 72057594037927935)
+            h: band(bxor(h * 33, band(bshr(q, 8), 255)), 72057594037927935)
+            h: band(bxor(h * 33, band(bshr(q, 16), 255)), 72057594037927935)
+            h: band(bxor(h * 33, band(bshr(q, 24), 255)), 72057594037927935)
+            h: band(bxor(h * 33, band(bshr(q, 32), 255)), 72057594037927935)
+            h: band(bxor(h * 33, band(bshr(q, 40), 255)), 72057594037927935)
+            h: band(bxor(h * 33, band(bshr(q, 48), 255)), 72057594037927935)
+            h: band(bxor(h * 33, band(bshr(q, 56), 255)), 72057594037927935)
+            i: i + 8
+        if not
+            as long as go is 1
+                b: peek_byte(s, i)
+                if b is 0
+                    go: 0
+                if not
+                    h: bxor(h * 33, b)
+                    h: band(h, 72057594037927935)
+                    i: i + 1
+    # avalanche the low bits. plain djb2 leaves sequential names (fn0, fn1,
+    # ...) with sequential hashes, which fill one linear-probe run until new
+    # inserts drop off the 64-probe cap and the index silently loses them.
+    # an odd multiply plus xor-shift pair scatters them across the table.
+    h: band(h, 4294967295)
+    h: h * 73244475
+    h: bxor(h, bshr(h, 15))
+    h: band(h, 4294967295)
+    h: h * 73244475
+    h: bxor(h, bshr(h, 15))
+    return band(h, 72057594037927935)
+
+list_find lst name:
+    if lst is 0 -> return 0 - 1
+    n: peek_i64(lst, 8)
+    i: 0
+    as long as i < n
+        s: peek_i64(lst, 16 + i * 8)
+        if s is name -> return i
+        if _sov_str_eq(s, name) is 1 -> return i
+        i: i + 1
+    return 0 - 1
+
+bsearch_le lst x:
+    # greatest i with lst[i] <= x in an ascending list, else -1.
+    n: _sov_list_len(lst)
+    lo: 0
+    hi: n - 1
+    best: 0 - 1
+    as long as lo <= hi -> mid: (lo + hi) / 2
+        mv: peek_i64(lst, 16 + mid * 8)
+        if mv <= x -> best: mid
+            lo: mid + 1
+        if mv > x -> hi: mid - 1
+    return best
+wbuf: 0
+wbuf_flush:
+    if wbuf = 0 -> return
+    if _sov_list_len(wbuf) = 0 -> return
+    o: sf_text(wbuf)
+    print cut(o, 0, length(o) - 1)
+    wbuf: _sov_list_new()
+list_reuse l:
+    if l < 65536 -> return _sov_list_new()
+    poke_i64(l, 8, 0)
+    return l
+
+dp_rsz: 0
+dp_raw0: 0
+dp_dbg: 0
+dp_w: 0
+dp_wn: 0
+dp_wcap: 0
+dp_f0: 0
+dp_b0: 0
+dp_b1: 0
+dp_rb: 0
+dp_ri: 0
+dp_y_s: 0
+dp_y_e: 0
+dp_y_nm: 0
+dp_y_h: 0
+dp_y_lc: 0
+dp_y_dl: 0
+dp_ms1: 0
+dp_ms2: 0
+dp_nmtab: 0
+dp_g_sgx1: 0
+dp_g_dbg: 0
+dp_g_flat: 0
+dp_g_nl: 0
+
+# ---- dead-function pruning -------------------------------------------------
+# Mark-and-sweep over textual mentions, run on the assembled source in place of
+# compile(all).  Every mention counts as an edge - including mentions inside
+# string literals and comments, because the token walk does not skip them - so
+# the reachable set is an over-approximation of the real call graph.  A function
+# is dropped only when nothing reachable mentions it, which errs towards
+# keeping: a wrongly kept function costs time, a wrongly dropped one is a build
+# failure.  Unreachable bodies are replaced by empty lines, not deleted, so the
+# and the .map offsets.
+#
+# A definition's extent is its own line plus the indented or blank lines that
+# follow it, stopping at the first non-blank column-0 line.  Running the extent
+# declarations that sit between two definitions, and blanking those removes
+# names the program still needs.
+#
+# Every local carries a pd_ prefix.  Names in this language are not scoped to
+# the function, so an unprefixed local such as `go` is shared with nhash, which
+# uses h/i/go/q/z/b internally - calling nhash from an unprefixed probe loop
+# silently rewrote the loop counter and dropped real edges.
+pd_key: 0
+pd_val: 0
+pd_cap: 0
+pd_adj: 0
+pd_mark: 0
+pd_nd: 0
+pd_report: 0
+pd_pu: 0
+pd_off: 0
+pd_lib: 0
+pd_pz: 0
+pd_ut: 0
+pd_nm: 0
+pd_un: 0
+pd_ul: 0
+pd_ui: 0
+pd_ull: 0
+pd_usp: 0
+
+pd_wt: 0
+
+# 256-entry wordchar table.  The scan touches every byte of the source, so the
+# predicate has to be a load, not a call: sf_wc plus peek_byte was two calls per
+# byte and dominated the whole analysis pass.
+pd_mktab:
+    pd_wt: _sov_heap_alloc(256)
+    pd_ti: 0
+    as long as pd_ti < 256 -> poke_byte(pd_wt, pd_ti, 0)
+        pd_ti: pd_ti + 1
+    pd_ti: 48
+    as long as pd_ti < 58 -> poke_byte(pd_wt, pd_ti, 1)
+        pd_ti: pd_ti + 1
+    pd_ti: 65
+    as long as pd_ti < 91 -> poke_byte(pd_wt, pd_ti, 1)
+        pd_ti: pd_ti + 1
+    pd_ti: 97
+    as long as pd_ti < 123 -> poke_byte(pd_wt, pd_ti, 1)
+        pd_ti: pd_ti + 1
+    poke_byte(pd_wt, 95, 1)
+    return 0
+
+# Hash of source[a:b) with no copy.  The per-byte chain and the avalanche are
+# the ones nhash applies, so a range hash and nhash of the same text agree -
+# which they must, because pd_put indexes with nhash.
+pd_hr pd_hp pd_ha pd_hb:
+    pd_hv: 0
+    pd_hi: pd_ha
+    as long as pd_hi < pd_hb
+        pd_hv: bxor(pd_hv * 33, peek_byte(pd_hp, pd_hi))
+        pd_hv: band(pd_hv, 72057594037927935)
+        pd_hi: pd_hi + 1
+    pd_hv: band(pd_hv, 4294967295)
+    pd_hv: pd_hv * 73244475
+    pd_hv: bxor(pd_hv, bshr(pd_hv, 15))
+    pd_hv: band(pd_hv, 4294967295)
+    pd_hv: pd_hv * 73244475
+    pd_hv: bxor(pd_hv, bshr(pd_hv, 15))
+    return band(pd_hv, 72057594037927935)
+
+pd_eqr pd_ep pd_ea pd_eb pd_eq:
+    pd_qi: 0
+    pd_pi: pd_ea
+    as long as pd_pi < pd_eb
+        if peek_byte(pd_eq, pd_qi) is 0 -> return 0
+        if peek_byte(pd_ep, pd_pi) != peek_byte(pd_eq, pd_qi) -> return 0
+        pd_pi: pd_pi + 1
+        pd_qi: pd_qi + 1
+    if peek_byte(pd_eq, pd_qi) != 0 -> return 0
+    return 1
+
+# Avalanche + probe from the pass-B rolling hash.  The per-byte chain and the
+# avalanche are exactly pd_hr's, so the probe sees the same hash nhash-based
+# puts indexed with; pd_eqr still byte-confirms, so a collision can never
+# match.  Digit-leading words never reach here: pass A refuses definitions
+# whose first byte is a digit, so such a word could only ever miss.
+pd_probe pd_pp pd_pa pd_pb pd_ph:
+    pd_ph: band(pd_ph, 4294967295)
+    pd_ph: pd_ph * 73244475
+    pd_ph: bxor(pd_ph, bshr(pd_ph, 15))
+    pd_ph: band(pd_ph, 4294967295)
+    pd_ph: pd_ph * 73244475
+    pd_ph: bxor(pd_ph, bshr(pd_ph, 15))
+    pd_ph: band(pd_ph, 72057594037927935)
+    pd_gk: band(pd_ph, pd_cap - 1)
+    pd_gg: 1
+    as long as pd_gg is 1
+        pd_gc: peek_i64(pd_key, pd_gk * 8)
+        if pd_gc is 0 -> pd_gg: 0
+        if pd_gg is 1 -> if pd_eqr(pd_pp, pd_pa, pd_pb, pd_gc) is 1 -> pd_gg: 2
+        if pd_gg is 1 -> pd_gk: band(pd_gk + 1, pd_cap - 1)
+    if pd_gg is 2 -> return peek_i64(pd_val, pd_gk * 8)
+    return 0 - 1
+
+pd_get2 pd_bp pd_ba pd_bb:
+    pd_gk: band(pd_hr(pd_bp, pd_ba, pd_bb), pd_cap - 1)
+    pd_gg: 1
+    as long as pd_gg is 1
+        pd_gc: peek_i64(pd_key, pd_gk * 8)
+        if pd_gc is 0 -> pd_gg: 0
+        if pd_gg is 1 -> if pd_eqr(pd_bp, pd_ba, pd_bb, pd_gc) is 1 -> pd_gg: 2
+        if pd_gg is 1 -> pd_gk: band(pd_gk + 1, pd_cap - 1)
+    if pd_gg is 2 -> return peek_i64(pd_val, pd_gk * 8)
+    return 0 - 1
+
+pd_get pd_gs:
+    pd_gk: band(nhash(pd_gs), pd_cap - 1)
+    pd_gg: 1
+    as long as pd_gg is 1
+        pd_gc: peek_i64(pd_key, pd_gk * 8)
+        if pd_gc is 0 -> pd_gg: 0
+        if pd_gg is 1 -> if _sov_str_eq(pd_gc, pd_gs) is 1 -> pd_gg: 2
+        if pd_gg is 1 -> pd_gk: band(pd_gk + 1, pd_cap - 1)
+    if pd_gg is 2 -> return peek_i64(pd_val, pd_gk * 8)
+    return 0 - 1
+
+pd_put pd_ps pd_pv:
+    pd_pk: band(nhash(pd_ps), pd_cap - 1)
+    pd_pg: 1
+    as long as pd_pg is 1
+        pd_pc: peek_i64(pd_key, pd_pk * 8)
+        if pd_pc is 0 -> pd_pg: 2
+        if pd_pg is 1 -> if _sov_str_eq(pd_pc, pd_ps) is 1 -> pd_pg: 2
+        if pd_pg is 1 -> pd_pk: band(pd_pk + 1, pd_cap - 1)
+    poke_i64(pd_key, pd_pk * 8, pd_ps)
+    poke_i64(pd_val, pd_pk * 8, pd_pv)
+    return 0
+
+pd_edge pd_ea pd_eb:
+    pd_el: peek_i64(pd_adj, 16 + pd_ea * 8)
+    pd_el: _sov_list_add(pd_el, pd_eb)
+    # _sov_list_add reallocs past capacity and returns the new list, so the
+    # pointer stored in pd_adj has to be written back or every later edge for
+    # this node is appended to a list nothing can reach any more.
+    poke_i64(pd_adj, 16 + pd_ea * 8, pd_el)
+    return 0
+
+# Names the compiled program needs that no source text ever mentions.  The
+# backend emits direct calls to most of these by hardcoded literal - addp alone
+# has four calln("_sov_list_add") sites - so each occurs exactly once in the
+# spliced source, at its own definition, and looks dead.  rt_init is the sharpest
+# case: it is the runtime initializer that sets g_argc and g_argv, it is named
+# nowhere in the entire tree, and dropping it builds cleanly then segfaults.
+pd_roots: '|_|'
+pd_r1: '|main|_sov_thread_exit|_sov_sysnum|_sov_mem_copy|_sov_mem_set|rt_init|_sov_atoi|_sov_bzero|_sov_find_text|_sov_heap_alloc|_sov_list_add|_sov_list_new|_sov_print|_sov_print_int|_sov_str_eq|_sov_strcat|_sov_strlen|_sov_trim|_sov_txt_eq|cfind1|cut|emit|emit2|emit3|emit4|find_col_q|here|ih_init|ih_mark|ih_slow|ih_tailscan|intern_ensure|intern_fast|'
+pd_r2: '|intern_fast_do|intern_kid|is_imm|nhash|ocgrow|plain_name|put|sf_match_n|unesc|_sov_alloc|_sov_canary_fail|_sov_cw_ret|_sov_trap|alloc_mark|alloc_reset|_sov_substring|cat|ch|join|letter|repl|str_cat|str_cut|str_join3|str_trim|strcat|strip|sub|trim|except|'
+pd_r3: '|forever|if|try|while|__pt_c|__pt_i|err_top|err_val|g_canary|heap_ptr|_sov_list_get|_sov_list_len|_sov_starts_with|add_rax_rcx|addp|cmp_rax_rcx|digitb|dir_of|emit8|emit_peek_rax|find_col|find_sep_do|list_find|imul_rax_rcx|intern|jae|jb|jg|jge|jl|'
+pd_r4: '|jle|jmp|jne|jnz|jz|leave|length|lines_of_fast|list_reuse|look|mov_rax_rcx|mov_rax_rdi|mov_rax_rsi|mov_rcx_rax|mov_rcx_rdx|mov_rcx_rsi|mov_rdi_rax|mov_rsi_rax|name_ok|num_of|oc_here|ocget|ocput|ocset|patch|poke4|poke8|pop_rax|pop_rcx|push_rax|'
+pd_r5: '|ret|rexx|same|sf_bare|sf_cat2|sf_cat3|sf_cat4|sf_cat5|sf_cat6|sf_ind|sf_match|sf_sqok|sf_thresh|sf_word|sibx|spawn_emit|starts|sub_rax_rcx|sysc_raw|test_rax|unquote|word_id|wordchar|xor_rax|'
+
+# Diagnostic: extra roots from a file, so the culprit can be bisected without
+# rebuilding the compiler for each candidate set.
+pd_xtra: 0
+# so the mention-scan can never keep them on its own.
+pd_force: blank
+pd_load_xtra:
+    if file_exists('/tmp/pdx.txt') is 0 -> return 0
+    pd_xtra: load_file('/tmp/pdx.txt')
+    return 0
+
+pd_rkey: 0
+pd_rcap: 0
+pd_radd bl:
+    # split one '|name|name|...' root blob into the probe table; the names
+    # are static, so the table is built once per process, not once per def.
+    n: length(bl)
+    k: 0
+    as long as k < n
+        if peek_byte(bl, k) = 124
+            j: k + 1
+            e: j
+            g9: 1
+            as long as g9 = 1
+                if e < n
+                    if peek_byte(bl, e) != 124
+                        e: e + 1
+                    if not
+                        g9: 0
+                if not
+                    g9: 0
+            if e > j
+                nm: cut(bl, j, e)
+                hv: band(nhash(nm), pd_rcap - 1)
+                g8: 1
+                as long as g8 = 1
+                    if peek_i64(pd_rkey, hv * 8) = 0
+                        g8: 0
+                    if not
+                        hv: band(hv + 1, pd_rcap - 1)
+                poke_i64(pd_rkey, hv * 8, nm)
+                k: e
+            if not
+                k: k + 1
+        if not
+            k: k + 1
+    return 0
+pd_mkrtab:
+    pd_rcap: 1024
+    pd_rkey: _sov_heap_alloc(pd_rcap * 8)
+    dummy8: _sov_bzero(pd_rkey, pd_rcap * 8)
+    dummy8: pd_radd(pd_r1)
+    dummy8: pd_radd(pd_r2)
+    dummy8: pd_radd(pd_r3)
+    dummy8: pd_radd(pd_r4)
+    dummy8: pd_radd(pd_r5)
+    return 0
+pd_isroot pd_rn:
+    if pd_force > 0 -> if _sov_find_text(pd_force, sf_cat3('|', pd_rn, '|')) > 0 - 1 -> return 1
+    if pd_rkey = 0 -> pd_mkrtab()
+    hv: band(nhash(pd_rn), pd_rcap - 1)
+    g8: 1
+    as long as g8 = 1
+        gc8: peek_i64(pd_rkey, hv * 8)
+        if gc8 = 0 -> return 0
+        if _sov_str_eq(gc8, pd_rn) = 1 -> return 1
+        hv: band(hv + 1, pd_rcap - 1)
+    if pd_xtra > 0 -> if _sov_find_text(pd_xtra, sf_cat3('|', pd_rn, '|')) > 0 - 1 -> return 1
+    if pd_force > 0 -> if _sov_find_text(pd_force, sf_cat3('|', pd_rn, '|')) > 0 - 1 -> return 1
+    return 0
+
+pd_uk: 0
+pd_umsk: 65535
+pd_rt: 0
+pd_scan_line pd_sl pd_sc:
+    # one line's token walk for the prune: separators skipped, words hashed
+    # and probed only when they do not start with a digit.  pd_sc < 0 means
+    # top level (mentions root definitions); pd_sc >= 0 means the body of
+    # definition pd_sc (mentions record edges and mark the target at once,
+    # which is safe because a body is only ever walked after its definition
+    # was reached, so the old sweep would have marked the target anyway).
+    pd_m: length(pd_sl)
+    pd_j: 0
+    as long as pd_j < pd_m
+        if peek_byte(pd_wt, peek_byte(pd_sl, pd_j)) is 0 -> pd_j: pd_j + 1
+        if not
+            pd_j0: pd_j
+            pd_db: peek_byte(pd_sl, pd_j0)
+            pd_ez: 0
+            if pd_db < 48 -> pd_ez: 1
+            if pd_db > 57 -> pd_ez: 1
+            pd_hv2: 0
+            pd_w: 1
+            # no bounds test inside: every line is NUL-terminated by lines_of
+            # and wt[0] is 0, so the word loop stops at the terminator itself.
+            as long as pd_w is 1
+                if peek_byte(pd_wt, peek_byte(pd_sl, pd_j)) is 0 -> pd_w: 0
+                if pd_w is 1 -> if pd_ez is 1 -> pd_hv2: band(bxor(pd_hv2 * 33, peek_byte(pd_sl, pd_j)), 72057594037927935)
+                if pd_w is 1 -> pd_j: pd_j + 1
+            pd_t: 0 - 1
+            if pd_ez is 1 -> pd_t: pd_probe(pd_sl, pd_j0, pd_j, pd_hv2)
+            if pd_t > 0 - 1
+                if pd_sc < 0 -> if peek_byte(pd_mark, pd_t) is 0 -> poke_byte(pd_mark, pd_t, 1)
+                    pd_rt: _sov_list_add(pd_rt, pd_t)
+                if pd_sc > 0 - 1
+                    if peek_byte(pd_mark, pd_t) is 0 -> poke_byte(pd_mark, pd_t, 1)
+                        pd_rt: _sov_list_add(pd_rt, pd_t)
+    return 0
+
+pd_lines_result text ls:
+    # Only publish after the round-trip guard: the parser must see exactly
+    # lines_of(text), including empty lines and the trailing-newline rule.
+    sf_pu_txt: text
+    sf_pu_ls: ls
+    return text
+
+prune_dead pd_src pd_lim pd_inf:
+    sf_pu_txt: 0
+    sf_pu_ls: 0
+    # Text of the user's own file, used to decide which definitions belong to
+    # the user rather than to the spliced library.  Reading it again is cheap
+    # and exact; offset arithmetic is not, because `use` chunks are spliced
+    # into src before it is appended to all.
+    pd_ut: load_file(pd_inf)
+    if pd_ut is 0 -> pd_ut: pd_src
+    pd_force: blank
+    if look(pd_ut, 'spawn') > 0 - 1 -> pd_force: '|_sov_thread_spawn|_sov_thread_exit|_sov_thread_entry_param|'
+    if look(pd_ut, 'join') > 0 - 1 -> pd_force: join(pd_force, '|_sov_thread_join|') ;; if look(pd_src, '_sov_heap_alloc') > 0 - 1 -> pd_force: join(pd_force, '|_sov_heap_wipe|')
+    # Names the user's own file defines, as one delimited blob.  Testing each
+    # candidate against the file text directly costs O(defs x user bytes), which
+    # on a 147 KB program is over 100 MB of scanning and swamps the saving.
+    # table sized to the user's own def count (4x load headroom, pow2,
+    # capped at the original 65536): a 512KB zeroing per compile cost
+    # ~0.29 ms on small sources where a 1024-slot table does the same job.
+    pd_ul: lines_of(pd_ut)
+    pd_uc: 0
+    pd_qi: 0
+    pd_qln: _sov_list_len(pd_ul)
+    as long as pd_qi < pd_qln
+        pd_ql: peek_i64(pd_ul, 16 + pd_qi * 8)
+        if length(pd_ql) > 1
+            if peek_byte(pd_ql, 0) > 32
+                if peek_byte(pd_ql, length(pd_ql) - 1) is 58
+                    pd_uc: pd_uc + 1
+        pd_qi: pd_qi + 1
+    pd_ucap: 1024
+    as long as pd_ucap < pd_uc * 4
+        if pd_ucap >= 65536 -> leave
+        pd_ucap: pd_ucap * 2
+    if pd_ucap > 65536 -> pd_ucap: 65536
+    pd_umsk: pd_ucap - 1
+    pd_uk: _sov_heap_alloc(pd_ucap * 8)
+    dummy: _sov_bzero(pd_uk, pd_ucap * 8)
+    pd_ui: 0
+    as long as pd_ui < _sov_list_len(pd_ul) -> pd_ull: peek_i64(pd_ul, 16 + pd_ui * 8)
+        if length(pd_ull) > 1 -> if peek_byte(pd_ull, 0) > 32 -> if peek_byte(pd_ull, length(pd_ull) - 1) is 58
+                pd_usp: look(pd_ull, ' ')
+                if pd_usp < 0 -> pd_usp: length(pd_ull) - 1
+                if pd_usp > 0 -> pd_u_put(cut(pd_ull, 0, pd_usp))
+        pd_ui: pd_ui + 1
+    if pd_wt is 0 -> pd_mktab()
+    pd_load_xtra()
+    pd_ls: lines_of(pd_src)
+    pd_n: _sov_list_len(pd_ls)
+    # Round-trip guard: sf_text must reproduce the source byte for byte before
+    # it is trusted to reproduce a blanked one.  If the line splitter and the
+    # joiner disagree about the trailing newline, pruning is skipped entirely
+    # rather than perturbing every build by one byte.
+    # sf_text appends one newline per line, so it round-trips only when the
+    # summed line lengths plus one byte per line equals the source length.
+    # The extent walk below already adds pd_ll + 1 per line into pd_off, so
+    # the guard compares that sum after the walk instead of paying a second
+    # full pass over the lines just for the check.
+    pd_dn: _sov_list_new()
+    pd_ds: _sov_list_new()
+    pd_de: _sov_list_new()
+    pd_rt: _sov_list_new()
+    pd_pu: _sov_list_new()
+    # PS9 rejection rows: the sweep must REJECT (not silently blank) duplicate
+    # task names and >7-parameter headers. This walk is the only stage that
+    # still sees every definition twin side by side: the parser downstream
+    # only ever sees the pruned text, so any later check is too late.
+    # the dup/arity rejections only apply to FLAT sources (no includes):
+    # spliced driver trees legitimately shadow same-name tasks across
+    # windows, and must keep the absorb behavior. the hash set exists only
+    # on this path: a 256KB alloc + 16K-slot zero loop costs ~0.15 ms of
+    # page faults on every compile otherwise, eating the int-dispatch win.
+    pd_flat: 0
+    if look(pd_src + snap_m, 'include ') < 0 -> pd_flat: 1
+
+    # Definitions and their extents come out of one walk.  A definition's extent
+    # is its own line plus the indented or blank lines that follow, ending at the
+    # first non-blank column-0 line - which is also the line that opens whatever
+    # comes next, so a single forward pass closes one body and opens the next.
+    # Scanning each body separately walked the whole source a second time.
+    mark('i-pa0')
+    mark('PA')
+    pd_i: 0
+    pd_off: 0
+    pd_open: 0
+    as long as pd_i < pd_n -> pd_l: peek_i64(pd_ls, 16 + pd_i * 8)
+        pd_ll: length(pd_l)
+        pd_ib: 0
+        if pd_ll is 0 -> pd_ib: 1
+        if pd_ll > 0 -> if peek_byte(pd_l, 0) < 33 -> pd_ib: 1
+        if pd_open is 1
+            if pd_ib is 0
+                pd_de: _sov_list_add(pd_de, pd_i)
+                pd_open: 0
+        pd_d: 0
+        if pd_ll > 1 -> if peek_byte(pd_l, 0) > 32
+            if peek_byte(pd_l, pd_ll - 1) is 58 -> pd_d: 1
+        if pd_d is 1
+            pd_b0: peek_byte(pd_l, 0)
+            if pd_b0 > 47 -> if pd_b0 < 58 -> pd_d: 0
+        if pd_d is 1
+            pd_sp: look(pd_l, ' ')
+            if pd_sp < 0 -> pd_sp: pd_ll - 1
+            pd_hb: peek_byte(pd_l, 0)
+            pd_hk: 0
+            if pd_hb > 64
+                if pd_hb < 91 -> pd_hk: 1
+            if pd_hb > 96
+                if pd_hb < 123 -> pd_hk: 1
+            if pd_hb = 95 -> pd_hk: 1
+            if pd_hk = 1
+                if pd_flat = 1
+                    pd_nc: 0
+                    pd_wc: 0
+                    as long as pd_wc < pd_ll
+                        if peek_byte(pd_l, pd_wc) = 32
+                            pd_nc: pd_nc + 1
+                        pd_wc: pd_wc + 1
+                    if pd_nc > 7
+                        print 'Error: too many parameters (7 max)'
+                        _sov_print(cut(pd_l, 0, pd_ll - 1))
+                        had_err: 1
+            if pd_sp > 0 -> pd_nm: cut(pd_l, 0, pd_sp)
+                pd_dn: _sov_list_add(pd_dn, pd_nm)
+                pd_ds: _sov_list_add(pd_ds, pd_i)
+                pd_lib: 1
+                if pd_u_has(pd_nm) = 1 -> pd_lib: 0
+                pd_pu: _sov_list_add(pd_pu, pd_lib)
+                pd_open: 1
+        pd_off: pd_off + pd_ll + 1
+        pd_i: pd_i + 1
+    if pd_open is 1 -> pd_de: _sov_list_add(pd_de, pd_n)
+    if pd_off != length(pd_src) -> if pd_report is 1 -> print 'BAIL1 roundtrip'
+        _sov_print(i2s(pd_off))
+        _sov_print(i2s(length(pd_src)))
+        return pd_src
+    mark('i-pa1')
+    pd_nd: _sov_list_len(pd_dn)
+    if pd_nd < 2 -> if pd_report is 1 -> print 'BAIL2 nd<2'
+        return pd_lines_result(pd_src, pd_ls)
+    if _sov_list_len(pd_de) != pd_nd -> if pd_report is 1 -> print 'BAIL3 de!=nd'
+        _sov_print(i2s(_sov_list_len(pd_de)))
+        _sov_print(i2s(pd_nd))
+        return pd_lines_result(pd_src, pd_ls)
+    # PS9: flat-source duplicate-name rejection. Runs after the walk so the
+    # hash table can be sized to the real def count (a fixed 16K-slot table
+    # costs ~0.3 ms of page faults on tiny flat compiles). Spliced trees keep
+    # the absorb behavior (pd_flat = 0 skips the whole pass).
+    if pd_flat = 1
+        pd_cap2: 64
+        as long as pd_cap2 < pd_nd * 2 + 16 -> pd_cap2: pd_cap2 * 2
+        pd_sh: _sov_heap_alloc(pd_cap2 * 16)
+        pd_zi: 0
+        as long as pd_zi < pd_cap2
+            poke_i64(pd_sh, pd_zi * 16, 0)
+            pd_zi: pd_zi + 1
+        pd_zj: 0
+        as long as pd_zj < pd_nd
+            pd_nm2: peek_i64(pd_dn, 16 + pd_zj * 8)
+            pd_hb2: peek_byte(pd_nm2, 0)
+            pd_hk2: 0
+            if pd_hb2 > 64
+                if pd_hb2 < 91 -> pd_hk2: 1
+            if pd_hb2 > 96
+                if pd_hb2 < 123 -> pd_hk2: 1
+            if pd_hb2 = 95 -> pd_hk2: 1
+            if pd_hk2 = 1
+                pd_sl2: band(nhash(pd_nm2), pd_cap2 - 1)
+                pd_sg2: 0
+                as long as pd_sg2 < pd_cap2
+                    pd_sv2: peek_i64(pd_sh, pd_sl2 * 16)
+                    if pd_sv2 = 0
+                        pd_sg2: pd_cap2
+                    if pd_sv2 != 0
+                        if _sov_str_eq(pd_sv2, pd_nm2) = 1
+                            print 'Error: two with the same name'
+                            _sov_print(pd_nm2)
+                            had_err: 1
+                            pd_sg2: pd_cap2
+                        if pd_sg2 != pd_cap2 -> pd_sl2: pd_sl2 + 1
+                        if pd_sl2 = pd_cap2 -> pd_sl2: 0
+                        if pd_sg2 != pd_cap2 -> pd_sg2: pd_sg2 + 1
+                if peek_i64(pd_sh, pd_sl2 * 16) = 0 -> poke_i64(pd_sh, pd_sl2 * 16, pd_nm2)
+            pd_zj: pd_zj + 1
+    # no-op gate: only library defs are ever blanked (user defs are rooted
+    # unconditionally).  a source with zero library defs therefore always
+    # ends this pass with pd_gone = 0 and returns its input unchanged, so
+    # the token walk, the sweep and the table builds can be skipped whole.
+    pd_pg: 0
+    pd_pz2: 0
+    as long as pd_pz2 < pd_nd -> if _sov_list_get(pd_pu, pd_pz2) is 1
+            pd_pg: 1
+        pd_pz2: pd_pz2 + 1
+    if pd_pg is 0 -> return pd_lines_result(pd_src, pd_ls)
+    pd_cap: 16384
+    as long as pd_cap < pd_nd * 2 + 16 -> pd_cap: pd_cap * 2
+    pd_key: _sov_heap_alloc(pd_cap * 8)
+    pd_val: _sov_heap_alloc(pd_cap * 8)
+    dummy: _sov_bzero(pd_key, pd_cap * 8)
+    pd_j: 0
+    as long as pd_j < pd_nd -> pd_put(peek_i64(pd_dn, 16 + pd_j * 8), pd_j)
+        pd_j: pd_j + 1
+    # pd_adj is gone: with the closure now marked inline by pd_scan_line, the
+    # adjacency lists had no reader left; building 2500 of them per compile
+    # was pure allocation+append work.
+    pd_mark: _sov_heap_alloc(pd_nd + 8)
+    dummy: _sov_bzero(pd_mark, pd_nd + 8)
+    # main is the entry point and is never mentioned by name, so it is rooted
+    # explicitly; without it the sweep would drop the whole program.
+    pd_j: 0
+    as long as pd_j < pd_nd -> if pd_isroot(peek_i64(pd_dn, 16 + pd_j * 8)) is 1
+            poke_byte(pd_mark, pd_j, 1)
+            pd_rt: _sov_list_add(pd_rt, pd_j)
+        pd_j: pd_j + 1
+    # Definitions from the user's own source are never blanked, and are rooted so
+    # that everything they mention survives too.  Pruning them would silently
+    # delete diagnostics: an unreachable user function calling an unknown name
+    # used to fail the build with "no such task", and blanking its body first
+    # makes that error disappear.  The dead code this pass exists to remove is
+    # library and runtime code, which is where the win is anyway.
+    pd_pz: 0
+    as long as pd_pz < pd_nd -> if _sov_list_get(pd_pu, pd_pz) is 0
+            poke_byte(pd_mark, pd_pz, 1)
+            pd_rt: _sov_list_add(pd_rt, pd_pz)
+        pd_pz: pd_pz + 1
+    # No main means this is not a program the sweep understands; leave it alone.
+    if _sov_list_len(pd_rt) < 1 -> if pd_report is 1 -> print 'BAIL4 no roots'
+        return pd_lines_result(pd_src, pd_ls)
+    # ---- pass B: one token walk, collecting roots and edges ---------------
+    # A mention is a root when it sits outside every definition body, and an
+    # edge from the enclosing definition otherwise.  Attributing a top-level
+    # mention to the preceding definition would be unsafe: if that definition
+    # is unreachable the mention would never be followed.
+    mark('PB')
+    # top-level lines only: roots are fully known before the walk (builtin
+    # names + main + every user definition + top-level mentions), and a body
+    # mention can only ever matter when its enclosing definition is itself
+    # reached, so dead bodies are skipped whole instead of token-walked.
+    pd_cur: 0 - 1
+    pd_nxt: 0
+    pd_i: 0
+    as long as pd_i < pd_n -> pd_l: peek_i64(pd_ls, 16 + pd_i * 8)
+        if pd_nxt < pd_nd
+            if pd_i is _sov_list_get(pd_ds, pd_nxt)
+                pd_cur: pd_nxt
+                pd_nxt: pd_nxt + 1
+        if pd_cur > 0 - 1 -> if pd_i >= _sov_list_get(pd_de, pd_cur) -> pd_cur: 0 - 1
+        if pd_cur < 0 -> dummy9: pd_scan_line(pd_l, 0 - 1)
+        pd_i: pd_i + 1
+    # ---- worklist: walk reached bodies breadth-first ----------------------
+    pd_qi: 0
+    as long as pd_qi < _sov_list_len(pd_rt) -> pd_a: _sov_list_get(pd_rt, pd_qi)
+        pd_i2: _sov_list_get(pd_ds, pd_a)
+        pd_e2: _sov_list_get(pd_de, pd_a)
+        as long as pd_i2 < pd_e2 -> pd_l2: peek_i64(pd_ls, 16 + pd_i2 * 8)
+            dummy9: pd_scan_line(pd_l2, pd_a)
+            pd_i2: pd_i2 + 1
+        pd_qi: pd_qi + 1
+    # ---- sweep ------------------------------------------------------------
+    mark('PS')
+    # the sweep is gone: pd_scan_line already marks every target the moment
+    # the edge is seen (a body is only walked after its definition was
+    # reached, so immediate marking IS the closure), and the worklist in PB
+    # walks exactly that closure.  re-sweeping pd_rt x adjacents re-validated
+    # ~200k edges against mark bytes that were already 1 — ~10 ms of pure
+    # no-op per build.  pd_rt is not read after PE.
+    # ---- blank the unreachable bodies -------------------------------------
+    if pd_report is 1
+        pd_vv: 0
+        as long as pd_vv < pd_nd
+            _sov_print(join('M|', join(peek_i64(pd_dn, 16 + pd_vv * 8), join(':', i2s(peek_byte(pd_mark, pd_vv))))))
+            pd_vv: pd_vv + 1
+    pd_bl: _sov_heap_alloc(2)
+    poke_byte(pd_bl, 0, 0)
+    # dead bodies blank in 512-slot blit chunks: one interpreted call per
+    # chunk instead of one list_set per dead line (~15k calls per build).
+    pd_src: _sov_heap_alloc(4096)
+    pd_f: 0
+    as long as pd_f < 512 -> dummy9: poke_i64(pd_src, pd_f * 8, pd_bl)
+        pd_f: pd_f + 1
+    pd_kept: 0
+    pd_gone: 0
+    pd_zb: 0
+    as long as pd_zb < pd_nd -> if peek_byte(pd_mark, pd_zb) is 0
+            pd_e: peek_i64(pd_de, 16 + pd_zb * 8)
+            pd_k: peek_i64(pd_ds, 16 + pd_zb * 8)
+            as long as pd_k < pd_e -> pd_c2: pd_e - pd_k
+                if pd_c2 > 512 -> pd_c2: 512
+                dummy9: _sov_blit(pd_ls + 16 + pd_k * 8, pd_src, pd_c2 * 8)
+                pd_k: pd_k + pd_c2
+            pd_gone: pd_gone + 1
+        if not -> pd_kept: pd_kept + 1
+        pd_zb: pd_zb + 1
+    mark('PE')
+    if pd_gone is 0 -> if pd_report is 1 -> print 'BAIL5 gone0'
+        return pd_lines_result(pd_src, pd_ls)
+    if pd_report is 1 -> print 'prune: kept'
+        _sov_print(i2s(pd_kept))
+        print 'prune: dropped'
+        _sov_print(i2s(pd_gone))
+    pd_o: sf_text(pd_ls)
+    if pd_report is 1 -> pd_kk: 0
+        as long as pd_kk < pd_nd -> if peek_byte(pd_mark, pd_kk) is 0 -> _sov_print(peek_i64(pd_dn, 16 + pd_kk * 8))
+            pd_kk: pd_kk + 1
+    return pd_lines_result(pd_o, pd_ls)
+pd_u_put nm:
+    h: band(nhash(nm), pd_umsk)
+    as long as peek_i64(pd_uk, h * 8) != 0
+        if peek_i64(pd_uk, h * 8) = nm -> return 0
+        h: band(h + 1, 65535)
+    poke_i64(pd_uk, h * 8, nm)
+    return 0
+pd_u_has nm:
+    h: band(nhash(nm), pd_umsk)
+    as long as peek_i64(pd_uk, h * 8) != 0
+        if peek_i64(pd_uk, h * 8) = nm -> return 1
+        h: band(h + 1, 65535)
+    return 0

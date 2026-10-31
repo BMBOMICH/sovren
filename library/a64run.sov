@@ -1,0 +1,28 @@
+# a64run.sov - runs a Sovren-built arm64 ELF under library/arm64.sov.
+use:
+    arm64
+    arg
+    string
+    num
+    sys
+    file
+main:
+    a: arm64_new()
+    n: arg_count()
+    arm64_argv(a, n, argv_block(n))
+    r: arm64_load(a, arg_at(1))
+    if r != 1 -> print 'cannot load that arm64 program'
+    if r != 1 -> sys_exit(1)
+    arm64_run_for(a, 200000000)
+    write_out(arm64_out(a))
+    write_err(arm64_err(a))
+    sys_exit(arm64_code(a))
+argv_block n:
+    b: _sov_alloc(8 * n)
+    i: 0
+    as long as i < n
+        poke_i64(b, i * 8, as_text_ptr(arg_at(i)))
+        i: i + 1
+    return b
+as_text_ptr s:
+    return s

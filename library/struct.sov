@@ -1,0 +1,71 @@
+use string
+use list
+use split
+use num
+struct_new fields:
+    return split_byte(fields, 44)
+struct_len lay:
+    return list_len(lay)
+struct_size lay:
+    return list_len(lay) * 8
+struct_alloc lay:
+    nb: struct_size(lay)
+    p: _sov_alloc(nb)
+    i: 0
+    as long as i < nb
+        poke_byte(p, i, 0)
+        i: i + 1
+    return p
+struct_slot lay name:
+    n: list_len(lay)
+    i: 0
+    as long as i < n
+        if str_eq(list_get(lay, i), name) is 1 -> return i
+        i: i + 1
+    return 0 - 1
+struct_has lay name:
+    if struct_slot(lay, name) < 0 -> return 0
+    return 1
+struct_set lay p name v:
+    s: struct_slot(lay, name)
+    if s < 0 -> return 0
+    off: s * 8
+    poke_i64(p, off, v)
+    return 1
+struct_get lay p name:
+    s: struct_slot(lay, name)
+    if s < 0 -> return 0
+    off: s * 8
+    return peek_i64(p, off)
+struct_at lay p i:
+    n: list_len(lay)
+    if i < 0 -> return 0
+    if i >= n -> return 0
+    off: i * 8
+    return peek_i64(p, off)
+struct_name lay i:
+    n: list_len(lay)
+    if i < 0 -> return ""
+    if i >= n -> return ""
+    return str_cat(list_get(lay, i), "")
+struct_copy lay src:
+    d: struct_alloc(lay)
+    n: list_len(lay)
+    i: 0
+    as long as i < n
+        off: i * 8
+        poke_i64(d, off, peek_i64(src, off))
+        i: i + 1
+    return d
+struct_dump lay p:
+    out: ""
+    n: list_len(lay)
+    i: 0
+    as long as i < n
+        nm: list_get(lay, i)
+        off: i * 8
+        out: str_cat(out, str_cat(nm, "="))
+        out: str_cat(out, num_text(peek_i64(p, off)))
+        out: str_cat(out, "\n")
+        i: i + 1
+    return out

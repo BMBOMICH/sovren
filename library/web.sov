@@ -1,0 +1,25 @@
+# unsafe-module
+# web: placeholder. The HTTP client was not part of the published tree;
+# every call answers with a clean failure.
+web_get url:
+    return 0 - 1
+web_post url body:
+    return 0 - 1
+web_host u:
+    return 0
+web_port u:
+    return 0
+web_path u:
+    return 0
+web_body r:
+    return 0
+web_lookup n:
+    return 0 - 1
+web_part u idx:
+    return 0
+web_quote s:
+    return s
+web_secure_ready:
+    return 0
+web_find_helper:
+    return 0 - 1
