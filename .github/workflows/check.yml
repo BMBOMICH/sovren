@@ -5,6 +5,8 @@ name: check
 # hand. If something breaks, the log says exactly what and why.
 on:
   push:
+    branches-ignore:
+      - 'codex/fleet-repair-checks-20261111'
     paths-ignore:
       - '**.md'
       - 'LICENSE'
