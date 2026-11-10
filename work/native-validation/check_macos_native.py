@@ -45,6 +45,15 @@ for case in json.loads((root/'corpus.json').read_text()):
             q=subprocess.run([out,*case['argv']],cwd=root,capture_output=True,timeout=90)
             row.update(exit_code=q.returncode,stdout=q.stdout.decode(errors='replace'),stderr=q.stderr.decode(errors='replace'))
             row['passed']=q.returncode==case['exit_code'] and (row['stdout']+row['stderr']).strip()==case['stdout']
+            if 'expected_lines' in case:
+                row['passed']=q.returncode==0 and row['stdout'].splitlines()==case['expected_lines']
+            if q.returncode == -11 and not any('lldb' in r for r in report['language_cases']):
+                try:
+                    debug=subprocess.run(['lldb','--batch','-o','settings set target.disable-aslr false','-o','run',
+                       '-o','register read','-o','bt','-o','disassemble --start-address $rip --count 12','--',out],
+                       cwd=root,capture_output=True,timeout=30)
+                    row['lldb']=(debug.stdout+debug.stderr).decode(errors='replace')[-24000:]
+                except (OSError,subprocess.TimeoutExpired) as error:row['lldb']=str(error)
         else:row['diagnostic']=(q.stdout+q.stderr).decode(errors='replace')[-3000:]
     except (OSError,subprocess.TimeoutExpired) as error:row['error']=str(error)
     report['language_cases'].append(row)
