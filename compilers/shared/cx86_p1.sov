@@ -1,68 +1,4 @@
 # unsafe-module
-scut s st en:
-    # strip(cut(s, st, en)) fused into one pass: _sov_substring's exact
-    # clamps, then _sov_trim's whitespace runs bounded to [st, en), one
-    # alloc, one copy. Result content == strip(cut(s, st, en)) in every
-    # case (both always return a fresh heap string).
-    if s < 4096
-        return blank
-    n: _sov_strlen(s)
-    if st < 0
-        st: 0
-    if en > n
-        en: n
-    if en < st
-        en: st
-    a: st
-    go: 1
-    as long as go is 1
-        if a >= en
-            go: 0
-        if not
-            ch: peek_byte(s, a)
-            if ch is 32
-                a: a + 1
-            if not
-                if ch is 9
-                    a: a + 1
-                if not
-                    if ch is 10
-                        a: a + 1
-                    if not
-                        if ch is 13
-                            a: a + 1
-                        if not
-                            go: 0
-    b: en
-    go: 1
-    as long as go is 1
-        if b <= a
-            go: 0
-        if not
-            ch: peek_byte(s, b - 1)
-            if ch is 32
-                b: b - 1
-            if not
-                if ch is 9
-                    b: b - 1
-                if not
-                    if ch is 10
-                        b: b - 1
-                    if not
-                        if ch is 13
-                            b: b - 1
-                        if not
-                            go: 0
-    L: b - a
-    r: _sov_heap_alloc(L + 1)
-    dummy: _sov_memcpy(r, s + a, L)
-    dummy: poke_byte(r, L, 0)
-    return r
-scutr s st:
-    # strip(cut(s, st, length(s))) fused: the length probe the sites used
-    # is absorbed into scut's own strlen.
-    return scut(s, st, length(s))
-
 intern_ht: 0
 kid_word_id: 0
 kid_intern_kid: 0
@@ -107,13 +43,7 @@ kid_pkr: 0
 kid_per: 0
 kid_spawn: 0
 kid_blank: 0
-kid_const: 0
 kid_addr_of: 0
-fsem_key: 0
-fsem_val: 0
-fsem_tgt: 0
-fsem_cah: 0
-fsem_cap: 0
 kid_wasm: 0
 kid_peek_i64: 0
 kid_poke_i64: 0
@@ -133,10 +63,6 @@ kid_ch: 0
 kid_nhash: 0
 kid_intern_fast: 0
 kid_look: 0
-kid_strip_span: 0
-kid_indent_of: 0
-kid_nl_count_lines: 0
-kid_rpx_nonspace: 0
 kid_length: 0
 kid_text: 0
 kid_ptr: 0
@@ -157,10 +83,8 @@ kid_find_sep_do: 0
 kid_join: 0
 kid_cut: 0
 kid_lsh_find: 0
-kid_lshf2: 0
-kid_lsha2: 0
-kid_reg_slot: 0
-kid_rax_imm: 0
+kid_lsh_find_s: 0
+kid_lsh_add: 0
 kid_lb_words: 0
 kid_set_h: 0
 kid_cx_info: 0
@@ -266,7 +190,6 @@ kid_f64_from_frac: 0
 kid_f64_to_i64: 0
 kid_pu_find_use: 0
 kid_sp_has_include: 0
-kid_sp_hinc_lim: 0
 kid_if: 0
 kid_except: 0
 kid_as: 0
@@ -310,7 +233,7 @@ accadd_rcx_h h:
     emit2(1, 12)
     emit(sibx(h))
 add_imm dest n:
-    asl: lshf2(dest)
+    asl: lsh_find_s(dest)
     if asl > 0 - 1
         if n >= 0 - 128
             if n < 128
@@ -356,16 +279,16 @@ add_imm dest n:
     add_rax_rcx()
     storev(dest)
 add_into dest src:
-    sd: regslot2(src)
+    sd: reg_slot(src)
     if sd > 0 - 1
-        dd: regslot2(dest)
+        dd: reg_slot(dest)
         if dd > 0 - 1
             cflush(dest)
             cflush(src)
             emit_addsub_slot(dd, sd, 0)
             return
     loadv(src)
-    sl: lshf2(dest)
+    sl: lsh_find_s(dest)
     if sl is 0
         emit3(72, 1, 195)
         return
@@ -919,11 +842,11 @@ bin_regop_k oid sl:
     cmp_rax_reg(sl)
     setcc_k(oid)
 bin_rslot name:
-    rs: regslot2(name)
+    rs: reg_slot(name)
     if rs > 0 - 1
         return rs
     if leaf8 is 1
-        bsl: lshf2(name)
+        bsl: lsh_find_s(name)
         if bsl > 4
             if bsl < 9
                 return bsl
@@ -936,7 +859,7 @@ bin_rslot name:
 bin_mem_ok_k oid name:
     if bin_rslot(name) > 0 - 1
         return 0
-    if lshf2(name) > 0 - 1
+    if lsh_find_s(name) > 0 - 1
         return bin_mem_opok_k(oid)
     if gn_lookup(name) > 0 - 1
         return bin_mem_opok_k(oid)
@@ -991,7 +914,7 @@ bin_mem_opc_k oid:
     return 59
 # caller has checked bin_mem_ok(op, name) is 1 and rax holds the other side.
 bin_memop_k oid name:
-    sl: lshf2(name)
+    sl: lsh_find_s(name)
     rex: 72
     absm: 0
     if sl < 0
@@ -1612,7 +1535,6 @@ emit_nt_strlen:
     emit3(72, 137, 248)
     emit3(72, 131, 224)
     emit(224)
-    prof_emit_n("prof_bytes_scanned", 32)
     emit(197)
     emit(253)
     emit(111)
@@ -1633,7 +1555,6 @@ emit_nt_strlen:
     sllp: here()
     emit3(72, 131, 192)
     emit(32)
-    prof_emit_n("prof_bytes_scanned", 32)
     emit(197)
     emit(253)
     emit(111)
@@ -1682,7 +1603,6 @@ emit_nt_strlen:
     emit3(72, 137, 248)
     emit3(72, 131, 224)
     emit(240)
-    prof_emit_n("prof_bytes_scanned", 16)
     emit(102)
     emit(15)
     emit(111)
@@ -1704,7 +1624,6 @@ emit_nt_strlen:
     sslp: here()
     emit3(72, 131, 192)
     emit(16)
-    prof_emit_n("prof_bytes_scanned", 16)
     emit(102)
     emit(15)
     emit(111)
@@ -1801,7 +1720,6 @@ emit_nt_starts:
     return 1
 
 emit_nt_memcpy:
-    prof_emit("prof_bytes_copied", 2)
     # bounded forward copy, exact-mirror of the runtime loop: small
     # sizes via overlapping 4/2/1 tail copies, 32B-unrolled 8B steps
     # with an overlapping final 8 (never reads/writes outside n), rep
@@ -2173,48 +2091,175 @@ emit_nt_f64to:
 emit_nt_pu_find:
     # native twin of pu_find_use (cx86_p6): rdi=text, rsi=st, rdx=lim ->
     # rax=index of next `use `/`use:` line's 'u' (after indent), or -1.
-    # SWAR 8-byte newline skip between line starts (the byte loop walked
-    # ~5 instr/byte); the `use `/`use:` check is one dword compare each.
-    # All loads stay inside [st,lim) so no NUL overread is possible.
-    # Volatile-only leaf; assembled+diff-verified in scripts/swar_twins.s
-    # (550k randomized differential cases vs the byte-loop reference).
-    emit:
-        73 184 10 10 10 10 10 10 10 10 73 185 1 1 1 1
-        1 1 1 1 73 186 128 128 128 128 128 128 128 128 76 141
-        28 23 72 141 52 55 76 57 222 15 131 131 0 0 0 15
-        182 6 60 32 116 10 60 9 116 6 60 13 116 2 235 5
-        72 255 198 235 225 72 141 70 4 76 57 216 119 26 139 6
-        61 117 115 101 32 116 9 61 117 115 101 58 116 2 235 8
-        72 137 240 72 41 248 235 81 72 141 70 8 76 57 216 119
-        45 72 139 6 76 49 192 72 137 193 76 41 201 72 247 208
-        72 33 193 76 33 209 116 16 72 15 188 201 72 193 233 3
-        72 1 206 72 255 198 235 142 72 131 198 8 235 202 76 57
-        222 115 15 15 182 6 72 255 198 60 10 117 241 233 116 255
-        255 255 72 199 192 255 255 255 255
+    emit3(72, 141, 52)
+    emit(55)
+    emit3(72, 141, 20)
+    emit(23)
+    puf_hd: here()
+    emit3(72, 57, 214)
+    puf_nf1: jae()
+    emit3(72, 137, 241)
+    puf_ws: here()
+    emit3(72, 57, 209)
+    puf_nf2: jae()
+    emit3(15, 182, 1)
+    emit2(60, 32)
+    puf_w1: jz()
+    emit2(60, 9)
+    puf_w2: jz()
+    emit2(60, 13)
+    puf_w3: jz()
+    puf_ck: jmp()
+    patch(puf_w1)
+    patch(puf_w2)
+    patch(puf_w3)
+    emit3(72, 255, 193)
+    emit(233)
+    puf_b1: here()
+    emit4(0)
+    put(puf_b1, puf_ws - (puf_b1 + 4))
+    patch(puf_ck)
+    emit3(72, 141, 65)
+    emit(3)
+    emit3(72, 57, 208)
+    puf_nf3: jae()
+    emit3(128, 57, 117)
+    puf_n1: jne()
+    emit(128)
+    emit(121)
+    emit(1)
+    emit(115)
+    puf_n2: jne()
+    emit(128)
+    emit(121)
+    emit(2)
+    emit(101)
+    puf_n3: jne()
+    emit3(15, 182, 65)
+    emit(3)
+    emit2(60, 32)
+    puf_f1: jz()
+    emit2(60, 58)
+    puf_f2: jz()
+    puf_n4: jmp()
+    patch(puf_f1)
+    patch(puf_f2)
+    emit3(72, 137, 200)
+    emit3(72, 41, 248)
+    puf_dn: jmp()
+    patch(puf_n1)
+    patch(puf_n2)
+    patch(puf_n3)
+    patch(puf_n4)
+    puf_nl: here()
+    emit3(72, 57, 214)
+    puf_nf4: jae()
+    emit3(15, 182, 6)
+    emit3(72, 255, 198)
+    emit2(60, 10)
+    emit2(15, 133)
+    puf_b2: here()
+    emit4(0)
+    put(puf_b2, puf_nl - (puf_b2 + 4))
+    emit(233)
+    puf_b3: here()
+    emit4(0)
+    put(puf_b3, puf_hd - (puf_b3 + 4))
+    patch(puf_nf1)
+    patch(puf_nf2)
+    patch(puf_nf3)
+    patch(puf_nf4)
+    emit3(72, 199, 192)
+    emit(255)
+    emit(255)
+    emit(255)
+    emit(255)
+    patch(puf_dn)
     leave()
     ret()
     return 1
 
 emit_nt_sp_inc:
-    # native twin of sp_hinc_lim (cx86_p7): rdi=text, rsi=lim (=
-    # length(text), so bytes [0,lim) are NUL-free and in-bounds) ->
-    # rax 1 iff some line starts (after indent 32/9/13) with `include `.
-    # SWAR 8-byte newline skip between line starts; the include test is
-    # one qword compare against "include ". All loads stay inside
-    # [0,lim). Volatile-only leaf; assembled+diff-verified in
-    # scripts/swar_twins.s (550k randomized differential cases).
-    emit:
-        72 186 10 10 10 10 10 10 10 10 73 184 1 1 1 1
-        1 1 1 1 73 185 128 128 128 128 128 128 128 128 76 141
-        20 55 73 137 251 77 57 211 115 122 65 15 182 3 60 32
-        116 10 60 9 116 6 60 13 116 2 235 5 73 255 195 235
-        228 73 141 67 8 76 57 208 119 18 73 139 3 72 185 105
-        110 99 108 117 100 101 32 72 57 200 116 76 73 141 67 8
-        76 57 208 119 45 73 139 3 72 49 208 72 137 193 76 41
-        193 72 247 208 72 33 193 76 33 201 116 16 72 15 188 201
-        72 193 233 3 73 1 203 73 255 195 235 153 73 131 195 8
-        235 202 77 57 211 115 13 65 15 182 3 73 255 195 60 10
-        117 240 235 129 49 192 235 5 184 1 0 0 0
+    # native twin of sp_has_include (cx86_p7): rdi=NUL-terminated text
+    # -> rax 1 iff some line starts (after indent) with `include `.
+    emit3(72, 137, 254)
+    spi_hd: here()
+    emit3(72, 137, 241)
+    spi_ws: here()
+    emit3(15, 182, 1)
+    emit2(60, 0)
+    spi_z1: jz()
+    emit2(60, 32)
+    spi_w1: jz()
+    emit2(60, 9)
+    spi_w2: jz()
+    emit2(60, 13)
+    spi_w3: jz()
+    spi_ck: jmp()
+    patch(spi_w1)
+    patch(spi_w2)
+    patch(spi_w3)
+    emit3(72, 255, 193)
+    emit(233)
+    spi_b1: here()
+    emit4(0)
+    put(spi_b1, spi_ws - (spi_b1 + 4))
+    patch(spi_ck)
+    emit3(128, 57, 105)
+    spi_c0: jne()
+    emit3(128, 121, 1)
+    emit(110)
+    spi_c1: jne()
+    emit3(128, 121, 2)
+    emit(99)
+    spi_c2: jne()
+    emit3(128, 121, 3)
+    emit(108)
+    spi_c3: jne()
+    emit3(128, 121, 4)
+    emit(117)
+    spi_c4: jne()
+    emit3(128, 121, 5)
+    emit(100)
+    spi_c5: jne()
+    emit3(128, 121, 6)
+    emit(101)
+    spi_c6: jne()
+    emit3(128, 121, 7)
+    emit(32)
+    spi_c7: jne()
+    emit(184)
+    emit(1)
+    emit(0)
+    emit(0)
+    emit(0)
+    spi_dn: jmp()
+    patch(spi_c0)
+    patch(spi_c1)
+    patch(spi_c2)
+    patch(spi_c3)
+    patch(spi_c4)
+    patch(spi_c5)
+    patch(spi_c6)
+    patch(spi_c7)
+    spi_nl: here()
+    emit3(15, 182, 6)
+    emit2(60, 0)
+    spi_z2: jz()
+    emit3(72, 255, 198)
+    emit2(60, 10)
+    emit2(15, 133)
+    spi_b2: here()
+    emit4(0)
+    put(spi_b2, spi_nl - (spi_b2 + 4))
+    emit(233)
+    spi_b3: here()
+    emit4(0)
+    put(spi_b3, spi_hd - (spi_b3 + 4))
+    patch(spi_z1)
+    patch(spi_z2)
+    emit2(49, 192)
+    patch(spi_dn)
     leave()
     ret()
     return 1
@@ -2396,7 +2441,6 @@ emit_nt_substr:
         235 244 77 133 219 121 3 77 49 219 73 57 201 118 3 73
         137 201 77 57 217 115 3 77 137 217 77 137 200 77 41 216
         73 141 120 1 80 65 80 65 82 65 83
-    prof_emit("prof_bytes_copied", 0)
     calln("_sov_heap_alloc")
     emit:
         65 91 65 90 65 88 89 73 137 193 75 141 52 26 76 137
@@ -2420,8 +2464,6 @@ emit_nt_strcat:
     emit:
         65 91 65 90 65 89 65 88 73 137 193 75 141 124 8 1 65
         80 65 81 65 82 65 83
-    prof_emit("prof_bytes_copied", 8)
-    prof_emit("prof_bytes_copied", 9)
     calln("_sov_heap_alloc")
     emit:
         65 91 65 90 65 89 65 88 72 137 194 77 133 192 116 11
@@ -2461,12 +2503,7 @@ intern_fast_do s:
     go: 1
     ue: 0
     as long as go is 1
-        # Unaligned qwords must not cross a page boundary: the source's
-        # NUL may be the final readable byte immediately before a guard.
-        # The existing byte tail handles the short boundary fragment.
-        q: 0
-        if band(s + k, 4095) < 4089
-            q: peek_i64(s, k)
+        q: peek_i64(s, k)
         z: band(band(q - 72340172838076673, bxor(q, 0 - 1)), -9187201950435737472)
         if z = 0
             c: band(q, 255)
@@ -2561,17 +2598,13 @@ intern_kid_h s h0 n0:
     # Tables start small (guest compiles) and grow to fit (self-compile);
     # pool growth copies at identical offsets so stored pointers stay valid.
     if kid_ht is 0
-        # pre-sized: a guest compile interns ~1.4k strings of compiler
-        # keyword constants before the first user line is parsed, which
-        # used to walk the 256->...->4096 rehash chain every run; 8192
-        # slots (64KiB, one fresh mmap - the old 2KiB bzero stays dead)
-        # covers 2730 strings at the 1/3 load trigger with zero rehash.
-        kid_ht: _sov_heap_alloc(65536)
-        kid_slots: 8192
-        kid_pool: _sov_heap_alloc(65536)
-        kid_poolcap: 65528
+        kid_ht: _sov_heap_alloc(2048)
+        dummy: _sov_bzero(kid_ht, 2048)
+        kid_slots: 256
+        kid_pool: _sov_heap_alloc(4096)
+        kid_poolcap: 4088
         dummy: poke_i64(kid_pool, 0, 0)
-    if kcnt * 3 > kid_slots -> dgy: kgrow_ht(kg_tbl_g())
+    if kcnt * 3 > kid_slots -> dgy: kgrow_ht()
     h: h0
     n: n0
     slot: band(h, kid_slots - 1)
@@ -2632,10 +2665,11 @@ ik_cached nm:
 # non-hit path (init, insert, growth, probe exhaustion) here.
 intern_kid_full s:
     if kid_ht is 0
-        kid_ht: _sov_heap_alloc(65536)
-        kid_slots: 8192
-        kid_pool: _sov_heap_alloc(65536)
-        kid_poolcap: 65528
+        kid_ht: _sov_heap_alloc(2048)
+        dummy: _sov_bzero(kid_ht, 2048)
+        kid_slots: 256
+        kid_pool: _sov_heap_alloc(4096)
+        kid_poolcap: 4088
         dummy: poke_i64(kid_pool, 0, 0)
     h: 5381
     k: 0
@@ -2645,12 +2679,7 @@ intern_kid_full s:
         # h = h*33 + b is applied in the same order, so the hash and the
         # length are unchanged.  64-bit wrap-around is the same arithmetic
         # the byte loop already relied on.
-        # Unaligned qwords must not cross a page boundary: the source's
-        # NUL may be the final readable byte immediately before a guard.
-        # The existing byte tail handles the short boundary fragment.
-        q: 0
-        if band(s + k, 4095) < 4089
-            q: peek_i64(s, k)
+        q: peek_i64(s, k)
         z: band(band(q - 72340172838076673, bxor(q, 0 - 1)), -9187201950435737472)
         if z = 0
             h: h * 33 + band(q, 255)
@@ -2671,7 +2700,7 @@ intern_kid_full s:
                     h: h * 33 + b
                     k: k + 1
     n: k
-    if kcnt * 3 > kid_slots -> dgy: kgrow_ht(kg_tbl_g())
+    if kcnt * 3 > kid_slots -> dgy: kgrow_ht()
     slot: band(h, kid_slots - 1)
     guard: 0
     as long as guard < kid_slots
@@ -2703,10 +2732,11 @@ intern_kid_full s:
 
 intern_kid s:
     if kid_ht is 0
-        kid_ht: _sov_heap_alloc(65536)
-        kid_slots: 8192
-        kid_pool: _sov_heap_alloc(65536)
-        kid_poolcap: 65528
+        kid_ht: _sov_heap_alloc(2048)
+        dummy: _sov_bzero(kid_ht, 2048)
+        kid_slots: 256
+        kid_pool: _sov_heap_alloc(4096)
+        kid_poolcap: 4088
         dummy: poke_i64(kid_pool, 0, 0)
     h: 5381
     k: 0
@@ -2716,12 +2746,7 @@ intern_kid s:
         # h = h*33 + b is applied in the same order, so the hash and the
         # length are unchanged.  64-bit wrap-around is the same arithmetic
         # the byte loop already relied on.
-        # Unaligned qwords must not cross a page boundary: the source's
-        # NUL may be the final readable byte immediately before a guard.
-        # The existing byte tail handles the short boundary fragment.
-        q: 0
-        if band(s + k, 4095) < 4089
-            q: peek_i64(s, k)
+        q: peek_i64(s, k)
         z: band(band(q - 72340172838076673, bxor(q, 0 - 1)), -9187201950435737472)
         if z = 0
             h: h * 33 + band(q, 255)
@@ -2742,7 +2767,7 @@ intern_kid s:
                     h: h * 33 + b
                     k: k + 1
     n: k
-    if kcnt * 3 > kid_slots -> dgy: kgrow_ht(kg_tbl_g())
+    if kcnt * 3 > kid_slots -> dgy: kgrow_ht()
     slot: band(h, kid_slots - 1)
     guard: 0
     as long as guard < kid_slots
@@ -2771,94 +2796,6 @@ intern_kid s:
         guard: guard + 1
     return 0
 
-intern_kid_n_full s n:
-    if kid_ht is 0
-        kid_ht: _sov_heap_alloc(65536)
-        kid_slots: 8192
-        kid_pool: _sov_heap_alloc(65536)
-        kid_poolcap: 65528
-        dummy: poke_i64(kid_pool, 0, 0)
-    h: 5381
-    k: 0
-    as long as k < n
-        h: h * 33 + peek_byte(s, k)
-        k: k + 1
-    if kcnt * 3 > kid_slots -> dgy: kgrow_ht(kg_tbl_g())
-    slot: band(h, kid_slots - 1)
-    guard: 0
-    as long as guard < kid_slots
-        idx: peek_i64(kid_ht, slot * 8)
-        if idx is 0
-            off: peek_i64(kid_pool, 0)
-            if off + n + 2 > kid_poolcap -> dgp: kgrow_pool()
-            off: peek_i64(kid_pool, 0)
-            dst: kid_pool + 8 + off
-            i: 0
-            as long as i < n
-                dummy: poke_byte(dst, i, peek_byte(s, i))
-                i: i + 1
-            dummy: poke_byte(dst, n, 0)
-            dummy: poke_i64(kid_pool, 0, off + n + 1)
-            dummy: poke_i64(kid_ht, slot * 8, dst)
-            kcnt: kcnt + 1
-            return dst
-        if peek_byte(idx, n) is 0
-            eq: 1
-            i: 0
-            as long as i < n
-                if peek_byte(idx, i) is not peek_byte(s, i)
-                    eq: 0
-                    leave
-                i: i + 1
-            if eq is 1
-                return idx
-        slot: slot + 1
-        if slot is kid_slots
-            slot: 0
-        guard: guard + 1
-    return 0
-
-intern_kid_n s n:
-    if s is 0 -> return 0
-    return intern_kid_n_full(s, n)
-
-fsem_slot nid:
-    if fsem_key is 0 -> return 0 - 1
-    fsl: band(wrap_mul(bshr(nid, 3), 2654435761), fsem_cap - 1)
-    as long as 1 is 1
-        fk: peek_i64(fsem_key, fsl * 8)
-        if fk is 0 -> return 0 - 1
-        if fk is nid -> return fsl
-        fsl: fsl + 1
-        if fsl is fsem_cap -> fsl: 0
-
-fsem_put nid val tgt cah:
-    fsl: band(wrap_mul(bshr(nid, 3), 2654435761), fsem_cap - 1)
-    as long as 1 is 1
-        fk: peek_i64(fsem_key, fsl * 8)
-        if fk is 0
-            poke_i64(fsem_key, fsl * 8, nid)
-            poke_i64(fsem_val, fsl * 8, val)
-            poke_i64(fsem_tgt, fsl * 8, tgt)
-            poke_i64(fsem_cah, fsl * 8, cah)
-            return fsl
-        if fk is nid
-            poke_i64(fsem_val, fsl * 8, bor(peek_i64(fsem_val, fsl * 8), val))
-            if tgt is not 0 -> poke_i64(fsem_tgt, fsl * 8, tgt)
-            if cah is not 0 -> poke_i64(fsem_cah, fsl * 8, cah)
-            return fsl
-        fsl: fsl + 1
-        if fsl is fsem_cap -> fsl: 0
-
-fsem_mark_str nid:
-    if fsem_key is 0 -> return 0
-    fsl: fsem_slot(nid)
-    if fsl >= 0
-        poke_i64(fsem_val, fsl * 8, bor(peek_i64(fsem_val, fsl * 8), 1))
-    if not
-        fsem_put(nid, 1, nid, 0)
-    return 0
-
 kgrow_pool:
     # double the string pool; the copy keeps every offset, so pointers
     # already stored in kid_ht stay valid without a rehash
@@ -2872,35 +2809,7 @@ kgrow_pool:
     kid_poolcap: kid_poolcap + kid_poolcap
     return 1
 
-# --- kgrow_ht twin: the C port is planted from compilers/linux/
-# kgrow_native.sov (generated from tools/native_kgrow.c) for the
-# self-hosted build; the Sovren body below stays the portable fallback.
-# One publish per growth (kg_pub sets kid_ht+kid_slots together, the
-# same two globals the interpreted tail assigns); the rehash walk, the
-# djb2 hash and the linear probe are 1:1, so the grown table layout is
-# identical.
-kg_tbl: 0
-kg_tbl_init:
-    kg_tbl: _sov_heap_alloc(40)
-    poke_i64(kg_tbl, 0, 4)
-    poke_i64(kg_tbl, 8, addr_of kg_g_ht)
-    poke_i64(kg_tbl, 16, addr_of kg_g_slots)
-    poke_i64(kg_tbl, 24, addr_of _sov_heap_alloc)
-    poke_i64(kg_tbl, 32, addr_of kg_pub)
-    return 0
-kg_tbl_g:
-    if kg_tbl is 0
-        kg_tbl_init()
-    return kg_tbl
-kg_g_ht:
-    return kid_ht
-kg_g_slots:
-    return kid_slots
-kg_pub ht slots:
-    kid_ht: ht
-    kid_slots: slots
-    return 0
-kgrow_ht tbl:
+kgrow_ht:
     # double the slot array and re-insert every tabled string by hash.
     # Walk the OLD TABLE (not the pool): the pointers already handed out
     # stay the canonical ones, so pointer-identity comparisons
@@ -2908,10 +2817,7 @@ kgrow_ht tbl:
     # freed, so those pointers stay valid for the life of the process.
     kh_ns: kid_slots + kid_slots
     kh_nht: _sov_heap_alloc(kid_slots * 16)
-    # >64KiB allocations are fresh mmaps (kernel-zeroed; large blocks are
-    # munmapped on free, never recycled) - the bzero was dead work.
-    if kid_slots * 16 <= 65536
-        dummy: _sov_bzero(kh_nht, kid_slots * 16)
+    dummy: _sov_bzero(kh_nht, kid_slots * 16)
     kh_oi: 0
     as long as kh_oi < kid_slots
         kh_sp: peek_i64(kid_ht, kh_oi * 8)
@@ -2946,10 +2852,6 @@ kid_init:
     kid_nhash: intern_kid("nhash")
     kid_intern_fast: intern_kid("intern_fast")
     kid_look: intern_kid("look")
-    kid_strip_span: intern_kid("strip_span")
-    kid_indent_of: intern_kid("indent_of")
-    kid_nl_count_lines: intern_kid("nl_count_lines")
-    kid_rpx_nonspace: intern_kid("rpx_nonspace")
     kid_length: intern_kid("length")
     kid_text: intern_kid("text")
     kid_ptr: intern_kid("ptr")
@@ -2970,10 +2872,8 @@ kid_init:
     kid_join: intern_kid("join")
     kid_cut: intern_kid("cut")
     kid_lsh_find: intern_kid("lsh_find")
-    kid_lshf2: intern_kid("lshf2")
-    kid_lsha2: intern_kid("lsha2")
-    kid_reg_slot: intern_kid("regslot2")
-    kid_rax_imm: intern_kid("rax_imm")
+    kid_lsh_find_s: intern_kid("lsh_find_s")
+    kid_lsh_add: intern_kid("lsh_add")
     kid_lb_words: intern_kid("lb_words")
     kid_set_h: intern_kid("set_h")
     kid_cx_info: intern_kid("cx_info")
@@ -3078,7 +2978,6 @@ kid_init:
     kid_f64_to_i64: intern_kid("f64_to_i64")
     kid_pu_find_use: intern_kid("pu_find_use")
     kid_sp_has_include: intern_kid("sp_has_include")
-    kid_sp_hinc_lim: intern_kid("sp_hinc_lim")
     kid_if: intern_kid("if")
     kid_except: intern_kid("except")
     kid_as: intern_kid("as")
@@ -3138,7 +3037,6 @@ kid_init:
     kid_per: intern_kid(join("peek", "_raw64"))
     kid_spawn: intern_kid("spawn")
     kid_blank: intern_kid("blank")
-    kid_const: intern_kid("const")
     kid_addr_of: intern_kid("addr_of")
     kid_wasm: intern_kid("wasm")
     kid_peek_i64: intern_kid("peek_i64")
@@ -3206,7 +3104,6 @@ emit_nt_intern_fast:
     emit:
         72 139 60 36 184 5 21 0 0 69 49 192
     ihh: here()
-    prof_emit_n("prof_bytes_scanned", 1)
     emit:
         15 182 23 132 210
     ihz: jz()
@@ -3231,7 +3128,6 @@ emit_nt_intern_fast:
     emit:
         72 137 4 36 72 137 199 184 5 21 0 0
     ihu: here()
-    prof_emit_n("prof_bytes_scanned", 1)
     emit:
         15 182 23 132 210
     iuz: jz()
@@ -3251,7 +3147,6 @@ emit_nt_intern_fast:
     emit:
         73 137 195
     ipr: here()
-    prof_emit_n("prof_hash_probes", 1)
     emit:
         75 139 20 194 72 133 210
     iemp: jnz()
@@ -3264,7 +3159,6 @@ emit_nt_intern_fast:
     emit:
         72 255 202 77 141 76 19 16 82 76 137 207 72 139 116 36 8
     iclp: here()
-    prof_emit_n("prof_bytes_scanned", 2)
     emit:
         15 182 15 15 182 22 57 209
     idlt: jne()
@@ -3344,7 +3238,6 @@ emit_nt_length:
     emit3(72, 137, 249)
     emit3(72, 131, 225)
     emit(248)
-    prof_emit_n("prof_bytes_scanned", 8)
     emit3(72, 139, 1)
     emit2(137, 249)
     emit3(131, 225, 7)
@@ -3463,7 +3356,6 @@ tk_grow:
         nc: tk_cap * 2
         nb: _sov_heap_alloc(nc * 16)
         ddd: _sov_mem_copy(nb, tk_buf, tk_n * 16)
-        ddd: _sov_free(tk_buf)
         tk_buf: nb
         tk_cap: nc
     return 0

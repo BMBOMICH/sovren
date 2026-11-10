@@ -1439,9 +1439,7 @@ nhash s:
         # (h*33 xor b, truncated to 56 bits) is applied in exactly the same
         # order, so the hash value is unchanged; the reads stay 8-aligned
         # because i only advances by 8 on this path.
-        q: 0
-        if band(s + i, 4095) < 4089
-            q: peek_i64(s, i)
+        q: peek_i64(s, i)
         z: band(band(q - 72340172838076673, bxor(q, 0 - 1)), -9187201950435737472)
         if z = 0
             h: band(bxor(h * 33, band(q, 255)), 72057594037927935)

@@ -1465,20 +1465,6 @@ x_step_0f m p rex sz:
     b2: x_r8(m, p)
     p: p + 1
     if b2 is 5 -> return x_syscall(m, p)
-    if b2 is 188
-        q: x_modrm(m, p, rex, 0)
-        v: x_rm_get(m, sz)
-        if v is 0
-            poke_i64(m, 136, 1)
-        if not
-            poke_i64(m, 136, 0)
-            bitn: 0
-            as long as band(v, 1) is 0
-                v: bshr(v, 1)
-                bitn: bitn + 1
-            x_rset(m, x_md_reg(m), sz, bitn)
-        x_set_rip(m, q)
-        return 1
     if b2 >= 128
         if b2 <= 143
             d: x_s32(m, p)

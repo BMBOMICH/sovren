@@ -27,8 +27,7 @@ def run(exe, args, out, t=300):
         for suf in ('.plk', '.state', '.ac', '.ac.bin', '.deep', '.deepoc', '.lsug'):
             try: os.unlink(src + suf)
             except FileNotFoundError: pass
-    # C.36: --no-ac/--no-learn are retired and now rejected; never pass them.
-    r = subprocess.run([exe] + args + ['-o', out], capture_output=True, timeout=t, cwd=R)
+    r = subprocess.run([exe] + args + ['-o', out, '--no-ac', '--no-learn'], capture_output=True, timeout=t, cwd=R)
     if r.returncode != 0:
         print('RC', r.returncode, exe.split('/')[-1], args[-1] if args else '', r.stderr.decode()[:80], r.stdout.decode()[-80:])
     if r.returncode == 0 and (not os.path.isfile(out) or os.path.getsize(out) == 0):

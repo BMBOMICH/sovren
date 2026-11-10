@@ -1,19 +1,28 @@
 #!/usr/bin/env python3
-"""Validate retained source layout and recorded file identities without launching binaries."""
-import argparse,json,sys
+"""Real-file persistence and identity checks. A directory link cannot pass."""
+import argparse,hashlib,json,os,subprocess,sys,tempfile
 from pathlib import Path
 R=Path(__file__).resolve().parents[2];sys.path.insert(0,str(R/'tools'))
 from backend_support import load,integrity
-p=argparse.ArgumentParser();p.add_argument('--output',type=Path,default=Path('/tmp/physical-layout.json'));a=p.parse_args();rows=[]
+p=argparse.ArgumentParser();p.add_argument('--output',type=Path,default='/tmp/physical-layout.json');a=p.parse_args();rows=[]
 for e in load():
-    errors=integrity(e,views=True)
-    for key in ['source','compatibility_source']:
-        path=R/e[key]
-        if not path.is_file() or path.is_symlink():errors.append('invalid regular source: '+e[key])
-    rows.append(dict(target=e['id'],errors=errors,pass_test=not errors))
-actual={p.relative_to(R).as_posix() for p in (R/'compilers').rglob('compiler.sov')}
-declared={e['source'] for e in load()}
-rows.append(dict(case='source-discovery',unregistered=sorted(actual-declared),missing=sorted(declared-actual),pass_test=actual==declared))
-report=dict(pass_all=all(x['pass_test'] for x in rows),results=rows,note='The 29 pre-existing missing native binaries fail this gate. This is static identity checking, not execution validation.')
-a.output.parent.mkdir(parents=True,exist_ok=True);a.output.write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
-print('Physical layout',sum(x['pass_test'] for x in rows),'/',len(rows));raise SystemExit(0 if report['pass_all'] else 1)
+ source=R/e['source'];legacy=R/e['compatibility_source'];folders=[R/e['canonical_directory'],*(R/v for v in e.get('views',[]))]
+ assert source.is_file() and not source.is_symlink() and source.stat().st_size>100,e['id']
+ assert legacy.is_file() and not legacy.is_symlink() and 'include ' in legacy.read_text()
+ for folder in folders:
+  assert folder.is_dir() and not folder.is_symlink(),folder
+  for name in ['compiler.sov','compiler']:assert (folder/name).is_file() and not (folder/name).is_symlink(),folder
+ assert not integrity(e,views=True),(e['id'],integrity(e,views=True))
+ rows.append(dict(target=e['id'],implementation=e['source'],regular_files=True,pass_test=True))
+# Direct real-file launchers must work, not merely point at metadata.
+with tempfile.TemporaryDirectory(prefix='sovren-layout-') as td:
+ w=Path(td);src=w/'input.sov';src.write_text('main:\n    print 42\n')
+ for name in ['c-language','javascript','typescript','linux']:
+  e=next(e for e in load() if e['id']==name);hashes=[]
+  for folder in [R/e['canonical_directory'],*(R/v for v in e.get('views',[])),(R/e['executable']).parent]:
+   exe=folder/'compiler';exe.chmod(exe.stat().st_mode|0o111);out=w/'output';out.unlink(missing_ok=True)
+   q=subprocess.run([str(exe),str(src),'--uncached','-o',str(out)],cwd=R,capture_output=True,timeout=30);assert q.returncode==0,(exe,q.stdout,q.stderr)
+   hashes.append(hashlib.sha256(out.read_bytes()).hexdigest())
+  assert len(set(hashes))==1,name
+  rows.append(dict(target=name,case='physical-entrypoints-byte-identical',pass_test=True))
+a.output.parent.mkdir(parents=True,exist_ok=True);a.output.write_text(json.dumps(dict(pass_all=True,results=rows),indent=2)+'\n');print('Physical layout:',len(rows),'checks PASS')

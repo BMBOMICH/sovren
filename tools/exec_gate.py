@@ -31,10 +31,8 @@ import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INSTALLED = os.path.join(ROOT, "compilers", "linux", "compiler")
-DRIVER = os.path.join(ROOT, "compilers", "linux", "compiler.sov")
-EXEC_DIR = os.environ.get("EXEC_CORPUS", os.path.join(ROOT, "tests", "performance"))
-# The original external corpus (/home/user/speedwork/exec) is not part of the
-# project upload; fall back to the in-tree executed-semantics corpus.
+DRIVER = os.path.join(ROOT, "backends", "native", "linux", "compiler.sov")
+EXEC_DIR = os.environ.get("EXEC_CORPUS", "/home/user/speedwork/exec")
 PROBES = [p for p in ("/tmp/torture.sov", "/tmp/cp_adv.sov", "/tmp/cp_chain.sov",
                       "/tmp/inl_adv.sov", "/tmp/inl2.sov", "/tmp/inl3.sov",
                       "/tmp/nest.sov", "/tmp/helper2.sov",

@@ -1,0 +1,711 @@
+# Expanded compact source to match current shared front end.
+# Sovren -> WebAssembly text (.wat) emitter.
+# Emits a readable module for command-style integer functions: params, calls,
+# arithmetic expressions, local variables/reassignment, equality/comparison
+# conditionals, while loops, and exported main.
+
+use arg
+use file
+use string
+use sys
+
+src: 0
+out: ""
+fn_names: 0
+fn_params: 0
+fn_bodies: 0
+cur_params: ""
+locals: 0
+block_inds: 0
+block_kinds: 0
+block_n: 0
+last_block_kind: ""
+fn_return_seen: 0
+ep: 0
+eb: 0
+es: ""
+
+emit s:
+    out: str_cat(out, s)
+    return 0
+
+emitln s:
+    out: str_cat(out, s)
+    out: str_cat(out, "\n")
+    return 0
+
+is_sp c:
+    if c is 32
+        return 1
+    if c is 9
+        return 1
+    if c is 13
+        return 1
+    return 0
+
+is_dig c:
+    if c >= 48
+        if c <= 57
+            return 1
+    return 0
+
+is_alfa c:
+    if c >= 97
+        if c <= 122
+            return 1
+    if c >= 65
+        if c <= 90
+            return 1
+    if c is 95
+        return 1
+    return 0
+
+is_aln c:
+    if is_alfa(c) is 1
+        return 1
+    if is_dig(c) is 1
+        return 1
+    return 0
+
+ltrim s:
+    n: str_len(s)
+    i: 0
+    as long as i < n
+        if is_sp(peek_byte(s, i)) is 1
+            i: i + 1
+        if not
+            leave
+    return str_cut(s, i, n)
+
+rtrim s:
+    n: str_len(s)
+    as long as n > 0
+        if is_sp(peek_byte(s, n - 1)) is 1
+            n: n - 1
+        if not
+            leave
+    return str_cut(s, 0, n)
+
+trim s:
+    return rtrim(ltrim(s))
+
+starts s p:
+    pn: str_len(p)
+    if str_len(s) < pn
+        return 0
+    if str_eq(str_cut(s, 0, pn), p) is 1
+        return 1
+    return 0
+
+word_end s a:
+    n: str_len(s)
+    i: a
+    as long as i < n
+        if is_aln(peek_byte(s, i)) is 1
+            i: i + 1
+        if not
+            leave
+    return i
+
+find_ch s c:
+    n: str_len(s)
+    i: 0
+    as long as i < n
+        if peek_byte(s, i) is c
+            return i
+        i: i + 1
+    return 0 - 1
+
+find_arrow s:
+    n: str_len(s)
+    i: 0
+    as long as i + 1 < n
+        if peek_byte(s, i) is 45
+            if peek_byte(s, i + 1) is 62
+                return i
+        i: i + 1
+    return 0 - 1
+
+indent_of s:
+    n: str_len(s)
+    i: 0
+    w: 0
+    as long as i < n
+        c: peek_byte(s, i)
+        if c is 32
+            w: w + 1
+        if not
+            if c is 9
+                w: w + 4
+            if not
+                return w
+        i: i + 1
+    return w
+
+param_index nm:
+    ps: trim(cur_params)
+    k: 0
+    as long as str_len(ps) > 0
+        ps: ltrim(ps)
+        e: word_end(ps, 0)
+        if e <= 0
+            leave
+        if str_eq(str_cut(ps, 0, e), nm) is 1
+            return k
+        k: k + 1
+        ps: trim(str_cut(ps, e, str_len(ps)))
+    return 0 - 1
+
+local_seen nm:
+    i: 0
+    as long as i < _sov_list_len(locals)
+        if str_eq(as text _sov_list_get(locals, i), nm) is 1
+            return 1
+        i: i + 1
+    return 0
+
+local_add nm:
+    if param_index(nm) >= 0
+        return 0
+    if local_seen(nm) is 0
+        locals: _sov_list_add(locals, nm)
+    return 0
+
+esk:
+    as long as ep < eb
+        if is_sp(peek_byte(es, ep)) is 1
+            ep: ep + 1
+        if not
+            leave
+    return 0
+
+fac:
+    esk()
+    if ep >= eb
+        emitln("    i32.const 0")
+        return 0
+    c: peek_byte(es, ep)
+    if c is 40
+        ep: ep + 1
+        expr()
+        esk()
+        if ep < eb
+            if peek_byte(es, ep) is 41
+                ep: ep + 1
+        return 0
+    if c is 45
+        ep: ep + 1
+        emitln("    i32.const 0")
+        fac()
+        emitln("    i32.sub")
+        return 0
+    if is_dig(c) is 1
+        st: ep
+        as long as ep < eb
+            if is_dig(peek_byte(es, ep)) is 1
+                ep: ep + 1
+            if not
+                leave
+        emit("    i32.const ")
+        emitln(str_cut(es, st, ep))
+        return 0
+    if is_alfa(c) is 1
+        st2: ep
+        as long as ep < eb
+            if is_aln(peek_byte(es, ep)) is 1
+                ep: ep + 1
+            if not
+                leave
+        nm: str_cut(es, st2, ep)
+        esk()
+        if ep < eb
+            if peek_byte(es, ep) is 40
+                ep: ep + 1
+                as long as ep < eb
+                    esk()
+                    if ep < eb
+                        if peek_byte(es, ep) is 41
+                            ep: ep + 1
+                            leave
+                    expr()
+                    esk()
+                    if ep < eb
+                        if peek_byte(es, ep) is 44
+                            ep: ep + 1
+                emit("    call $")
+                emitln(nm)
+                return 0
+        emit("    local.get $")
+        emitln(nm)
+        return 0
+    emitln("    i32.const 0")
+    return 0
+
+term:
+    fac()
+    as long as 1 is 1
+        esk()
+        if ep >= eb
+            return 0
+        c: peek_byte(es, ep)
+        if c is not 42
+            if c is not 47
+                return 0
+        ep: ep + 1
+        fac()
+        if c is 42
+            emitln("    i32.mul")
+        if c is 47
+            emitln("    i32.div_s")
+    return 0
+
+expr:
+    term()
+    as long as 1 is 1
+        esk()
+        if ep >= eb
+            return 0
+        c: peek_byte(es, ep)
+        if c is not 43
+            if c is not 45
+                return 0
+        ep: ep + 1
+        term()
+        if c is 43
+            emitln("    i32.add")
+        if c is 45
+            emitln("    i32.sub")
+    return 0
+
+emit_expr s:
+    es: trim(s)
+    ep: 0
+    eb: str_len(es)
+    expr()
+    return 0
+
+emit_cmp op:
+    if str_eq(op, "eq") is 1
+        emitln("    i32.eq")
+    if str_eq(op, "ne") is 1
+        emitln("    i32.ne")
+    if str_eq(op, "lt") is 1
+        emitln("    i32.lt_s")
+    if str_eq(op, "gt") is 1
+        emitln("    i32.gt_s")
+    if str_eq(op, "le") is 1
+        emitln("    i32.le_s")
+    if str_eq(op, "ge") is 1
+        emitln("    i32.ge_s")
+    return 0
+
+emit_cond cond:
+    s: trim(cond)
+    oi: 0 - 1
+    op: ""
+    step: 1
+    i: 0
+    as long as i < str_len(s)
+        c: peek_byte(s, i)
+        n: 0
+        if i + 1 < str_len(s)
+            n: peek_byte(s, i + 1)
+        if c is 33
+            if n is 61
+                op: "ne"
+            oi: i
+            step: 2
+            leave
+        if c is 60
+            op: "lt"
+            oi: i
+            step: 1
+            if n is 61
+                op: "le"
+                step: 2
+            leave
+        if c is 62
+            op: "gt"
+            oi: i
+            step: 1
+            if n is 61
+                op: "ge"
+                step: 2
+            leave
+        if c is 61
+            op: "eq"
+            oi: i
+            step: 1
+            leave
+        i: i + 1
+    if oi >= 0
+        emit_expr(str_cut(s, 0, oi))
+        emit_expr(str_cut(s, oi + step, str_len(s)))
+        emit_cmp(op)
+        return 0
+    emit_expr(s)
+    return 0
+
+push_block kind ind:
+    if block_n < _sov_list_len(block_inds)
+        block_inds: _sov_list_set(block_inds, block_n, ind)
+        block_kinds: _sov_list_set(block_kinds, block_n, kind)
+    if not
+        block_inds: _sov_list_add(block_inds, ind)
+        block_kinds: _sov_list_add(block_kinds, kind)
+    block_n: block_n + 1
+    return 0
+
+close_one:
+    if block_n > 0
+        kind: as text _sov_list_get(block_kinds, block_n - 1)
+        if str_eq(kind, "while") is 1
+            emitln("    br 0")
+            emitln("    end")
+            emitln("    end")
+            block_n: block_n - 1
+            return 0
+        emitln("    end")
+        block_n: block_n - 1
+    return 0
+
+close_blocks ind:
+    as long as block_n > 0
+        top: _sov_list_get(block_inds, block_n - 1)
+        if ind <= top
+            close_one()
+        if not
+            leave
+    return 0
+
+close_all:
+    as long as block_n > 0
+        close_one()
+    return 0
+
+emit_else_line s ind:
+    if block_n > 0
+        top: _sov_list_get(block_inds, block_n - 1)
+        kind: as text _sov_list_get(block_kinds, block_n - 1)
+        if ind <= top
+            if str_eq(kind, "if") is 1
+                emitln("    else")
+                block_n: block_n - 1
+                ar: find_arrow(s)
+                if ar >= 0
+                    body: trim(str_cut(s, ar + 2, str_len(s)))
+                    if str_len(body) > 0
+                        emit_stmt_parts(body)
+                push_block("else", ind)
+                return 1
+    close_blocks(ind)
+    return 0
+
+emit_stmt st:
+    s: trim(st)
+    if str_len(s) is 0
+        return 0
+    w: word_end(s, 0)
+    kw: str_cut(s, 0, w)
+    if starts(s, "as long as ") is 1
+        arw: find_arrow(s)
+        condw: ""
+        bodyw: ""
+        if arw < 0
+            condw: trim(str_cut(s, 11, str_len(s)))
+        if not
+            condw: trim(str_cut(s, 11, arw))
+            bodyw: trim(str_cut(s, arw + 2, str_len(s)))
+        emitln("    block")
+        emitln("    loop")
+        emit_cond(condw)
+        emitln("    i32.eqz")
+        emitln("    br_if 1")
+        if str_len(bodyw) > 0
+            emit_stmt_parts(bodyw)
+        last_block_kind: "while"
+        return 1
+    if str_eq(kw, "print") is 1
+        emit_expr(str_cut(s, w, str_len(s)))
+        emitln("    call $sovren_print")
+        return 0
+    if str_eq(kw, "return") is 1
+        emit_expr(str_cut(s, w, str_len(s)))
+        emitln("    return")
+        fn_return_seen: 1
+        return 0
+    if str_eq(kw, "if") is 1
+        ar: find_arrow(s)
+        cond: ""
+        body: ""
+        if ar < 0
+            cond: trim(str_cut(s, w, str_len(s)))
+        if not
+            cond: trim(str_cut(s, w, ar))
+            body: trim(str_cut(s, ar + 2, str_len(s)))
+        if str_eq(cond, "not") is 1
+            return 0
+        emit_cond(cond)
+        emitln("    if")
+        if str_len(body) > 0
+            emit_stmt_parts(body)
+        last_block_kind: "if"
+        return 1
+    col: find_ch(s, 58)
+    if col > 0
+        nm: trim(str_cut(s, 0, col))
+        local_add(nm)
+        emit_expr(str_cut(s, col + 1, str_len(s)))
+        emit("    local.set $")
+        emitln(nm)
+        return 0
+    return 0
+
+emit_stmt_parts s:
+    t0: trim(s)
+    if starts(t0, "as long as ") is 1
+        return emit_stmt(t0)
+    if starts(t0, "if ") is 1
+        return emit_stmt(t0)
+    start: 0
+    n: str_len(s)
+    opened: 0
+    as long as start < n
+        i: start
+        found: 0
+        as long as i + 1 < n
+            if peek_byte(s, i) is 59
+                if peek_byte(s, i + 1) is 59
+                    found: 1
+                    leave
+            i: i + 1
+        if found is 0
+            i: n
+        one: emit_stmt(str_cut(s, start, i))
+        if one is 1
+            opened: 1
+        if found is 1
+            start: i + 2
+        if not
+            start: n
+    return opened
+
+collect_stmt st:
+    s: trim(st)
+    if str_len(s) is 0
+        return 0
+    if starts(s, "as long as ") is 1
+        arw: find_arrow(s)
+        if arw >= 0
+            bodyw: trim(str_cut(s, arw + 2, str_len(s)))
+            if str_len(bodyw) > 0
+                collect_parts(bodyw)
+        return 0
+    w: word_end(s, 0)
+    kw: str_cut(s, 0, w)
+    if str_eq(kw, "if") is 1
+        ar: find_arrow(s)
+        if ar >= 0
+            body: trim(str_cut(s, ar + 2, str_len(s)))
+            if str_len(body) > 0
+                collect_parts(body)
+        return 0
+    col: find_ch(s, 58)
+    if col > 0
+        nm: trim(str_cut(s, 0, col))
+        local_add(nm)
+    return 0
+
+collect_parts s:
+    t0: trim(s)
+    if starts(t0, "as long as ") is 1
+        collect_stmt(t0)
+        return 0
+    if starts(t0, "if ") is 1
+        collect_stmt(t0)
+        return 0
+    start: 0
+    n: str_len(s)
+    as long as start < n
+        i: start
+        found: 0
+        as long as i + 1 < n
+            if peek_byte(s, i) is 59
+                if peek_byte(s, i + 1) is 59
+                    found: 1
+                    leave
+            i: i + 1
+        if found is 0
+            i: n
+        collect_stmt(str_cut(s, start, i))
+        if found is 1
+            start: i + 2
+        if not
+            start: n
+    return 0
+
+collect_body body:
+    n: str_len(body)
+    i: 0
+    as long as i < n
+        e: i
+        as long as e < n
+            if peek_byte(body, e) is 10
+                leave
+            e: e + 1
+        raw: str_cut(body, i, e)
+        t: trim(raw)
+        if str_len(t) > 0
+            if peek_byte(t, 0) is not 35
+                collect_parts(t)
+        i: e + 1
+    return 0
+
+emit_body body:
+    block_inds: _sov_list_new()
+    block_kinds: _sov_list_new()
+    block_n: 0
+    fn_return_seen: 0
+    n: str_len(body)
+    i: 0
+    as long as i < n
+        e: i
+        as long as e < n
+            if peek_byte(body, e) is 10
+                leave
+            e: e + 1
+        raw: str_cut(body, i, e)
+        t: trim(raw)
+        if str_len(t) > 0
+            if peek_byte(t, 0) is not 35
+                ind: indent_of(raw)
+                if starts(t, "if not") is 1
+                    emit_else_line(t, ind)
+                if not
+                    close_blocks(ind)
+                    opened: emit_stmt_parts(t)
+                    if opened is 1
+                        push_block(last_block_kind, ind)
+        i: e + 1
+    close_all()
+    if fn_return_seen is 0
+        emitln("    i32.const 0")
+    return 0
+
+parse_file path:
+    src: ""
+    if file_size(path) > 100000
+        src: file_read_max(path, 4096)
+    if not
+        src: file_read_all(path)
+    if src is 0
+        print "wat: cannot read source"
+        sys_exit(1)
+    fn_names: _sov_list_new()
+    fn_params: _sov_list_new()
+    fn_bodies: _sov_list_new()
+    cur: 0 - 1
+    n: str_len(src)
+    if n >= 4096
+        n: 0
+    i: 0
+    as long as i < n
+        e: i
+        as long as e < n
+            if peek_byte(src, e) is 10
+                leave
+            e: e + 1
+        raw: str_cut(src, i, e)
+        t: trim(raw)
+        if str_len(t) > 0
+            if peek_byte(t, 0) is not 35
+                if is_sp(peek_byte(raw, 0)) is 0
+                    if peek_byte(t, str_len(t) - 1) is 58
+                        h: str_cut(t, 0, str_len(t) - 1)
+                        w: word_end(h, 0)
+                        nm: str_cut(h, 0, w)
+                        ps: trim(str_cut(h, w, str_len(h)))
+                        fn_names: _sov_list_add(fn_names, nm)
+                        fn_params: _sov_list_add(fn_params, ps)
+                        fn_bodies: _sov_list_add(fn_bodies, "")
+                        cur: _sov_list_len(fn_names) - 1
+                if is_sp(peek_byte(raw, 0)) is 1
+                    if cur >= 0
+                        old: as text _sov_list_get(fn_bodies, cur)
+                        old: str_cat(old, raw)
+                        old: str_cat(old, "\n")
+                        fn_bodies: _sov_list_set(fn_bodies, cur, old)
+        i: e + 1
+    if _sov_list_len(fn_names) is 0
+        fn_names: _sov_list_add(fn_names, "main")
+        fn_params: _sov_list_add(fn_params, "")
+        fn_bodies: _sov_list_add(fn_bodies, "    return 0\n")
+    return 0
+
+emit_function idx:
+    nm: as text _sov_list_get(fn_names, idx)
+    cur_params: as text _sov_list_get(fn_params, idx)
+    body: as text _sov_list_get(fn_bodies, idx)
+    locals: _sov_list_new()
+    collect_body(body)
+    emit("  (func $")
+    emit(nm)
+    emit(" (export \"")
+    emit(nm)
+    emit("\")")
+    p: trim(cur_params)
+    as long as str_len(p) > 0
+        p: ltrim(p)
+        e: word_end(p, 0)
+        if e <= 0
+            leave
+        pn: str_cut(p, 0, e)
+        emit(" (param $")
+        emit(pn)
+        emit(" i32)")
+        p: trim(str_cut(p, e, str_len(p)))
+    emitln(" (result i32)")
+    li: 0
+    as long as li < _sov_list_len(locals)
+        emit("    (local $")
+        emit(as text _sov_list_get(locals, li))
+        emitln(" i32)")
+        li: li + 1
+    emit_body(body)
+    emitln("  )")
+    return 0
+
+compile_file path:
+    parse_file(path)
+    out: "(module\n"
+    out: str_cat(out, "  (import \"env\" \"sovren_print\" (func $sovren_print (param i32)))\n")
+    i: 0
+    as long as i < _sov_list_len(fn_names)
+        emit_function(i)
+        i: i + 1
+    emitln(")")
+    return 0
+
+main:
+    ac: arg_count()
+    if ac < 2
+        print "Usage: compiler src.sov -o out.wat"
+        sys_exit(1)
+    inp: as text arg_at(1)
+    outp: "a.wat"
+    if ac is 3
+        if str_eq(as text arg_at(1), "-o") is 0
+            if str_eq(as text arg_at(2), "-o") is 0
+                outp: as text arg_at(2)
+    i: 2
+    as long as i + 1 < ac
+        if str_eq(as text arg_at(i), "-o") is 1
+            outp: as text arg_at(i + 1)
+            i: i + 2
+        if not
+            i: i + 1
+    compile_file(inp)
+    file_write_all(outp, out)
+    print "wat: wrote "
+    print outp
+    return 0

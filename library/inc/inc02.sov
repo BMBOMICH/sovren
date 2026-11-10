@@ -571,9 +571,9 @@ k: 0
 as long as k < ncpu -> id: atomic_load(IDTBL + k * 8)
     if id != bsp -> poke_raw32(APIC + 784, 0, bshl(id, 24))
         poke_raw32(APIC + 768, 0, 50432)
-        # 200ms wait removed
+        pause(200000)
         poke_raw32(APIC + 768, 0, 34048)
-        # 200ms wait removed
+        pause(200000)
         poke_raw32(APIC + 768, 0, 1544)
         pause(50000)
         poke_raw32(APIC + 768, 0, 1544)

@@ -2,7 +2,7 @@
 """Real output faults, inode aliases, and same-output concurrent writers."""
 import argparse,concurrent.futures,hashlib,json,os,subprocess,tempfile
 from pathlib import Path
-R=Path(__file__).resolve().parents[2];p=argparse.ArgumentParser();p.add_argument('--native',type=Path,default=R/'compilers/linux/compiler');p.add_argument('--output',default=str('/tmp/output-safety.json'));a=p.parse_args();rows=[]
+R=Path(__file__).resolve().parents[2];p=argparse.ArgumentParser();p.add_argument('--staged',action='store_true');p.add_argument('--output',default=str('/tmp/output-safety.json'));a=p.parse_args();rows=[]
 def invoke(cmd):
  try:
   q=subprocess.run(list(map(str,cmd)),cwd=R,capture_output=True,timeout=30);return q.returncode,(q.stdout+q.stderr).decode(errors='replace')[-2000:]
@@ -10,8 +10,8 @@ def invoke(cmd):
 def h(path):return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
 with tempfile.TemporaryDirectory(prefix='sovren-output-safety-') as td:
  w=Path(td);inject=w/'inject';subprocess.run(['cc','-O2',R/'tests/conformance/inject_write.c','-o',inject],check=True)
- for target in ['native']:
-  exe=a.native
+ for target,name in [('c','c-language'),('js','javascript'),('ts','typescript')]:
+  exe=Path('/tmp/sovren-repair')/(target+'-new') if a.staged else R/'compilers'/name/'compiler'
   src=w/'input.sov';src.write_text('main:\n'+''.join(f'    print {i}\n' for i in range(200)));out=w/'artifact'
   rc,log=invoke([exe,src,'-o',out]);assert rc==0 and out.stat().st_size>0;gold=h(out)
   for mode in ['short','eintr','io','kill']:

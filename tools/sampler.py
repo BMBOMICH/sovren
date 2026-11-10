@@ -65,11 +65,7 @@ def endbr_starts(path):
 
 
 def load_map(path):
-    toks = []
-    for ln in open(path):
-        if ln.startswith("#"):
-            continue  # comment header lines (e.g. "# fnmap")
-        toks.extend(ln.split())
+    toks = open(path).read().split()
     pairs = sorted(((int(toks[i + 1]), toks[i]) for i in range(0, len(toks), 2)))
     return [p[0] for p in pairs], [p[1] for p in pairs]
 
@@ -103,20 +99,8 @@ def main():
         raise SystemExit("PTRACE_SEIZE failed")
     status = ctypes.c_int(0)
     counts, pairs, total, t0, base, foff = {}, {}, 0, time.perf_counter(), None, None
-    sc_rips = {}
     reaped = False
-    deadline = float(os.environ.get("SAMPLER_MAX_S", "20"))
-    hz_cap = float(os.environ.get("SAMPLER_HZ", "0"))  # 0 = as fast as possible
-    per_iter = 1.0 / hz_cap if hz_cap > 0 else 0.0
     while True:
-        if per_iter:
-            time.sleep(per_iter)
-        if time.perf_counter() - t0 > deadline:
-            try:
-                os.kill(pid, 9)
-            except ProcessLookupError:
-                pass
-            break
         if libc.ptrace(PTRACE_INTERRUPT, pid, None, None) != 0:
             break
         w = libc.waitpid(pid, ctypes.byref(status), 0)
@@ -142,36 +126,18 @@ def main():
             else:
                 cnm = "?"
             pairs[(nm, cnm)] = pairs.get((nm, cnm), 0) + 1
-            if nm == "_sov_strcat" and ra:
-                sc_rips[fo2] = sc_rips.get(fo2, 0) + 1
             total += 1
-        # forward real signal-delivery stops (suppressing e.g. SIGABRT on a
-        # failing child made the loop spin forever); INTERRUPT stops get 0.
-        sig = 0
-        if os.WIFSTOPPED(status.value):
-            raw = status.value >> 8
-            if raw != (19 | 0x80):  # not a plain PTRACE_EVENT_STOP signature
-                s2 = os.WSTOPSIG(status.value)
-                if s2 not in (5, 19):  # not SIGTRAP/SIGSTOP from ptrace itself
-                    sig = s2
-        libc.ptrace(PTRACE_CONT, pid, None, sig)
+        libc.ptrace(PTRACE_CONT, pid, None, None)
     if not reaped:
         try:
             os.waitpid(pid, 0)
         except ChildProcessError:
-            pass
-        try:
-            os.kill(pid, 9)
-        except ProcessLookupError:
             pass
     dt = time.perf_counter() - t0
     print(f"# {total} samples in {dt:.3f} s  ({total/max(dt,1e-9):.0f} Hz)", file=sys.stderr)
     self_time = sum(counts.values())
     for nm, n in sorted(counts.items(), key=lambda kv: -kv[1])[:30]:
         print(f"{n:7d} {100.0*n/max(self_time,1):6.2f}%  {nm}")
-    print("\n# _sov_strcat caller return-address histogram (file offset)")
-    for off, n in sorted(sc_rips.items(), key=lambda kv: -kv[1])[:20]:
-        print(f"{n:7d}  0x{off:x}")
     print("\n# top call sites (callee <- caller)")
     for (cal, cur), n in sorted(pairs.items(), key=lambda kv: -kv[1])[:30]:
         print(f"{n:7d} {100.0*n/max(self_time,1):6.2f}%  {cal} <- {cur}")

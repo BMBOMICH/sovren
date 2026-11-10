@@ -69,21 +69,6 @@ main argc argv:
         if _sov_str_eq(a2, "--flat") is 1
             flat_mode: 1
             flag_ok: 1
-        if _sov_str_eq(a2, "--instrument-compiler") is 1
-            prof_codegen: 1
-            flag_ok: 1
-        if _sov_str_eq(a2, "--syntax-reference") is 1
-            syntax_mode: 2
-            flag_ok: 1
-        if _sov_str_eq(a2, "--legacy-syntax") is 1
-            syntax_mode: 0
-            flag_ok: 1
-        if _sov_str_eq(a2, "--syntax-tree") is 1
-            syntax_mode: 1
-            flag_ok: 1
-        if _sov_str_eq(a2, "--debug") is 1
-            dbg_collect: 1
-            flag_ok: 1
         if _sov_str_eq(a2, "--prof") is 1
             prof_mode: 1
             flag_ok: 1
@@ -97,16 +82,16 @@ main argc argv:
             flag_ok: 1
         if _sov_str_eq(a2, "--run") is 1
             flag_ok: 1
-        if _sov_str_eq(a2, "--exec") is 1
-            exec_mode: 1
-            flag_ok: 1
         if _sov_str_eq(a2, "--fmt") is 1
             flag_ok: 1
         if _sov_str_eq(a2, "--plain") is 1
             flag_ok: 1
-        # C.36: retired. The 2026-10-25 purge removed every cache; these
-        # two legacy no-op flags are now REJECTED as unknown by the
-        # anti-cache regression gate (tests/regression/cache.py).
+        # older-generation cache-control flags the gate still passes;
+        # this generation has no anchor/learning caches, so accept as no-ops.
+        if _sov_str_eq(a2, "--no-ac") is 1
+            flag_ok: 1
+        if _sov_str_eq(a2, "--no-learn") is 1
+            flag_ok: 1
         if flag_ok is 0
             if starts(a2, "--") is 1
                 print "Error: unknown flag"
@@ -133,19 +118,22 @@ main argc argv:
     if src is 0
         print "Error: cannot read input"
         fail()
-    if prof_mode is 1
-        prof_input_bytes: length(src)
     src: splice_inc(src, dir_of(inf))
-    # C.9: no /proc/self/exe readlink, no 4 KiB probe buffer, no eager boot
-    # work. argv[0] is already in hand; when invoked by absolute path (every
-    # gate does) its dirname is byte-identical to the old readlink result,
-    # so all three self_dir fallbacks still resolve. The baked runtime
-    # payload (kept in sync by tools/rt_baked_sync.py) stays last resort.
-    self_dir: dirname(peek_i64(argv, 0))
+    pf_buf: _sov_heap_alloc(4096)
+    pf_n: syscall(89, "/proc/self/exe", pf_buf, 4095, 0)
+    if pf_n > 0
+        pf_z: _sov_set_byte(pf_buf, pf_n, 0)
+        self_dir: dirname(pf_buf)
+    ph2: mark
+    ph0: 0
+    ph1: 0
     mark("pre-u")
+    ph0: mark - ph2
+    ph2: mark
     # the first pull's used_libs/alias_pairs side effects are reset below and
     # its text is discarded, so the phase ran the identical fixpoint twice;
     # one pull chain (after the pad splice) yields the same extra.
+    ph1: mark - ph2
     mark("sug")
     nl: _sov_heap_alloc(2)
     dummy: _sov_set_byte(nl, 0, 10)
@@ -154,67 +142,44 @@ main argc argv:
     mark("f3-sug")
     used_libs: blank
     alias_pairs: blank
-    # C.2/C.3: pull_uses is a BFS over USE chunks.  The old fixpoint rebuilt
-    # `extra` with join() every round, recopying all previously seen text
-    # (O(n^2) full-source copies).  Keep the SAME chunk order in a stable
-    # work list, then materialise `extra` with ONE allocation and ONE memcpy
-    # per chunk.  No persisted state, no cache: the list dies with this run.
-    pu_chunks: _sov_list_new()
-    pu_first: pull_uses(src)
-    if length(pu_first) > 0
-        dummy: _sov_list_add(pu_chunks, pu_first)
-    more: pu_first
+    extra: pull_uses(src)
+    more: pull_uses(extra)
     as long as length(more) > 0
+        extra: join(extra, more)
         more: pull_uses(more)
-        if length(more) > 0
-            dummy: _sov_list_add(pu_chunks, more)
         mark("pu")
-    pu_n: _sov_list_len(pu_chunks)
-    pu_total: 0
-    pu_i: 0
-    as long as pu_i < pu_n
-        pu_total: pu_total + length(peek_i64(pu_chunks, 16 + pu_i * 8))
-        pu_i: pu_i + 1
-    extra: blank
-    if pu_n > 0
-        extra: _sov_heap_alloc(pu_total + 1)
-        pu_off: 0
-        pu_i: 0
-        as long as pu_i < pu_n
-            pu_ch: peek_i64(pu_chunks, 16 + pu_i * 8)
-            pu_cl: length(pu_ch)
-            dummy: _sov_memcpy(extra + pu_off, pu_ch, pu_cl)
-            pu_off: pu_off + pu_cl
-            pu_i: pu_i + 1
-        dummy: poke_byte(extra, pu_off, 0)
     src: apply_aliases(src)
     mark("aa")
     if length(extra) > 0
         src: join(extra, src)
-    # C.2/C.9/C.11/C.15: ONE bounded SWAR pass replaces the six whole-source
-    # look() runtime-need probes. Early-exits on the first hit. The length is
-    # taken once here and reused for the name-table pre-size below, so this
-    # does not add a second length() walk. Cold only, no persisted state.
-    src_len: length(src)
-    need: front_scan(src, src_len)
-    if bare_mode is 1
-        need: 0
+    need: 0
     mmap_sz: 12582912
     # runtime.sov splice triggers: any _sov_* runtime call (atoi, alloc,
     # list, buf, ...) or raw peek_/poke_ intrinsic needs the runtime
     # text; a missed trigger links the call to a trap stub.
+    if need is 0
+        if look(src, "_sov_") > 0 - 1
+            need: 1
+    if need is 0
+        if look(src, "load_file") > 0 - 1
+            need: 1
+    if need is 0
+        if look(src, "peek_") > 0 - 1
+            need: 1
+    if need is 0
+        if look(src, "poke_") > 0 - 1
+            need: 1
+    if need is 0
+        if look(src, "spawn ") > 0 - 1
+            need: 1
+    if need is 0
+        if look(src, "join ") > 0 - 1
+            need: 1
     rt: blank
+    if bare_mode is 1
+        need: 0
     if need is 1
         mmap_sz: 1073741824
-        # Disk runtime first, baked text as the last-resort fallback.
-        # Measured 2026-11-03: baked-first saves one open+read (~0.15 ms)
-        # but pays the base64 decode (~2 ms interpreted, ~160 c/B) on
-        # every runtime-needing compile — net -1.3..-3.9% on the bulk
-        # lanes (work/p4/ab_rtbake.json), so the decode is the pig, not
-        # the disk. An emit-group blob instead of base64 would sugar into
-        # 43,642 emit(N) statements in the self-compile parse — worse.
-        # The fallback payload is kept exactly in sync with runtime.sov
-        # and gated by tools/rt_baked_sync.py in the tier gate.
         rt: load_file("runtime.sov")
         if rt is 0
             rt: load_file("linux/runtime.sov")
@@ -232,34 +197,31 @@ main argc argv:
             rt: repl(rt, "syscall(186, 0, 0, 0, 0, 0, 0)", "0 - 38")
     mark("1-rt-loaded")
     src_base: 1
-    # reader-chain fusion: the split lists are already in hand, and
-    # nl_count_lines is documented as the exact replacement for their
-    # length -- counting newlines again would rescan both parts.
-    if lf_tbl is 0 -> lf_tbl_init()
-    if sg_tbl is 0 -> sg_tbl_init()
-    bs_rt: _sov_base_scan(rt, sg_tbl)
-    bs_ex: _sov_base_scan(extra, sg_tbl)
-    src_base: src_base + band(bs_rt, 4294967295)
-    src_base: src_base + band(bs_ex, 4294967295)
-    src_base: src_base + bshr(bs_rt, 32)
-    src_base: src_base + bshr(bs_ex, 32)
-    all: rt_splice_all(rt, need, sxe_mode)
+    sxs_rt: lines_of_fast(rt)
+    src_base: src_base + nl_count_lines(rt)
+    src_base: src_base + sg_extra_ls(sxs_rt)
+    sxs_ex: lines_of_fast(extra)
+    src_base: src_base + nl_count_lines(extra)
+    src_base: src_base + sg_extra_ls(sxs_ex)
+    nl: _sov_heap_alloc(2)
+    dummy: _sov_set_byte(nl, 0, 10)
+    dummy: _sov_set_byte(nl, 1, 0)
+    all: join(rt, nl)
     src_base: src_base + 1
     if need is 1
+        all: join(all, nl)
+        all: join(all, join("_sov_thread_exit:", nl))
+        if sxe_mode is 1
+            all: join(all, join("    sovcall(60, 0, 0, 0, 0, 0)", nl))
+        if not
+            all: join(all, join("    syscall(60, 0, 0, 0, 0, 0, 0)", nl))
+        all: join(all, join("    return 0 - 1", nl))
         src_base: src_base + 4
     mark("2-all-spliced")
-    u_listing: 0
     if unsafe_mode is 1
         u_listing: 1
     u_bare_total: 0
-    u_srclen: src_len
-    # Phase-3 name-table pre-sizing input (globals cross the splice; the
-    # other x86 backends leave it 0 and take the 16384-slot floor).
-    lh_srclen: u_srclen
-    u_note: u_scan_wide(src, u_listing, u_srclen)
-    u_bare_hi: bshr(u_note, 32)
-    u_bare_total: u_bare_total + u_bare_hi
-    u_note: band(u_note, 4294967295)
+    u_note: u_scan(src)
     if u_bare_total > 0
         if unsafe_mode is 0
             print "Error: raw memory/io access denied by default; use checked primitives (library/sbuf.sov) or mark reviewed low-level code: # unsafe-module file stamp, unsafe: block, per-line # unsafe, or --unsafe"
@@ -267,16 +229,10 @@ main argc argv:
     if u_note > 0
         print "note: compiler sees raw memory/io sites without unsafe markers; library/sbuf.sov covers checked buffers (count follows)"
         print u_note
-    # u_prep retains its own native SWAR `look(source,"unsafe:")` first gate.
-    # Fusing that existence test into the need scan lost to find_text's SWAR
-    # (measured 7.2 ms on 4 MB vs 15.6 ms for the whole --flat front end), so
-    # it is deliberately NOT fused. See C.38 dead-end ledger.
     src: u_prep(src)
-    # join() concatenates, so length(all_after) - length(src) IS snap_a.
-    # The old pair of whole-text length() walks after the join is redundant.
     snap_a: length(all)
-    snap_m: snap_a
     all: join(all, src)
+    snap_m: length(all) - length(src)
     mark("3-scanned")
     # expansion is applied per-part at load (rt above, chunks in take_use, src above)
     if flat_mode is 1
@@ -296,40 +252,12 @@ main argc argv:
     write_elf(outf)
     if had_err is 1
         fail()
-    dbg_write(outf)
     print "Wrote"
     _sov_print(outf)
     mark("z-end")
-    prof_report()
     if run_mode is 1
         run_prog(outf, argv, argc)
-    if exec_mode is 1
-        run_exec(outf, argv, argc)
     sys_exit(0)
-
-front_scan s n:
-    # Interpreted fallback for backends without the native twin; n is the
-    # precomputed source length (unused here, `_sov_find_text` is bounded).
-    # The self-hosted compiler uses emit_nt_front_scan: one bounded SWAR pass.
-    fs_need: 0
-    if look(s, "_sov_") > 0 - 1
-        fs_need: 1
-    if fs_need is 0
-        if look(s, "load_file") > 0 - 1
-            fs_need: 1
-    if fs_need is 0
-        if look(s, "peek_") > 0 - 1
-            fs_need: 1
-    if fs_need is 0
-        if look(s, "poke_") > 0 - 1
-            fs_need: 1
-    if fs_need is 0
-        if look(s, "spawn ") > 0 - 1
-            fs_need: 1
-    if fs_need is 0
-        if look(s, "join ") > 0 - 1
-            fs_need: 1
-    return fs_need
 
 oc: 0
 strb: 0
@@ -366,7 +294,6 @@ kern_mode: 0
 sxe_mode: 0
 sxe_compact: 0
 run_mode: 0
-exec_mode: 0
 fmt_mode: 0
 flat_mode: 0
 dbg_mode: 0
@@ -416,14 +343,9 @@ used_pi: 0
 did_stos: 0
 walk_lo: 0
 walk_hi: 0
-par_late: 0
-par_ph: 0
 par_again: 0
 par_live: 0
 par_child: 0
-par_flor_pre: 0
-gh: 0
-gcap: 0
 par_n: 0
 par_do: 0
 par_cfn: 0 - 1
@@ -431,8 +353,6 @@ par_base0: 0
 par_pat0: 0
 par_fn0: 0
 par_sf0: 0
-par_br0: 0
-par_nbr: 0
 par_pid0: 0
 par_pool: 0
 par_hi2: 0
@@ -471,10 +391,6 @@ par_mg_app: 0
 pm_kn_touched: 0
 pm_cb_fn: 0
 pm_cb_pat: 0
-pm_cb_br: 0
-pm_nbr: 0
-pm_br: 0
-pm_brs: 0
 pm_cfn_prev: 0
 par_rb_fn: 0
 par_rb_pat: 0
@@ -546,7 +462,7 @@ try_sbss var rhs:
     if in_entry_now is 1
         if br_depth is 0
             if _sov_byte_at(rhs, length(rhs) - 1) is 41 is 1
-                inn: scut(rhs, 11, length(rhs) - 1)
+                inn: strip(cut(rhs, 11, length(rhs) - 1))
                 asz: 0
                 if _sov_str_eq(inn, kn) is 1
                     if kv > 0
@@ -839,7 +755,6 @@ ca_seed:
     ca_put("sg_word")
     ca_put("sovcall")
     ca_put("syscall")
-    ca_put("thread_create")
     ca_put("f64_sign")
     ca_put("f64_sqrt")
     ca_put("peek_i64")
@@ -907,65 +822,19 @@ ca_maybe h0 nm:
             return _sov_str_eq(peek_i64(ca_ntab, ix * 8), nm)
         ix: band(ix + 1, 511)
     return 0
-ca_nid: 0
 call_args name argc direct:
-    # Resolve the callee facts from the per-compilation name->facts table.
-    # The table is keyed by the canonical interned kid, so a call site that
-    # already knows the kid pays one hash probe instead of a symbol-table
-    # scan, a delegate-map chase and a C-builtin string compare.
-    cfnid: ca_nid
-    ca_nid: 0
-    if cfnid is 0
-        cfnid: intern_kid(name)
-    cfs: fsem_slot(cfnid)
-    cfv: 0
-    cft: 0
-    cfc: 0
-    if cfs >= 0
-        cfv: peek_i64(fsem_val, cfs * 8)
-        cft: peek_i64(fsem_tgt, cfs * 8)
-        cfc: peek_i64(fsem_cah, cfs * 8)
-    car: 0 - 1
-    if fsem_key is not 0
-        car: band(bshr(cfv, 9), 255)
-    if car >= 0
-        if car > 0
-            if car - 1 is not argc
-                print "Error: wrong number of values"
-                _sov_print(name)
-                err_where()
-                had_err: 1
-    if not
-        ci_fn: nm_lookup(name)
-        if ci_fn >= 0
-            if _sov_list_len(peek_i64(params, 16 + ci_fn * 8)) is not argc
-                print "Error: wrong number of values"
-                _sov_print(name)
-                err_where()
-                had_err: 1
-    if cft is not 0
-        name: cft
-    if not
-        name: delegate_resolve(name)
+    name: delegate_resolve(name)
     ca_h: 0
-    if band(cfv, 562949953421312) is not 0
-        ca_h: cfc
-    if not
-        ci: 0
-        cg: 1
-        as long as cg is 1
-            cb: peek_byte(name, ci)
-            if cb is 0
-                cg: 0
-            if not
-                ca_h: ca_h * 33 + cb
-                ci: ci + 1
-    ca_hit: 0
-    if band(cfv, 562949953421312) is not 0
-        ca_hit: 1
-    if not
-        ca_hit: ca_maybe(ca_h, name)
-    if ca_hit is 0
+    ci: 0
+    cg: 1
+    as long as cg is 1
+        cb: peek_byte(name, ci)
+        if cb is 0
+            cg: 0
+        if not
+            ca_h: ca_h * 33 + cb
+            ci: ci + 1
+    if ca_maybe(ca_h, name) is 0
         if direct is 0
             if argc is 1
                 pop_rax()
@@ -1122,40 +991,6 @@ call_args name argc direct:
                                     emit(94)
                                     pop_rax()
                                     mov_rdi_rax()
-    if ca_h is 14443550449306134955
-        if argc is not 6
-            print "Error: thread_create needs six values"
-            err_where()
-            had_err: 1
-            xor_rax()
-            return 0
-        # Linux clone is NOT clone(entry, stack, flags). Keep an explicit
-        # entry/control pair on the new stack; only the child uses it.
-        emit3(72, 141, 134)
-        emit4(0 - 262272)
-        emit:
-            72 131 238 16
-            72 137 62
-            72 137 70 8
-            72 137 215
-            72 137 202
-            65 82
-            77 137 194
-            77 137 200
-            184 56 0 0 0
-        sysc()
-        test_rax()
-        tc_parent: jnz()
-        emit:
-            72 139 124 36 8
-            255 20 36
-            49 255
-            184 60 0 0 0
-        sysc()
-        emit2(15, 11)
-        patch(tc_parent)
-        emit2(65, 90)
-        return 0
     if argc is 2
         if ca_h is 133908235000
             emit(102)
@@ -3989,11 +3824,8 @@ emit_stack_wipe:
     put(sw_back, sw_loop - (sw_back + 4))
     patch(sw_exit)
     patch(sw_cap)
-    # Library text/list allocation uses _sov_heap_alloc directly, so the
-    # explicit _sov_alloc-use bit does not say whether a heap exists.
-    # Resolve against parsed symbols, not code-emission order.
-    if has_vm is 1
-        if nm_lookup("_sov_heap_wipe") >= 0
+    if used_al is 1
+        if fn_lookup("_sov_heap_wipe") > 0 - 1
             xor_rax()
             calln("_sov_heap_wipe")
     emit(72)
@@ -4315,19 +4147,6 @@ hexval s:
     return _sov_atoi(s)
 num_of s:
     return hexval(s)
-# --- lines_of_fast twin: the C port is planted from compilers/linux/
-# linesfast_native.sov (generated from tools/native_linesfast.c) for the
-# self-hosted build; this wrapper is the portable fallback.  The two
-# allocations and the empty-source _sov_list_new stay behind lf_tbl.
-lf_tbl: 0
-lf_tbl_init:
-    lf_tbl: _sov_heap_alloc(32)
-    poke_i64(lf_tbl, 0, 2)
-    poke_i64(lf_tbl, 8, addr_of _sov_list_new)
-    poke_i64(lf_tbl, 16, addr_of _sov_heap_alloc)
-    return 0
-_sov_lines_of_fast src tbl:
-    return lines_of_fast(src)
 lines_of_fast source:
     n: length(source)
     if n is 0
@@ -4485,8 +4304,6 @@ cn_lookup nm:
     # list_find(cnms, nm): the matching index, else -1. cset guarantees
     # names are unique, so there is never a second match to disambiguate.
     if cnms is 0
-        return 0 - 1
-    if peek_i64(cnms, 8) is 0
         return 0 - 1
     cn_sync()
     cn_h: set_h(nm)
@@ -4793,8 +4610,6 @@ sv_lookup nm:
     # falls back to the exact linear scan, so the answer is always the
     # list_find answer (first matching index, else -1).
     if str_vars is 0
-        return 0 - 1
-    if peek_i64(str_vars, 8) is 0
         return 0 - 1
     svt_sync()
     svt_h: set_h(nm)
@@ -5297,145 +5112,24 @@ lord_build lb_fb lb_gh lb_gc lb_fc lb_np:
     lord_fcnt: lb_fcnt
     if lb_fcnt + lb_np < 6
         return 0
-    lb_cln: _sov_list_len(lb_cl)
-    if lb_cln < 32
-        # small bodies: the classic position scan + middle insert is
-        # cheaper than four fresh arrays (deepfns regressed 24% paying
-        # the sort scaffolding per two-target function).
-        lb_on: _sov_list_new()
-        lb_os: _sov_list_new()
-        lb_k: 0
-        as long as lb_k < lb_cln
-            lb_sc: fl_span_count(peek_i64(lb_cl, 16 + lb_k * 8), peek_i64(lb_ca, 16 + lb_k * 8), peek_i64(lb_cb, 16 + lb_k * 8))
-            lb_nm: repl(cut(peek_i64(lb_cl, 16 + lb_k * 8), peek_i64(lb_ca, 16 + lb_k * 8), peek_i64(lb_cb, 16 + lb_k * 8)), " ", "_")
-            lb_pos: _sov_list_len(lb_on)
-            lb_q: 0
-            as long as lb_q < lb_pos
-                if peek_i64(lb_os, 16 + lb_q * 8) < lb_sc
-                    lb_pos: lb_q
-                    lb_q: _sov_list_len(lb_on)
-                lb_q: lb_q + 1
-            lb_on: lord_ins(lb_on, lb_pos, lb_nm)
-            lb_os: lord_ins(lb_os, lb_pos, lb_sc)
-            lb_k: lb_k + 1
-        return lb_on
-    # Arrival order first, then one bottom-up merge sort by (score desc,
-    # arrival asc) - the exact total order the old per-item position scan
-    # plus middle insert produced, without its O(n^2) scan+shift per
-    # distinct target (loc100k spent ~1.4 s in that tail alone).
-    lb_an: _sov_list_new()
-    lb_as2: _sov_list_new()
+    lb_on: _sov_list_new()
+    lb_os: _sov_list_new()
     lb_k: 0
+    lb_cln: _sov_list_len(lb_cl)
     as long as lb_k < lb_cln
         lb_sc: fl_span_count(peek_i64(lb_cl, 16 + lb_k * 8), peek_i64(lb_ca, 16 + lb_k * 8), peek_i64(lb_cb, 16 + lb_k * 8))
         lb_nm: repl(cut(peek_i64(lb_cl, 16 + lb_k * 8), peek_i64(lb_ca, 16 + lb_k * 8), peek_i64(lb_cb, 16 + lb_k * 8)), " ", "_")
-        lb_an: _sov_list_add(lb_an, lb_nm)
-        lb_as2: _sov_list_add(lb_as2, lb_sc)
+        lb_pos: _sov_list_len(lb_on)
+        lb_q: 0
+        as long as lb_q < lb_pos
+            if peek_i64(lb_os, 16 + lb_q * 8) < lb_sc
+                lb_pos: lb_q
+                lb_q: _sov_list_len(lb_on)
+            lb_q: lb_q + 1
+        lb_on: lord_ins(lb_on, lb_pos, lb_nm)
+        lb_os: lord_ins(lb_os, lb_pos, lb_sc)
         lb_k: lb_k + 1
-    lb_n: _sov_list_len(lb_an)
-    lb_src: _sov_heap_alloc(16 + lb_n * 8)
-    lb_tmp: _sov_heap_alloc(16 + lb_n * 8)
-    lb_i: 0
-    as long as lb_i < lb_n
-        poke_i64(lb_src, 16 + lb_i * 8, lb_i)
-        lb_i: lb_i + 1
-    lb_w: 1
-    as long as lb_w < lb_n
-        lb_i: 0
-        as long as lb_i < lb_n
-            lb_lo: lb_i
-            lb_mid: lb_i + lb_w
-            if lb_mid > lb_n
-                lb_mid: lb_n
-            lb_hi: lb_i + lb_w + lb_w
-            if lb_hi > lb_n
-                lb_hi: lb_n
-            lb_a: lb_lo
-            lb_b: lb_mid
-            lb_o: lb_lo
-            as long as lb_o < lb_hi
-                lb_ta: 0
-                if lb_a < lb_mid
-                    if lb_b >= lb_hi
-                        lb_ta: 1
-                if lb_a < lb_mid
-                    if lb_b < lb_hi
-                        lb_va: peek_i64(lb_as2, 16 + peek_i64(lb_src, 16 + lb_a * 8) * 8)
-                        lb_vb: peek_i64(lb_as2, 16 + peek_i64(lb_src, 16 + lb_b * 8) * 8)
-                        # score desc; the left run holds the earlier
-                        # arrivals, so >= keeps the tie order stable.
-                        if lb_va >= lb_vb
-                            lb_ta: 1
-                if lb_ta is 1
-                    poke_i64(lb_tmp, 16 + lb_o * 8, peek_i64(lb_src, 16 + lb_a * 8))
-                    lb_a: lb_a + 1
-                if not
-                    poke_i64(lb_tmp, 16 + lb_o * 8, peek_i64(lb_src, 16 + lb_b * 8))
-                    lb_b: lb_b + 1
-                lb_o: lb_o + 1
-            lb_i: lb_i + lb_w + lb_w
-        lb_sw: lb_src
-        lb_src: lb_tmp
-        lb_tmp: lb_sw
-        lb_w: lb_w + lb_w
-    lb_on: _sov_list_new()
-    lb_os: _sov_list_new()
-    lb_i: 0
-    as long as lb_i < lb_n
-        lb_j: peek_i64(lb_src, 16 + lb_i * 8)
-        lb_on: _sov_list_add(lb_on, peek_i64(lb_an, 16 + lb_j * 8))
-        lb_os: _sov_list_add(lb_os, peek_i64(lb_as2, 16 + lb_j * 8))
-        lb_i: lb_i + 1
     return lb_on
-
-# --- lord_build twin: the C port is planted from compilers/linux/
-# lord_native.sov (generated from tools/native_lord.c) for the self-hosted
-# build; this wrapper is the portable fallback. lb_words/set_span_has/
-# fl_span_newt/fl_span_count/lord_ins/repl/cut/find_col_q stay behind
-# lb_tbl; find_col and the header prefixes are fused; the local lists
-# live in the persistent lb_arblk arena.
-lb_tbl: 0
-lb_arblk: 0
-lb_tbl_init:
-    lb_tbl: _sov_heap_alloc(168)
-    lb_arblk: _sov_heap_alloc(16)
-    poke_i64(lb_arblk, 0, 0)
-    poke_i64(lb_arblk, 8, 0)
-    poke_i64(lb_tbl, 0, 12)
-    poke_i64(lb_tbl, 8, addr_of lb_start)
-    poke_i64(lb_tbl, 16, addr_of lb_set_fcnt)
-    poke_i64(lb_tbl, 24, addr_of lb_words)
-    poke_i64(lb_tbl, 32, addr_of set_span_has)
-    poke_i64(lb_tbl, 40, addr_of fl_span_newt)
-    poke_i64(lb_tbl, 48, addr_of fl_span_count)
-    poke_i64(lb_tbl, 56, addr_of lord_ins)
-    poke_i64(lb_tbl, 64, addr_of repl)
-    poke_i64(lb_tbl, 72, addr_of cut)
-    poke_i64(lb_tbl, 80, addr_of find_col_q)
-    poke_i64(lb_tbl, 88, addr_of lb_arblk_get)
-    poke_i64(lb_tbl, 96, addr_of _sov_heap_alloc)
-    return 0
-lb_start:
-    floc_epoch: floc_epoch + 1
-    lord_fcnt: 0
-    # S25 fused lord blob: publish the epoch tables every call
-    # (flor_range only rebinds/grows them between functions).
-    poke_i64(lb_tbl, 104, floc_ep)
-    poke_i64(lb_tbl, 112, floc_ln)
-    poke_i64(lb_tbl, 120, floc_a)
-    poke_i64(lb_tbl, 128, floc_b)
-    poke_i64(lb_tbl, 136, floc_c)
-    poke_i64(lb_tbl, 144, floc_ce)
-    poke_i64(lb_tbl, 152, floc_cap)
-    poke_i64(lb_tbl, 160, floc_epoch)
-    return 0
-lb_set_fcnt n:
-    lord_fcnt: n
-    return 0
-lb_arblk_get:
-    return lb_arblk
-_sov_lord_build2 lb_fb lb_gh lb_gc lb_fc lb_np lb_tbl:
-    return lord_build(lb_fb, lb_gh, lb_gc, lb_fc, lb_np)
 
 nl_count_lines t:
     # exact replacement for _sov_list_len(lines_of(t)): newline count, plus one
@@ -6185,7 +5879,7 @@ sg_one l:
         return l
     eqp: look(t, " = ")
     if eqp > 0 - 1
-        hd2: scut(t, 0, eqp)
+        hd2: strip(cut(t, 0, eqp))
         if sg_word(hd2) is 1
             return sg_cat4(sg_sp(sg_ind(l)), hd2, ": ", cut(t, eqp + 3, length(t)))
     gen: sg_lists(l)
@@ -6223,28 +5917,28 @@ sg_run_head t:
     q: look(t, ": ")
     if q < 0
         return out
-    recv: scut(t, 0, q)
+    recv: strip(cut(t, 0, q))
     rword: recv
     rstart: "0"
     if sg_word(recv) is 0
         ap: look(recv, " + ")
         if ap < 0
             return out
-        if sg_word(scut(recv, 0, ap)) is 0
+        if sg_word(strip(cut(recv, 0, ap))) is 0
             return out
-        if sg_num(scutr(recv, ap + 3)) is 0
+        if sg_num(strip(cut(recv, ap + 3, length(recv)))) is 0
             return out
-        rword: scut(recv, 0, ap)
-        rstart: scutr(recv, ap + 3)
+        rword: strip(cut(recv, 0, ap))
+        rstart: strip(cut(recv, ap + 3, length(recv)))
     rest: cut(t, q + 2, length(t))
     cp: look(rest, ": ")
     if cp < 0
         return out
-    head: scut(rest, 0, cp)
+    head: strip(cut(rest, 0, cp))
     sp1: look(head, " ")
     if sp1 < 0
         return out
-    vtext: scutr(rest, cp + 2)
+    vtext: strip(cut(rest, cp + 2, length(rest)))
     vals: sg_toks(vtext)
     if _sov_list_len(vals) < 2
         return out
@@ -6256,7 +5950,7 @@ sg_run_head t:
         k: k + 1
     out: _sov_list_add(out, recv)
     out: _sov_list_add(out, cut(head, 0, sp1))
-    out: _sov_list_add(out, scutr(head, sp1 + 1))
+    out: _sov_list_add(out, strip(cut(head, sp1 + 1, length(head))))
     out: _sov_list_add(out, vtext)
     out: _sov_list_add(out, rword)
     out: _sov_list_add(out, rstart)
@@ -6282,7 +5976,7 @@ sg_step_expr a:
             npart: tail
             rest2: ""
             if cm > 0 - 1
-                npart: scut(tail, 0, cm)
+                npart: strip(cut(tail, 0, cm))
                 rest2: cut(tail, cm, length(tail))
             if sg_num(npart) is 1
                 step: str_num(npart)
@@ -6292,16 +5986,16 @@ sg_step_expr a:
     if shape is 0
         ri: look(a, " + ")
         if ri > 0 - 1
-            if sg_num(scut(a, 0, ri)) is 1
-                base: str_num(scut(a, 0, ri))
+            if sg_num(strip(cut(a, 0, ri))) is 1
+                base: str_num(strip(cut(a, 0, ri)))
                 tail: cut(a, ri + 3, length(a))
                 if _sov_starts_with(tail, "i") is 0
                     mt: look(tail, " * i")
                     if mt < 0
                         return _sov_list_new()
-                    if sg_num(scut(tail, 0, mt)) is 0
+                    if sg_num(strip(cut(tail, 0, mt))) is 0
                         return _sov_list_new()
-                    step: str_num(scut(tail, 0, mt))
+                    step: str_num(strip(cut(tail, 0, mt)))
                     tail: cut(tail, mt + 4, length(tail))
                 if not
                     tail: (tail + 1)
@@ -6390,10 +6084,10 @@ sg_lists l:
         return out
     if peek_byte(t, 0) > 57
         return out
-    left: scut(t, 0, q1)
+    left: strip(cut(t, 0, q1))
     if sg_num(left) is 0
         return out
-    right: scutr(t, q1 + 2)
+    right: strip(cut(t, q1 + 2, length(t)))
     toks: sg_toks(right)
     okv: 1
     k: 0
@@ -6431,7 +6125,7 @@ sg_extra t:
         return r
     if sg_arrow(t) is 1
         pp: look(t, " -> ")
-        return 1 + sg_extra(scutr(t, pp + 4))
+        return 1 + sg_extra(strip(cut(t, pp + 4, length(t))))
     e: sg_run_count(t)
     if e > 0
         return e
@@ -6459,8 +6153,8 @@ sg_extra t:
                             nbgo: 0
         if peek_byte(t, nb) > 47
             if peek_byte(t, nb) < 58
-                left: scut(t, 0, cp)
-                right: scutr(t, cp + 2)
+                left: strip(cut(t, 0, cp))
+                right: strip(cut(t, cp + 2, length(t)))
                 if sg_num(left) is 1
                     toks: sg_toks(right)
                     okv: 1
@@ -6473,75 +6167,6 @@ sg_extra t:
                         if _sov_list_len(toks) > 1
                             return _sov_list_len(toks) - 1
     return 0
-rt_splice_all rt need sxe:
-    # Tier-1 item 7 (2-all-spliced fusion): the old chain paid six join()
-    # calls, each recopying the whole accumulated runtime buffer (~44 KB x 5)
-    # plus one intermediate per line piece.  One allocation, one copy per
-    # piece, byte-identical content (join's 0/empty short-circuits only ever
-    # skipped copies; the concatenated result is the same bytes).
-    nl: _sov_heap_alloc(2)
-    dummy: _sov_set_byte(nl, 0, 10)
-    dummy: _sov_set_byte(nl, 1, 0)
-    p3: ""
-    p4: ""
-    p6: ""
-    p8: ""
-    if need is 1
-        p3: nl
-        p4: "_sov_thread_exit:"
-        if sxe is 1
-            p6: "    sovcall(60, 0, 0, 0, 0, 0)"
-        if not
-            p6: "    syscall(60, 0, 0, 0, 0, 0, 0)"
-        p8: "    return 0 - 1"
-    tl: length(rt) + 1 + length(p3) + length(p4) + 1 + length(p6) + 1 + length(p8) + 1
-    buf: _sov_heap_alloc(tl + 1)
-    w: 0
-    k: 0
-    la: length(rt)
-    as long as k + 8 <= la
-        dummy: poke_i64(buf, w, peek_i64(rt, k))
-        w: w + 8
-        k: k + 8
-    as long as k < la
-        dummy: poke_byte(buf, w, peek_byte(rt, k))
-        w: w + 1
-        k: k + 1
-    dummy: poke_byte(buf, w, 10)
-    w: w + 1
-    pl: length(p3)
-    k: 0
-    as long as k < pl
-        dummy: poke_byte(buf, w, peek_byte(p3, k))
-        w: w + 1
-        k: k + 1
-    pl: length(p4)
-    k: 0
-    as long as k < pl
-        dummy: poke_byte(buf, w, peek_byte(p4, k))
-        w: w + 1
-        k: k + 1
-    dummy: poke_byte(buf, w, 10)
-    w: w + 1
-    pl: length(p6)
-    k: 0
-    as long as k < pl
-        dummy: poke_byte(buf, w, peek_byte(p6, k))
-        w: w + 1
-        k: k + 1
-    dummy: poke_byte(buf, w, 10)
-    w: w + 1
-    pl: length(p8)
-    k: 0
-    as long as k < pl
-        dummy: poke_byte(buf, w, peek_byte(p8, k))
-        w: w + 1
-        k: k + 1
-    if need is 1
-        dummy: poke_byte(buf, w, 10)
-        w: w + 1
-    dummy: poke_byte(buf, w, 0)
-    return buf
 sg_extra_ls ls:
     ins: 0
     d: 0
@@ -6586,41 +6211,14 @@ sg_extra_ls ls:
 sg_extra_all src:
     ls: lines_of(src)
     return sg_extra_ls(ls)
-
-# C.10/C.12: in-run function-pointer table for the sg_extra_ls native twin.
-# Built once per process (a data structure, not a cache: nothing is persisted
-# between runs and no translation result is reused).
-sg_tbl: 0
-sg_tbl_init:
-    # slot 3 is _sov_heap_alloc for the fused C.2/C.3 base-scan twin; slots
-    # 1/2 keep their strip/sg_extra ABI so sgextra_native.sov is unaffected.
-    sg_tbl: _sov_heap_alloc(40)
-    poke_i64(sg_tbl, 0, 3)
-    poke_i64(sg_tbl, 8, addr_of strip)
-    poke_i64(sg_tbl, 16, addr_of sg_extra)
-    poke_i64(sg_tbl, 24, addr_of _sov_heap_alloc)
-    return 0
-_sov_sg_extra_ls ls tbl:
-    # Portable fallback for backends without the twin; the self-hosted
-    # compiler plants emit_nt_sg_extra_ls (see sgextra_native.sov).
-    return sg_extra_ls(ls)
-_sov_base_scan text tbl:
-    # C.2/C.3/C.12/C.13 fused front-end scan. Portable fallback: exactly
-    # the four calls the old main made, packed into one value. The
-    # self-hosted compiler plants emit_nt_base_scan (basescan_native.sov),
-    # which does ONE pass over ONE flat copy with no line-pointer list.
-    bs_ls: _sov_lines_of_fast(text, lf_tbl)
-    bs_ln: _sov_list_len(bs_ls)
-    bs_sx: sg_extra_ls(bs_ls)
-    return bs_sx * 4294967296 + bs_ln
 sg_arrow t:
     # is this line a one-line 'if ...' / 'as long as ...' with a ' -> ' body?
     pp: look(t, " -> ")
     if pp < 0
         return 0
-    if length(scutr(t, pp + 4)) is 0
+    if length(strip(cut(t, pp + 4, length(t)))) is 0
         return 0
-    hd: scut(t, 0, pp)
+    hd: strip(cut(t, 0, pp))
     if _sov_starts_with(hd, "if ") is 1
         return 1
     if _sov_starts_with(hd, "as long as ") is 1
@@ -6870,12 +6468,8 @@ pu_lines src:
     # A source that mentions a compact form is read through cx_read, the only
     # place those forms are understood.  Plain text takes the fusion seam below,
     # so the common case still hands back the pruner's own list untouched.
-    # _sov_cx_read is the twin-planted native port of cx_read (C1 attack);
-    # its interpreted fallback calls the same cx_read, so every build
-    # without the compiler-internals gate reads identically.
     if sg_plain(src) is 0
-        if cx_tbl is 0 -> cx_tbl_init()
-        return _sov_cx_read(src, cx_tbl)
+        return cx_read(src)
     # fusion seam: hand back the pruner's own logical-line list when the caller
     # holds the exact text it came from.  the caller gets a FRESH list holding
     # the same line strings (mutation-safe), and the stash is consumed by the
@@ -6892,8 +6486,7 @@ pu_lines src:
             sg_pu_txt: 0
             sg_pu_ls: 0
             return out2
-    if lf_tbl is 0 -> lf_tbl_init()
-    return _sov_lines_of_fast(src, lf_tbl)
+    return lines_of_fast(src)
 
 zz_nt: 0
 zz_ni: 0
@@ -6903,15 +6496,14 @@ zz_nsync:
     if zz_ncap is 0
         zz_ncap: 65536
         zz_nt: _sov_heap_alloc(zz_ncap * 8)
-        # 512KiB fresh mmap: kernel-zeroed, bzero is dead work
+        dummy: _sov_bzero(zz_nt, zz_ncap * 8)
     zn: _sov_list_len(names)
     if zz_nsync_hi >= zn
         return 0
     # grow past 50% load; re-insert old slot pointers (identity stable)
     as long as zn * 2 > zz_ncap
         zz_nnh: _sov_heap_alloc(zz_ncap * 16)
-        if zz_ncap * 16 <= 65536
-            dummy: _sov_bzero(zz_nnh, zz_ncap * 16)
+        dummy: _sov_bzero(zz_nnh, zz_ncap * 16)
         zz_gi: 0
         as long as zz_gi < zz_ncap
             zz_gs: peek_i64(zz_nt, zz_gi * 8)
@@ -6961,8 +6553,7 @@ sp_pu_lines src:
     # out, without the old two-copy line split.  Descriptor arena lives in
     # library/sp.sov's format: [off, len, indent|flags, first].
     if sg_plain(src) is 0
-        if cx_tbl is 0 -> cx_tbl_init()
-        return _sov_cx_read(src, cx_tbl)
+        return cx_read(src)
     if sg_pu_txt is not 0 -> if src is sg_pu_txt
         cb2: cb2 + 1
         n2: _sov_list_len(sg_pu_ls)
@@ -6973,8 +6564,7 @@ sp_pu_lines src:
         sg_pu_txt: 0
         sg_pu_ls: 0
         return out2
-    if lf_tbl is 0 -> lf_tbl_init()
-    r_lf: _sov_lines_of_fast(src, lf_tbl)
+    r_lf: lines_of_fast(src)
     return r_lf
 
 sg_plain src:
@@ -7407,7 +6997,7 @@ cx_read source:
                     ep: find_col(t)
                 if ep > 0 - 1
                     if ep is length(t) - 1
-                        hd: scut(t, 0, ep)
+                        hd: strip(cut(t, 0, ep))
                         if sg_num(hd) is 1
                             # numeric task labels (px-generation lineage): a bare
                             # number-colon line whose indented body is statements, not
@@ -7424,11 +7014,11 @@ cx_read source:
                                 g3n: 0
             if done is 0
                 if last58 is 1
-                    hd6: scut(t, 0, length(t) - 1)
+                    hd6: strip(cut(t, 0, length(t) - 1))
                         q6: look(hd6, ": ")
                         if q6 > 0 - 1
-                            lt6: scut(hd6, 0, q6)
-                            rt6: scutr(hd6, q6 + 2)
+                            lt6: strip(cut(hd6, 0, q6))
+                            rt6: strip(cut(hd6, q6 + 2, length(hd6)))
                             if sg_word(lt6) is 1
                                 if sg_word(rt6) is 1
                                     done: 1
@@ -7442,7 +7032,7 @@ cx_read source:
                     ep5: find_col(t)
                 if ep5 > 0 - 1
                     if ep5 is length(t) - 1
-                        hd5: scut(t, 0, ep5)
+                        hd5: strip(cut(t, 0, ep5))
                         if length(hd5) > 0
                             if sg_bare(hd5) is 1
                                 if peek_byte(hd5, length(hd5) - 1) is 41
@@ -7452,7 +7042,7 @@ cx_read source:
                                     bhd: hd5
             if done is 0
                 if eqp > 0 - 1
-                    hd2: scut(t, 0, eqp)
+                    hd2: strip(cut(t, 0, eqp))
                     if sg_word(hd2) is 1
                         done: 1
                         out: _sov_list_add(out, sg_cat4(sg_sp(ind), hd2, ": ", cut(t, eqp + 3, length(t))))
@@ -7500,52 +7090,6 @@ cx_read source:
             print "Error: a value group needs two or more names; write one name directly"
             fail()
     return out
-
-# --- C1 attack: the cx_read C port (tools/native_cxread.c).  cx_tbl carries
-# just the ALLOCATING helpers (Sovren ABI fn pointers); the per-line leaf
-# scanners (sg_marks/sg_sqok/sg_ind/sg_trim/cx_info/cx_probe/look/find_col/
-# sg_stmt/sg_unparen/sg_bare/sg_word/sg_num/sg_thresh/sg_qend/_sov_str_eq/
-# _sov_starts_with/digitb) are fused static C mirrors in the blob, and every
-# needle/message string is stack-built there, so one pass per line answers
-# what the interpreted path learned from a chain of indirect calls.  Slot n
-# lives at byte n*8, count in slot 0 (mirrors tools/native_cxread.c).
-# _sov_cx_read is the twin-planted entry (the cxread_native.sov include);
-# the _sov_ prefix makes walk_range consult nt_will_twin with NO
-# sx_force_native line.  The interpreted one-line body below is the fallback
-# for every program without the compiler-internals gate; it calls the same
-# cx_read, so all such builds read identically.
-cx_tbl: 0
-cx_tbl_init:
-    cx_tbl: _sov_heap_alloc(512)
-    poke_i64(cx_tbl, 0, 21)
-    # T_LINES: lines_of_fast holds the identical records (NUL-terminated
-    # slices, same empty-line and trailing-newline rules; the pu_lines
-    # round-trip guard and the splice_inc line path both certify the
-    # equality) at one SWAR copy instead of the legacy two-copy split.
-    poke_i64(cx_tbl, 8, addr_of lines_of_fast)
-    poke_i64(cx_tbl, 16, addr_of _sov_list_new)
-    poke_i64(cx_tbl, 24, addr_of _sov_list_add)
-    poke_i64(cx_tbl, 32, addr_of _sov_heap_alloc)
-    poke_i64(cx_tbl, 40, addr_of sg_sq2)
-    poke_i64(cx_tbl, 48, addr_of sg_cat4)
-    poke_i64(cx_tbl, 56, addr_of sg_cat5)
-    poke_i64(cx_tbl, 64, addr_of sg_toks)
-    poke_i64(cx_tbl, 72, addr_of str_cat)
-    poke_i64(cx_tbl, 80, addr_of sg_pad3)
-    poke_i64(cx_tbl, 88, addr_of sg_ph)
-    poke_i64(cx_tbl, 96, addr_of sg_sub)
-    poke_i64(cx_tbl, 104, addr_of cut)
-    poke_i64(cx_tbl, 112, addr_of strip)
-    poke_i64(cx_tbl, 120, addr_of sg_lists)
-    poke_i64(cx_tbl, 128, addr_of sg_one)
-    poke_i64(cx_tbl, 136, addr_of sg_cmp)
-    poke_i64(cx_tbl, 144, addr_of sg_sp)
-    poke_i64(cx_tbl, 152, addr_of sg_digits)
-    poke_i64(cx_tbl, 160, addr_of _sov_print)
-    poke_i64(cx_tbl, 168, addr_of fail)
-    return 0
-_sov_cx_read source tbl:
-    return cx_read(source)
 sg_pu_txt: 0
 sg_pu_ls: 0
 u_prep source:
@@ -7765,8 +7309,7 @@ u_san ln:
         usi: usi + 1
     poke_byte(buf, w, 0)
     return buf
-u_scan_wide source us_listing us_len:
-    us_bare: 0
+u_scan source:
     # The gate used to be three sequential _sov_find_text probes (peek_/poke_/
     # port_, ~0.7 ms each on a t1-scale source).  One fused pass does it: hunt
     # every 'p' with cfind1n (memchr speed) and byte-check the 4 followers
@@ -7786,7 +7329,7 @@ u_scan_wide source us_listing us_len:
         uskip: 0
     if uskip is 1
         return 0
-    us_n: us_len
+    us_n: length(source)
     us_i: 0
     # Cursor over source lines instead of a lines_of split: the walk
     # below is already span-based ([toff, tend) peeks bounded by on),
@@ -7893,9 +7436,7 @@ u_scan_wide source us_listing us_len:
                 if smod is 0
                     if in_blk is 0
                         if cfind1n(osl, toff, tend, 112) >= 0
-                            # The complete source bound is already known. Do not rescan
-                            # its NUL terminator for every candidate line.
-                            sl: strip(cutn(source, us_pos, us_pos + on, us_n))
+                            sl: strip(cut(source, us_pos, us_pos + on))
                             slc: u_san(sl)
                             uraw: 0
                             ubare: 0
@@ -7983,14 +7524,14 @@ u_scan_wide source us_listing us_len:
                             if uraw is 1
                                 sbad: sbad + 1
                                 if ubare is 1
-                                    us_bare: us_bare + 1
-                                if us_listing is 1
+                                    u_bare_total: u_bare_total + 1
+                                if u_listing is 1
                                     print "unsafe lint: unmarked raw memory/io line:"
                                     _sov_print(sl)
                 smark: 0
         si: si + 1
         us_pos: us_e + 1
-    return sbad + bshl(us_bare, 32)
+    return sbad
 nhash s:
     h: 0
     i: 0
@@ -8000,9 +7541,7 @@ nhash s:
         # (h*33 xor b, truncated to 56 bits) is applied in exactly the same
         # order, so the hash value is unchanged; the reads stay 8-aligned
         # because i only advances by 8 on this path.
-        q: 0
-        if band(s + i, 4095) < 4089
-            q: peek_i64(s, i)
+        q: peek_i64(s, i)
         z: band(band(q - 72340172838076673, bxor(q, 0 - 1)), -9187201950435737472)
         if z is 0
             h: band(bxor(h * 33, band(q, 255)), 72057594037927935)
@@ -8122,9 +7661,8 @@ fn_sync:
         # lookups; rebuild into a doubled pair of tables
         fn_nh: _sov_heap_alloc(fn_htcap * 16)
         fn_ni: _sov_heap_alloc(fn_htcap * 16)
-        if fn_htcap * 16 <= 65536
-            dummy: _sov_bzero(fn_nh, fn_htcap * 16)
-            dummy: _sov_bzero(fn_ni, fn_htcap * 16)
+        dummy: _sov_bzero(fn_nh, fn_htcap * 16)
+        dummy: _sov_bzero(fn_ni, fn_htcap * 16)
         fn_j: 0
         as long as fn_j < fn_htcap
             fn_js: peek_i64(fn_ht, fn_j * 8)
@@ -8303,19 +7841,6 @@ pd_edge pd_ea pd_eb:
 # case: it is the runtime initializer that sets g_argc and g_argv, it is named
 # nowhere in the entire tree, and dropping it builds cleanly then segfaults.
 pd_roots: "|_|"
-zz_g2v: 0 - 1
-zz_g2:
-    # once-per-run probe for the /tmp/sov_glog2 debug gate. The write_elf
-    # patch loop used to open it PER PATCH RECORD (~7900 failed opens on
-    # the self build, ~17 ms of pure path-lookup waste). In-run boolean
-    # only - not compilation data, no cache-policy exposure.
-    if zz_g2v is 0 - 1
-        tfp: syscall(2, "/tmp/sov_glog2", 0, 0, 0)
-        zz_g2v: 0
-        if tfp > 2
-            syscall(3, tfp, 0)
-            zz_g2v: 1
-    return zz_g2v
 pd_r1: "|_sov_thread_exit|_sov_sysnum|_sov_mem_copy|_sov_mem_set|rt_init|_sov_atoi|_sov_bzero|_sov_find_text|_sov_heap_alloc|_sov_list_add|_sov_list_new|_sov_print|_sov_print_int|_sov_str_eq|_sov_strcat|_sov_strlen|_sov_trim|_sov_txt_eq|cfind1|cut|emit|emit2|emit3|emit4|find_col_q|here|intern_ensure|intern_fast|"
 pd_r3: "|forever|if|try|while|__pt_c|__pt_i|err_top|err_val|g_canary|heap_ptr|_sov_list_get|_sov_list_len|_sov_starts_with|add_rax_rcx|addp|cmp_rax_rcx|digitb|dir_of|emit8|emit_peek_rax|find_col|find_sep_do|imul_rax_rcx|intern|jae|jb|jg|jge|jl|"
 pd_r4: "|jle|jmp|jne|jnz|jz|leave|length|lines_of_fast|list_reuse|look|mov_rax_rcx|mov_rax_rdi|mov_rax_rsi|mov_rcx_rax|mov_rcx_rdx|mov_rcx_rsi|mov_rdi_rax|mov_rsi_rax|name_ok|num_of|oc_here|ocget|ocput|ocset|patch|poke4|poke8|pop_rax|pop_rcx|push_rax|"
@@ -8375,6 +7900,7 @@ pd_mkrtab:
     pd_rkey: _sov_heap_alloc(pd_rcap * 8)
     dummy8: _sov_bzero(pd_rkey, pd_rcap * 8)
     dummy8: pd_radd(pd_r1)
+    dummy8: pd_radd(pd_r2)
     dummy8: pd_radd(pd_r3)
     dummy8: pd_radd(pd_r4)
     dummy8: pd_radd(pd_r5)
@@ -8508,8 +8034,7 @@ prune_dead pd_src pd_lim pd_inf:
         pd_ucap: 65536
     pd_umsk: pd_ucap - 1
     pd_uk: _sov_heap_alloc(pd_ucap * 8)
-    if pd_ucap * 8 <= 65536
-        dummy: _sov_bzero(pd_uk, pd_ucap * 8)
+    dummy: _sov_bzero(pd_uk, pd_ucap * 8)
     pd_ui: 0
     as long as pd_ui < _sov_list_len(pd_ul)
         pd_ull: peek_i64(pd_ul, 16 + pd_ui * 8)
@@ -8709,8 +8234,7 @@ prune_dead pd_src pd_lim pd_inf:
         pd_cap: pd_cap * 2
     pd_key: _sov_heap_alloc(pd_cap * 8)
     pd_val: _sov_heap_alloc(pd_cap * 8)
-    if pd_cap * 8 <= 65536
-        dummy: _sov_bzero(pd_key, pd_cap * 8)
+    dummy: _sov_bzero(pd_key, pd_cap * 8)
     pd_j: 0
     as long as pd_j < pd_nd
         pd_put(peek_i64(pd_dn, 16 + pd_j * 8), pd_j)
@@ -8880,13 +8404,13 @@ delegate_core nm ps bl:
         return 0
     if _sov_starts_with(ln, "return ") is 0
         return 0
-    e9: scutr(ln, 7)
+    e9: strip(cut(ln, 7, length(ln)))
     po: cfind1(e9, 40)
     if po < 1
         return 0
     if peek_byte(e9, length(e9) - 1) is not 41
         return 0
-    tn: scut(e9, 0, po)
+    tn: strip(cut(e9, 0, po))
     if plain_name(tn) is 0
         return 0
     if _sov_str_eq(tn, nm) is 1
@@ -8957,128 +8481,6 @@ build_del_map:
             del_targets: _sov_list_add(del_targets, del_target)
         di: di + 1
 
-fsem_build:
-    # Per-compilation name->facts map. One open-addressed table keyed by the
-    # canonical interned kid replaces three per-call scans (the symbol
-    # table lookup, the delegate-map chase and the C-builtin probe).
-    #
-    # value layout (64 bits):
-    #   bit 0        string function
-    #   bits 1..8    ret_par + 1   (0 = no identity return)
-    #   bits 9..16   arity + 1     (0 = not a user task)
-    #   bits 17..32  inl_set index + 1
-    #   bits 33..48  names index + 1
-    #   bit 49       known C builtin
-    # tgt: interned kid of the delegate target (0 = none)
-    # cah: djb2 hash of the resolved target name
-    if fsem_key is not 0
-        fsem_key: 0
-        fsem_val: 0
-        fsem_tgt: 0
-        fsem_cah: 0
-        fsem_cap: 0
-    fsem_n: _sov_list_len(names) + _sov_list_len(str_fns) + _sov_list_len(inl_set) + 512
-    fsem_cap: 16
-    as long as fsem_cap < fsem_n * 2 + 2
-        fsem_cap: fsem_cap + fsem_cap
-    fsem_key: _sov_heap_alloc(fsem_cap * 8)
-    fsem_val: _sov_heap_alloc(fsem_cap * 8)
-    fsem_tgt: _sov_heap_alloc(fsem_cap * 8)
-    fsem_cah: _sov_heap_alloc(fsem_cap * 8)
-    if fsem_cap * 8 <= 65536
-        dummy: _sov_bzero(fsem_key, fsem_cap * 8)
-        dummy: _sov_bzero(fsem_val, fsem_cap * 8)
-        dummy: _sov_bzero(fsem_tgt, fsem_cap * 8)
-        dummy: _sov_bzero(fsem_cah, fsem_cap * 8)
-    if ca_tab is 0
-        ca_seed()
-    # C builtins: the hash table already holds every builtin and its hash.
-    cbx: 0
-    as long as cbx < 512
-        cbh: peek_i64(ca_tab, cbx * 8)
-        if cbh is not 0
-            cbn: peek_i64(ca_ntab, cbx * 8)
-            if cbn is not 0
-                cbid: intern_kid(cbn)
-                dummy: fsem_put(cbid, 562949953421312, 0, cbh)
-        cbx: cbx + 1
-    # user tasks: arity, identity return, delegate target, inl eligibility.
-    fni: 0
-    as long as fni < _sov_list_len(names)
-        fnnm: peek_i64(names, 16 + fni * 8)
-        fnid: intern_kid(fnnm)
-        fnv: 0
-        fnar: _sov_list_len(peek_i64(params, 16 + fni * 8))
-        if fnar > 0
-            if fnar < 256
-                fnv: bor(fnv, (fnar + 1) * 512)
-        fnrp: 0 - 1
-        if ret_par is not 0
-            if fni < _sov_list_len(ret_par)
-                fnrp: peek_i64(ret_par, 16 + fni * 8)
-        if fnrp >= 0
-            if fnrp < 255
-                fnv: bor(fnv, (fnrp + 1) * 2)
-        if fni < 65535
-            fnv: bor(fnv, (fni + 1) * 8589934592)
-        fntgt: 0
-        fncah: 0
-        fndi: list_find(del_names, fnnm)
-        if fndi >= 0
-            fntnm: peek_i64(del_targets, 16 + fndi * 8)
-            fntgt: intern_kid(fntnm)
-            # a delegate target that is itself a C builtin keeps that
-            # builtin's hash so the call site skips the probe
-            fncah: ca_hash_of(fntnm)
-        dummy: fsem_put(fnid, fnv, fntgt, fncah)
-        fni: fni + 1
-    # string functions: the seed list holds plain literals, later additions
-    # hold interned kids; interning both lands them on the same key.
-    fsi: 0
-    as long as fsi < _sov_list_len(str_fns)
-        fsn: peek_i64(str_fns, 16 + fsi * 8)
-        if fsn is not 0
-            dummy: fsem_put(intern_kid(fsn), 1, 0, 0)
-        fsi: fsi + 1
-    # inlinable tasks: the set index and the symbol table index.
-    fii: 0
-    as long as fii < _sov_list_len(inl_set)
-        finm: peek_i64(inl_set, 16 + fii * 8)
-        if finm is not 0
-            fiid: intern_kid(finm)
-            fiv: 0
-            fifi: nm_lookup(finm)
-            if fifi >= 0
-                if fifi < 65535
-                    fiv: bor(fiv, (fifi + 1) * 8589934592)
-            if fii < 65535
-                fiv: bor(fiv, (fii + 1) * 131072)
-            dummy: fsem_put(fiid, fiv, 0, 0)
-        fii: fii + 1
-    return 0
-
-ca_hash_of nm:
-    # the djb2 hash the C-builtin probe uses, or 0 when nm is not a builtin
-    if ca_tab is 0
-        ca_seed()
-    cah: 0
-    cci: 0
-    ccg: 1
-    as long as ccg is 1
-        ccb: peek_byte(nm, cci)
-        if ccb is 0
-            ccg: 0
-        if not
-            cah: cah * 33 + ccb
-            cci: cci + 1
-    cix: band(cah, 511)
-    as long as peek_i64(ca_tab, cix * 8) is not 0
-        if peek_i64(ca_tab, cix * 8) is cah
-            if _sov_str_eq(peek_i64(ca_ntab, cix * 8), nm) is 1
-                return cah
-        cix: band(cix + 1, 511)
-    return 0
-
 tco_allowed tc_lines tc_nm:
     # TCO only for pure tail recursion (used as iteration).  If the body
     # makes any non-tail self-call it is genuine branching recursion: the
@@ -9115,16 +8517,10 @@ tco_allowed tc_lines tc_nm:
 walk_range wa wb:
     fi: wa
     as long as fi < wb
-        if prof_mode is 1
-            prof_functions: prof_functions + 1
-        dbg_active: peek_i64(task_user, 16 + fi * 8)
         walk_nm: peek_i64(names, 16 + fi * 8)
         if fn_lookup(walk_nm) < 0
                 fn_names: _sov_list_add(fn_names, walk_nm)
                 fn_offs: _sov_list_add(fn_offs, here())
-                if dbg_collect is 1
-                    if dbg_active is 1
-                        addp(here(), "debug", peek_i64(task_lns, 16 + fi * 8))
                 par_cfn: fi
                 if par_do is 1
                     pe0(50, fi, here(), _sov_list_len(patch_at))
@@ -9145,7 +8541,7 @@ walk_range wa wb:
                 ps: peek_i64(params, 16 + fi * 8)
                 pi: 0
                 as long as pi < _sov_list_len(ps)
-                    d8: lsha2(peek_i64(ps, 16 + pi * 8))
+                    d8: lsh_add(peek_i64(ps, 16 + pi * 8))
                     pi: pi + 1
                 if fi < _sov_list_len(fn_lord)
                     wl_ord: peek_i64(fn_lord, 16 + fi * 8)
@@ -9160,6 +8556,11 @@ walk_range wa wb:
                         thin: 0
                 if thin is 1
                     skip_al: dead_iota(peek_i64(bodies, 16 + fi * 8))
+                    fgn: repl(strip(cut(fls, 0, fgc)), " ", "_")
+                    if length(fgn) > 0
+                        if gn_lookup(fgn) is 0 - 1
+                            if list_idx(fset, fgn) is 0 - 1
+                                fset: _sov_list_add(fset, fgn)
                     leaf8: leaf8_scan(tops)
                     stmt_lns: tops_lns
                     body(tops)
@@ -9202,28 +8603,7 @@ walk_range wa wb:
                     # will plant the twin, so other programs keep the
                     # framed Sovren body for these same names.
                     nt_fl: 0
-                    sx_force_native: 0
-                    if _sov_str_eq(walk_nm, "syntax_build") is 1 -> sx_force_native: 1
-                    if _sov_str_eq(walk_nm, "syntax_statement_build") is 1 -> sx_force_native: 1
-                    if _sov_str_eq(walk_nm, "intern_kid_n") is 1 -> sx_force_native: 1
-                    if _sov_str_eq(walk_nm, "regslot2") is 1 -> sx_force_native: 1
-                    if _sov_str_eq(walk_nm, "rax_imm") is 1 -> sx_force_native: 1
-                    if _sov_str_eq(walk_nm, "u_scan_wide") is 1 -> sx_force_native: 1
-                    if _sov_str_eq(walk_nm, "kgrow_ht") is 1 -> sx_force_native: 1
-                    if _sov_str_eq(walk_nm, "list_find") is 1 -> sx_force_native: 1
-                    # C.2/C.11 fused front-end scan: the blob is a volatile-only
-                    # leaf with no rbp frame, so the walk must not emit callee-
-                    # saved pushes (same law as syntax_build / u_scan_wide).
-                    if _sov_str_eq(walk_nm, "front_scan") is 1 -> sx_force_native: 1
-                    # NOTE: the u_scan_wide sx_force_native line lives with the
-                    # PARKED twin (see work/p4/SESSION_2026-11-02_USCAN_TWIN_PARK.md).
-                    # All three switches - cx86_p3 nt_will_twin, cx86_p3
-                    # try_native_body, and the sx_force line here - must flip
-                    # TOGETHER: the force without the plant compiles the
-                    # interpreted body into a frameless twin entry (the E1
-                    # crash), and the plant without the force builds the hybrid
-                    # entry. Never land one without the others.
-                    if no_frame is 0 or sx_force_native is 1
+                    if no_frame is 0
                         if nt_will_twin(walk_nm) is 1
                             nt_fl: 1
                             no_frame: 1
@@ -9246,29 +8626,6 @@ walk_range wa wb:
                                     if fi is not entry_idx
                                         if _sov_list_len(ps) < 7
                                             del_ok: delegate_name(walk_nm, ps, peek_i64(bodies, 16 + fi * 8))
-                    if inl2_lfd > 0
-                        inl2_lc: 0
-                        inl2_lp("W")
-                        inl2_lnum(par_child)
-                        inl2_lp(" fi")
-                        inl2_lnum(fi)
-                        inl2_lp(" nm")
-                        inl2_lp(walk_nm)
-                        inl2_lp(" do")
-                        inl2_lnum(del_ok)
-                        inl2_lp(" nf")
-                        inl2_lnum(no_frame)
-                        inl2_lp(" nt")
-                        inl2_lnum(nt_fl)
-                        inl2_lp(" ch")
-                        inl2_lnum(can_here)
-                        inl2_lp(" fb")
-                        inl2_lnum(isfib)
-                        inl2_lp(" ps")
-                        inl2_lnum(_sov_list_len(ps))
-                        poke_byte(inl2_lbuf, inl2_lc, 10)
-                        inl2_lc: inl2_lc + 1
-                        syscall(1, inl2_lfd, inl2_lbuf, inl2_lc, 0)
                     leaf8_fn: 0
                     if _sov_list_len(ps) < 8
                         if fargs + floc > 5
@@ -9281,15 +8638,6 @@ walk_range wa wb:
                                 canary_store()
                     if nt_fl is 0
                         copyargs(_sov_list_len(ps))
-                    if _sov_str_eq(walk_nm, "_sov_heap_alloc") is 1
-                        prof_emit("prof_allocations", 0 - 1)
-                        prof_emit("prof_alloc_bytes", 7)
-                    if _sov_str_eq(walk_nm, "intern_kid_full") is 1
-                        prof_emit("prof_fallbacks", 0 - 1)
-                    if _sov_str_eq(walk_nm, "intern_kid_n_full") is 1
-                        prof_emit("prof_fallbacks", 0 - 1)
-                    if _sov_str_eq(walk_nm, "intern_fast_do") is 1
-                        prof_emit("prof_fallbacks", 0 - 1)
                     if isfib is 1
                         emit_fib_iter()
                     if not
@@ -9304,9 +8652,7 @@ walk_range wa wb:
                             entry_start: here()
                             rax_small: 0
                             in_entry_now: 1
-                            dbg_tops: 1
                             body(tops)
-                            dbg_tops: 0
                             in_entry_now: 0
                             stmt_lns: _sov_list_get(body_lns, fi)
                             cflush_all()
@@ -9343,15 +8689,12 @@ walk_range wa wb:
                             mark("W-entry-done")
                         if fi is entry_idx
                             in_entry_now: 0
-                    # Native twins intentionally save no source locals: they
-                    # consume argument registers, not the discarded body.
-                    if nt_fl is 0
-                        if _sov_list_len(locals) < 6
-                            if fn_save_n < _sov_list_len(locals)
-                                print "Warning: locals"
-                                _sov_print(walk_nm)
-                                print _sov_list_len(locals)
-                                print fn_save_n
+                    if _sov_list_len(locals) < 6
+                        if fn_save_n < _sov_list_len(locals)
+                            print "Warning: locals"
+                            _sov_print(walk_nm)
+                            print _sov_list_len(locals)
+                            print fn_save_n
                     if saw_str is 1
                         mark_fn_str(walk_nm)
                     if no_frame is 0
@@ -9404,12 +8747,6 @@ walk_range wa wb:
                                 xor_rax()
                                 leave()
                                 ret()
-        if par_child is 1
-            if band(fi, 7) is 0
-                pm_dbg3("CFI=", fi)
-                pm_dbg3("CFO=", band(oc_n / 1000, 999999))
-                pm_dbg(walk_nm)
-                pm_dbg("\n")
         fi: fi + 1
     return 0
 
@@ -9661,28 +8998,14 @@ par_setup:
         pm_ptf: 1
         pm_vv: 1
         pm_t0: pm_ms()
-    # 2026-11-03: serial is the DEFAULT; parallel is opt-in via /tmp/sov_par.
-    # Retest under the patch-fixed compiler (ocgrow 4 MiB first alloc + emit3
-    # rdx save): the parallel self-build now completes deterministically (3/3
-    # byte-identical runs), its product's outputs are byte-identical to the
-    # certified serial compiler's on hello/all.sov/x86ins, and that product
-    # run serially rebuilds the serial fixed point exactly - but the parallel
-    # self-image itself still diverges from the serial fixed point, and on
-    # this 2-core box it is 11% SLOWER (200.4 vs 180.0 ms median). A
-    # silently-on, slower, byte-divergent default is a hazard: opt in only.
-    tf: syscall(2, "/tmp/sov_par", 0, 0, 0)
+    if dbg_mode is 0
+        if prof_mode is 0
+            pn: par_cores()
+    pm_dbg("PB\n")
+    tf: syscall(2, "/tmp/sov_nopar", 0, 0, 0)
     if tf > 2
         syscall(3, tf, 0)
-        if dbg_mode is 0
-            if prof_mode is 0
-                pn: par_cores()
-    pm_dbg("PB\n")
-    # The 2026-11-02 warning below is superseded by the retest above: the
-    # ocgrow/emit3 patch fixes cured the corrupt-product class. Keep the DCE
-    # caveat forever: never hard-park this with a constant `pn: 0` (the
-    # constant fold DCEs the whole split block and the prune itself shifts
-    # codegen - hash-order latent bug class, verified broken as gen_d).
-    # Forensics: work/p4/SESSION_2026-11-02_MERGE_CHILD_DIVERGENCE.md.
+        pn: 0
     if pn > 1
         if _sov_list_len(names) > 127
             pm_dbg("PC0\n")
@@ -9698,7 +9021,7 @@ par_setup:
             as long as psp_i < _sov_list_len(bodies)
                 psp_tot: psp_tot + _sov_list_len(peek_i64(bodies, 16 + psp_i * 8))
                 psp_i: psp_i + 1
-            psp_tgt: psp_tot * 50 / 100
+            psp_tgt: psp_tot * 60 / 100
             psp_acc: 0
             psp_i: 0
             as long as psp_i < _sov_list_len(bodies)
@@ -9729,31 +9052,36 @@ par_setup:
                     as long as psv_i < _sov_list_len(im_names)
                         par_sv_im: _sov_list_add(par_sv_im, peek_i64(im_names, 16 + psv_i * 8))
                         psv_i: psv_i + 1
-                # Pre-walk flor of the parent's range: the parent's own
-                # walk below needs the inl2/licm-rewritten bodies, and the
-                # child inherits them via the LATE fork, so its own
-                # flor(walk_hi..) sees callee bodies exactly as a serial
-                # flor would have left them.  Without this, a child-range
-                # caller sees the ORIGINAL body of a parent-range callee
-                # where serial sees the rewritten one, and the child blob
-                # diverges from the serial tail.
-                dummy: flor_range(0, par_hi2, gh, gcap)
-                par_flor_pre: 1
-                # LATE FORK (work/p4/SESSION_2026-11-02_MERGE_CHILD_DIVERGENCE.md):
-                # par_setup no longer forks.  The parent first walks
-                # [0, par_hi2) to completion (walk_hi set below), and the
-                # main loop forks only AFTER that walk.  The child then
-                # inherits the parent's POST-walk universe (oc, fn ledger,
-                # str_fns, patch prefix, del/inl/fsem tables, kn/kv) - byte
-                # for byte the state serial carries across the hi2 boundary
-                # - and continues [hi2, N) as a pure serial continuation.
-                # This kills the whole "decision reads state built by the
-                # other half's walk" class (ml_calls_ok's fn_lookup probe,
-                # sf_lookup's emergent str_fns) by construction, and makes
-                # the merge's address remap the identity (cur0 == clo).
-                par_late: 1
-                walk_hi: par_hi2
-                return 0
+                pid: syscall(57, 0)
+                if pm_ptf is 1
+                    pm_tfk: pm_ms()
+                    pm_note3("TFK=", pm_tfk  - pm_t0)
+                    pm_dbg("\n")
+                pm_dbg("PC4\n")
+                if pid is 0
+                    par_child: 1
+                    par_kill: 1
+                    par_do: 1
+                    walk_lo: par_hi2
+                    pm_dbg("K1\n")
+                    par_dup_log()
+                    zzlog: _sov_list_new()
+                    pm_p0: zzlog
+                    pm_probe: _sov_list_new()
+                    pm_samp: _sov_list_new()
+                    pm_sam2: _sov_list_new()
+                    zzlog_s: _sov_list_new()
+                    parm_cfn: _sov_list_new()
+                    parm_off: _sov_list_new()
+                    parm_pat: _sov_list_new()
+                    pm_dbg("K2\n")
+                    return 0
+                if pid > 0
+                    pm_dbg("PP\n")
+                    par_pid0: pid
+                    walk_hi: par_hi2
+                    par_live: 1
+                    return 0
     return 0
 
 par_w8 wc v:
@@ -9849,36 +9177,6 @@ par_export:
         wc: par_wstr(wc, _sov_list_get(str_fns, par_sf0 + si2))
         si2: si2 + 1
     poke_i64(par_pool, 104, wc)
-    # LATE FORK: transport the child's branch records (br_at/br_st) -
-    # walk-emergent dead-branch state (br_st=4 folded-dead flags) that
-    # dce_litter/shrink consume post-merge.  Without it the child's dead
-    # branches survive as live patches: 226 extra grel/kglob refs, +78
-    # kept globals, +624 RW bytes, dense RX byte diffs.
-    par_nbr: _sov_list_len(br_at) - par_br0
-    poke_i64(par_pool, 112, par_nbr)
-    pm_dbg3("CNBR=", par_nbr)
-    pm_dbg3("CNBL=", band(blen / 1000, 999999))
-    pm_dbg3("CNPG=", band(par_pool / 4096, 999999))
-    pm_dbg3("CHI2=", par_hi2)
-    pm_dbg3("CWL0=", walk_lo)
-    pm_dbg3("CWHI=", walk_hi)
-    pm_dbg3("COCN=", band(oc_n / 1000, 999999))
-    pm_dbg("\n")
-    wc: par_wsseg(wc, br_at, par_br0, par_nbr)
-    poke_i64(par_pool, 128, wc)
-    wc: par_wsseg(wc, br_st, par_br0, par_nbr)
-    poke_i64(par_pool, 136, wc)
-    # String offsets belong to the child's pool, not the parent's.
-    # Transfer the current compilation's raw pool with its byte length.
-    # The parent re-interns referenced payloads when importing fixups.
-    poke_i64(par_pool, 192, wc)
-    p0_sl: _sov_buf_len(strb)
-    poke_i64(par_pool, 200, p0_sl)
-    wc: par_wraw(wc, strb, 16, p0_sl)
-    bfd: syscall(2, "/tmp/child_blob.bin", 577, 420, 0)
-    if bfd > 0
-        dummy: syscall(1, bfd, peek_i64(par_pool, 64), blen, 0)
-        syscall(3, bfd, 0)
     if wc > par_pool + 31457280
         par_err: 1
     return 0
@@ -10024,23 +9322,10 @@ pm_import_patches plo phi clo cur0:
             vv: vraw
             if wf is 1
                 vv: pm_rval
-            p0_isstr: 0
             if _sov_str_eq(kptr, "strrel") is 1
-                p0_isstr: 1
-            if _sov_str_eq(kptr, "str") is 1
-                p0_isstr: 1
-            if _sov_str_eq(kptr, "str32") is 1
-                p0_isstr: 1
-            if p0_isstr is 1
-                p0_sl: peek_i64(par_pool, 200)
-                if vraw < 0
+                vv: pm_map_int(vraw)
+                if vv < 0
                     bad: 1
-                if vraw >= p0_sl
-                    bad: 1
-                if vraw >= 0
-                    if vraw < p0_sl
-                        p0_sb: peek_i64(par_pool, 192)
-                        vv: intern_nz(p0_sb + vraw)
             nat: cur0 + (at - clo) - drun
             patch_at: _sov_list_add(patch_at, nat)
             patch_kind: _sov_list_add(patch_kind, kptr)
@@ -10054,13 +9339,8 @@ pm_import_patches plo phi clo cur0:
 pm_commit clo chi plo phi:
     pm_cb_fn: _sov_list_len(fn_names)
     pm_cb_pat: _sov_list_len(patch_at)
-    pm_cb_br: _sov_list_len(br_at)
     cur0: pm_cursor
-    # Reserve against the live write cursor, not oc_n: oc_n is only
-    # re-synced after the whole event walk, so with several commits per
-    # walk the stale oc_n let pm_copy run past oc once the committed
-    # bytes exceeded the 65536 slack (the par_merge SIGSEGV/SIGILL).
-    as long as cur0 + (chi - clo) + 65536 > oc_cap
+    as long as oc_n + (chi - clo) + 65536 > oc_cap
         ocgrow()
     pm_main: pm_name_read()
     fn_names: _sov_list_add(fn_names, pm_rval)
@@ -10109,20 +9389,8 @@ pm_init:
         pm_sf: peek_i64(par_pool, 96)
         pm_pev: par_pool + 4096
         pm_nev: peek_i64(par_pool, 120)
-        pm_nbr: peek_i64(par_pool, 112)
-        pm_br: peek_i64(par_pool, 128)
-        pm_brs: peek_i64(par_pool, 136)
-        pm_nbr: 0
-        pm_dbg3("BRDIS=", pm_nbr)
         pm_ppv: pm_ppat + pm_npat * 8
         pm_ppl: pm_ppat + pm_npat * 16
-        pmb0: peek_i64(pm_blob, 0)
-        pmb1: peek_i64(pm_blob, 8)
-        pm_dbg3("PB0=", band(pmb0 / 1000000000, 999999))
-        pm_dbg3("PB1=", band(pmb1 / 1000000000, 999999))
-        pm_dbg3("PBL=", band(pm_blen / 1000, 999999))
-        pm_dbg3("PRW=", band(peek_i64(par_pool, 8) / 1000, 999999))
-        pm_dbg3("PRPG=", band(par_pool / 4096, 999999))
         return 1
     return 0
 
@@ -10165,13 +9433,11 @@ par_merge:
         par_rb_pat: _sov_list_len(patch_at)
         par_rb_sf: _sov_list_len(str_fns)
         par_rb_set: 1
-        # LATE FORK: no par_sv restore.  The child inherited the parent's
-        # POST-walk kn/kv/did_stos/im_names at fork time, so its recorded
-        # event values - and the op10/op11 sigs that par_sig_calc (kv,
-        # nhash(kn), dirty tables, im_names, did_stos) must validate
-        # against - live on exactly the state the parent is holding right
-        # now.  Restoring the pre-walk snapshot here would desync every
-        # parent-side sig from the child's and force a full serial redo.
+        kn: par_sv_kn
+        kv: par_sv_kv
+        did_stos: par_sv_stos
+        if par_sv_im is not 0
+            im_names: par_sv_im
     if rfrom < 0
         pm_cursor: oc_n
         pm_rfrom: 0 - 1
@@ -10203,8 +9469,6 @@ par_merge:
                             dummy: poke_i64(patch_kind, 8, pm_cb_pat)
                             dummy: poke_i64(patch_val, 8, pm_cb_pat)
                             dummy: poke_i64(patch_line, 8, pm_cb_pat)
-                            dummy: poke_i64(br_at, 8, pm_cb_br)
-                            dummy: poke_i64(br_st, 8, pm_cb_br)
                             if patch_kid is not 0
                                 dummy: poke_i64(patch_kid, 8, pm_cb_pat)
                             rfrom: pm_cfn_prev
@@ -10256,8 +9520,6 @@ par_merge:
                     dummy: poke_i64(patch_kind, 8, pm_cb_pat)
                     dummy: poke_i64(patch_val, 8, pm_cb_pat)
                     dummy: poke_i64(patch_line, 8, pm_cb_pat)
-                    dummy: poke_i64(br_at, 8, pm_cb_br)
-                    dummy: poke_i64(br_st, 8, pm_cb_br)
                     if patch_kid is not 0
                         dummy: poke_i64(patch_kid, 8, pm_cb_pat)
                     rfrom: pm_cfn_prev
@@ -10268,13 +9530,6 @@ par_merge:
                 str_fns: _sov_list_add(str_fns, pm_sf + 8)
                 pm_sf: pm_sf + 8 + sfl2 + 1
                 sfj: sfj + 1
-            bj9: 0
-            as long as bj9 < pm_nbr
-                br_at: _sov_list_add(br_at, peek_i64(pm_br, bj9 * 8))
-                br_st: _sov_list_add(br_st, peek_i64(pm_brs, bj9 * 8))
-                bj9: bj9 + 1
-            pm_dbg3("BRADD=", bj9)
-            pm_dbg("\n")
             if band(pm_bits, 1) is 1
                 used_al: 1
             if band(pm_bits, 2) is 2
@@ -10336,398 +9591,7 @@ par_merge:
                     im_names: _sov_list_add(im_names, peek_i64(par_mg_app, 16 + psv_j * 8))
                     psv_j: psv_j + 1
             par_bk_set: 0
-    if pm_vv is 1
-        pm_dbg3("RF=", rfrom)
-        pm_dbg("\n")
     return rfrom
-
-# --- LICM C port (tools/native_licm.c): the whole licm family (the scan
-# driver with its <=16-round fixpoint, licm_one's guard splice and
-# licm2_one's pure-call hoist) is fused into one position-independent
-# blob entered at _sov_licm_scan(lines, sln, tbl).  strip_span/indent_of/
-# look/cut/str_cat/same/plain_name/is_imm run as static span mirrors
-# inside it, rebuilt line lists live in the persistent lc_tbl arena, and
-# licm_udef answers are cached generation-tagged (load factor under
-# 50%, the STAB lesson).  The tbl block doubles as the persistent cell
-# so the fast path pays ZERO interpreted dispatches: slot 0 = count (4),
-# slots 1..4 = the helpers, slot 5 = arp, slot 6 = are (written by the
-# blob's ar_grow), slot 7 = the generation tag, slot 8 = the udef-cache
-# base.  The cache owns a DEDICATED allocation: a cache inside the bump
-# arena died at every ar_grow chunk change (32KB re-zero + every udef
-# re-asked through ~5us dispatches; on all.sov that snowballed to
-# +8.5ms W-walk0, 7x the interpreted cost).  The interpreted licm_scan
-# in the cx86 core stays as the fallback for programs without the
-# compiler-internals gate; it reads global stmt_lns itself, so sln/tbl
-# are ignored on that path and all such builds read identically.
-lc_tbl: 0
-lc_tbl_init:
-    lc_tbl: _sov_heap_alloc(96)
-    poke_i64(lc_tbl, 0, 4)
-    poke_i64(lc_tbl, 8, addr_of lc_set_out)
-    poke_i64(lc_tbl, 16, addr_of lc_set_sln)
-    poke_i64(lc_tbl, 24, addr_of licm_udef)
-    poke_i64(lc_tbl, 32, addr_of _sov_heap_alloc)
-    poke_i64(lc_tbl, 40, 0)
-    poke_i64(lc_tbl, 48, 0)
-    poke_i64(lc_tbl, 56, 1)
-    poke_i64(lc_tbl, 64, 0)
-    return 0
-lc_set_out v:
-    licm_out: v
-    return 0
-lc_set_sln v:
-    licm_sln: v
-    return 0
-_sov_licm_scan lines sln tbl:
-    return licm_scan(lines)
-
-# --- INL2 C port (tools/native_inl2.c): the whole inl2 family (the
-# fixpoint driver with okm/okb body-ok memo, inl2_one's candidate
-# discovery + zzln splice, callfind, body_ok, scanreads, rename, mkcn)
-# fused into one native blob entered at _sov_inl2_scan(lines, sln, ci,
-# tbl).  The tbl carries the publishing/allocating helpers plus the
-# program tables as data slots (9=names, 10=params, 11=bodies, 12=gh,
-# 13=gcap, 14=task_user - poked per function below; poke_i64 is inline
-# native, no dispatch), and doubles as the persistent cell (5=arp,
-# 6=are, 7=gen, 8=state base with the okm/okb memo, the cnci capture
-# memo, and blob-local names/gh hashes - names are unique post-parse
-# and set_has answers membership, so both lookups are hash-independent
-# and never dispatch).  split_args stays a tbl dispatch (once per
-# accepted site).  The env-gated /tmp/sov_inl2log determinism probe is
-# not mirrored: it only writes a side log when the gate file exists.
-# The interpreted inl2_scan in the cx86 core stays as the fallback for
-# programs without the compiler-internals gate (it reads the inl2_*
-# globals, still set below); all such builds read identically.
-il_tbl: 0
-il_tbl_init:
-    il_tbl: _sov_heap_alloc(128)
-    poke_i64(il_tbl, 0, 4)
-    poke_i64(il_tbl, 8, addr_of il_set_out)
-    poke_i64(il_tbl, 16, addr_of il_set_sln)
-    poke_i64(il_tbl, 24, addr_of _sov_heap_alloc)
-    poke_i64(il_tbl, 32, addr_of split_args)
-    poke_i64(il_tbl, 40, 0)
-    poke_i64(il_tbl, 48, 0)
-    poke_i64(il_tbl, 56, 1)
-    poke_i64(il_tbl, 64, 0)
-    return 0
-il_set_out v:
-    inl2_out: v
-    return 0
-il_set_sln v:
-    inl2_sln: v
-    return 0
-_sov_inl2_scan lines sln ci tbl:
-    return inl2_scan(lines, sln, ci)
-# c0-parse: the single-pass parse loop of compile(), moved verbatim into the
-# fallback task below and fused into one native blob (tools/native_c0parse.c,
-# emitted as c0parse_native.sov) entered at _sov_c0_parse(lns, tbl).  The
-# differential is tools/native/diff_c0parse.py: 1514 cases (14 regressions +
-# 1500 seeded randoms, g2 gate exercised), 0 divergences.  tbl slots:
-# 0=count(6), 1=print(msg id 1..6 -> the exact literal), 2=print_int,
-# 3=_sov_print, 4=set_err_line, 5=err_where, 6=_sov_heap_alloc, 7=arp,
-# 8=are (ar_grow), 9=gen, 10=src_base, 11=kern_mode, 12=need_priv (in/out),
-# 13=had_err (in/out), 14=blank; outputs 20=names, 21=params, 22=bodies,
-# 23=body_lns, 24=task_lns, 25=task_user, 26=glob_names, 27=sglob_names,
-# 28=tops, 29=tops_lns, 30=tops_users.  The blob's zz_g2 probe and the
-# per-global /tmp/sov_g2.log writes are raw syscalls, byte-exact with the
-# interpreted loop's.  The loop below is the fallback for programs without
-# the compiler-internals gate; it reads the same globals it always did.
-c0_tbl: 0
-c0_tbl_init:
-    c0_tbl: _sov_heap_alloc(256)
-    poke_i64(c0_tbl, 0, 6)
-    poke_i64(c0_tbl, 8, addr_of c0_h_print)
-    poke_i64(c0_tbl, 16, addr_of c0_h_printi)
-    poke_i64(c0_tbl, 24, addr_of c0_h_sprint)
-    poke_i64(c0_tbl, 32, addr_of c0_h_seterr)
-    poke_i64(c0_tbl, 40, addr_of c0_h_ew)
-    poke_i64(c0_tbl, 48, addr_of _sov_heap_alloc)
-    poke_i64(c0_tbl, 56, 0)
-    poke_i64(c0_tbl, 64, 0)
-    poke_i64(c0_tbl, 72, 1)
-    return 0
-c0_h_print a:
-    if a is 1
-        print "Error: tab indent, use spaces"
-        return 0
-    if a is 2
-        print "Error: two with the same name"
-        return 0
-    if a is 3
-        print "Error: too many parameters (7 max)"
-        return 0
-    if a is 4
-        print "Error: duplicate top-level definition"
-        return 0
-    if a is 5
-        print "Error: a statement inside a task must be indented"
-        return 0
-    if a is 6
-        print "Error: law expects a name and a condition"
-        return 0
-    return 0
-c0_h_printi a:
-    print a
-    return 0
-c0_h_sprint a:
-    _sov_print(a)
-    return 0
-c0_h_seterr a:
-    err_line: a
-    return 0
-c0_h_ew:
-    err_where()
-    return 0
-_sov_c0_parse lns tbl:
-    # unsafe-module
-    # single-pass parse: the old header-counting pre-walk (18 rows) is gone;
-    # capacity is over-allocated to the line count + slack. Saves a full
-    # is_task_hdr pass over every line on every compile (parse is the largest
-    # single phase on the compiler-scale lane).
-    pcap: _sov_list_len(lns) + 8
-    names_buf: _sov_heap_alloc(16 + pcap * 8)
-    poke_i64(names_buf, 0, pcap)
-    bodies_buf: _sov_heap_alloc(16 + pcap * 8)
-    poke_i64(bodies_buf, 8, 0)
-    bodyln_buf: _sov_heap_alloc(16 + pcap * 8)
-    poke_i64(bodyln_buf, 8, 0)
-    #
-    names_n: 0
-    li: 0
-    ln_n: peek_i64(lns, 8)
-    as long as li < ln_n
-        raw: peek_i64(lns, 16 + li * 8)
-        c0n0: nind(raw)
-        s: raw
-        th: 0
-        if c0n0 is 0
-            s: strip(raw)
-            if need_priv is 0
-                if _sov_str_eq(s, "private") is 1
-                    need_priv: 1
-                if not
-                    if _sov_starts_with(s, "wipe ") is 1
-                        need_priv: 1
-            if is_task_hdr(s) is 1
-                th: 1
-        if th is 1
-            if in_t is 1
-                bodies: _sov_list_add(bodies, cur)
-                body_lns: _sov_list_add(body_lns, cur_ln)
-            tn: tname(s)
-            if zz_dup(tn) is 1
-                print "Error: two with the same name"
-                _sov_print(tn)
-                err_line: file_ln(li)
-                err_where()
-                had_err: 1
-            poke_i64(names_buf, 16 + names_n * 8, tn)
-            names_n: names_n + 1
-            poke_i64(names_buf, 8, names_n)
-            names: names_buf
-            params: _sov_list_add(params, tparams_g(th, s))
-            tu: 0
-            if li + 1 > src_base
-                tu: 1
-            task_user: _sov_list_add(task_user, tu)
-            task_lns: _sov_list_add(task_lns, file_ln(li))
-            cur: _sov_list_new()
-            cur_ln: _sov_list_new()
-            in_t: 1
-        if not
-            if c0n0 is 0
-                gok: 0
-                gc: find_col(s)
-                if starts(s, "#") is 1
-                    gok: 0
-                    gc: 0 - 1
-                if gc > 0
-                    if gc < length(s) - 1
-                        gok: 1
-                if gok is 1
-                    gn: blank
-                    if starts(s, "<-- ") is 1
-                        rest: cut(s, 4, length(s))
-                        t: find_sep(rest)
-                        if t > 0 - 1
-                            gn: repl(scut(rest, 0, t), " ", "_")
-                    if not
-                        gn: repl(scut(s, 0, gc), " ", "_")
-                    if length(gn) > 0
-                        if gn_lookup(gn) is 0 - 1
-                            glob_names: _sov_list_add(glob_names, gn)
-                            if zz_g2() is 1
-                                zzgp_fd: syscall(2, "/tmp/sov_g2.log", 1089, 438, 0)
-                                zzgp_k: 0
-                                as long as zzgp_k < par_slen(gn)
-                                    dummy: syscall(1, zzgp_fd, gn + zzgp_k, 1, 0)
-                                    zzgp_k: zzgp_k + 1
-                                dummy: syscall(1, zzgp_fd, "\n", 1, 0)
-                                syscall(3, zzgp_fd, 0)
-                            sgin9: scutr(s, gc + 1)
-                            if peek_byte(sgin9, 0) is 34
-                                if sg_lookup(gn) < 0
-                                    sglob_names: _sov_list_add(sglob_names, gn)
-                        if not
-                            dupok: 1
-                            if _sov_str_eq(gn, "heap_ptr") is 1
-                                dupok: 0
-                            if _sov_str_eq(gn, "heap_end") is 1
-                                dupok: 0
-                            if _sov_str_eq(gn, "g_slide") is 1
-                                dupok: 0
-                            if _sov_str_eq(gn, "g_canary") is 1
-                                dupok: 0
-                            if _sov_str_eq(gn, "g_argc") is 1
-                                dupok: 0
-                            if _sov_str_eq(gn, "g_argv") is 1
-                                dupok: 0
-                            if _sov_str_eq(gn, "pie_walk") is 1
-                                dupok: 0
-                            if _sov_str_eq(gn, "sc_write") is 1
-                                dupok: 0
-                            if _sov_str_eq(gn, "sc_exit") is 1
-                                dupok: 0
-                            if _sov_str_eq(gn, "sc_mmap") is 1
-                                dupok: 0
-                            if _sov_str_eq(gn, "mmap_flags") is 1
-                                dupok: 0
-                            if _sov_str_eq(gn, "sc_mincore") is 1
-                                dupok: 0
-                            if _sov_str_eq(gn, "sc_rand") is 1
-                                dupok: 0
-                            if _sov_str_eq(gn, "sc_nodump") is 1
-                                dupok: 0
-                            if _sov_str_eq(gn, "sc_sigact") is 1
-                                dupok: 0
-                            if _sov_str_eq(gn, "M32") is 1
-                                dupok: 0
-                            if dupok is 1
-                                print "Error: duplicate top-level definition"
-                                _sov_print(gn)
-                                _sov_print(strip(raw))
-                                err_line: file_ln(li)
-                                print err_line
-                                had_err: 1
-                        sa: 0
-                        if gc + 1 < length(s)
-                            grhs: scutr(s, gc + 1)
-                            if _sov_str_eq(repl(grhs, " ", "_"), gn) is 1
-                                sa: 1
-                        if sa is 0
-                            tops: _sov_list_add(tops, raw)
-                            tops_lns: _sov_list_add(tops_lns, file_ln(li))
-                            if li + 1 > src_base
-                                tops_users: _sov_list_add(tops_users, 1)
-                            if not
-                                tops_users: _sov_list_add(tops_users, 0)
-                if gok is 0
-                    if length(s) > 0
-                        if in_t is 1
-                            if starts(s, "use ") is 0
-                                if starts(s, "#") is 0
-                                    print "Error: a statement inside a task must be indented"
-                                    _sov_print(s)
-                                    err_line: file_ln(li)
-                                    print err_line
-                                    had_err: 1
-            if not
-                # indented line: the old standalone probe strip_span'd every
-                # line; only a p/w/tab first byte can ever match, and nind
-                # has already walked the spaces (peek at c0n0 lands on the
-                # first non-space byte; a tab goes through strip_span's
-                # strip path, matching the old probe exactly).
-                if need_priv is 0
-                    pwb: peek_byte(raw, c0n0)
-                    pwh: 0
-                    if pwb is 112
-                        pwh: 1
-                    if pwb is 119
-                        pwh: 1
-                    if pwb is 9
-                        pwh: 1
-                    if pwh is 1
-                        pnl2: strip_span(raw)
-                        if _sov_str_eq(pnl2, "private") is 1
-                            need_priv: 1
-                        if not
-                            if _sov_starts_with(pnl2, "wipe ") is 1
-                                need_priv: 1
-                if in_t is 1
-                    law_handled: 0
-                    if starts(s, "law ") is 1
-                        law_handled: 1
-                        law_body: scutr(s, 4)
-                        law_bln: length(law_body)
-                        law_name: "unnamed"
-                        law_cond: law_body
-                        if _sov_byte_at(law_body, 0) is 34 is 1
-                            law_q2: 0
-                            law_qi: 1
-                            as long as law_qi < law_bln
-                                if _sov_byte_at(law_body, law_qi) is 34 is 1
-                                    if law_q2 is 0
-                                        law_q2: law_qi
-                                law_qi: law_qi + 1
-                            if law_q2 > 0
-                                law_name: cut(law_body, 1, law_q2)
-                                law_cond: scut(law_body, law_q2 + 1, law_bln)
-                        law_sp: 0 - 1
-                        law_ci: 0
-                        as long as law_ci < law_bln
-                            if _sov_byte_at(law_body, law_ci) is 32 is 1
-                                if law_sp < 0
-                                    law_sp: law_ci
-                            law_ci: law_ci + 1
-                        if law_sp > 0
-                            law_name: cut(law_body, 0, law_sp)
-                            law_cond: scut(law_body, law_sp, law_bln)
-                        if length(law_cond) is 0
-                            print "Error: law expects a name and a condition"
-                            law_handled: 0 - 1
-                        law_ind: cut(raw, 0, length(raw) - length(s))
-                        law_ln: file_ln(li)
-                        cur: _sov_list_add(cur, law_ind)
-                        cur_ln: _sov_list_add(cur_ln, law_ln)
-                        cur: _sov_list_add(cur, str_cat(law_ind, str_cat("if ", str_cat(law_cond, " is 0"))))
-                        cur_ln: _sov_list_add(cur_ln, law_ln)
-                        cur: _sov_list_add(cur, str_cat(law_ind, str_cat("    print \"LAW VIOLATED: ", str_cat(law_name, "\""))))
-                        cur_ln: _sov_list_add(cur_ln, law_ln)
-                        cur: _sov_list_add(cur, str_cat(law_ind, str_cat("    print ", i2s(law_ln))))
-                        cur_ln: _sov_list_add(cur_ln, law_ln)
-                        if kern_mode is 1
-                            cur: _sov_list_add(cur, str_cat(law_ind, "    as long as 1 is 1"))
-                            cur_ln: _sov_list_add(cur_ln, law_ln)
-                            cur: _sov_list_add(cur, str_cat(law_ind, "        hlt()"))
-                            cur_ln: _sov_list_add(cur_ln, law_ln)
-                        if kern_mode is 0
-                            cur: _sov_list_add(cur, str_cat(law_ind, "    sys_exit(232)"))
-                            cur_ln: _sov_list_add(cur_ln, law_ln)
-                        if starts(cut(raw, 0, length(raw) - length(s)), "        ") is 1
-                            dummy_dp: 0
-                    if law_handled is 0
-                        cur: _sov_list_add(cur, raw)
-                        cur_ln: _sov_list_add(cur_ln, file_ln(li))
-        li: li + 1
-    if in_t is 1
-        bodies: _sov_list_add(bodies, cur)
-        body_lns: _sov_list_add(body_lns, cur_ln)
-    poke_i64(tbl, 160, names)
-    poke_i64(tbl, 168, params)
-    poke_i64(tbl, 176, bodies)
-    poke_i64(tbl, 184, body_lns)
-    poke_i64(tbl, 192, task_lns)
-    poke_i64(tbl, 200, task_user)
-    poke_i64(tbl, 208, glob_names)
-    poke_i64(tbl, 216, sglob_names)
-    poke_i64(tbl, 224, tops)
-    poke_i64(tbl, 232, tops_lns)
-    poke_i64(tbl, 240, tops_users)
-    poke_i64(tbl, 96, need_priv)
-    poke_i64(tbl, 104, had_err)
-    return 1
-
 
 flor_range flo fhi gh gcap:
     # Per-function front analyses (inl2/licm body rewrites, fn_locs,
@@ -10735,8 +9599,6 @@ flor_range flo fhi gh gcap:
     # par_again loop so a parallel child pays only for its own range
     # (fn_locs/fn_lord are pre-sized; out-of-range slots stay 0 there
     # and are never read by the walker of the other range).
-    if lc_tbl is 0
-        dummy: lc_tbl_init()
     fli: flo
     as long as fli < fhi
         fb: peek_i64(bodies, 16 + fli * 8)
@@ -10752,20 +9614,12 @@ flor_range flo fhi gh gcap:
             inl2_bodies: bodies
             inl2_gh: gh
             inl2_gcap: gcap
-            if il_tbl is 0
-                dummy: il_tbl_init()
-            poke_i64(il_tbl, 72, names)
-            poke_i64(il_tbl, 80, params)
-            poke_i64(il_tbl, 88, bodies)
-            poke_i64(il_tbl, 96, gh)
-            poke_i64(il_tbl, 104, gcap)
-            poke_i64(il_tbl, 112, task_user)
-            if _sov_inl2_scan(fb, stmt_lns, fli, il_tbl) is 1
+            if inl2_scan(fb, stmt_lns, fli) is 1
                 fb: inl2_out
                 bodies: _sov_list_set(bodies, fli, fb)
                 body_lns: _sov_list_set(body_lns, fli, inl2_sln)
                 stmt_lns: inl2_sln
-            if _sov_licm_scan(fb, stmt_lns, lc_tbl) is 1
+            if licm_scan(fb) is 1
                 fb: licm_out
                 bodies: _sov_list_set(bodies, fli, fb)
                 body_lns: _sov_list_set(body_lns, fli, licm_sln)
@@ -10782,48 +9636,20 @@ flor_range flo fhi gh gcap:
             floc_b: _sov_heap_alloc(needcap * 8)
             floc_c: _sov_heap_alloc(needcap * 8)
             floc_ep: _sov_heap_alloc(needcap * 8)
+            dummy: _sov_bzero(floc_ep, needcap * 8)
             floc_ce: _sov_heap_alloc(needcap * 8)
-            if needcap * 8 <= 65536
-                dummy: _sov_bzero(floc_ep, needcap * 8)
-                dummy: _sov_bzero(floc_ce, needcap * 8)
+            dummy: _sov_bzero(floc_ce, needcap * 8)
             floc_cap: needcap
             floc_epoch: 0
         fn_locs: _sov_list_set(fn_locs, fli, 0)
-        if lb_tbl is 0 -> lb_tbl_init()
-        flv_lord: _sov_lord_build2(fb, gh, gcap, 0, _sov_list_len(peek_i64(params, 16 + fli * 8)), lb_tbl)
+        flv_lord: lord_build(fb, gh, gcap, 0, _sov_list_len(peek_i64(params, 16 + fli * 8)))
         fn_locs: _sov_list_set(fn_locs, fli, lord_fcnt)
         fn_lord: _sov_list_set(fn_lord, fli, flv_lord)
-        if inl2_lfd > 0
-            dummy: inl2_lmeas(fb)
-            dummy: inl2_lsum(fb)
-            inl2_lc: 0
-            inl2_lp("F")
-            inl2_lnum(par_child)
-            inl2_lp(" f")
-            inl2_lnum(fli)
-            inl2_lp(" L")
-            inl2_lnum(inl2_lnl)
-            inl2_lp(" B")
-            inl2_lnum(inl2_lnb)
-            inl2_lp(" S")
-            inl2_lnum(inl2_lns)
-            poke_byte(inl2_lbuf, inl2_lc, 10)
-            inl2_lc: inl2_lc + 1
-            syscall(1, inl2_lfd, inl2_lbuf, inl2_lc, 0)
         fli: fli + 1
     return 0
 
 compile source:
     mark("C0")
-    # Per-compilation semantic tables. The symbol table is rebuilt from the
-    # parsed source below; the fast name->facts map is rebuilt by fsem_build
-    # once the symbol table is final.
-    fsem_key: 0
-    fsem_val: 0
-    fsem_tgt: 0
-    fsem_cah: 0
-    fsem_cap: 0
-    dummy: syntax_reset_slabs()
     # Bound stdout for this compilation (see runtime _sov_print_val):
     # ~1 MB of diagnostics max, whatever path prints them.
     g_out_budget: 1048576
@@ -10894,11 +9720,20 @@ compile source:
     mark("C1")
     nls: pre_lns
     ni: 0
-    # private/wipe probe: folded into the single-pass parse loop below
-    # (top-level lines compare the already-stripped s; indented lines
-    # gate on the first non-space byte at the nind-walked offset, which
-    # is decision-identical to the old standalone strip_span sweep and
-    # skips the strip + compares for every non-p/w/non-tab line).
+    # private/wipe probe: per-line strip + exact/prefix test (restored simple
+    # form; the in-place span walk it replaces read corrupt values and
+    # SEGVed on certain heap layouts -- c09b hunt, work/track1/LOG.md)
+    nlp: 0
+    nl2: 0
+    as long as ni < _sov_list_len(nls)
+        nlp: peek_i64(nls, 16 + ni * 8)
+        nl2: strip_span(nlp)
+        if _sov_str_eq(nl2, "private") is 1
+            need_priv: 1
+        if not
+            if _sov_starts_with(nl2, "wipe ") is 1
+                need_priv: 1
+        ni: ni + 1
     cnms: _sov_list_new()
     sig_seen: _sov_list_new()
     sig_epoch: 0
@@ -10926,46 +9761,203 @@ compile source:
     names: _sov_list_new()
     tops: _sov_list_new()
     tops_lns: _sov_list_new()
-    tops_users: _sov_list_new()
     in_t: 0
     cur: _sov_list_new()
     cur_ln: _sov_list_new()
-    # c0-parse: one call through the blob (internals programs) or the
-    # interpreted fallback task above - identical results either way; the
-    # task body is the loop that used to live here, verbatim.
-    if c0_tbl is 0 -> c0_tbl_init()
-    poke_i64(c0_tbl, 80, src_base)
-    poke_i64(c0_tbl, 88, kern_mode)
-    poke_i64(c0_tbl, 96, need_priv)
-    poke_i64(c0_tbl, 104, had_err)
-    poke_i64(c0_tbl, 112, blank)
-    if _sov_c0_parse(lns, c0_tbl) is 1
-        names: peek_i64(c0_tbl, 160)
-        params: peek_i64(c0_tbl, 168)
-        bodies: peek_i64(c0_tbl, 176)
-        body_lns: peek_i64(c0_tbl, 184)
-        task_lns: peek_i64(c0_tbl, 192)
-        task_user: peek_i64(c0_tbl, 200)
-        glob_names: peek_i64(c0_tbl, 208)
-        sglob_names: peek_i64(c0_tbl, 216)
-        tops: peek_i64(c0_tbl, 224)
-        tops_lns: peek_i64(c0_tbl, 232)
-        tops_users: peek_i64(c0_tbl, 240)
-        need_priv: peek_i64(c0_tbl, 96)
-        had_err: peek_i64(c0_tbl, 104)
-    zzpe_tf: 0
-    if zz_g2() is 1
-        zzpe_fd: syscall(2, "/tmp/sov_g2.log", 1089, 438, 0)
-        zzpe_s: str_cat("PARSE-END n=", i2s(_sov_list_len(glob_names)))
-        zzpe_k: 0
-        as long as zzpe_k < par_slen(zzpe_s)
-            dummy: syscall(1, zzpe_fd, zzpe_s + zzpe_k, 1, 0)
-            zzpe_k: zzpe_k + 1
-        dummy: syscall(1, zzpe_fd, "\n", 1, 0)
-        syscall(3, zzpe_fd, 0)
-    build_ret_par()
-    if sb_tbl is 0 -> sb_tbl_init()
-    _sov_st_build(sb_tbl)
+    # unsafe-module
+    # single-pass parse: the old header-counting pre-walk (18 rows) is gone;
+    # capacity is over-allocated to the line count + slack. Saves a full
+    # is_task_hdr pass over every line on every compile (parse is the largest
+    # single phase on the compiler-scale lane).
+    pcap: _sov_list_len(lns) + 8
+    names_buf: _sov_heap_alloc(16 + pcap * 8)
+    poke_i64(names_buf, 0, pcap)
+    bodies_buf: _sov_heap_alloc(16 + pcap * 8)
+    poke_i64(bodies_buf, 8, 0)
+    bodyln_buf: _sov_heap_alloc(16 + pcap * 8)
+    poke_i64(bodyln_buf, 8, 0)
+    #
+    names_n: 0
+    li: 0
+    ln_n: peek_i64(lns, 8)
+    as long as li < ln_n
+        raw: peek_i64(lns, 16 + li * 8)
+        c0n0: nind(raw)
+        s: raw
+        th: 0
+        if c0n0 is 0
+            s: strip(raw)
+            if is_task_hdr(s) is 1
+                th: 1
+        if th is 1
+            if in_t is 1
+                bodies: _sov_list_add(bodies, cur)
+                body_lns: _sov_list_add(body_lns, cur_ln)
+            tn: tname(s)
+            if zz_dup(tn) is 1
+                print "Error: two with the same name"
+                _sov_print(tn)
+                err_line: file_ln(li)
+                err_where()
+                had_err: 1
+            poke_i64(names_buf, 16 + names_n * 8, tn)
+            names_n: names_n + 1
+            poke_i64(names_buf, 8, names_n)
+            names: names_buf
+            params: _sov_list_add(params, tparams_g(th, s))
+            tu: 0
+            if li + 1 > src_base
+                tu: 1
+            task_user: _sov_list_add(task_user, tu)
+            task_lns: _sov_list_add(task_lns, file_ln(li))
+            cur: _sov_list_new()
+            cur_ln: _sov_list_new()
+            in_t: 1
+        if not
+            if c0n0 is 0
+                gok: 0
+                gc: find_col(s)
+                if starts(s, "#") is 1
+                    gok: 0
+                    gc: 0 - 1
+                if gc > 0
+                    if gc < length(s) - 1
+                        gok: 1
+                if gok is 1
+                    gn: blank
+                    if starts(s, "<-- ") is 1
+                        rest: cut(s, 4, length(s))
+                        t: find_sep(rest)
+                        if t > 0 - 1
+                            gn: repl(strip(cut(rest, 0, t)), " ", "_")
+                    if not
+                        gn: repl(strip(cut(s, 0, gc)), " ", "_")
+                    if length(gn) > 0
+                        if gn_lookup(gn) is 0 - 1
+                            glob_names: _sov_list_add(glob_names, gn)
+                            sgin9: strip(cut(s, gc + 1, length(s)))
+                            if peek_byte(sgin9, 0) is 34
+                                if sg_lookup(gn) < 0
+                                    sglob_names: _sov_list_add(sglob_names, gn)
+                        if not
+                            dupok: 1
+                            if _sov_str_eq(gn, "heap_ptr") is 1
+                                dupok: 0
+                            if _sov_str_eq(gn, "heap_end") is 1
+                                dupok: 0
+                            if _sov_str_eq(gn, "g_slide") is 1
+                                dupok: 0
+                            if _sov_str_eq(gn, "g_canary") is 1
+                                dupok: 0
+                            if _sov_str_eq(gn, "g_argc") is 1
+                                dupok: 0
+                            if _sov_str_eq(gn, "g_argv") is 1
+                                dupok: 0
+                            if _sov_str_eq(gn, "pie_walk") is 1
+                                dupok: 0
+                            if _sov_str_eq(gn, "sc_write") is 1
+                                dupok: 0
+                            if _sov_str_eq(gn, "sc_exit") is 1
+                                dupok: 0
+                            if _sov_str_eq(gn, "sc_mmap") is 1
+                                dupok: 0
+                            if _sov_str_eq(gn, "mmap_flags") is 1
+                                dupok: 0
+                            if _sov_str_eq(gn, "sc_mincore") is 1
+                                dupok: 0
+                            if _sov_str_eq(gn, "sc_rand") is 1
+                                dupok: 0
+                            if _sov_str_eq(gn, "sc_nodump") is 1
+                                dupok: 0
+                            if _sov_str_eq(gn, "sc_sigact") is 1
+                                dupok: 0
+                            if _sov_str_eq(gn, "M32") is 1
+                                dupok: 0
+                            if dupok is 1
+                                print "Error: duplicate top-level definition"
+                                _sov_print(gn)
+                                _sov_print(strip(raw))
+                                err_line: file_ln(li)
+                                print err_line
+                                had_err: 1
+                        sa: 0
+                        if gc + 1 < length(s)
+                            grhs: strip(cut(s, gc + 1, length(s)))
+                            if _sov_str_eq(repl(grhs, " ", "_"), gn) is 1
+                                sa: 1
+                        if sa is 0
+                            tops: _sov_list_add(tops, raw)
+                            tops_lns: _sov_list_add(tops_lns, file_ln(li))
+                if gok is 0
+                    if length(s) > 0
+                        if in_t is 1
+                            if starts(s, "use ") is 0
+                                if starts(s, "#") is 0
+                                    print "Error: a statement inside a task must be indented"
+                                    _sov_print(s)
+                                    err_line: file_ln(li)
+                                    print err_line
+                                    had_err: 1
+            if not
+                if in_t is 1
+                    law_handled: 0
+                    if starts(s, "law ") is 1
+                        law_handled: 1
+                        law_body: strip(cut(s, 4, length(s)))
+                        law_bln: length(law_body)
+                        law_name: "unnamed"
+                        law_cond: law_body
+                        if _sov_byte_at(law_body, 0) is 34 is 1
+                            law_q2: 0
+                            law_qi: 1
+                            as long as law_qi < law_bln
+                                if _sov_byte_at(law_body, law_qi) is 34 is 1
+                                    if law_q2 is 0
+                                        law_q2: law_qi
+                                law_qi: law_qi + 1
+                            if law_q2 > 0
+                                law_name: cut(law_body, 1, law_q2)
+                                law_cond: strip(cut(law_body, law_q2 + 1, law_bln))
+                        law_sp: 0 - 1
+                        law_ci: 0
+                        as long as law_ci < law_bln
+                            if _sov_byte_at(law_body, law_ci) is 32 is 1
+                                if law_sp < 0
+                                    law_sp: law_ci
+                            law_ci: law_ci + 1
+                        if law_sp > 0
+                            law_name: cut(law_body, 0, law_sp)
+                            law_cond: strip(cut(law_body, law_sp, law_bln))
+                        if length(law_cond) is 0
+                            print "Error: law expects a name and a condition"
+                            law_handled: 0 - 1
+                        law_ind: cut(raw, 0, length(raw) - length(s))
+                        law_ln: file_ln(li)
+                        cur: _sov_list_add(cur, law_ind)
+                        cur_ln: _sov_list_add(cur_ln, law_ln)
+                        cur: _sov_list_add(cur, str_cat(law_ind, str_cat("if ", str_cat(law_cond, " is 0"))))
+                        cur_ln: _sov_list_add(cur_ln, law_ln)
+                        cur: _sov_list_add(cur, str_cat(law_ind, str_cat("    print \"LAW VIOLATED: ", str_cat(law_name, "\""))))
+                        cur_ln: _sov_list_add(cur_ln, law_ln)
+                        cur: _sov_list_add(cur, str_cat(law_ind, str_cat("    print ", i2s(law_ln))))
+                        cur_ln: _sov_list_add(cur_ln, law_ln)
+                        if kern_mode is 1
+                            cur: _sov_list_add(cur, str_cat(law_ind, "    as long as 1 is 1"))
+                            cur_ln: _sov_list_add(cur_ln, law_ln)
+                            cur: _sov_list_add(cur, str_cat(law_ind, "        hlt()"))
+                            cur_ln: _sov_list_add(cur_ln, law_ln)
+                        if kern_mode is 0
+                            cur: _sov_list_add(cur, str_cat(law_ind, "    sys_exit(232)"))
+                            cur_ln: _sov_list_add(cur_ln, law_ln)
+                        if starts(cut(raw, 0, length(raw) - length(s)), "        ") is 1
+                            dummy_dp: 0
+                    if law_handled is 0
+                        cur: _sov_list_add(cur, raw)
+                        cur_ln: _sov_list_add(cur_ln, file_ln(li))
+        li: li + 1
+    if in_t is 1
+        bodies: _sov_list_add(bodies, cur)
+        body_lns: _sov_list_add(body_lns, cur_ln)
     rpx_tg: rpp_repeat_prepass()
     dce_prune()
     e: _sov_list_len(pre_lns)
@@ -11055,55 +10047,15 @@ compile source:
     par_live: 0
     par_do: 0
     par_child: 0
-    par_late: 0
-    par_ph: 0
     dummy: par_setup()
     par_again: 1
     as long as par_again is 1
         par_again: 0
-        if par_ph is 0
-            if par_child is 1
-                dummy: flor_range(walk_lo, walk_hi, gh, gcap)
-                # LATE FORK: flor just rewrote fn_locs[fli] = lord_fcnt for
-                # the child's range, wiping the fn_locs=6 inline-site
-                # overrides that build_inl_set poked pre-walk over the FULL
-                # range (parent side).  Serial's order is flor(0,N) FIRST,
-                # build_inl_set SECOND, so serial's walk sees the 6s; the
-                # child must re-apply them over its own range or its frame/
-                # home decisions diverge (the sc_rcx/mark/sg_* -100..-690
-                # byte deficits).  inl_site_present is parse-level (it ran
-                # pre-walk in serial), so the re-poke is serial-identical.
-                if _sov_list_len(ml_set) + _sov_list_len(inl_set) > 0
-                    pfl_i: walk_lo
-                    as long as pfl_i < walk_hi
-                        if pfl_i < _sov_list_len(fn_locs)
-                            if peek_i64(fn_locs, 16 + pfl_i * 8) < 6
-                                if inl_site_present(pfl_i) is 1
-                                    dummy: poke_i64(fn_locs, 16 + pfl_i * 8, 6)
-                        pfl_i: pfl_i + 1
-            if not
-                # parent first pass: [0, hi2) was already flor'd pre-fork in
-                # par_setup; redo passes (par_again) still flor their range.
-                if par_flor_pre is 1
-                    par_flor_pre: 0
-                if not
-                    dummy: flor_range(walk_lo, walk_hi, gh, gcap)
-            # LATE FORK discipline: the child does NOT rebuild the walk
-            # tables (build_del_map/build_inl_set/fsem_build).  It inherits
-            # the parent's trio state - exactly what serial carries across
-            # the hi2 boundary - and re-running the trio on post-walk state
-            # would mutate it away from serial.  The child only flos its
-            # own range (body rewrites are walk-state-free, proven by the
-            # 1145/1145 post-flor checksum probe) and continues the walk.
-            if par_child is 0
-                build_del_map()
-                bd0: build_inl_set()
-                dummy: fsem_build()
-            if par_child is 1
-                pm_dbg3("CWS=", band(oc_n / 1000, 999999))
-            dummy: walk_range(walk_lo, walk_hi)
-            if par_child is 1
-                pm_dbg3("CWE=", band(oc_n / 1000, 999999))
+        dummy: flor_range(walk_lo, walk_hi, gh, gcap)
+        build_del_map()
+        bd0: build_inl_set()
+        bd1: build_ret_par()
+        dummy: walk_range(walk_lo, walk_hi)
         if par_child is 1
             poke_i64(par_pool, 160, band(had_err, 1))
             par_export()
@@ -11111,66 +10063,16 @@ compile source:
                 syscall(60, 99, 0)
             syscall(60, 0, 0)
         if not
-            if par_late is 1
-                par_late: 0
-                # LATE FORK: the parent has finished walking [0, hi2).
-                # Re-baseline the export deltas NOW (the parent's walk grew
-                # the fn/patch/str_fns ledgers after par_setup captured
-                # them) so the child exports only ITS OWN additions, then
-                # fork.  The child inherits the post-walk universe and
-                # continues [hi2, N) as a pure serial continuation.
-                par_fn0: _sov_list_len(fn_names)
-                par_pat0: _sov_list_len(patch_at)
-                par_sf0: _sov_list_len(str_fns)
-                par_br0: _sov_list_len(br_at)
-                pm_dbg3("PWOC=", band(oc_n / 1000, 999999))
-                pm_dbg3("PWHI=", walk_hi)
-                pm_dbg3("PLO0=", walk_lo)
-                if pm_ptf is 1
-                    pm_tfk: pm_ms()
-                    pm_note3("TFK=", pm_tfk - pm_t0)
-                    pm_dbg("\n")
-                pid: syscall(57, 0)
-                pm_dbg("PC4\n")
-                if pid is 0
-                    par_child: 1
-                    par_kill: 1
-                    par_do: 1
-                    walk_lo: par_hi2
+            if par_live is 1
+                pm_t1: pm_ms()
+                pm_note3("T0=", pm_t0)
+                par_redo_from: par_merge()
+                par_live: 0
+                par_do: 0
+                if par_redo_from > 0 - 1
+                    par_again: 1
+                    walk_lo: par_redo_from
                     walk_hi: _sov_list_len(names)
-                    par_ph: 0
-                    pm_dbg("K1\n")
-                    par_dup_log()
-                    zzlog: _sov_list_new()
-                    pm_p0: zzlog
-                    pm_probe: _sov_list_new()
-                    pm_samp: _sov_list_new()
-                    pm_sam2: _sov_list_new()
-                    zzlog_s: _sov_list_new()
-                    parm_cfn: _sov_list_new()
-                    parm_off: _sov_list_new()
-                    parm_pat: _sov_list_new()
-                    pm_dbg3("CWOC=", band(oc_n / 1000, 999999))
-                    pm_dbg("K2\n")
-                    par_again: 1
-                if pid > 0
-                    pm_dbg("PP\n")
-                    par_pid0: pid
-                    par_live: 1
-                    par_ph: 1
-                    par_again: 1
-            if not
-                if par_live is 1
-                    pm_t1: pm_ms()
-                    pm_note3("T0=", pm_t0)
-                    par_redo_from: par_merge()
-                    par_live: 0
-                    par_do: 0
-                    if par_redo_from > 0 - 1
-                        par_again: 1
-                        walk_lo: par_redo_from
-                        walk_hi: _sov_list_len(names)
-                        par_ph: 0
     mark("p-wend")
     if has_vm is 0
         emit_used()
@@ -11186,15 +10088,13 @@ compile source:
     pk_sync()
     mark("p-dce")
     if opt_dce is 1
-        if dce_tbl is 0 -> dce_tbl_init()
-        _sov_dce(dce_tbl)
+        dce()
     mark("p-stub")
     if sxe_mode is 0
         stub_diet()
     mark("p-post")
-    if dce_tbl is 0 -> dce_tbl_init()
-    _sov_dce_stores(dce_tbl)
-    _sov_dce_litter(dce_tbl)
+    dce_stores()
+    dce_litter()
     dce_globals()
 emit_tswitch:
     fn_names: _sov_list_add(fn_names, "_t_switch")
@@ -11262,290 +10162,6 @@ emit_tswitch:
     emit(89)
     emit(88)
     emit(195)
-# --- flat patch twin (tools/native_flatpatch.c, generated blob in
-# flatpatch_native.sov): write_elf's rel-count pass, the patch-apply pass
-# and stub_diet's liveness scan + compaction behind one mode-dispatched
-# native entry _sov_flat_pass(pass, tbl).  The interpreted body below is
-# the portable fallback for builds without the compiler-internals gate;
-# the blob inlines fn_lookup/gn_lookup (nhash/set_h chains + open
-# addressing, exact .sov semantics) over pre-synced tables, the rel_at
-# appends into a pre-sized buffer, and the poke4/poke8 stores.  The
-# /tmp/sov_glog2 per-record side log is not mirrored in the blob (the
-# inl2/licm precedent: side-log-only, never affects translation output);
-# the fallback keeps it.
-# tbl slots (byte offsets; slot i lives at i*8):
-#   0 count(52), 8 rel_n(out p0/in p1), 16 had_err(out p1), 24 rc_kok,
-#   32 patch_at, 40 patch_kid, 48 patch_val, 56 patch_kind, 64 patch_line,
-#   72 flat, 80 HDR, 88 BASE, 96 str_addr, 104 glob_addr, 112 rel_off,
-#   120 sl, 128 sbtot, 136 fn_offs, 144 glob_names, 152 sbss_sizes,
-#   160 fn_ht, 168 fn_hti, 176 fn_htcap, 184 gn_tbl, 192 gn_idx,
-#   200 gn_cap, 208 kg_rel, 216 kg_fnaddr, 224 kg_str, 232 kg_strrel,
-#   240 kg_str32, 248 kg_sbss, 256 kg_grel, 264 kg_glob, 272 kg_gwstr_a,
-#   280 kg_gwstr_n, 288 kg_gwipe_a, 296 kg_gwipe_n, 304 rk_fa, 312 rk_str,
-#   320 rk_gl, 328 rk_gw, 336 rk_gp, 344 rk_sb, 352 flp_dbg,
-#   360 flp_rel_err, 368 flp_fa_err, 376 sd_g, 384 sd_gr, 392 sd_n,
-#   400 sd_cut_at, 408 sd_cut, 416 relbuf.
-flat_tbl: 0
-flat_tbl_init:
-    flat_tbl: _sov_heap_alloc(424)
-    poke_i64(flat_tbl, 0, 52)
-    poke_i64(flat_tbl, 352, addr_of flp_dbg)
-    poke_i64(flat_tbl, 360, addr_of flp_rel_err)
-    poke_i64(flat_tbl, 368, addr_of flp_fa_err)
-    return 0
-flp_dbg k i:
-    print k
-    print i
-    return 0
-flp_rel_err val el:
-    print "Error: no such task"
-    _sov_print(val)
-    err_line: el
-    err_where()
-    suggest_name(val)
-    return 0
-flp_fa_err val:
-    print "Error: no such task"
-    _sov_print(val)
-    return 0
-_sov_flat_pass pass tbl:
-    if pass is 0
-        rc_kok: peek_i64(tbl, 24)
-        pat: peek_i64(tbl, 32)
-        pkid: peek_i64(tbl, 40)
-        pkind: peek_i64(tbl, 56)
-        rk_fa: peek_i64(tbl, 304)
-        rk_str: peek_i64(tbl, 312)
-        rk_gl: peek_i64(tbl, 320)
-        rk_gw: peek_i64(tbl, 328)
-        rk_gp: peek_i64(tbl, 336)
-        rk_sb: peek_i64(tbl, 344)
-        rc_n: _sov_list_len(pat)
-        rel_n: 0
-        rc_i: 0
-        as long as rc_i < rc_n
-            if rc_kok is 1
-                rkd: peek_i64(pkid, 16 + rc_i * 8)
-                if rkd is rk_fa
-                    rel_n: rel_n + 1
-                if rkd is rk_str
-                    rel_n: rel_n + 1
-                if rkd is rk_gl
-                    rel_n: rel_n + 1
-                if rkd is rk_gw
-                    rel_n: rel_n + 1
-                if rkd is rk_gp
-                    rel_n: rel_n + 1
-                if rkd is rk_sb
-                    rel_n: rel_n + 1
-            if rc_kok is 0
-                rk: peek_i64(pkind, 16 + rc_i * 8)
-                if _sov_str_eq(rk, "fnaddr") is 1
-                    rel_n: rel_n + 1
-                if _sov_str_eq(rk, "str") is 1
-                    rel_n: rel_n + 1
-                if _sov_str_eq(rk, "glob") is 1
-                    rel_n: rel_n + 1
-                if _sov_str_eq(rk, "gwstr_a") is 1
-                    rel_n: rel_n + 1
-                if _sov_str_eq(rk, "gwipe_a") is 1
-                    rel_n: rel_n + 1
-                if _sov_str_eq(rk, "sbss") is 1
-                    rel_n: rel_n + 1
-            rc_i: rc_i + 1
-        poke_i64(tbl, 8, rel_n)
-        return rel_n
-    if pass is 1
-        pat: peek_i64(tbl, 32)
-        pkid: peek_i64(tbl, 40)
-        pval: peek_i64(tbl, 48)
-        pline: peek_i64(tbl, 64)
-        flat: peek_i64(tbl, 72)
-        HDR: peek_i64(tbl, 80)
-        BASE: peek_i64(tbl, 88)
-        str_addr: peek_i64(tbl, 96)
-        glob_addr: peek_i64(tbl, 104)
-        rel_off: peek_i64(tbl, 112)
-        sl: peek_i64(tbl, 120)
-        sbtot: peek_i64(tbl, 128)
-        fn_offs: peek_i64(tbl, 136)
-        glob_names: peek_i64(tbl, 144)
-        sbss_sizes: peek_i64(tbl, 152)
-        relbuf: peek_i64(tbl, 416)
-        rel_n: peek_i64(tbl, 8)
-        had_err: peek_i64(tbl, 16)
-        kg_rel: peek_i64(tbl, 208)
-        kg_fnaddr: peek_i64(tbl, 216)
-        kg_str: peek_i64(tbl, 224)
-        kg_strrel: peek_i64(tbl, 232)
-        kg_str32: peek_i64(tbl, 240)
-        kg_sbss: peek_i64(tbl, 248)
-        kg_grel: peek_i64(tbl, 256)
-        kg_glob: peek_i64(tbl, 264)
-        kg_gwstr_a: peek_i64(tbl, 272)
-        kg_gwstr_n: peek_i64(tbl, 280)
-        kg_gwipe_a: peek_i64(tbl, 288)
-        kg_gwipe_n: peek_i64(tbl, 296)
-        rel_at: relbuf
-        i: 0
-        as long as i < _sov_list_len(pat)
-            at: _sov_list_get(pat, i)
-            kind: peek_i64(pkid, 16 + i * 8)
-            val: peek_i64(pval, 16 + i * 8)
-            if at < 0
-                print kind
-            if at < 0
-                print i
-            if kind is kg_rel
-                fi: fn_lookup(val)
-                if fi > 0 - 1
-                    tgt: peek_i64(fn_offs, 16 + fi * 8)
-                    rel: tgt - (at + 4)
-                    poke4(flat, HDR + at, rel)
-                if not
-                    print "Error: no such task"
-                    _sov_print(val)
-                    err_line: _sov_list_get(pline, i)
-                    err_where()
-                    suggest_name(val)
-                    had_err: 1
-            if peek_byte(kind, 0) is 102
-                if kind is kg_fnaddr
-                    fi: fn_lookup(val)
-                    if fi > 0 - 1
-                        poke8(flat, HDR + at, BASE + HDR + _sov_list_get(fn_offs, fi))
-                        rel_at: _sov_list_add(rel_at, at)
-                    if not
-                        print "Error: no such task"
-                        _sov_print(val)
-                        had_err: 1
-            if peek_byte(kind, 0) is 115
-                if kind is kg_str
-                    poke8(flat, HDR + at, str_addr + val)
-                    rel_at: _sov_list_add(rel_at, at)
-                if kind is kg_strrel
-                    poke4(flat, HDR + at, str_addr + val - (BASE + HDR + at + 4))
-                if kind is kg_str32
-                    poke4(flat, HDR + at, str_addr + val)
-                if kind is kg_sbss
-                    bi: _sov_atoi(val)
-                    baddr: glob_addr + _sov_list_len(glob_names) * 8
-                    bj: 0
-                    as long as bj < bi
-                        bs: _sov_list_get(sbss_sizes, bj)
-                        baddr: baddr + 15
-                        baddr: baddr - baddr % 16
-                        baddr: baddr + bs
-                        bj: bj + 1
-                    baddr: baddr + 15
-                    baddr: baddr - baddr % 16
-                    poke8(flat, HDR + at, baddr)
-                    rel_at: _sov_list_add(rel_at, at)
-            if peek_byte(kind, 0) is 103
-                if zz_g2() is 1
-                    zzpk_fd: syscall(2, "/tmp/sov_pk.log", 1089, 438, 0)
-                    zzpk_s: str_cat(kind, " ")
-                    zzpk_s: str_cat(zzpk_s, val)
-                    zzpk_s: str_cat(zzpk_s, " @")
-                    zzpk_s: str_cat(zzpk_s, i2s(at))
-                    zzpk_s: str_cat(zzpk_s, "\n")
-                    zzpk_k: 0
-                    as long as zzpk_k < par_slen(zzpk_s)
-                        dummy: syscall(1, zzpk_fd, zzpk_s + zzpk_k, 1, 0)
-                        zzpk_k: zzpk_k + 1
-                    syscall(3, zzpk_fd, 0)
-                if kind is kg_grel
-                    gx: gn_lookup(val)
-                    poke4(flat, HDR + at, glob_addr + gx * 8 - (BASE + HDR + at + 4))
-                if kind is kg_glob
-                    gx: gn_lookup(val)
-                    poke8(flat, HDR + at, glob_addr + gx * 8)
-                    rel_at: _sov_list_add(rel_at, at)
-                if kind is kg_gwstr_a
-                    poke8(flat, HDR + at, str_addr)
-                    rel_at: _sov_list_add(rel_at, at)
-                if kind is kg_gwstr_n
-                    poke4(flat, HDR + at, (sl + 7) / 8)
-                if kind is kg_gwipe_a
-                    poke8(flat, HDR + at, glob_addr)
-                    rel_at: _sov_list_add(rel_at, at)
-                if kind is kg_gwipe_n
-                    gbytes: _sov_list_len(glob_names) * 8 + sbtot
-                    poke4(flat, HDR + at, (gbytes + 7) / 8)
-            i: i + 1
-        poke_i64(tbl, 16, had_err)
-        if rel_n > 0
-            poke8(flat, rel_off, rel_n)
-            ri: 0
-            as long as ri < rel_n
-                poke8(flat, rel_off + 8 + ri * 8, HDR + peek_i64(rel_at, 16 + ri * 8))
-                ri: ri + 1
-        return rel_at
-    if pass is 2
-        pat: peek_i64(tbl, 32)
-        pkid: peek_i64(tbl, 40)
-        pval: peek_i64(tbl, 48)
-        sd_g: peek_i64(tbl, 376)
-        sd_gr: peek_i64(tbl, 384)
-        sd_n: peek_i64(tbl, 392)
-        sd_i: 0
-        as long as sd_i < sd_n
-            sd_at2: peek_i64(pat, 16 + sd_i * 8)
-            if sd_at2 >= 41
-                sd_kd: peek_i64(pkid, 16 + sd_i * 8)
-                if sd_kd is sd_g
-                    sd_v: peek_i64(pval, 16 + sd_i * 8)
-                    if _sov_str_eq(sd_v, "g_argc") is 1
-                        return 1
-                    if _sov_str_eq(sd_v, "g_argv") is 1
-                        return 1
-                if sd_kd is sd_gr
-                    sd_v: peek_i64(pval, 16 + sd_i * 8)
-                    if _sov_str_eq(sd_v, "g_argc") is 1
-                        return 1
-                    if _sov_str_eq(sd_v, "g_argv") is 1
-                        return 1
-            sd_i: sd_i + 1
-        return 0
-    pat: peek_i64(tbl, 32)
-    pkid: peek_i64(tbl, 40)
-    pval: peek_i64(tbl, 48)
-    pkind: peek_i64(tbl, 56)
-    pline: peek_i64(tbl, 64)
-    fn_offs: peek_i64(tbl, 136)
-    sd_n: peek_i64(tbl, 392)
-    sd_cut_at: peek_i64(tbl, 400)
-    sd_cut: peek_i64(tbl, 408)
-    sd_w: 0
-    sd_i: 0
-    as long as sd_i < sd_n
-        sd_at: peek_i64(pat, 16 + sd_i * 8)
-        sd_keep: 0
-        sd_na2: sd_at
-        if sd_at < sd_cut_at
-            sd_keep: 1
-        if sd_at >= 41
-            sd_keep: 1
-            sd_na2: sd_at - sd_cut
-        if sd_keep is 1
-            if sd_w is not sd_i
-                poke_i64(pkind, 16 + sd_w * 8, peek_i64(pkind, 16 + sd_i * 8))
-                poke_i64(pkid, 16 + sd_w * 8, peek_i64(pkid, 16 + sd_i * 8))
-                poke_i64(pval, 16 + sd_w * 8, peek_i64(pval, 16 + sd_i * 8))
-                poke_i64(pline, 16 + sd_w * 8, peek_i64(pline, 16 + sd_i * 8))
-            poke_i64(pat, 16 + sd_w * 8, sd_na2)
-            sd_w: sd_w + 1
-        sd_i: sd_i + 1
-    poke_i64(pat, 8, sd_w)
-    poke_i64(pkind, 8, sd_w)
-    poke_i64(pkid, 8, sd_w)
-    poke_i64(pval, 8, sd_w)
-    poke_i64(pline, 8, sd_w)
-    sd_i: 0
-    as long as sd_i < _sov_list_len(fn_offs)
-        poke_i64(fn_offs, 16 + sd_i * 8, peek_i64(fn_offs, 16 + sd_i * 8) - sd_cut)
-        sd_i: sd_i + 1
-    return sd_w
 stub_diet:
     if had_err is 1
         return
@@ -11569,17 +10185,29 @@ stub_diet:
             sd_j: sd_j + 1
     sd_g: intern_kid("glob")
     sd_gr: intern_kid("grel")
-    # twin pass 2: g_argc/g_argv liveness scan over the patch records
-    # (blob: tools/native_flatpatch.c; fallback: _sov_flat_pass above).
-    if flat_tbl is 0
-        dummy: flat_tbl_init()
-    poke_i64(flat_tbl, 32, patch_at)
-    poke_i64(flat_tbl, 40, patch_kid)
-    poke_i64(flat_tbl, 48, patch_val)
-    poke_i64(flat_tbl, 376, sd_g)
-    poke_i64(flat_tbl, 384, sd_gr)
-    poke_i64(flat_tbl, 392, sd_n)
-    sd_live: _sov_flat_pass(2, flat_tbl)
+    sd_live: 0
+    sd_i: 0
+    as long as sd_i < sd_n
+        sd_at2: peek_i64(patch_at, 16 + sd_i * 8)
+        if sd_at2 >= 41
+            sd_kd: peek_i64(patch_kid, 16 + sd_i * 8)
+            if sd_kd is sd_g
+                sd_v: peek_i64(patch_val, 16 + sd_i * 8)
+                if _sov_str_eq(sd_v, "g_argc") is 1
+                    sd_live: 1
+                    sd_i: sd_n
+                if _sov_str_eq(sd_v, "g_argv") is 1
+                    sd_live: 1
+                    sd_i: sd_n
+            if sd_kd is sd_gr
+                sd_v: peek_i64(patch_val, 16 + sd_i * 8)
+                if _sov_str_eq(sd_v, "g_argc") is 1
+                    sd_live: 1
+                    sd_i: sd_n
+                if _sov_str_eq(sd_v, "g_argv") is 1
+                    sd_live: 1
+                    sd_i: sd_n
+        sd_i: sd_i + 1
     if sd_live is 1
         return
     sd_cut_at: 0
@@ -11587,22 +10215,42 @@ stub_diet:
     if main_params_n > 0
         sd_cut_at: 15
         sd_cut: 26
-    # twin pass 3: in-place compaction of the five parallel patch lists
-    # (same kept records in the same order; at<cut_at verbatim, at>=41
-    # shifted by -sd_cut, the [cut_at,41) span dropped), lengths reseated
-    # at end, fn_offs shifted.  The stub-byte block copy stays here (oc is
-    # a compiler global).
-    poke_i64(flat_tbl, 56, patch_kind)
-    poke_i64(flat_tbl, 64, patch_line)
-    poke_i64(flat_tbl, 136, fn_offs)
-    poke_i64(flat_tbl, 392, sd_n)
-    poke_i64(flat_tbl, 400, sd_cut_at)
-    poke_i64(flat_tbl, 408, sd_cut)
-    sd_w: _sov_flat_pass(3, flat_tbl)
+    # in-place compaction of the five parallel patch lists: same kept
+    # records in the same order (at<cut_at verbatim, at>=41 shifted by
+    # -sd_cut, the [cut_at,41) span dropped), lengths reseated at end.
+    sd_w: 0
+    sd_i: 0
+    as long as sd_i < sd_n
+        sd_at: peek_i64(patch_at, 16 + sd_i * 8)
+        sd_keep: 0
+        sd_na2: sd_at
+        if sd_at < sd_cut_at
+            sd_keep: 1
+        if sd_at >= 41
+            sd_keep: 1
+            sd_na2: sd_at - sd_cut
+        if sd_keep is 1
+            if sd_w is not sd_i
+                poke_i64(patch_kind, 16 + sd_w * 8, peek_i64(patch_kind, 16 + sd_i * 8))
+                poke_i64(patch_kid, 16 + sd_w * 8, peek_i64(patch_kid, 16 + sd_i * 8))
+                poke_i64(patch_val, 16 + sd_w * 8, peek_i64(patch_val, 16 + sd_i * 8))
+                poke_i64(patch_line, 16 + sd_w * 8, peek_i64(patch_line, 16 + sd_i * 8))
+            poke_i64(patch_at, 16 + sd_w * 8, sd_na2)
+            sd_w: sd_w + 1
+        sd_i: sd_i + 1
+    poke_i64(patch_at, 8, sd_w)
+    poke_i64(patch_kind, 8, sd_w)
+    poke_i64(patch_kid, 8, sd_w)
+    poke_i64(patch_val, 8, sd_w)
+    poke_i64(patch_line, 8, sd_w)
     # delete the stub bytes with one forward block copy (dst < src)
     # instead of rebuilding the whole code buffer as a byte list.
     dummy: _sov_blit(oc + sd_cut_at, oc + sd_cut_at + sd_cut, oc_n - sd_cut_at - sd_cut)
     oc_n: oc_n - sd_cut
+    sd_i: 0
+    as long as sd_i < _sov_list_len(fn_offs)
+        poke_i64(fn_offs, 16 + sd_i * 8, peek_i64(fn_offs, 16 + sd_i * 8) - sd_cut)
+        sd_i: sd_i + 1
     want_args: 0
 poke2 p off v:
     dummy: _sov_set_byte(p, off, v % 256)
@@ -11656,59 +10304,43 @@ write_elf path:
         rk_gw: intern_kid("gwstr_a")
         rk_gp: intern_kid("gwipe_a")
         rk_sb: intern_kid("sbss")
-    # twin pass 0: rel_n count over the patch records (blob:
-    # tools/native_flatpatch.c; fallback: _sov_flat_pass above).
-    if flat_tbl is 0
-        dummy: flat_tbl_init()
-    poke_i64(flat_tbl, 24, rc_kok)
-    poke_i64(flat_tbl, 32, patch_at)
-    poke_i64(flat_tbl, 40, patch_kid)
-    poke_i64(flat_tbl, 56, patch_kind)
-    poke_i64(flat_tbl, 304, rk_fa)
-    poke_i64(flat_tbl, 312, rk_str)
-    poke_i64(flat_tbl, 320, rk_gl)
-    poke_i64(flat_tbl, 328, rk_gw)
-    poke_i64(flat_tbl, 336, rk_gp)
-    poke_i64(flat_tbl, 344, rk_sb)
-    rel_n: _sov_flat_pass(0, flat_tbl)
+    rc_i: 0
+    as long as rc_i < rc_n
+        if rc_kok is 1
+            rkd: peek_i64(patch_kid, 16 + rc_i * 8)
+            if rkd is rk_fa
+                rel_n: rel_n + 1
+            if rkd is rk_str
+                rel_n: rel_n + 1
+            if rkd is rk_gl
+                rel_n: rel_n + 1
+            if rkd is rk_gw
+                rel_n: rel_n + 1
+            if rkd is rk_gp
+                rel_n: rel_n + 1
+            if rkd is rk_sb
+                rel_n: rel_n + 1
+        if rc_kok is 0
+            rk: peek_i64(patch_kind, 16 + rc_i * 8)
+            if _sov_str_eq(rk, "fnaddr") is 1
+                rel_n: rel_n + 1
+            if _sov_str_eq(rk, "str") is 1
+                rel_n: rel_n + 1
+            if _sov_str_eq(rk, "glob") is 1
+                rel_n: rel_n + 1
+            if _sov_str_eq(rk, "gwstr_a") is 1
+                rel_n: rel_n + 1
+            if _sov_str_eq(rk, "gwipe_a") is 1
+                rel_n: rel_n + 1
+            if _sov_str_eq(rk, "sbss") is 1
+                rel_n: rel_n + 1
+        rc_i: rc_i + 1
     relsz: 8 + rel_n * 8
     glob_off: rel_off + relsz - HDR
-    zzgl_tf: syscall(2, "/tmp/sov_glog", 0, 0, 0)
-    if zzgl_tf > 2
-        syscall(3, zzgl_tf, 0)
-        zzgl_fd: syscall(2, "/tmp/sov_globs.txt", 577, 420, 0)
-        if zzgl_fd > 2
-            zzgl_i: 0
-            as long as zzgl_i < _sov_list_len(glob_names)
-                zzgl_n: peek_i64(glob_names, 16 + zzgl_i * 8)
-                zzgl_k: 0
-                as long as zzgl_k < par_slen(zzgl_n)
-                    dummy: syscall(1, zzgl_fd, zzgl_n + zzgl_k, 1, 0)
-                    zzgl_k: zzgl_k + 1
-                dummy: syscall(1, zzgl_fd, "\n", 1, 0)
-                zzgl_i: zzgl_i + 1
-            zzgl_j: 0
-            as long as zzgl_j < _sov_list_len(fn_names)
-                zzgl_n: peek_i64(fn_names, 16 + zzgl_j * 8)
-                dummy: syscall(1, zzgl_fd, "fn ", 3, 0)
-                zzgl_k: 0
-                as long as zzgl_k < par_slen(zzgl_n)
-                    dummy: syscall(1, zzgl_fd, zzgl_n + zzgl_k, 1, 0)
-                    zzgl_k: zzgl_k + 1
-                dummy: syscall(1, zzgl_fd, " ", 1, 0)
-                zzgl_s: i2s(peek_i64(fn_offs, 16 + zzgl_j * 8))
-                zzgl_k: 0
-                as long as zzgl_k < par_slen(zzgl_s)
-                    dummy: syscall(1, zzgl_fd, zzgl_s + zzgl_k, 1, 0)
-                    zzgl_k: zzgl_k + 1
-                dummy: syscall(1, zzgl_fd, "\n", 1, 0)
-                zzgl_j: zzgl_j + 1
-            syscall(3, zzgl_fd, 0)
     pad: _sov_list_len(glob_names) * 8
     filesz: rel_off + relsz + pad
     flat: _sov_heap_alloc(filesz + 64)
-    if filesz + 64 <= 65536
-        dummy: _sov_bzero(flat, filesz + 64)
+    dummy: _sov_bzero(flat, filesz + 64)
     i: 0
     as long as i + 8 <= 0
         dummy: poke_i64(flat, i, 0)
@@ -11801,6 +10433,7 @@ write_elf path:
     dummy: i
     glob_addr: BASE + dva + HDR + glob_off
     rel_at: 0
+    i: 0
     # intern the patch-kind set once per call; dispatch then runs on ints.
     kg_rel: intern_kid("rel")
     kg_fnaddr: intern_kid("fnaddr")
@@ -11817,58 +10450,91 @@ write_elf path:
     kg_rel_a: intern_kid("rel_a")
     kg_rel_n: intern_kid("rel_n")
     kg_rel_l: intern_kid("rel_l")
-    # twin pass 1: patch application + the rel entry writes (blob:
-    # tools/native_flatpatch.c; fallback: _sov_flat_pass above).  The
-    # intern tables are synced once here so the blob's inline probes see
-    # exactly the frozen state the per-record fn_lookup/gn_lookup calls
-    # would have built; rel_at appends go into a pre-sized buffer
-    # (rel_n counts exactly the appending kinds).
-    dummy: fn_sync()
-    dummy: gn_sync()
-    flat_relbuf: 0
-    if rel_n > 0
-        flat_relbuf: _sov_heap_alloc(16 + rel_n * 8)
-        poke_i64(flat_relbuf, 0, rel_n)
-        poke_i64(flat_relbuf, 8, 0)
-    poke_i64(flat_tbl, 8, rel_n)
-    poke_i64(flat_tbl, 16, 0)
-    poke_i64(flat_tbl, 48, patch_val)
-    poke_i64(flat_tbl, 64, patch_line)
-    poke_i64(flat_tbl, 72, flat)
-    poke_i64(flat_tbl, 80, HDR)
-    poke_i64(flat_tbl, 88, BASE)
-    poke_i64(flat_tbl, 96, str_addr)
-    poke_i64(flat_tbl, 104, glob_addr)
-    poke_i64(flat_tbl, 112, rel_off)
-    poke_i64(flat_tbl, 120, sl)
-    poke_i64(flat_tbl, 128, sbtot)
-    poke_i64(flat_tbl, 136, fn_offs)
-    poke_i64(flat_tbl, 144, glob_names)
-    poke_i64(flat_tbl, 152, sbss_sizes)
-    poke_i64(flat_tbl, 160, fn_ht)
-    poke_i64(flat_tbl, 168, fn_hti)
-    poke_i64(flat_tbl, 176, fn_htcap)
-    poke_i64(flat_tbl, 184, gn_tbl)
-    poke_i64(flat_tbl, 192, gn_idx)
-    poke_i64(flat_tbl, 200, gn_cap)
-    poke_i64(flat_tbl, 208, kg_rel)
-    poke_i64(flat_tbl, 216, kg_fnaddr)
-    poke_i64(flat_tbl, 224, kg_str)
-    poke_i64(flat_tbl, 232, kg_strrel)
-    poke_i64(flat_tbl, 240, kg_str32)
-    poke_i64(flat_tbl, 248, kg_sbss)
-    poke_i64(flat_tbl, 256, kg_grel)
-    poke_i64(flat_tbl, 264, kg_glob)
-    poke_i64(flat_tbl, 272, kg_gwstr_a)
-    poke_i64(flat_tbl, 280, kg_gwstr_n)
-    poke_i64(flat_tbl, 288, kg_gwipe_a)
-    poke_i64(flat_tbl, 296, kg_gwipe_n)
-    poke_i64(flat_tbl, 416, flat_relbuf)
-    rel_at: _sov_flat_pass(1, flat_tbl)
-    had_err: peek_i64(flat_tbl, 16)
+    as long as i < _sov_list_len(patch_at)
+        at: _sov_list_get(patch_at, i)
+        # per-record list_get calls inlined: ~50k records x 2 interpreted calls
+        kind: peek_i64(patch_kid, 16 + i * 8)
+        val: peek_i64(patch_val, 16 + i * 8)
+        if at < 0
+            print kind
+        if at < 0
+            print i
+        if kind is kg_rel
+            fi: fn_lookup(val)
+            if fi > 0 - 1
+                tgt: peek_i64(fn_offs, 16 + fi * 8)
+                rel: tgt - (at + 4)
+                poke4(flat, HDR + at, rel)
+            if not
+                print "Error: no such task"
+                _sov_print(val)
+                err_line: _sov_list_get(patch_line, i)
+                err_where()
+                suggest_name(val)
+                had_err: 1
+        # first-char dispatch: ~50k records used to run up to 11 full strcmps
+        # each; the byte test rejects a whole group for one interpreted step.
+        if peek_byte(kind, 0) is 102
+            if kind is kg_fnaddr
+                fi: fn_lookup(val)
+                if fi > 0 - 1
+                    poke8(flat, HDR + at, BASE + HDR + _sov_list_get(fn_offs, fi))
+                    rel_at: _sov_list_add(rel_at, at)
+                if not
+                    print "Error: no such task"
+                    _sov_print(val)
+                    had_err: 1
+        if peek_byte(kind, 0) is 115
+            if kind is kg_str
+                poke8(flat, HDR + at, str_addr + val)
+                rel_at: _sov_list_add(rel_at, at)
+            if kind is kg_strrel
+                poke4(flat, HDR + at, str_addr + val - (BASE + HDR + at + 4))
+            if kind is kg_str32
+                poke4(flat, HDR + at, str_addr + val)
+            if kind is kg_sbss
+                bi: _sov_atoi(val)
+                baddr: glob_addr + _sov_list_len(glob_names) * 8
+                bj: 0
+                as long as bj < bi
+                    bs: _sov_list_get(sbss_sizes, bj)
+                    baddr: baddr + 15
+                    baddr: baddr - baddr % 16
+                    baddr: baddr + bs
+                    bj: bj + 1
+                baddr: baddr + 15
+                baddr: baddr - baddr % 16
+                poke8(flat, HDR + at, baddr)
+                rel_at: _sov_list_add(rel_at, at)
+        if peek_byte(kind, 0) is 103
+            if kind is kg_grel
+                gx: gn_lookup(val)
+                poke4(flat, HDR + at, glob_addr + gx * 8 - (BASE + HDR + at + 4))
+            if kind is kg_glob
+                gx: gn_lookup(val)
+                poke8(flat, HDR + at, glob_addr + gx * 8)
+                rel_at: _sov_list_add(rel_at, at)
+            if kind is kg_gwstr_a
+                poke8(flat, HDR + at, str_addr)
+                rel_at: _sov_list_add(rel_at, at)
+            if kind is kg_gwstr_n
+                poke4(flat, HDR + at, (sl + 7) / 8)
+            if kind is kg_gwipe_a
+                poke8(flat, HDR + at, glob_addr)
+                rel_at: _sov_list_add(rel_at, at)
+            if kind is kg_gwipe_n
+                gbytes: _sov_list_len(glob_names) * 8 + sbtot
+                poke4(flat, HDR + at, (gbytes + 7) / 8)
+        i: i + 1
     mark("5a-flat0")
     if had_err is 1
         return
+    if rel_n > 0
+        poke8(flat, rel_off, rel_n)
+        ri: 0
+        as long as ri < rel_n
+            poke8(flat, rel_off + 8 + ri * 8, HDR + peek_i64(rel_at, 16 + ri * 8))
+            ri: ri + 1
     if 1 is 1
         sxi: 0
         sxi_ln: _sov_list_len(patch_at)
@@ -11909,8 +10575,11 @@ write_elf path:
             sx_count: 3
             sx_total: sx_rel_off + sx_rel_len
         sx: _sov_heap_alloc(sx_total)
-        if sx_total <= 65536
+        sxz: 0
+        as long as sxz < sx_total
             dummy: _sov_bzero(sx, sx_total)
+        sxz: sx_total
+            sxz: sxz + 1
         poke8(sx, 0, 4544595)
         poke8(sx, 8, 1)
         poke8(sx, 16, 4096 + HDR)
@@ -12042,47 +10711,6 @@ fmt_file path:
     print "Formatted"
     _sov_print(path)
     return 1
-# --exec: compile, then replace this process with the artifact (no fork).
-# Same argv filter as run_prog's child; exit status is the artifact's own
-# status (signal deaths report faithfully instead of wait-status>>8).
-run_exec path argv argc:
-    argv2: _sov_heap_alloc(512)
-    poke_i64(argv2, 0, path)
-    k: 1
-    i: 1
-    as long as i < argc
-        a: peek_ptr(argv, i)
-        keep: 1
-        if _sov_str_eq(a, "-o") is 1
-            keep: 0
-            i: i + 1
-        if not
-            if _sov_str_eq(a, "--run") is 1
-                keep: 0
-            if not
-                if _sov_str_eq(a, "--exec") is 1
-                    keep: 0
-                if not
-                    if _sov_str_eq(a, "--fmt") is 1
-                        keep: 0
-                    if not
-                        if _sov_str_eq(a, "--debug") is 1
-                            keep: 0
-                        if not
-                            if _sov_str_eq(a, "--flat") is 1
-                                keep: 0
-                            if _sov_str_eq(a, "--bare") is 1
-                                keep: 0
-                            if not
-                                if _sov_str_eq(a, path) is 1
-                                    keep: 0
-        if keep is 1
-            poke_i64(argv2, k * 8, a)
-            k: k + 1
-        i: i + 1
-    poke_i64(argv2, k * 8, 0)
-    sys_exec(path, argv2, 0)
-    sys_exit(127)
 run_prog path argv argc:
     pid: sys_fork()
     if pid is 0
@@ -12182,127 +10810,12 @@ mark label:
     t: now_ns()
     if prof_t0 is 0
         prof_t0: t
-        if prof_marks is 0
-            prof_marks: _sov_heap_alloc(18432)
-        if prof_last is 0
-            prof_last: _sov_heap_alloc(48)
-        ci: 0
-        as long as ci < 6
-            poke_i64(prof_last, ci * 8, prof_value(ci))
-            ci: ci + 1
-        return t
-    dt: t - prof_t0
-    pi: 0
-    as long as pi < prof_mark_n
-        if _sov_str_eq(peek_i64(prof_marks, pi * 72), label) is 1
-            poke_i64(prof_marks, pi * 72 + 8, peek_i64(prof_marks, pi * 72 + 8) + dt)
-            poke_i64(prof_marks, pi * 72 + 16, peek_i64(prof_marks, pi * 72 + 16) + 1)
-            prof_capture(pi * 72, 0)
-            prof_t0: now_ns()
-            return t
-        pi: pi + 1
-    if prof_mark_n >= 256
-        print "Error: profile mark table full"
-        fail()
-    poke_i64(prof_marks, prof_mark_n * 72, label)
-    poke_i64(prof_marks, prof_mark_n * 72 + 8, dt)
-    poke_i64(prof_marks, prof_mark_n * 72 + 16, 1)
-    prof_capture(prof_mark_n * 72, 1)
-    prof_mark_n: prof_mark_n + 1
-    prof_t0: now_ns()
+    d: (t - prof_t0) / 1000
+    _sov_print(label)
+    print d
+    prof_t0: t
     return t
-
-prof_marks: 0
-prof_mark_n: 0
-prof_functions: 0
-prof_input_bytes: 0
-prof_report:
-    if prof_mode is 0
-        return 0
-    prof_mode: 0
-    txt: "{\"schema\":1,\"kind\":\"phase-endpoint-aggregates\",\"marks\":["
-    pi: 0
-    as long as pi < prof_mark_n
-        if pi > 0
-            txt: join(txt, ",")
-        pl: peek_i64(prof_marks, pi * 72)
-        pn: peek_i64(prof_marks, pi * 72 + 8)
-        pc: peek_i64(prof_marks, pi * 72 + 16)
-        txt: join(txt, "{\"endpoint\":\"")
-        txt: join(txt, pl)
-        txt: join(txt, "\",\"ns\":")
-        txt: join(txt, i2s(pn))
-        txt: join(txt, ",\"calls\":")
-        txt: join(txt, i2s(pc))
-        if prof_counter_active is 1
-            txt: join(txt, ",\"counters\":{")
-            ci: 0
-            as long as ci < 6
-                if ci > 0
-                    txt: join(txt, ",")
-                txt: join(txt, join("\"", join(prof_key(ci), "\":")))
-                txt: join(txt, dbg_decimal(peek_i64(prof_marks, pi * 72 + 24 + ci * 8)))
-                ci: ci + 1
-            txt: join(txt, "}")
-        txt: join(txt, "}")
-        pi: pi + 1
-    txt: join(txt, "],\"input_bytes\":")
-    txt: join(txt, i2s(prof_input_bytes))
-    txt: join(txt, ",\"functions_visited\":")
-    txt: join(txt, i2s(prof_functions))
-    txt: join(txt, ",\"emitted_bytes\":")
-    txt: join(txt, i2s(oc_n))
-    if syntax_mode > 0
-        txt: join(txt, ",\"syntax_trees\":")
-        txt: join(txt, dbg_decimal(syntax_trees))
-        txt: join(txt, ",\"syntax_nodes\":")
-        txt: join(txt, dbg_decimal(syntax_nodes))
-        txt: join(txt, ",\"syntax_declines\":")
-        txt: join(txt, dbg_decimal(syntax_declines))
-        txt: join(txt, ",\"syntax_decline_rc\":[")
-        ri: 0
-        as long as ri < 10
-            if ri > 0
-                txt: join(txt, ",")
-            rv: 0
-            if syntax_decline_rc is not 0
-                rv: peek_i64(syntax_decline_rc, ri * 8)
-            txt: join(txt, dbg_decimal(rv))
-            ri: ri + 1
-        txt: join(txt, "]")
-        if sx_dbg_n > 0
-            file_write_all("/tmp/sov_decline_spans.txt", sx_dbg_txt)
-        txt: join(txt, ",\"syntax_native_trees\":")
-        txt: join(txt, dbg_decimal(syntax_native_trees))
-        txt: join(txt, ",\"statement_trees\":")
-        txt: join(txt, dbg_decimal(syntax_statement_trees))
-        txt: join(txt, ",\"statement_native_trees\":")
-        txt: join(txt, dbg_decimal(syntax_statement_native_trees))
-        txt: join(txt, ",\"statement_nodes\":")
-        txt: join(txt, dbg_decimal(syntax_statement_nodes))
-        txt: join(txt, ",\"statement_roots_lowered\":")
-        txt: join(txt, dbg_decimal(syntax_stmt_roots))
-    txt: join(txt, ",\"instrumented\":")
-    txt: join(txt, dbg_decimal(prof_counter_active))
-    if prof_counter_active is 1
-        txt: join(txt, ",\"counters\":{\"bytes_scanned\":")
-        txt: join(txt, dbg_decimal(prof_bytes_scanned))
-        txt: join(txt, ",\"bytes_copied\":")
-        txt: join(txt, dbg_decimal(prof_bytes_copied))
-        txt: join(txt, ",\"allocations\":")
-        txt: join(txt, dbg_decimal(prof_allocations))
-        txt: join(txt, ",\"allocation_requested_bytes\":")
-        txt: join(txt, dbg_decimal(prof_alloc_bytes))
-        txt: join(txt, ",\"hash_probes\":")
-        txt: join(txt, dbg_decimal(prof_hash_probes))
-        txt: join(txt, ",\"fallbacks\":")
-        txt: join(txt, dbg_decimal(prof_fallbacks))
-        txt: join(txt, "},\"counter_scope\":\"native-length-SWAR/vector-loads+native-intern-scans-and-probes;memcpy+native-concat+native-substring-copy-payloads;heap-allocator-entries;intern-slow-path-entries\",\"unavailable_counters\":[]}")
-    if not
-        txt: join(txt, ",\"unavailable_counters\":[\"bytes_scanned\",\"bytes_copied\",\"allocations\",\"hash_probes\",\"fallbacks\"]}")
-    txt: join(txt, "\n")
-    syscall(1, 2, txt, length(txt), 0, 0, 0)
-    return 0
+    mark("5-written")
 
 prv_imm b i n:
     j: i - 16
@@ -12567,16 +11080,14 @@ rpp_repeat_prepass:
             fs9: rpx_nonspace(raw)
             st9: ""
             if fs9 > 0 - 1
-                # prefix test on the pointer, not a stripped copy: the copy
-                # existed only to feed starts_with, so it allocated once per
-                # re-led line (every `return` in the tree, ~26k on self).
-                if _sov_starts_with(raw + fs9, "repeat ") is 1
-                    st9: strip(raw)
+                if _sov_byte_at(raw, fs9) is 114
+                    if _sov_byte_at(raw, fs9 + 1) is 101
+                        st9: strip(raw)
             if _sov_starts_with(st9, "repeat ") is 1
-                ct9: scutr(st9, 7)
+                ct9: strip(cut(st9, 7, length(st9)))
                 tp9: look(ct9, " times")
                 if tp9 > 0 - 1
-                    ct9: scut(ct9, 0, tp9)
+                    ct9: strip(cut(ct9, 0, tp9))
                 if length(ct9) is 0
                     print "Error: repeat needs a count"
                     err_line: _sov_list_get(bl9, i9)
@@ -12639,710 +11150,3 @@ rpp_repeat_prepass:
             i9: i9 + 1
         f9: f9 + 1
     return 0
-
-# Per-compilation primary text-type dependency graph. This is semantic state,
-# not saved/replayed compilation output. Nodes are tasks and scoped variables;
-# text literals/casts seed a worklist, reverse edges propagate forward types.
-st_need: 0
-st_edges: 0
-st_done: 0
-st_vars: 0
-st_ids: 0
-# st_var memo: an open-addressed content-keyed index over the append-only
-# st_vars/st_ids pair.  A hit is verified against the live list (slot pointer
-# still at vi), so the memo answers exactly what list_idx's linear walk
-# answered; a miss is a genuinely absent name (the memo is complete:
-# every st_vars append goes through stv_put, every reset kills the memo),
-# so st_var goes straight to the append.  Killed at both
-# st_vars reset sites (st_build's per-function loop, sb_vars_reset) - the
-# lists are append-only between kills, so the verify can never alias a
-# rebuilt generation.  This is what removed the c0-parsed quadratic: one
-# list_idx(st_vars) per assignment/atom was O(vars) per statement.
-stv_h: 0
-stv_cap: 0
-stv_kill:
-    stv_h: 0
-    stv_cap: 0
-    return 0
-stv_find name:
-    if stv_cap is 0
-        return 0 - 1
-    m: stv_cap - 1
-    i: band(nhash(name), m)
-    p: 0
-    as long as p < stv_cap
-        sl: peek_i64(stv_h, i * 8)
-        if sl is 0
-            return 0 - 1
-        if _sov_str_eq(sl, name) is 1
-            vi: peek_i64(stv_h, stv_cap * 8 + i * 8)
-            # self-heal guard: the slot name is the list's own pointer, so
-            # a live hit means st_vars[vi] still is that string.
-            if _sov_list_len(st_vars) > vi
-                if peek_i64(st_vars, 16 + vi * 8) is sl
-                    return vi
-            return 0 - 1
-        i: i + 1
-        if i > m
-            i: 0
-        p: p + 1
-    return 0 - 1
-stv_put name vi:
-    # name is guaranteed absent (stv_find missed).  The first table is
-    # 16 slots: bodies with a handful of vars (the common function)
-    # pay one 256-byte bump, and the doubling chain reaches the big
-    # single-function shapes in ~14 amortized growths total.
-    if stv_cap is 0
-        stv_cap: 16
-        stv_h: _sov_heap_alloc(stv_cap * 16)
-        dummy: _sov_bzero(stv_h, stv_cap * 16)
-    if _sov_list_len(st_vars) * 2 >= stv_cap
-        # grow + rehash from the lists (the truth); load stays <= 50% so
-        # every probe sequence terminates at an empty slot.
-        ncap: 16
-        as long as ncap < _sov_list_len(st_vars) * 4
-            ncap: ncap + ncap
-        nh: _sov_heap_alloc(ncap * 16)
-        dummy: _sov_bzero(nh, ncap * 16)
-        ri: 0
-        rn: _sov_list_len(st_vars)
-        as long as ri < rn
-            rnm: peek_i64(st_vars, 16 + ri * 8)
-            rm: ncap - 1
-            rj: band(nhash(rnm), rm)
-            as long as peek_i64(nh, rj * 8) is not 0
-                rj: rj + 1
-                if rj > rm
-                    rj: 0
-            poke_i64(nh, rj * 8, rnm)
-            poke_i64(nh, ncap * 8 + rj * 8, ri)
-            ri: ri + 1
-        stv_h: nh
-        stv_cap: ncap
-    m: stv_cap - 1
-    i: band(nhash(name), m)
-    as long as peek_i64(stv_h, i * 8) is not 0
-        i: i + 1
-        if i > m
-            i: 0
-    poke_i64(stv_h, i * 8, name)
-    poke_i64(stv_h, stv_cap * 8 + i * 8, vi)
-    return 0
-st_node kind:
-    ix: _sov_list_len(st_need)
-    st_need: _sov_list_add(st_need, kind)
-    st_edges: _sov_list_add(st_edges, _sov_list_new())
-    st_done: _sov_list_add(st_done, 0)
-    return ix
-st_var name:
-    vi: stv_find(name)
-    if vi >= 0
-        return peek_i64(st_ids, 16 + vi * 8)
-    ni: st_node(0)
-    st_vars: _sov_list_add(st_vars, name)
-    st_ids: _sov_list_add(st_ids, ni)
-    dummy: stv_put(name, _sov_list_len(st_vars) - 1)
-    return ni
-st_edge source target:
-    cnt: peek_i64(st_need, 16 + target * 8)
-    if cnt >= 0
-        poke_i64(st_need, 16 + target * 8, cnt + 1)
-    if source > 0
-        adj: peek_i64(st_edges, 16 + source * 8)
-        adj: _sov_list_add(adj, target)
-        poke_i64(st_edges, 16 + source * 8, adj)
-    return 0
-st_expr e0 dep:
-    if dep > 32
-        return 0
-    # strip fast path, trim-exact: the c0 blob hands RHS spans that carry
-    # at most trimmable leading bytes (the text after the colon), so a
-    # clean tail means the trim is a pure pointer skip - no _sov_substring
-    # copy.  A dirty tail pays strip as before.  This was the one
-    # heap-alloc-per-line in c0-parsed (100k allocs on loc100k).
-    e: e0
-    en: length(e0)
-    if en > 0
-        hb: peek_byte(e0, 0)
-        tb: peek_byte(e0, en - 1)
-        tws: 0
-        if tb is 32 -> tws: 1
-        if tb is 9 -> tws: 1
-        if tb is 10 -> tws: 1
-        if tb is 13 -> tws: 1
-        if tws is 1
-            e: strip(e0)
-            en: length(e)
-        if not
-            hws: 0
-            if hb is 32 -> hws: 1
-            if hb is 9 -> hws: 1
-            if hb is 10 -> hws: 1
-            if hb is 13 -> hws: 1
-            if hws is 1
-                sk: 0
-                as long as sk < en
-                    cb: peek_byte(e0, sk)
-                    adv: 0
-                    if cb is 32 -> adv: 1
-                    if cb is 9 -> adv: 1
-                    if cb is 10 -> adv: 1
-                    if cb is 13 -> adv: 1
-                    if adv is 0 -> leave
-                    sk: sk + 1
-                # sk = en here means the whole span was trimmable: the
-                # empty text (e0+en is its NUL), matching strip's answer
-                e: e0 + sk
-                en: en - sk
-    if is_lit(e) is 1
-        return 1
-    if starts(e, "as text ") is 1
-        return 1
-    if starts(e, "as ptr ") is 1
-        return 1
-    if en > 8
-        if sg_match(e, en - 8, " as text") is 1
-            return 1
-    if en > 7
-        if sg_match(e, en - 7, " as ptr") is 1
-            return 1
-    if en > 1
-        if peek_byte(e, 0) is 40
-            if licm2_match(e, 0) is en - 1
-                return st_expr(cut(e, 1, en - 1), dep + 1)
-    if expr_atom(e) is 1
-        if digitb(peek_byte(e, 0)) is 1
-            return 0
-        vi: stv_find(e)
-        if vi >= 0
-            return peek_i64(st_ids, 16 + vi * 8)
-        if sg_lookup(e) >= 0
-            return 1
-        return 0
-    lp: cfind1(e, 40)
-    if lp > 0
-        if licm2_match(e, lp) is en - 1
-            nm: scut(e, 0, lp)
-            if expr_atom(nm) is 1
-                if sf_lookup(nm) >= 0
-                    return 1
-                fi: nm_lookup(nm)
-                if fi >= 0
-                    # Identity returns stay parametric: specialize the returned
-                    # parameter at this expression, not every call to the task.
-                    pk: peek_i64(ret_par, 16 + fi * 8)
-                    if pk >= 0
-                        args: split_args(cut(e, lp + 1, en - 1), _sov_list_new())
-                        if pk < _sov_list_len(args)
-                            return st_expr(peek_i64(args, 16 + pk * 8), dep + 1)
-                    return fi + 2
-    return 0
-st_scr_buf: 0
-st_scr_cap: 0
-st_scratch n:
-    # per-function scratch: three slots per body line (line, colon, name)
-    if st_scr_cap < n * 24 + 16
-        st_scr_buf: _sov_heap_alloc(n * 24 + 16)
-        st_scr_cap: n * 24 + 16
-    return st_scr_buf
-st_build:
-    st_need: _sov_list_new()
-    st_edges: _sov_list_new()
-    st_done: _sov_list_new()
-    zz: st_node(0)
-    zz: st_node(0)
-    fi: 0
-    nn: _sov_list_len(names)
-    as long as fi < nn
-        zz: st_node(0 - 1)
-        fi: fi + 1
-    fi: 0
-    as long as fi < nn
-        st_vars: _sov_list_new()
-        st_ids: _sov_list_new()
-        dummy: stv_kill()
-        bl: peek_i64(bodies, 16 + fi * 8)
-        ps: peek_i64(params, 16 + fi * 8)
-        pi: 0
-        as long as pi < _sov_list_len(ps)
-            zz: st_var(peek_i64(ps, 16 + pi * 8))
-            # A runtime parameter is unknown unless its actual argument is
-            # considered at a parametric call site. Do not assume text.
-            st_edge(0, zz)
-            pi: pi + 1
-        bln: _sov_list_len(bl)
-        # One line pass feeds both phases: the trimmed line, its colon
-        # offset and its assignment-target name are cached per line so
-        # the edge phase does not re-strip and re-scan every line.
-        st_scr: st_scratch(bln)
-        bi: 0
-        as long as bi < bln
-            line: strip_span(peek_i64(bl, 16 + bi * 8))
-            if starts(line, "immutable ") is 1
-                line: strip_span(cut(line, 10, length(line)))
-            co: find_col(line)
-            poke_i64(st_scr, 16 + bi * 24, line)
-            poke_i64(st_scr, 24 + bi * 24, co)
-            nm: 0
-            if co > 0
-                nm: cut(line, 0, co)
-                if peek_byte(nm, co - 1) < 33
-                    nm: strip(nm)
-                if expr_atom_word(nm) is 0
-                    nm: 0
-            poke_i64(st_scr, 32 + bi * 24, nm)
-            if nm is not 0
-                zz: st_var(nm)
-            bi: bi + 1
-        bi: 0
-        as long as bi < bln
-            line: peek_i64(st_scr, 16 + bi * 24)
-            co: peek_i64(st_scr, 24 + bi * 24)
-            nm: peek_i64(st_scr, 32 + bi * 24)
-            if starts(line, "return ") is 1
-                st_edge(st_expr(cut(line, 7, length(line)), 0), fi + 2)
-            if not
-                if co > 0
-                    if nm is not 0
-                        vn: st_var(nm)
-                        st_edge(st_expr(cut(line, co + 1, length(line)), 0), vn)
-            bi: bi + 1
-        fi: fi + 1
-    queue: _sov_list_new()
-    queue: _sov_list_add(queue, 1)
-    poke_i64(st_done, 24, 1)
-    qi: 0
-    as long as qi < _sov_list_len(queue)
-        ni: peek_i64(queue, 16 + qi * 8)
-        adj: peek_i64(st_edges, 16 + ni * 8)
-        ai: 0
-        as long as ai < _sov_list_len(adj)
-            dst: peek_i64(adj, 16 + ai * 8)
-            need: peek_i64(st_need, 16 + dst * 8)
-            if need > 0
-                need: need - 1
-                poke_i64(st_need, 16 + dst * 8, need)
-            if need <= 0
-                if peek_i64(st_done, 16 + dst * 8) is 0
-                    poke_i64(st_done, 16 + dst * 8, 1)
-                    queue: _sov_list_add(queue, dst)
-                    if dst >= 2
-                        if dst < nn + 2
-                            mark_fn_str(peek_i64(names, 16 + (dst - 2) * 8))
-            ai: ai + 1
-        qi: qi + 1
-    # The semantic result is now in str_fns; graph scratch is not reused by
-    # another compilation and no source or emitted artifact is replayed.
-    return 0
-
-# --- st_build twin: the C port is planted from compilers/linux/
-# stbuild_native.sov (generated from tools/native_stbuild.c) for the
-# self-hosted build; this wrapper is the portable fallback. The graph
-# helpers (st_node/st_var/st_edge/st_expr/st_scratch/mark_fn_str) stay
-# interpreted behind sb_tbl; strip_span/find_col/cut/starts/
-# expr_atom_word are fused inside the blob, and its cut copies plus the
-# BFS queue live in the persistent sb_arblk arena.
-sb_tbl: 0
-sb_arblk: 0
-sb_tbl_init:
-    sb_tbl: _sov_heap_alloc(256)
-    sb_arblk: _sov_heap_alloc(16)
-    poke_i64(sb_arblk, 0, 0)
-    poke_i64(sb_arblk, 8, 0)
-    poke_i64(sb_tbl, 0, 29)
-    poke_i64(sb_tbl, 8, addr_of sb_names_get)
-    poke_i64(sb_tbl, 16, addr_of sb_bodies_get)
-    poke_i64(sb_tbl, 24, addr_of sb_params_get)
-    poke_i64(sb_tbl, 32, addr_of sb_reset)
-    poke_i64(sb_tbl, 40, addr_of st_node)
-    poke_i64(sb_tbl, 48, addr_of st_var)
-    poke_i64(sb_tbl, 56, addr_of st_edge)
-    poke_i64(sb_tbl, 64, addr_of st_expr)
-    poke_i64(sb_tbl, 72, addr_of st_scratch)
-    poke_i64(sb_tbl, 80, addr_of sb_vars_reset)
-    poke_i64(sb_tbl, 88, addr_of sb_need_get)
-    poke_i64(sb_tbl, 96, addr_of sb_edges_get)
-    poke_i64(sb_tbl, 104, addr_of sb_done_get)
-    poke_i64(sb_tbl, 112, addr_of mark_fn_str)
-    poke_i64(sb_tbl, 120, addr_of strip)
-    poke_i64(sb_tbl, 128, addr_of expr_atom)
-    poke_i64(sb_tbl, 136, addr_of find_col_q)
-    poke_i64(sb_tbl, 144, addr_of cut)
-    poke_i64(sb_tbl, 152, addr_of sb_arblk_get)
-    poke_i64(sb_tbl, 160, addr_of _sov_heap_alloc)
-    # slots 21-28: the st_expr port inside the blob reaches the hash-state
-    # lookups and the two global list reads through the table.
-    poke_i64(sb_tbl, 168, addr_of stv_find)
-    poke_i64(sb_tbl, 176, addr_of sg_lookup)
-    poke_i64(sb_tbl, 184, addr_of sf_lookup)
-    poke_i64(sb_tbl, 192, addr_of nm_lookup)
-    poke_i64(sb_tbl, 200, addr_of split_args)
-    poke_i64(sb_tbl, 208, addr_of _sov_list_new)
-    poke_i64(sb_tbl, 216, addr_of ret_par_get)
-    poke_i64(sb_tbl, 224, addr_of st_ids_get)
-    return 0
-ret_par_get:
-    return ret_par
-st_ids_get:
-    return st_ids
-sb_names_get:
-    return names
-sb_bodies_get:
-    return bodies
-sb_params_get:
-    return params
-sb_reset:
-    st_need: _sov_list_new()
-    st_edges: _sov_list_new()
-    st_done: _sov_list_new()
-    return 0
-sb_vars_reset:
-    st_vars: _sov_list_new()
-    st_ids: _sov_list_new()
-    dummy: stv_kill()
-    return 0
-sb_need_get:
-    return st_need
-sb_edges_get:
-    return st_edges
-sb_done_get:
-    return st_done
-sb_arblk_get:
-    return sb_arblk
-_sov_st_build tbl:
-    st_build()
-    return 0
-
-# --- dce family twins: the C ports are planted from compilers/linux/
-# dstores_native.sov, dlitter_native.sov and dce_native.sov (generated from
-# tools/native_dstores.c, native_dlitter.c, native_dce.c) for the
-# self-hosted build; these wrappers are the portable fallback.  The graph
-# lookups (fn_lookup/gn_lookup) are answered from blob-local first-index
-# tables - the answers are hash-independent, and the global caches
-# self-heal on next use (fn_sync appends the tail; gn_sync rebuilds on
-# shrink), except the compaction-branch fn cache reset, which the
-# interpreted dce performs by clearing fn_htcap/fn_sync_hi and which
-# dce_pub_fn replicates.  Rebuilt lists live in the persistent dce_arblk
-# arena; oc compactions are in-place forward blits (kept bytes only ever
-# move down); every patch-table rebuild publishes through dce_pub_patch.
-dce_tbl: 0
-dce_arblk: 0
-dce_tbl_init:
-    dce_tbl: _sov_heap_alloc(232)
-    dce_arblk: _sov_heap_alloc(16)
-    poke_i64(dce_arblk, 0, 0)
-    poke_i64(dce_arblk, 8, 0)
-    poke_i64(dce_tbl, 0, 28)
-    poke_i64(dce_tbl, 8, addr_of dce_g_patch_at)
-    poke_i64(dce_tbl, 16, addr_of dce_g_patch_kind)
-    poke_i64(dce_tbl, 24, addr_of dce_g_patch_kid)
-    poke_i64(dce_tbl, 32, addr_of dce_g_patch_val)
-    poke_i64(dce_tbl, 40, addr_of dce_g_patch_line)
-    poke_i64(dce_tbl, 48, addr_of dce_g_fn_names)
-    poke_i64(dce_tbl, 56, addr_of dce_g_fn_offs)
-    poke_i64(dce_tbl, 64, addr_of dce_g_glob_names)
-    poke_i64(dce_tbl, 72, addr_of dce_g_br_at)
-    poke_i64(dce_tbl, 80, addr_of dce_g_br_st)
-    poke_i64(dce_tbl, 88, addr_of dce_g_oc)
-    poke_i64(dce_tbl, 96, addr_of dce_g_oc_n)
-    poke_i64(dce_tbl, 104, addr_of dce_g_strb)
-    poke_i64(dce_tbl, 112, addr_of dce_g_had_err)
-    poke_i64(dce_tbl, 120, addr_of dce_g_fib_drop)
-    poke_i64(dce_tbl, 128, addr_of dce_g_fib_nm)
-    poke_i64(dce_tbl, 136, addr_of dce_g_entry_nm)
-    poke_i64(dce_tbl, 144, addr_of dce_g_kid_krel)
-    poke_i64(dce_tbl, 152, addr_of dce_g_kid_kfnaddr)
-    poke_i64(dce_tbl, 160, addr_of dce_g_kid_kgrel)
-    poke_i64(dce_tbl, 168, addr_of dce_g_kid_kglob)
-    poke_i64(dce_tbl, 176, addr_of intern_kid)
-    poke_i64(dce_tbl, 184, addr_of _sov_heap_alloc)
-    poke_i64(dce_tbl, 192, addr_of dce_arblk_get)
-    poke_i64(dce_tbl, 200, addr_of dce_pub_ocn)
-    poke_i64(dce_tbl, 208, addr_of dce_pub_fn)
-    poke_i64(dce_tbl, 216, addr_of dce_pub_patch)
-    poke_i64(dce_tbl, 224, addr_of dce_pub_strb)
-    return 0
-dce_g_patch_at:
-    return patch_at
-dce_g_patch_kind:
-    return patch_kind
-dce_g_patch_kid:
-    return patch_kid
-dce_g_patch_val:
-    return patch_val
-dce_g_patch_line:
-    return patch_line
-dce_g_fn_names:
-    return fn_names
-dce_g_fn_offs:
-    return fn_offs
-dce_g_glob_names:
-    return glob_names
-dce_g_br_at:
-    return br_at
-dce_g_br_st:
-    return br_st
-dce_g_oc:
-    return oc
-dce_g_oc_n:
-    return oc_n
-dce_g_strb:
-    return strb
-dce_g_had_err:
-    return had_err
-dce_g_fib_drop:
-    return fib_drop
-dce_g_fib_nm:
-    return fib_nm
-dce_g_entry_nm:
-    return entry_nm
-dce_g_kid_krel:
-    return kid_krel
-dce_g_kid_kfnaddr:
-    return kid_kfnaddr
-dce_g_kid_kgrel:
-    return kid_kgrel
-dce_g_kid_kglob:
-    return kid_kglob
-dce_arblk_get:
-    return dce_arblk
-dce_pub_ocn v:
-    oc_n: v
-    return 0
-dce_pub_fn names offs:
-    fn_names: names
-    fn_offs: offs
-    fn_htcap: 0
-    fn_sync_hi: 0
-    return 0
-dce_pub_patch at kind kid val line:
-    patch_at: at
-    patch_kind: kind
-    patch_kid: kid
-    patch_val: val
-    patch_line: line
-    return 0
-dce_pub_strb b:
-    strb: b
-    return 0
-_sov_dce tbl:
-    dce()
-    return 0
-_sov_dce_stores tbl:
-    dce_stores()
-    return 0
-_sov_dce_litter tbl:
-    dce_litter()
-    return 0
-
-# Debug points are ordinary numeric patch records. Every compaction and
-# parallel merge already relocates these records; no stale raw PCs survive.
-dbg_collect: 0
-dbg_active: 0
-dbg_tops: 0
-tops_users: 0
-dbg_decimal v:
-    if v is 0
-        return "0"
-    out: ""
-    as long as v > 0
-        out: join(cut("0123456789", v % 10, v % 10 + 1), out)
-        v: v / 10
-    return out
-dbg_write path:
-    if dbg_collect is 0
-        return 0
-    out: join("# src_base ", join(dbg_decimal(src_base), "\n"))
-    di: 0
-    as long as di < _sov_list_len(patch_at)
-        if _sov_str_eq(peek_i64(patch_kind, 16 + di * 8), "debug") is 1
-            pc: peek_i64(patch_at, 16 + di * 8) + HDR
-            ln: peek_i64(patch_val, 16 + di * 8)
-            out: join(out, join(dbg_decimal(pc), join(" ", join(dbg_decimal(ln), "\n"))))
-        di: di + 1
-    if file_write_all(join(path, ".map"), out) is 0
-        print "Error: cannot write debug map"
-        fail()
-    return 0
-
-# Counters are emitted only by an explicitly instrumenting compiler build.
-# Ordinary translation emits no probes and normal benchmark binaries stay clean.
-prof_codegen: 0
-prof_counter_active: 0
-prof_bytes_scanned: 0
-prof_bytes_copied: 0
-prof_allocations: 0
-prof_alloc_bytes: 0
-prof_hash_probes: 0
-prof_fallbacks: 0
-prof_emit counter reg:
-    if prof_codegen is 0
-        return 0
-    if gn_lookup("prof_counter_active") < 0
-        print "Error: --instrument-compiler requires compiler counter globals"
-        fail()
-    # Preserve flags and both scratch registers, including the original rax
-    # when it is the measured value. No calls or ABI alignment dependencies.
-    emit(156)
-    emit(80)
-    emit2(65, 83)
-    load_glob("prof_mode")
-    test_rax()
-    disabled: jz()
-    emit2(72, 184)
-    emit8(1)
-    store_glob("prof_counter_active")
-    load_glob(counter)
-    if reg < 0
-        emit3(72, 131, 192)
-        emit(1)
-    if not
-        if reg is 0
-            emit3(72, 3, 68)
-            emit(36)
-            emit(8)
-        if not
-            rex: 72
-            if reg >= 8
-                rex: 76
-            emit3(rex, 1, 192 + (reg % 8) * 8)
-    store_glob(counter)
-    patch(disabled)
-    emit2(65, 91)
-    emit(88)
-    emit(157)
-    return 0
-prof_emit_n counter count:
-    if prof_codegen is 0
-        return 0
-    emit(80)
-    emit2(72, 184)
-    emit8(count)
-    prof_emit(counter, 0)
-    emit(88)
-    return 0
-
-prof_strlen_stub:
-    # Same aligned SWAR algorithm as emit_strlen; symbolic branch patches
-    # permit probes without stale byte displacements in the original stub.
-    emit3(72, 129, 255)
-    emit4(4096)
-    emit2(15, 134)
-    small: here()
-    emit4(0)
-    emit3(72, 137, 254)
-    emit3(72, 137, 250)
-    emit3(72, 131, 226)
-    emit(248)
-    prof_emit_n("prof_bytes_scanned", 8)
-    emit3(76, 139, 10)
-    emit2(137, 249)
-    emit3(131, 225, 7)
-    emit3(193, 225, 3)
-    emit(184)
-    emit4(1)
-    emit3(72, 211, 224)
-    emit3(72, 255, 200)
-    emit3(73, 9, 193)
-    emit2(73, 184)
-    emit8(0 - 72340172838076673)
-    emit2(72, 184)
-    emit8(-9187201950435737472)
-    first: jmp()
-    loop: here()
-    prof_emit_n("prof_bytes_scanned", 8)
-    emit3(76, 139, 10)
-    patch(first)
-    emit3(76, 137, 201)
-    emit3(76, 1, 193)
-    emit3(73, 247, 209)
-    emit3(73, 33, 193)
-    emit3(73, 33, 201)
-    found: jnz()
-    emit3(72, 131, 194)
-    emit(8)
-    back: jmp()
-    put(back, loop - (back + 4))
-    patch(found)
-    emit3(77, 15, 188)
-    emit(201)
-    emit3(73, 193, 233)
-    emit(3)
-    emit3(76, 1, 202)
-    emit3(72, 137, 208)
-    emit3(72, 41, 240)
-    ret()
-    patch(small)
-    xor_rax()
-    ret()
-    return 0
-
-prof_last: 0
-prof_value i:
-    if i is 0 -> return prof_bytes_scanned
-    if i is 1 -> return prof_bytes_copied
-    if i is 2 -> return prof_allocations
-    if i is 3 -> return prof_alloc_bytes
-    if i is 4 -> return prof_hash_probes
-    return prof_fallbacks
-prof_key i:
-    if i is 0 -> return "bytes_scanned"
-    if i is 1 -> return "bytes_copied"
-    if i is 2 -> return "allocations"
-    if i is 3 -> return "allocation_requested_bytes"
-    if i is 4 -> return "hash_probes"
-    return "fallbacks"
-prof_capture off fresh:
-    ci: 0
-    as long as ci < 6
-        value: prof_value(ci)
-        prior: peek_i64(prof_last, ci * 8)
-        field: off + 24 + ci * 8
-        delta: value - prior
-        if fresh is 0
-            delta: delta + peek_i64(prof_marks, field)
-        poke_i64(prof_marks, field, delta)
-        poke_i64(prof_last, ci * 8, value)
-        ci: ci + 1
-    return 0
-
-include syntax.sov
-
-include statements.sov
-
-include uscan_native.sov
-
-include cxread_native.sov
-
-include collect_native.sov
-
-include stbuild_native.sov
-
-include lord_native.sov
-include dstores_native.sov
-
-include dlitter_native.sov
-
-include dce_native.sov
-
-include kgrow_native.sov
-
-include licm_native.sov
-
-include inl2_native.sov
-
-include c0parse_native.sov
-
-include listfind_native.sov
-
-include linesfast_native.sov
-
-include stmt_native.sov
-
-include flatpatch_native.sov
-
-include front_native.sov
-
-include sgextra_native.sov
-
-include basescan_native.sov

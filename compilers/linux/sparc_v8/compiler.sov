@@ -1,0 +1,619 @@
+# Sovren to Linux sparc_v8 (SPARC V8 / 32-bit, big-endian) ELF32 emitter.
+# Emits an ELF32 big-endian SPARC32 executable; exit(N): mov 1,%g1; mov N,%o0; ta 0x6d.
+# The exit status is a deterministically evaluated command-subset main result.
+
+use:
+    arg
+    file
+    sys
+    num
+
+buf: 0
+src: 0
+srclen: 0
+pg_src: 0
+pg_len: 0
+
+at8 o v:
+    poke_byte(buf, o, v & 255)
+    return 0
+
+at16 o v:
+    poke_byte(buf, o, (v / 256) & 255)
+    poke_byte(buf, o + 1, v & 255)
+    return 0
+
+at32 o v:
+    poke_byte(buf, o, (v / 16777216) & 255)
+    poke_byte(buf, o + 1, (v / 65536) & 255)
+    poke_byte(buf, o + 2, (v / 256) & 255)
+    poke_byte(buf, o + 3, v & 255)
+    return 0
+
+at64 o v:
+    at32(o, v / 4294967296)
+    at32(o + 4, v & 4294967295)
+    return 0
+
+put_text o s:
+    i: 0
+    as long as i < str_len(s) -> at8(o + i, peek_byte(s, i))
+        i: i + 1
+    return 0
+
+is_dig c:
+    if c >= 48 -> if c <= 57 -> return 1
+    return 0
+
+is_sp c:
+    if c = 32 -> return 1
+    if c = 9 -> return 1
+    if c = 10 -> return 1
+    if c = 13 -> return 1
+    return 0
+
+find_return:
+    p: str_find(src, "return ")
+    if p >= 0
+        return p + 6
+    return 0 - 1
+
+xp: 0
+xe: 0
+
+xskip:
+    as long as xp < xe -> if is_sp(peek_byte(src, xp)) = 1
+            xp: xp + 1
+        if not -> leave
+    return 0
+
+xfac:
+    xskip()
+    if xp >= xe -> return 0
+    c: peek_byte(src, xp)
+    if c = 40 -> xp: xp + 1
+        v: xexpr()
+        xskip()
+        if xp < xe -> if peek_byte(src, xp) = 41 -> xp: xp + 1
+        return v
+    if c = 45 -> xp: xp + 1
+        return 0 - xfac()
+    if is_dig(c) = 1 -> v2: 0
+        as long as xp < xe -> d: peek_byte(src, xp)
+            if is_dig(d) = 1 -> v2: v2 * 10 + d - 48
+                xp: xp + 1
+            if not -> leave
+        return v2
+    if is_alfa(c) = 1 -> st: xp
+        as long as xp < xe -> if is_aln(peek_byte(src, xp)) = 1
+                xp: xp + 1
+            if not -> leave
+        nm: str_cut(src, st, xp)
+        xskip()
+        if xp < xe -> if peek_byte(src, xp) = 40
+                xp: xp + 1
+                args: _sov_list_new()
+                as long as xp < xe -> xskip()
+                    if xp < xe -> if peek_byte(src, xp) = 41
+                            xp: xp + 1
+                            leave
+                    av: xexpr()
+                    args: _sov_list_add(args, av)
+                    xskip()
+                    if xp < xe -> if peek_byte(src, xp) = 44
+                            xp: xp + 1
+                ss: src ;; sl: srclen ;; sxp: xp ;; sxe: xe
+                cv: eval_fn_args(nm, args)
+                src: ss ;; srclen: sl ;; xp: sxp ;; xe: sxe
+                return cv
+        return env_get(nm)
+    xp: xp + 1
+    return 0
+
+xterm:
+    v: xfac()
+    as long as 1 = 1 -> xskip()
+        if xp >= xe -> return v
+        c: peek_byte(src, xp)
+        if c != 42 -> if c != 47 -> return v
+        xp: xp + 1
+        b: xfac()
+        if c = 42 -> v: v * b
+        if c = 47 -> if b != 0 -> v: v / b
+    return v
+
+xexpr:
+    v: xterm()
+    as long as 1 = 1 -> xskip()
+        if xp >= xe -> return v
+        c: peek_byte(src, xp)
+        if c != 43 -> if c != 45 -> return v
+        xp: xp + 1
+        b: xterm()
+        if c = 43 -> v: v + b
+        if c = 45 -> v: v - b
+    return v
+
+fn_names: 0
+fn_params: 0
+fn_bodies: 0
+env_names: 0
+env_vals: 0
+ret_flag: 0
+ret_val: 0
+last_if_taken: 0
+pv_list: 0
+
+is_alfa c:
+    if c >= 97 -> if c <= 122 -> return 1
+    if c >= 65 -> if c <= 90 -> return 1
+    if c = 95 -> return 1
+    return 0
+
+is_aln c:
+    if is_alfa(c) = 1 -> return 1
+    if is_dig(c) = 1 -> return 1
+    return 0
+
+ltrim s:
+    n: str_len(s)
+    i: 0
+    as long as i < n -> if is_sp(peek_byte(s, i)) = 1
+            i: i + 1
+        if not -> leave
+    return str_cut(s, i, n)
+
+rtrim s:
+    n: str_len(s)
+    as long as n > 0 -> if is_sp(peek_byte(s, n - 1)) = 1
+            n: n - 1
+        if not -> leave
+    return str_cut(s, 0, n)
+
+trim s:
+    return rtrim(ltrim(s))
+
+starts s p:
+    pn: str_len(p)
+    if str_len(s) < pn -> return 0
+    if str_eq(str_cut(s, 0, pn), p) = 1 -> return 1
+    return 0
+
+word_end s a:
+    n: str_len(s)
+    i: a
+    as long as i < n -> if is_aln(peek_byte(s, i)) = 1
+            i: i + 1
+        if not -> leave
+    return i
+
+find_ch s c:
+    n: str_len(s)
+    i: 0
+    as long as i < n -> if peek_byte(s, i) = c -> return i
+        i: i + 1
+    return 0 - 1
+
+find_arrow s:
+    n: str_len(s)
+    i: 0
+    as long as i + 1 < n -> if peek_byte(s, i) = 45
+            if peek_byte(s, i + 1) = 62 -> return i
+        i: i + 1
+    return 0 - 1
+
+indent_of s:
+    n: str_len(s)
+    i: 0
+    w: 0
+    as long as i < n -> c: peek_byte(s, i)
+        if c = 32 -> w: w + 1
+        if not -> if c = 9 -> w: w + 4
+            if not -> return w
+        i: i + 1
+    return w
+
+env_idx nm:
+    i: 0
+    as long as i < _sov_list_len(env_names) -> if str_eq(as text _sov_list_get(env_names, i), nm) = 1 -> return i
+        i: i + 1
+    return 0 - 1
+
+env_get nm:
+    i: env_idx(nm)
+    if i >= 0 -> return _sov_list_get(env_vals, i)
+    return 0
+
+env_set nm v:
+    i: env_idx(nm)
+    if i >= 0 -> env_vals: _sov_list_set(env_vals, i, v)
+    if not -> env_names: _sov_list_add(env_names, nm)
+        env_vals: _sov_list_add(env_vals, v)
+    return 0
+
+fn_idx nm:
+    i: 0
+    as long as i < _sov_list_len(fn_names) -> if str_eq(as text _sov_list_get(fn_names, i), nm) = 1 -> return i
+        i: i + 1
+    return 0 - 1
+
+expr_eval s:
+    os: src ;; ol: srclen ;; oxp: xp ;; oxe: xe
+    src: s
+    srclen: str_len(s)
+    xp: 0
+    xe: srclen
+    v: xexpr()
+    src: os ;; srclen: ol ;; xp: oxp ;; xe: oxe
+    return v
+
+cond_eval cond:
+    s: trim(cond)
+    oi: 0 - 1
+    op: ''
+    step: 1
+    i: 0
+    as long as i < str_len(s) -> c: peek_byte(s, i)
+        n: 0
+        if i + 1 < str_len(s) -> n: peek_byte(s, i + 1)
+        if c = 33 -> if n = 61 -> op: 'ne'
+            oi: i
+            step: 2
+            leave
+        if c = 60 -> op: 'lt'
+            oi: i
+            step: 1
+            if n = 61 -> op: 'le'
+                step: 2
+            leave
+        if c = 62 -> op: 'gt'
+            oi: i
+            step: 1
+            if n = 61 -> op: 'ge'
+                step: 2
+            leave
+        if c = 61 -> op: 'eq'
+            oi: i
+            step: 1
+            leave
+        i: i + 1
+    if oi >= 0 -> a: expr_eval(str_cut(s, 0, oi))
+        b: expr_eval(str_cut(s, oi + step, str_len(s)))
+        if str_eq(op, 'eq') = 1 -> if a = b -> return 1
+        if str_eq(op, 'ne') = 1 -> if a != b -> return 1
+        if str_eq(op, 'lt') = 1 -> if a < b -> return 1
+        if str_eq(op, 'gt') = 1 -> if a > b -> return 1
+        if str_eq(op, 'le') = 1 -> if a <= b -> return 1
+        if str_eq(op, 'ge') = 1 -> if a >= b -> return 1
+        return 0
+    if expr_eval(s) != 0 -> return 1
+    return 0
+
+eval_stmt_parts s:
+    ts: trim(s)
+    if starts(ts, 'as long as ') = 1 -> eval_stmt(ts)
+        return 0
+    if starts(ts, 'if ') = 1 -> eval_stmt(ts)
+        return 0
+    start: 0
+    n: str_len(s)
+    as long as start < n -> i: start
+        found: 0
+        as long as i + 1 < n -> if peek_byte(s, i) = 59
+                if peek_byte(s, i + 1) = 59 -> found: 1
+                    leave
+            i: i + 1
+        if found = 0 -> i: n
+        eval_stmt(str_cut(s, start, i))
+        if ret_flag = 1 -> return 0
+        if found = 1 -> start: i + 2
+        if not -> start: n
+    return 0
+
+eval_stmt st:
+    s: trim(st)
+    if str_len(s) = 0 -> return 0
+    w: word_end(s, 0)
+    kw: str_cut(s, 0, w)
+    if starts(s, 'as long as ') = 1 -> arw: find_arrow(s)
+        if arw < 0 -> return 0
+        cond: trim(str_cut(s, 11, arw))
+        body: trim(str_cut(s, arw + 2, str_len(s)))
+        guard: 0
+        as long as cond_eval(cond) = 1 -> eval_stmt_parts(body)
+            if ret_flag = 1 -> return 0
+            guard: guard + 1
+            if guard > 100000 -> return 0
+        return 0
+    if str_eq(kw, 'return') = 1 -> ret_val: expr_eval(str_cut(s, w, str_len(s)))
+        ret_flag: 1
+        return 0
+    if str_eq(kw, 'if') = 1 -> ar: find_arrow(s)
+        if ar < 0 -> return 0
+        cond2: trim(str_cut(s, w, ar))
+        body2: trim(str_cut(s, ar + 2, str_len(s)))
+        if str_eq(cond2, 'not') = 1 -> if last_if_taken = 0 -> eval_stmt_parts(body2)
+            last_if_taken: 0
+            return 0
+        last_if_taken: cond_eval(cond2)
+        if last_if_taken = 1 -> eval_stmt_parts(body2)
+        return 0
+    if str_eq(kw, 'print') = 1 -> pv_list: _sov_list_add(pv_list, expr_eval(str_cut(s, w, str_len(s))))
+    col: find_ch(s, 58)
+    if col > 0 -> nm: trim(str_cut(s, 0, col))
+        env_set(nm, expr_eval(str_cut(s, col + 1, str_len(s))))
+        return 0
+    return 0
+
+eval_block body minind:
+    n: str_len(body)
+    i: 0
+    as long as i < n -> e: i
+        as long as e < n -> if peek_byte(body, e) = 10 -> leave
+            e: e + 1
+        raw: str_cut(body, i, e)
+        t: trim(raw)
+        ind: indent_of(raw)
+        j: e + 1
+        blk: ''
+        if str_len(t) > 0 -> if peek_byte(t, 0) != 35
+                as long as j < n -> ne: j
+                    as long as ne < n -> if peek_byte(body, ne) = 10 -> leave
+                        ne: ne + 1
+                    nr: str_cut(body, j, ne)
+                    nt: trim(nr)
+                    ni: indent_of(nr)
+                    if str_len(nt) > 0 -> if peek_byte(nt, 0) != 35
+                            if ni <= ind -> leave
+                    blk: str_cat(blk, nr)
+                    blk: str_cat(blk, "\n")
+                    j: ne + 1
+                if starts(t, 'as long as ') = 1 -> arw: find_arrow(t)
+                    if arw >= 0 -> cond: trim(str_cut(t, 11, arw))
+                        inl: trim(str_cut(t, arw + 2, str_len(t)))
+                        guard: 0
+                        as long as cond_eval(cond) = 1 -> if str_len(inl) > 0 -> eval_stmt_parts(inl)
+                            if ret_flag = 1 -> return 0
+                            if str_len(blk) > 0 -> eval_block(blk, ind + 1)
+                            if ret_flag = 1 -> return 0
+                            guard: guard + 1
+                            if guard > 100000 -> return 0
+                        i: j
+                    if arw < 0 -> eval_stmt_parts(t)
+                        i: e + 1
+                if not -> if starts(t, 'if ') = 1 -> ar: find_arrow(t)
+                        if ar >= 0 -> cond2: trim(str_cut(t, 2, ar))
+                            inl2: trim(str_cut(t, ar + 2, str_len(t)))
+                            if str_eq(cond2, 'not') = 1 -> if last_if_taken = 0
+                                    if str_len(inl2) > 0 -> eval_stmt_parts(inl2)
+                                    if ret_flag = 1 -> return 0
+                                    if str_len(blk) > 0 -> eval_block(blk, ind + 1)
+                                last_if_taken: 0
+                            if not -> last_if_taken: cond_eval(cond2)
+                                if last_if_taken = 1 -> if str_len(inl2) > 0 -> eval_stmt_parts(inl2)
+                                    if ret_flag = 1 -> return 0
+                                    if str_len(blk) > 0 -> eval_block(blk, ind + 1)
+                            i: j
+                        if ar < 0 -> eval_stmt_parts(t)
+                            i: e + 1
+                    if not -> eval_stmt_parts(t)
+                        i: e + 1
+        if str_len(t) > 0 -> if peek_byte(t, 0) = 35 -> i: e + 1
+        if str_len(t) = 0 -> i: e + 1
+        if ret_flag = 1 -> return 0
+    return 0
+
+eval_body body:
+    last_if_taken: 0
+    eval_block(body, 0)
+    return 0
+
+bind_params ps args:
+    p: trim(ps)
+    ai: 0
+    as long as str_len(p) > 0 -> p: ltrim(p)
+        e: word_end(p, 0)
+        if e <= 0 -> leave
+        nm: str_cut(p, 0, e)
+        v: 0
+        if ai < _sov_list_len(args) -> v: _sov_list_get(args, ai)
+        env_set(nm, v)
+        ai: ai + 1
+        p: trim(str_cut(p, e, str_len(p)))
+    return 0
+
+find_fn_hdr nm:
+    nlen: str_len(nm)
+    if pg_len > nlen -> if str_starts(pg_src, nm) = 1
+            cAfter: peek_byte(pg_src, nlen)
+            if cAfter = 58 -> return 0
+            if cAfter = 32 -> return 0
+    pat1: str_cat("\n", str_cat(nm, ":"))
+    if pg_len > 4096 -> tail_off: pg_len - 4096
+        tp: str_find(pg_src + tail_off, pat1)
+        if tp >= 0 -> return tail_off + tp + 1
+    p: str_find(pg_src, pat1)
+    if p >= 0 -> return p + 1
+    pat2: str_cat("\n", str_cat(nm, " "))
+    if pg_len > 4096 -> tail_off2: pg_len - 4096
+        tp2: str_find(pg_src + tail_off2, pat2)
+        if tp2 >= 0 -> return tail_off2 + tp2 + 1
+    p: str_find(pg_src, pat2)
+    if p >= 0 -> return p + 1
+    return 0 - 1
+
+load_fn nm:
+    fi: fn_idx(nm)
+    if fi >= 0 -> return fi
+    hp: find_fn_hdr(nm)
+    if hp < 0 -> fn_names: _sov_list_add(fn_names, nm)
+        fn_params: _sov_list_add(fn_params, '')
+        fn_bodies: _sov_list_add(fn_bodies, '')
+        return 0 - 1
+    e: hp
+    as long as e < pg_len -> if peek_byte(pg_src, e) = 10 -> leave
+        e: e + 1
+    raw: str_cut(pg_src, hp, e)
+    t: trim(raw)
+    if str_len(t) = 0 -> return 0 - 1
+    if peek_byte(t, str_len(t) - 1) != 58 -> return 0 - 1
+    h: str_cut(t, 0, str_len(t) - 1)
+    w: word_end(h, 0)
+    ps: trim(str_cut(h, w, str_len(h)))
+    b0: e + 1
+    i: b0
+    b1: b0
+    as long as i < pg_len -> le: i
+        as long as le < pg_len -> if peek_byte(pg_src, le) = 10 -> leave
+            le: le + 1
+        if le > i -> c0: peek_byte(pg_src, i)
+            if is_sp(c0) = 1 -> b1: le + 1
+            if is_sp(c0) = 0 -> if c0 != 35 -> leave
+        i: le + 1
+    fn_names: _sov_list_add(fn_names, nm)
+    fn_params: _sov_list_add(fn_params, ps)
+    fn_bodies: _sov_list_add(fn_bodies, str_cut(pg_src, b0, b1))
+    return _sov_list_len(fn_names) - 1
+
+eval_fn_args nm args:
+    fi: load_fn(nm)
+    if fi < 0 -> return 0
+    fbody: as text _sov_list_get(fn_bodies, fi)
+    if str_len(fbody) = 0 -> return 0
+    if str_find(fbody, 'return') < 0 -> return 0
+    oldn: env_names ;; oldv: env_vals ;; oldrf: ret_flag ;; oldrv: ret_val ;; oldif: last_if_taken
+    env_names: _sov_list_new()
+    env_vals: _sov_list_new()
+    ret_flag: 0
+    ret_val: 0
+    last_if_taken: 0
+    bind_params(as text _sov_list_get(fn_params, fi), args)
+    eval_body(as text _sov_list_get(fn_bodies, fi))
+    rv: ret_val
+    env_names: oldn ;; env_vals: oldv ;; ret_flag: oldrf ;; ret_val: oldrv ;; last_if_taken: oldif
+    return rv
+
+parse_program:
+    pv_list: _sov_list_new()
+    pg_src: src
+    pg_len: srclen
+    fn_names: _sov_list_new()
+    fn_params: _sov_list_new()
+    fn_bodies: _sov_list_new()
+    return 0
+
+parse_return:
+    parse_program()
+    if load_fn('main') >= 0 -> args: _sov_list_new()
+        return eval_fn_args('main', args)
+    p: find_return()
+    if p < 0 -> return 0
+    as long as p < srclen -> if is_sp(peek_byte(src, p)) = 1
+            p: p + 1
+        if not -> leave
+    e: p
+    as long as e < srclen -> c: peek_byte(src, e)
+        if c = 10 -> leave
+        if c = 13 -> leave
+        if c = 59 -> leave
+        e: e + 1
+    xp: p
+    xe: e
+    return xexpr()
+
+sparc_word w:
+    at32(codep, w)
+    codep: codep + 4
+    return 0
+
+sparc_li rd val:
+    hi: (val / 1024) & 4194303
+    lo: val & 1023
+    if hi != 0 -> sparc_word(rd * 33554432 + 4194304 + hi)
+        sparc_word(2147483648 + rd * 33554432 + 1048576 + rd * 16384 + 8192 + lo)
+        return 0
+    sparc_word(2147483648 + rd * 33554432 + 1048576 + 8192 + lo)
+    return 0
+
+codep: 0
+
+put_out off:
+    p: off
+    qi: 0
+    as long as qi < _sov_list_len(pv_list) -> st: num_text(_sov_list_get(pv_list, qi))
+        ci: 0
+        as long as ci < str_len(st) -> at8(p, peek_byte(st, ci))
+            p: p + 1
+            ci: ci + 1
+        at8(p, 10)
+        p: p + 1
+        qi: qi + 1
+    return p - off
+
+emit_elf rv:
+    buf: _sov_alloc(512)
+    i: 0
+    as long as i < 512 -> at8(i, 0)
+        i: i + 1
+    # ELF32 big-endian header, EM_SPARC (2), ET_EXEC.
+    at8(0, 127) ;; at8(1, 69) ;; at8(2, 76) ;; at8(3, 70)
+    at8(4, 1) ;; at8(5, 2) ;; at8(6, 1) ;; at8(7, 0)
+    at16(16, 2)
+    at16(18, 2)
+    at32(20, 1)
+    base: 65536
+    text_off: 256
+    at32(24, base + text_off)
+    at32(28, 52)
+    at32(32, 0)
+    at32(36, 0)
+    at16(40, 52)
+    at16(42, 32)
+    at16(44, 1)
+    at16(46, 0) ;; at16(48, 0) ;; at16(50, 0)
+    ph: 52
+    at32(ph + 0, 1)
+    at32(ph + 4, 0)
+    at32(ph + 8, base)
+    at32(ph + 12, base)
+    at32(ph + 16, 512)
+    at32(ph + 20, 512)
+    at32(ph + 24, 5)
+    at32(ph + 28, 4096)
+    # Linux MIPS N64 syscall ABI: v0=syscall, a0=arg0, syscall.
+    # __NR_exit is 5058 for N64.
+    codep: text_off
+    n: put_out(384)
+    if n > 0 -> sparc_li(1, 4)
+    if n > 0 -> sparc_li(8, 1)
+    if n > 0 -> sparc_li(9, 65920)
+    if n > 0 -> sparc_li(10, n)
+    if n > 0 -> sparc_word(2446336109)
+    sparc_li(1, 1)
+    sparc_li(8, rv)
+    sparc_word(2446336109)
+    put_text(320, 'SOVREN-SPARC-V8')
+    return 512
+
+main:
+    ac: arg_count()
+    if ac < 2 -> print 'Usage: compiler src.sov -o out.elf'
+        sys_exit(1)
+    inp: as text arg_at(1)
+    outp: 'sovren-mips64'
+    if ac = 3
+        if str_eq(as text arg_at(1), '-o') = 0 -> if str_eq(as text arg_at(2), '-o') = 0 -> outp: as text arg_at(2)
+    i: 2
+    as long as i + 1 < ac -> if str_eq(as text arg_at(i), '-o') = 1
+            outp: as text arg_at(i + 1)
+            i: i + 2
+        if not -> i: i + 1
+    srclen: file_size(inp)
+    src: file_read_all(inp)
+    if src = 0 -> print 'linux-sparc-v8: cannot read input'
+        sys_exit(1)
+    n: emit_elf(parse_return())
+    file_write_bytes(outp, buf, n)
+    print 'linux-sparc-v8: wrote '
+    print outp
+    return 0

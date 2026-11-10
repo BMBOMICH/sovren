@@ -8,7 +8,7 @@ report=json.loads((D/'conformance.json').read_text());fleet=json.loads((W/'verif
 assert report['pass_all'] and not report['skipped'] and all(x['oracle_agrees'] for x in report['native_oracle_comparisons'])
 assert report['implementation_sources_sha256']==source_snapshot(),'implementation changed since semantic tests'
 assert len(fleet)==len(entries) and {x['target'] for x in fleet}==set(byid)
-for name in ['output-safety','parallel-sugar','constant-evaluation','physical-layout']:assert json.loads((D/(name+'.json')).read_text())['pass_all'],name
+for name in ['output-safety','shared-ir','parallel-sugar','constant-evaluation','physical-layout']:assert json.loads((D/(name+'.json')).read_text())['pass_all'],name
 for name in ['cache-regressions','dependency-caches','artifact-modes']:assert all(x['pass_test'] for x in json.loads((D/(name+'.json')).read_text())),name
 front=json.loads((D/'frontend.json').read_text());assert front['sugar_exact']>=220 and all(x['status'] in ['EXACT','SAME-REJECTION'] for x in front['suite'])
 assert 'fixed point EXACT' in (D/'frontend.log').read_text()
@@ -20,7 +20,7 @@ for row in fleet:
  assert row['source_sha256']==digest(ROOT/e['source'])
  assert row['builder_sha256']==report['compiler_sha256']['native']
  changes.append((src,dst,sha))
-assert digest(W/'linux/compiler')==report['compiler_sha256']['native']
+for name,key in [('c-language','c'),('javascript','js'),('typescript','ts'),('linux','native')]:assert digest(W/name/'compiler')==report['compiler_sha256'][key]
 # Durable compact rollback material, with no copies in aliases.
 backup=D/'previous-fleet.tar.gz'
 with tarfile.open(backup,'w:gz') as tar:

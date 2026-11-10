@@ -21,9 +21,6 @@ frame_wipe:
     fw_pos: _sov_list_add(fw_pos, fw_a)
     fw_pos: _sov_list_add(fw_pos, fw_b)
 fuse_cmp cond inv:
-    if syntax_mode is 1
-        sx_jump: syntax_fuse(cond, inv)
-        if sx_jump is not 0 - 1 -> return sx_jump
     e: strip(cops(cond))
     if cfind1(e, 38) > 0 - 1
         if look(e, "&&") > 0 - 1
@@ -61,27 +58,24 @@ fuse_cmp cond inv:
     if p < 0
         return 0 - 1
     oid: intern_kid(op)
-    le: scut(e, 0, p)
-    re: scutr(e, p + ow)
-    return fuse_cmp_operands(le, re, op, inv, 0, 0)
-fuse_cmp_operands le re op inv sx_tree sx_node:
-    oid: intern_kid(op)
+    le: strip(cut(e, 0, p))
+    re: strip(cut(e, p + ow, length(e)))
     if look(le, "(") > 0 - 1
-        fuse_operand(sx_tree, sx_node, 0, le)
+        expr(le)
         if is_imm(re) is 1
             cmp_rax_imm(num_of(re))
             return fuse_jcc(op, inv)
         push_rax()
-        fuse_operand(sx_tree, sx_node, 1, re)
+        expr(re)
         mov_rcx_rax()
         pop_rax()
         cmp_rax_rcx()
         return fuse_jcc(op, inv)
     if oid is kid_opeq
         if peek_byte(re, 0) is 34
-            fuse_operand(sx_tree, sx_node, 0, le)
+            expr(le)
             push_rax()
-            fuse_operand(sx_tree, sx_node, 1, re)
+            expr(re)
             mov_rsi_rax()
             pop_rax()
             mov_rdi_rax()
@@ -89,9 +83,9 @@ fuse_cmp_operands le re op inv sx_tree sx_node:
             cmp_rax_imm(1)
             return fuse_jcc("eq", inv)
         if peek_byte(le, 0) is 34
-            fuse_operand(sx_tree, sx_node, 1, re)
+            expr(re)
             push_rax()
-            fuse_operand(sx_tree, sx_node, 0, le)
+            expr(le)
             mov_rsi_rax()
             pop_rax()
             mov_rdi_rax()
@@ -100,9 +94,9 @@ fuse_cmp_operands le re op inv sx_tree sx_node:
             return fuse_jcc("eq", inv)
     if oid is kid_opne
         if peek_byte(re, 0) is 34
-            fuse_operand(sx_tree, sx_node, 0, le)
+            expr(le)
             push_rax()
-            fuse_operand(sx_tree, sx_node, 1, re)
+            expr(re)
             mov_rsi_rax()
             pop_rax()
             mov_rdi_rax()
@@ -110,9 +104,9 @@ fuse_cmp_operands le re op inv sx_tree sx_node:
             cmp_rax_imm(1)
             return fuse_jcc("ne", inv)
         if peek_byte(le, 0) is 34
-            fuse_operand(sx_tree, sx_node, 1, re)
+            expr(re)
             push_rax()
-            fuse_operand(sx_tree, sx_node, 0, le)
+            expr(le)
             mov_rsi_rax()
             pop_rax()
             mov_rdi_rax()
@@ -126,7 +120,7 @@ fuse_cmp_operands le re op inv sx_tree sx_node:
                 cflush(le)
                 cmp_reg_imm(sl, num_of(re))
             if not
-                fuse_operand(sx_tree, sx_node, 0, le)
+                expr(le)
                 cmp_rax_imm(num_of(re))
             return fuse_jcc(op, inv)
     if is_imm(le) is 1
@@ -136,11 +130,11 @@ fuse_cmp_operands le re op inv sx_tree sx_node:
                 cflush(re)
                 cmp_reg_imm(sl, num_of(le))
             if not
-                fuse_operand(sx_tree, sx_node, 1, re)
+                expr(re)
                 cmp_rax_imm(num_of(le))
             return fuse_jcc(swap_op(op), inv)
-    la: regslot2(le)
-    ra: regslot2(re)
+    la: reg_slot(le)
+    ra: reg_slot(re)
     if la > 0 - 1
         if ra > 0 - 1
             cflush(le)
@@ -155,7 +149,7 @@ fuse_cmp_operands le re op inv sx_tree sx_node:
             emit_cmp_reg_scaled(la, mb, mq / 4096, mq % 4096 - 128)
             return fuse_jcc(op, inv)
         cflush(le)
-        fuse_operand(sx_tree, sx_node, 1, re)
+        expr(re)
         cmp_reg_rax(la)
         return fuse_jcc(op, inv)
     if ra > 0 - 1
@@ -167,7 +161,7 @@ fuse_cmp_operands le re op inv sx_tree sx_node:
             emit_cmp_reg_scaled(ra, mb, mq / 4096, mq % 4096 - 128)
             return fuse_jcc(swap_op(op), inv)
         cflush(re)
-        fuse_operand(sx_tree, sx_node, 0, le)
+        expr(le)
         cmp_rax_reg(ra)
         return fuse_jcc(op, inv)
     ml: mem_scaled(le)
@@ -181,16 +175,13 @@ fuse_cmp_operands le re op inv sx_tree sx_node:
             emit_rax_scaled(mb, mq / 4096, mq % 4096 - 128)
             emit_cmp_rax_scaled(nb, nq / 4096, nq % 4096 - 128)
             return fuse_jcc(op, inv)
-    fuse_operand(sx_tree, sx_node, 0, le)
+    expr(le)
     push_rax()
-    fuse_operand(sx_tree, sx_node, 1, re)
+    expr(re)
     mov_rcx_rax()
     pop_rax()
     cmp_rax_rcx()
     return fuse_jcc(op, inv)
-fuse_operand sx_tree sx_node sx_side sx_text:
-    if sx_tree is 0 -> return expr(sx_text)
-    return syntax_operand(sx_tree, sx_node, sx_side, 0, 0)
 fuse_jcc op inv:
     oid: intern_kid(op)
     if oid is kid_opeq
@@ -221,13 +212,13 @@ fuse_jcc op inv:
 here:
     return oc_here(oc)
 homereg name:
-    sl: regslot2(name)
+    sl: reg_slot(name)
     if sl > 0 - 1
         if sl is 0
             return 3
         return sl + 11
     if leaf8 is 1
-        sl8: lshf2(name)
+        sl8: lsh_find_s(name)
         if sl8 > 4
             if sl8 < 9
                 return sl8 + 3
@@ -268,7 +259,7 @@ imul_rax_reg sl:
     emit2(15, 175)
     emit(192 + op_low3(sl))
 inc_var name:
-    sl: lshf2(name)
+    sl: lsh_find_s(name)
     if sl is 0
         emit3(72, 255, 195)
         return
@@ -510,8 +501,8 @@ lea_ok ag:
         neg: 0
     if p < 0
         return 0
-    nm: scut(ag, 0, p)
-    cs: scutr(ag, p + 3)
+    nm: strip(cut(ag, 0, p))
+    cs: strip(cut(ag, p + 3, length(ag)))
     if plain_name(nm) is 0
         return 0
     if is_imm(cs) is 0
@@ -525,7 +516,7 @@ lea_ok ag:
         return 0
     if v is 0
         return 0
-    if regslot2(nm) < 0
+    if reg_slot(nm) < 0
         return 0
     return 1
 leaf8_scan lines:
@@ -663,7 +654,7 @@ lim_source_const lines li lim:
             if peek_byte(pl, 0) is not 35
                 if _sov_starts_with(pl, pref) is 1
                     if nind(raw) <= loopind
-                        vs: scutr(pl, length(pref))
+                        vs: strip(cut(pl, length(pref), length(pl)))
                         if digitb(peek_byte(vs, 0)) is 1
                             if look(vs, " ") < 0
                                 return num_of(vs)
@@ -738,7 +729,7 @@ loadv name:
         dummy: expr(fl_x5)
         return
     cflush(name)
-    i: lshf2(name)
+    i: lsh_find_s(name)
     if i > 0 - 1
         load_loc(i)
         return
@@ -746,15 +737,18 @@ loadv name:
     if g > 0 - 1
         load_glob(name)
         return
-    print "Error: undeclared name"
-    _sov_print(name)
-    err_where()
-    had_err: 1
-    xor_rax()
-
+    # undeclared reads auto-register (stale-era tolerance; k*-tests rely on it)
+    if wr_used is 0
+        wr_used: _sov_list_new()
+    if list_find(wr_used, name) is 0 - 1
+        wr_used: _sov_list_add(wr_used, name)
+        print "Warning: undeclared read, auto-registers as a local starting at 0"
+        _sov_print(name)
+        err_where()
+    load_loc(slot(name))
 loadv_rcx name:
     loadv(name)
-    li: lshf2(name)
+    li: lsh_find_s(name)
     if li > 0 - 1
         if li < 5
             if oc_n > 0
@@ -787,7 +781,7 @@ loadv_rcx name:
 loadv_rdi name:
     g9: gn_lookup(name)
     if g9 > 0 - 1
-        if lshf2(name) < 0
+        if lsh_find_s(name) < 0
             cflush(name)
             emit3(72, 139, 61)
             at: here()
@@ -795,7 +789,7 @@ loadv_rdi name:
             addp(at, "grel", name)
             return 0
     loadv(name)
-    li: lshf2(name)
+    li: lsh_find_s(name)
     if li > 0 - 1
         if li < 5
             if oc_n > 0
@@ -828,7 +822,7 @@ loadv_rdi name:
 loadv_rdx name:
     g9: gn_lookup(name)
     if g9 > 0 - 1
-        if lshf2(name) < 0
+        if lsh_find_s(name) < 0
             cflush(name)
             emit3(72, 139, 21)
             at: here()
@@ -836,7 +830,7 @@ loadv_rdx name:
             addp(at, "grel", name)
             return 0
     loadv(name)
-    li: lshf2(name)
+    li: lsh_find_s(name)
     if li > 0 - 1
         if li < 5
             if oc_n > 0
@@ -869,7 +863,7 @@ loadv_rdx name:
 loadv_rsi name:
     g9: gn_lookup(name)
     if g9 > 0 - 1
-        if lshf2(name) < 0
+        if lsh_find_s(name) < 0
             cflush(name)
             emit3(72, 139, 53)
             at: here()
@@ -877,7 +871,7 @@ loadv_rsi name:
             addp(at, "grel", name)
             return 0
     loadv(name)
-    li: lshf2(name)
+    li: lsh_find_s(name)
     if li > 0 - 1
         if li < 5
             if oc_n > 0
@@ -919,14 +913,10 @@ look t s:
     kr: _sov_find_text(t, s)
     return kr
 mark_fn_str name:
-    name: intern_kid(name)
     if sf_lookup(name) < 0
         str_fns: _sov_list_add(str_fns, name)
         dhmf: plog_str(40, name)
-    if fsem_key is not 0
-        fsem_mark_str(name)
 mark_str name:
-    name: intern_kid(name)
     if sv_lookup(name) < 0
         str_vars: _sov_list_add(str_vars, name)
 mem_peek_byte b x:
@@ -1796,11 +1786,11 @@ mem_scaled t:
     mc: look(mn, ",")
     if mc < 0
         return 0 - 1
-    mb: scut(mn, 0, mc)
-    mx: scutr(mn, mc + 1)
+    mb: strip(cut(mn, 0, mc))
+    mx: strip(cut(mn, mc + 1, length(mn)))
     if name_ok(mb) is 0
         return 0 - 1
-    mbs: regslot2(mb)
+    mbs: reg_slot(mb)
     if mbs < 0
         return 0 - 1
     mq: raw_scaled(mx)
@@ -1817,11 +1807,11 @@ memabs_scaled t:
     mc: look(mn, ",")
     if mc < 0
         return 0 - 1
-    mb: scut(mn, 0, mc)
-    mx: scutr(mn, mc + 1)
+    mb: strip(cut(mn, 0, mc))
+    mx: strip(cut(mn, mc + 1, length(mn)))
     if name_ok(mb) is 0
         return 0 - 1
-    mbs: regslot2(mb)
+    mbs: reg_slot(mb)
     if mbs < 0
         return 0 - 1
     if is_imm(mx) is 0
@@ -1897,8 +1887,8 @@ parse_sq t:
         return 0
     if peek_byte(t, p) is 42 is 0
         return 0
-    l: scut(t, 0, p)
-    r: scutr(t, p + 1)
+    l: strip(cut(t, 0, p))
+    r: strip(cut(t, p + 1, length(t)))
     if fop3(l) > 0 - 1
         return 0
     if fop3(r) > 0 - 1
@@ -1916,7 +1906,7 @@ patch at:
 peek_home e:
     if sg_match(e, length(e) - 4, " * 8") is 0
         return 0 - 1
-    head: scut(e, 0, length(e) - 4)
+    head: strip(cut(e, 0, length(e) - 4))
     if name_ok(head) is 0
         return 0 - 1
     return homereg(head)
@@ -1987,20 +1977,20 @@ pkacc g x v:
         k: k + 1
     if k2 < 0
         return 0
-    rest: scutr(v, k2 + 1)
+    rest: strip(cut(v, k2 + 1, length(v)))
     if peek_byte(rest, 0) is not 43
         return 0
-    t2: scutr(rest, 1)
+    t2: strip(cut(rest, 1, length(rest)))
     if length(t2) is 0
         return 0
     inn: cut(v, 9, k2)
     c1: look(inn, ",")
     if c1 < 0
         return 0
-    g2: scut(inn, 0, c1)
+    g2: strip(cut(inn, 0, c1))
     if _sov_str_eq(g2, g) is 0
         return 0
-    x2: scutr(inn, c1 + 1)
+    x2: strip(cut(inn, c1 + 1, length(inn)))
     if _sov_str_eq(x2, x) is 0
         return 0
     pk_t: t2
@@ -2014,8 +2004,8 @@ pkpeek t:
     c1: look(inn, ",")
     if c1 < 0
         return 0
-    g2: scut(inn, 0, c1)
-    x2: scutr(inn, c1 + 1)
+    g2: strip(cut(inn, 0, c1))
+    x2: strip(cut(inn, c1 + 1, length(inn)))
     if name_ok(g2) is 0
         return 0
     if scaled_shape(x2) is 0

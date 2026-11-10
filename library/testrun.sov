@@ -185,7 +185,6 @@ tr_flat path:
     dummy: tr_emit_file(path, tmp, 0)
     return file_read_all(tmp)
 tr_build src out:
-    file_delete(out)
     line: as text tr_sov
     line: str_cat(line, " ")
     line: str_cat(line, src)
@@ -194,7 +193,6 @@ tr_build src out:
     line: str_cat(line, " 2>&1")
     return as text tr_shell(line)
 tr_build_for src out flag:
-    file_delete(out)
     line: as text tr_sov
     line: str_cat(line, " ")
     line: str_cat(line, src)
@@ -222,9 +220,7 @@ tr_ok name:
     dummy: tr_mark()
     return 1
 tr_bad name got want:
-    if tr_quiet is 1
-        tr_fail: tr_fail + 1
-        return 1
+    if tr_quiet is 1 -> tr_fail: tr_fail + 1 ;; return 1
     if tr_skipped(name) is 1
         tr_skip: tr_skip + 1
         return 1

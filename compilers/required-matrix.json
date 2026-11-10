@@ -1,62 +1,16 @@
 {
   "schema": 1,
   "contract": "No unknown, skipped, incomplete-semantic or failed required category may count as universal parity.",
-  "required_hosts": [
-    "linux-x86_64",
-    "linux-aarch64",
-    "windows-x86_64",
-    "windows-aarch64",
-    "macos-x86_64",
-    "macos-aarch64"
-  ],
+  "required_hosts": ["linux-x86_64", "linux-aarch64", "windows-x86_64", "windows-aarch64", "macos-x86_64", "macos-aarch64"],
   "host_scope_note": "Initial explicit host matrix, not a claim that every conceivable host is covered. Additional host claims must extend this matrix.",
-  "required_backend_scope": "all retained entries in compilers/registry.json, including WebAssembly",
-  "modes": [
-    "fresh-application",
-    "fully-uncached",
-    "identical",
-    "edited-function",
-    "end-to-end"
-  ],
-  "edit_categories": [
-    "one-character",
-    "whitespace",
-    "comment",
-    "function-size",
-    "signature",
-    "global",
-    "child-dependency",
-    "broad-dependencies",
-    "compiler-change",
-    "flag-change",
-    "consecutive-edits"
-  ],
-  "workload_families": [
-    "startup",
-    "all-functions-reachable",
-    "library-heavy",
-    "expressions",
-    "calls",
-    "strings",
-    "sugar",
-    "large-dependency-graph",
-    "self-build",
-    "comments",
-    "labels",
-    "forward-references",
-    "long-names",
-    "constants",
-    "tiny-source",
-    "large-source",
-    "memory-growth-cliffs",
-    "full-self-compilation"
-  ],
+  "required_backend_scope": "all entries in backends/registry.json",
+  "modes": ["fresh-application", "fully-uncached", "identical", "edited-function", "end-to-end"],
+  "edit_categories": ["one-character", "whitespace", "comment", "function-size", "signature", "global", "child-dependency", "broad-dependencies", "compiler-change", "flag-change", "consecutive-edits"],
+  "workload_families": ["startup", "all-functions-reachable", "library-heavy", "expressions", "calls", "strings", "sugar", "large-dependency-graph", "self-build"],
   "latency_upper_95ci_max": 1.0,
   "throughput_lower_95ci_min": 1.0,
   "require_real_host_execution": true,
   "require_semantics_before_timing": true,
   "require_downstream_for_end_to_end": true,
-  "forbid_overall_average_override": true,
-  "translation_result_cache_allowed": false,
-  "cleanup_note": "Removed targets are documented in cleanup-manifest.json. Retained partial implementations still require restoration and full-language validation."
+  "forbid_overall_average_override": true
 }

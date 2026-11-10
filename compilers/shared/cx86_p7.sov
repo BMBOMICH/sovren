@@ -35,7 +35,7 @@ try_scaled_mem name argc argl:
             q1: _sov_list_get(argl, 0)
             q2: _sov_list_get(argl, 1)
             if name_ok(q1) is 1
-                qbs: regslot2(q1)
+                qbs: reg_slot(q1)
                 if qbs > 0 - 1
                     qk: raw_scaled(q2)
                     if qk > 0 - 1
@@ -48,10 +48,10 @@ try_scaled_mem name argc argl:
             q2: _sov_list_get(argl, 1)
             q3: _sov_list_get(argl, 2)
             if name_ok(q1) is 1
-                qbs: regslot2(q1)
+                qbs: reg_slot(q1)
                 if qbs > 0 - 1
                     if name_ok(q3) is 1
-                        qv: regslot2(q3)
+                        qv: reg_slot(q3)
                         if qv > 0 - 1
                             qk: raw_scaled(q2)
                             if qk > 0 - 1
@@ -78,8 +78,8 @@ try_scaled_mem name argc argl:
                             emit_store_scaled_rax(qbs, qk2 / 4096, qk2 % 4096 - 128)
                             return 1
                         if name_ok(q3) is 1
-                            if regslot2(q3) < 0
-                                if lshf2(q3) > 0 - 1
+                            if reg_slot(q3) < 0
+                                if lsh_find_s(q3) > 0 - 1
                                     cflush(q1)
                                     loadv(q3)
                                     emit_store_scaled_rax(qbs, qk2 / 4096, qk2 % 4096 - 128)
@@ -89,14 +89,14 @@ try_scaled_mem name argc argl:
                         if mi3 > 0 - 1
                             if mi3 < 2147483648
                                 if name_ok(q3) is 1
-                                    qv3: regslot2(q3)
+                                    qv3: reg_slot(q3)
                                     if qv3 > 0 - 1
                                         cflush(q1)
                                         cflush(q3)
                                         emit_store_abs(qbs, qv3, mi3)
                                         return 1
-                                    if regslot2(q3) < 0
-                                        if lshf2(q3) > 0 - 1
+                                    if reg_slot(q3) < 0
+                                        if lsh_find_s(q3) > 0 - 1
                                             cflush(q1)
                                             loadv(q3)
                                             emit_store_abs_rax(qbs, mi3)
@@ -164,10 +164,10 @@ try_scaled_mem name argc argl:
             a2: _sov_list_get(argl, 1)
             if has_vm is 1
                 if name_ok(a1) is 1
-                    fbs: regslot2(a1)
+                    fbs: reg_slot(a1)
                     if fbs > 0 - 1
                         if name_ok(a2) is 1
-                            fis: regslot2(a2)
+                            fis: reg_slot(a2)
                             if fis > 0 - 1
                                 cflush(a1)
                                 cflush(a2)
@@ -416,7 +416,7 @@ sel_oper name:
     if b > 0 - 1
         so_sl: b
         return 0
-    l: lshf2(name)
+    l: lsh_find_s(name)
     if l > 0 - 1
         so_sl: l
         return 1
@@ -661,13 +661,13 @@ try_sel_if cond lines li ind:
                     if word_id(t2) is kid_if
                         if length(t2) is 6
                             return 0
-                        if word_id(scutr(t2, 3)) is kid_not
+                        if word_id(strip(cut(t2, 3, length(t2)))) is kid_not
                             return 0
     tc: look(t1, ": ")
     if tc < 0
         return 0
-    sel_c: scut(t1, 0, tc)
-    sel_d: scutr(t1, tc + 2)
+    sel_c: strip(cut(t1, 0, tc))
+    sel_d: strip(cut(t1, tc + 2, length(t1)))
     if plain_name(sel_c) is 0
         return 0
     sel_dn2: sel_d
@@ -685,8 +685,8 @@ try_sel_if cond lines li ind:
                 pds: 0 - 1
             if pd < 0
                 return 0
-            dn2: scut(sel_d, 0, pd)
-            di2: scutr(sel_d, pd + 3)
+            dn2: strip(cut(sel_d, 0, pd))
+            di2: strip(cut(sel_d, pd + 3, length(sel_d)))
             if plain_name(dn2) is 0
                 return 0
             if is_imm(di2) is 0
@@ -716,8 +716,8 @@ try_sel_if cond lines li ind:
         sel_opl: 4
     if ps < 0
         return 0
-    av: scut(c0, 0, ps)
-    bv: scutr(c0, ps + sel_opl)
+    av: strip(cut(c0, 0, ps))
+    bv: strip(cut(c0, ps + sel_opl, length(c0)))
     ka: sel_val(av)
     if ka < 0
         if is_imm(av) is 1
@@ -782,8 +782,8 @@ try_sel_if cond lines li ind:
         if sel_dv is not 0
             if _sov_str_eq(sel_c, tw_x) is 1
                 if _sov_str_eq(sel_dn2, tw_x) is 1
-                    rbs: regslot2(sel_a)
-                    rxs: regslot2(tw_x)
+                    rbs: reg_slot(sel_a)
+                    rxs: reg_slot(tw_x)
                     if rbs > 0 - 1
                         if rxs > 0 - 1
                             rt: 1
@@ -984,7 +984,7 @@ sc_rcx o:
         rcx_imm(num_of(o))
         return
     if plain_name(o) is 1
-        os: regslot2(o)
+        os: reg_slot(o)
         if os > 0 - 1
             cflush(o)
             mov_rcx_reg(os)
@@ -994,7 +994,7 @@ sc_rcx o:
 try_self_chain var rhs:
     if sv_lookup(var) > 0 - 1
         return 0
-    ds: regslot2(var)
+    ds: reg_slot(var)
     if ds < 0
         return 0
     # pre-gate: the chain loop's first test needs a '(' in the stripped
@@ -1016,7 +1016,7 @@ try_self_chain var rhs:
             return 0
         if sc_balanced(cur, lp) is 0
             return 0
-        nm: scut(cur, 0, lp)
+        nm: strip(cut(cur, 0, lp))
         if plain_name(nm) is 0
             return 0
         kid: intern_kid(nm)
@@ -1166,7 +1166,7 @@ try_self_infix var rhs:
     # for recurrence loops like LCG. Checked ops keep their overflow traps.
     if sv_lookup(var) > 0 - 1
         return 0
-    ds: regslot2(var)
+    ds: reg_slot(var)
     if ds < 0
         return 0
     inn: strip(rhs)
@@ -1174,7 +1174,7 @@ try_self_infix var rhs:
     warg: blank
     lp: look(inn, "(")
     if lp > 0
-        nm0: scut(inn, 0, lp)
+        nm0: strip(cut(inn, 0, lp))
         kid0: intern_kid(nm0)
         if si_is_wrap(kid0) is 0
             return 0
@@ -1221,13 +1221,13 @@ try_slot_forms var rhs:
             return 0 - 1
     if sv_lookup(var) > 0 - 1
         return 0 - 1
-    ds: regslot2(var)
+    ds: reg_slot(var)
     if ds < 0
         return 0 - 1
     if plain_name(rhs) is 1
         if sv_lookup(rhs) > 0 - 1
             return 0 - 1
-        ss: regslot2(rhs)
+        ss: reg_slot(rhs)
         if ss < 0
             return 0 - 1
         cflush(rhs)
@@ -1240,12 +1240,12 @@ try_slot_forms var rhs:
         return 0 - 1
     if pp + 8 is not length(rhs)
         return 0 - 1
-    u: scut(rhs, 0, pp)
+    u: strip(cut(rhs, 0, pp))
     if plain_name(u) is 0
         return 0 - 1
     if sv_lookup(u) > 0 - 1
         return 0 - 1
-    ss: regslot2(u)
+    ss: reg_slot(u)
     if ss < 0
         return 0 - 1
     cflush(u)
@@ -1254,22 +1254,22 @@ try_slot_forms var rhs:
 twin_idx xa xb:
     if sg_match(xa, length(xa) - 4, " * 8") is 0
         return 0
-    ah: scut(xa, 0, length(xa) - 4)
+    ah: strip(cut(xa, 0, length(xa) - 4))
     if plain_name(ah) is 0
         return 0
     if sg_match(xb, length(xb) - 4, " * 8") is 0
         return 0
-    bh: scut(xb, 0, length(xb) - 4)
+    bh: strip(cut(xb, 0, length(xb) - 4))
     if peek_byte(bh, 0) is 40 is 0
         return 0
     if peek_byte(bh, length(bh) - 1) is 41 is 0
         return 0
-    inn: scut(bh, 1, length(bh) - 1)
+    inn: strip(cut(bh, 1, length(bh) - 1))
     pp: look(inn, " + ")
     if pp < 0
         return 0
-    l2: scut(inn, 0, pp)
-    r2: scutr(inn, pp + 3)
+    l2: strip(cut(inn, 0, pp))
+    r2: strip(cut(inn, pp + 3, length(inn)))
     if _sov_str_eq(l2, ah) is 0
         return 0
     if length(r2) is not 1
@@ -1477,6 +1477,25 @@ dce:
         dpos: _sov_list_set(dpos, peek_i64(dri, 16 + (i) * 8), i)
         i: i + 1
     pn: _sov_list_len(patch_at)
+    downer: _sov_list_new()
+    ff: 0
+    pp: 0
+    as long as pp < pn
+        at: peek_i64(patch_at, 16 + (pp) * 8)
+        o: 0 - 1
+        if at >= first_off
+            adv: 1
+            as long as adv is 1
+                if ff + 1 < nr
+                    if at >= peek_i64(dro, 16 + (ff + 1) * 8)
+                        ff: ff + 1
+                    if not
+                        adv: 0
+                if not
+                    adv: 0
+            o: ff
+        downer: _sov_list_add(downer, o)
+        pp: pp + 1
     dreach: _sov_list_new()
     i: 0
     as long as i < nr
@@ -1495,38 +1514,12 @@ dce:
     if rj > 0 - 1
         dreach: _sov_list_set(dreach, rj, 1)
         dtodo: _sov_list_add(dtodo, rj)
-    # owner + call-edge walk in ONE pass over the records: the owner
-    # window (ff) advances over the ascending function offsets exactly as
-    # the old two-loop form did, so the per-record owner is identical;
-    # the interned kind comes straight from patch_kid (pk_sync rebuilt it
-    # in lockstep immediately before dce), and the old 48k-entry downer
-    # side list (one add + one read per record) is gone.
-    dkid_ok: 0
-    if patch_kid is not 0
-        if _sov_list_len(patch_kid) is pn
-            dkid_ok: 1
-    ff: 0
     pp: 0
     as long as pp < pn
-        at: peek_i64(patch_at, 16 + (pp) * 8)
-        o: 0 - 1
-        if at >= first_off
-            adv: 1
-            as long as adv is 1
-                if ff + 1 < nr
-                    if at >= peek_i64(dro, 16 + (ff + 1) * 8)
-                        ff: ff + 1
-                    if not
-                        adv: 0
-                if not
-                    adv: 0
-            o: ff
-        dki: 0
-        if dkid_ok is 1
-            dki: peek_i64(patch_kid, 16 + (pp) * 8)
-        if dkid_ok is 0
-            dki: intern_kid(peek_i64(patch_kind, 16 + (pp) * 8))
+        o: peek_i64(downer, 16 + (pp) * 8)
+        dk: peek_i64(patch_kind, 16 + (pp) * 8)
         iscall: 0
+        dki: intern_kid(dk)
         if dki is kid_krel
             iscall: 1
         if dki is kid_kfnaddr
@@ -1596,27 +1589,11 @@ dce:
     npat_kid: _sov_list_new()
     npat_val: _sov_list_new()
     npat_line: _sov_list_new()
-    # fresh owner window for the rebuild walk (same advancing rule over
-    # the unchanged, ascending patch_at; identical owners to the merged
-    # pass above without materializing the old downer list)
-    ff2: 0
     pp: 0
     as long as pp < pn
-        at2: peek_i64(patch_at, 16 + (pp) * 8)
-        o: 0 - 1
-        if at2 >= first_off
-            adv2: 1
-            as long as adv2 is 1
-                if ff2 + 1 < nr
-                    if at2 >= peek_i64(dro, 16 + (ff2 + 1) * 8)
-                        ff2: ff2 + 1
-                    if not
-                        adv2: 0
-                if not
-                    adv2: 0
-            o: ff2
+        o: peek_i64(downer, 16 + (pp) * 8)
         keep: 0
-        ns: at2
+        ns: peek_i64(patch_at, 16 + (pp) * 8)
         if o is 0 - 1
             keep: 1
         if not
@@ -1748,8 +1725,8 @@ compound_do s:
                 if c is 94
                     op: 1
                 if op is 1
-                    lhs: scut(s, 0, i)
-                    rhs: scut(s, i + 2, n)
+                    lhs: strip(cut(s, 0, i))
+                    rhs: strip(cut(s, i + 2, n))
                     if length(lhs) > 0
                         if length(rhs) > 0
                             cch_mod: 1
@@ -1906,17 +1883,17 @@ tparams line:
     lst: _sov_list_new()
     s: strip(line)
     if is_task_hdr(s) is 1
-        s: scut(s, 0, length(s) - 1)
+        s: strip(cut(s, 0, length(s) - 1))
         if _sov_starts_with(s, "task ") is 1
-            s: scutr(s, 5)
+            s: strip(cut(s, 5, length(s)))
         wp: look(s, " with ")
         if wp > 0 - 1
-            s: scutr(s, wp + 6)
+            s: strip(cut(s, wp + 6, length(s)))
         if not
             sp: look(s, " ")
             if sp < 0
                 return lst
-            s: scutr(s, sp + 1)
+            s: strip(cut(s, sp + 1, length(s)))
         p: repl(s, ",", " ")
         p: repl(p, " and ", " ")
         start: 0
@@ -1929,7 +1906,7 @@ tparams line:
             if tp_c is 32
                 tp_sp: 1
             if tp_sp is 1
-                one: scut(p, start, i)
+                one: strip(cut(p, start, i))
             tp_ap: 0
             if tp_sp is 1
                 tp_ap: 1
@@ -1940,11 +1917,11 @@ tparams line:
             if tp_sp is 1
                 start: i + 1
             i: i + 1
-        one: scut(p, start, n)
+        one: strip(cut(p, start, n))
         if length(one) > 0
             lst: _sov_list_add(lst, one)
         return lst
-    rest: scutr(line, 5)
+    rest: strip(cut(line, 5, length(line)))
     wp: look(rest, " with ")
     if wp < 0
         return lst
@@ -1958,7 +1935,7 @@ tparams line:
     # dead loop line 5 (placeholder keeps include ranges stable)
     # dead loop line 6 (placeholder keeps include ranges stable)
     # dead loop line 7 (placeholder keeps include ranges stable)
-    one: repl(scut(p, start, n), " ", "_")
+    one: repl(strip(cut(p, start, n)), " ", "_")
     if length(one) > 0
         lst: _sov_list_add(lst, one)
     return lst
@@ -2048,18 +2025,9 @@ sp_lskip s:
                         return s + k
 sp_has_include t:
     # 1 iff some line's first non-whitespace bytes are `include ` -- the
-    # only shape the long splice path acts on.  length() first: it maps
-    # small-int and null "texts" to 0 (the walk below must not touch
-    # them), and hands the bounded worker a hard limit so the x86 twin
-    # (emit_nt_sp_inc, SWAR) never reads past the allocation.
+    # only shape the long splice path acts on.  Plain Sovren here for
+    # other backends; on x86 try_native_body plants emit_nt_sp_inc.
     lim: length(t)
-    if lim is 0
-        return 0
-    return sp_hinc_lim(t, lim)
-
-sp_hinc_lim t lim:
-    # bounded worker for sp_has_include: plain Sovren walk for other
-    # backends; on x86 try_native_body plants emit_nt_sp_inc (SWAR).
     i: 0
     as long as i < lim
         j: i
@@ -2194,16 +2162,7 @@ sp_splice_text src base:
     # joined in one buffer -- the same bytes the line path produces
     # (it rejoins every line with a newline), without splitting every
     # included file into a line list first.  Returns 0 to decline.
-    # Single walk: the old code ran sp_find_inc over the whole text
-    # twice (a validate pass, then a build pass); the walk now collects
-    # [li, lnn, slo, shi] records once, still declining on the first
-    # non-plain form BEFORE any file is loaded (the validate pass's
-    # exact decision point), then builds from the records.
     sn: length(src)
-    rec_li: _sov_list_new()
-    rec_lnn: _sov_list_new()
-    rec_slo: _sov_list_new()
-    rec_shi: _sov_list_new()
     cur: 0
     ag1: 1
     as long as ag1 is 1
@@ -2217,10 +2176,6 @@ sp_splice_text src base:
                 lnn: sn
             if sp_inc_spec(src, li, lnn) is 0
                 return 0
-            rec_li: _sov_list_add(rec_li, li)
-            rec_lnn: _sov_list_add(rec_lnn, lnn)
-            rec_slo: _sov_list_add(rec_slo, sp_slo)
-            rec_shi: _sov_list_add(rec_shi, sp_shi)
             cur: lnn + 1
             if le < 0
                 ag1: 0
@@ -2228,19 +2183,19 @@ sp_splice_text src base:
     segl: _sov_list_new()
     tot: 0
     seg: 0
-    ri: 0
-    rn: _sov_list_len(rec_li)
+    cur: 0
     bg1: 1
     as long as bg1 is 1
-        if ri >= rn
+        li: sp_find_inc(src, cur, sn)
+        if li < 0
             bg1: 0
-        if ri < rn
-            li: peek_i64(rec_li, 16 + ri * 8)
-            lnn: peek_i64(rec_lnn, 16 + ri * 8)
-            rslo: peek_i64(rec_slo, 16 + ri * 8)
-            rshi: peek_i64(rec_shi, 16 + ri * 8)
-            ri: ri + 1
-            pname: cut(src, rslo, rshi)
+        if li >= 0
+            le: cfind1n(src, li, sn, 10)
+            lnn: le
+            if le < 0
+                lnn: sn
+            sok: sp_inc_spec(src, li, lnn)
+            pname: cut(src, sp_slo, sp_shi)
             cp1: pname
             cp2: join(base, pname)
             cp3: join("library/", pname)
@@ -2277,8 +2232,11 @@ sp_splice_text src base:
                 had_err: 1
                 fail()
             seg: lnn + 1
-            if lnn >= sn
+            if le < 0
                 seg: sn
+            cur: seg
+            if le < 0
+                bg1: 0
     if seg < sn
         segp: _sov_list_add(segp, src + seg)
         segl: _sov_list_add(segl, sn - seg)
@@ -2354,7 +2312,7 @@ splice_inc src base:
             if _sov_starts_with(t, "include ") is 1
                 # no new pass is needed for this line itself; a pass only runs
                 # again when a spliced line is itself an include
-                spec: scutr(t, 8)
+                spec: strip(cut(t, 8, length(t)))
                 pname: spec
                 from: 0
                 nlin: 0
@@ -2364,19 +2322,19 @@ splice_inc src base:
                 if op > 0 - 1
                     # values for a shared block: include inc/incNN.sov 4 3 (7 8 9)
                     pars: sg_toks(cut(spec, op + 1, length(spec) - 1))
-                    spec: scut(spec, 0, op)
+                    spec: strip(cut(spec, 0, op))
                 sp1: look(spec, " ")
                 if sp1 > 0 - 1
                     pname: cut(spec, 0, sp1)
-                    w2: scutr(spec, sp1 + 1)
+                    w2: strip(cut(spec, sp1 + 1, length(spec)))
                     sp2: look(w2, " ")
                     if sp2 > 0 - 1
                         from: num_of(cut(w2, 0, sp2))
-                        rest2: scutr(w2, sp2 + 1)
+                        rest2: strip(cut(w2, sp2 + 1, length(w2)))
                         sp3: look(rest2, " ")
                         if sp3 > 0 - 1
                             nlin: num_of(cut(rest2, 0, sp3))
-                            dgs: scutr(rest2, sp3 + 1)
+                            dgs: strip(cut(rest2, sp3 + 1, length(rest2)))
                             if peek_byte(dgs, 0) is 35
                                 dgh: num_of(cut(dgs, 1, length(dgs)))
                             if peek_byte(dgs, 0) is not 35
