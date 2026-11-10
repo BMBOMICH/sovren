@@ -5,7 +5,7 @@ Byte-stability: recompiling each source twice must give identical bytes."""
 import json, subprocess, sys, hashlib
 from pathlib import Path
 R = Path(__file__).resolve().parents[1]
-reg = json.loads((R/'backends/registry.json').read_text())
+reg = json.loads((R/'compilers/registry.json').read_text())
 GATE = str(R/'compilers/linux/compiler')
 rows=[]; ok=bad=0
 for e in reg['entries']:

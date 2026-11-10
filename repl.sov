@@ -1,108 +1,137 @@
-include inc/inc03.sov 103 3 
-    include inc/inc03.sov 106 3 
-RP_SRC: '/tmp/repl_run.sov'
-RP_BIN: '/tmp/repl_run.bin'
-include inc/px01.sov 836 4 (RP_EOF 0 RP_FILE RP_LTXT RP_LPOS)
-rp_fline:
-    t: RP_LTXT ;; n: str_len(t)
-    if RP_LPOS >= n -> RP_EOF: 1
-        return ''
-    i: RP_LPOS ;; j: i
-    include inc/px00.sov 1137 5 (more more j more t j 10 more 0)
-            if not -> j: j + 1
-    end: j ;; line: str_cut(t, i, end)
-    ln: str_len(line) ;; if ln > 0 -> if peek_byte(line, ln - 1) = 13
-            line: str_cut(line, 0, ln - 1)
-    RP_LPOS: end + 1 ;; return line
-rp_src:
-    if RP_FILE = 1 -> return rp_fline() ;; return rp_line()
+# unsafe-module
+# Explicit source replaces drifted line-number macro fragments.
+use arg
+use file
+use list
+use num
+use string
+use sys
+use tool
+RP_SRC: ""
+RP_BIN: ""
+RP_EOF: 0
 rp_line:
-    include inc/inc03.sov 1026 5 
-        if got = 0 -> more: 0
-            if n = 0 -> RP_EOF: 1
-        include inc/inc03.sov 1930 4 
-                if not -> poke_byte(buf, n, v)
-                    n: n + 1
-    poke_byte(buf, n, 0) ;; return buf
-include inc/px00.sov 548 4 (rp_pr rp_pw)
-rp_run path args:
-    include inc/inc04.sov 808 3 
-    if pid = 0 -> sys_dup2(rp_pw(fds), 1)
-        sys_close(rp_pr(fds)) ;; sys_exec(path, args, 0)
-        sys_exit(127)
-    sys_close(rp_pw(fds))
-    out: ''
-    buf: _sov_alloc(4096) ;; more: 1
-    as long as more = 1 -> n: sys_read(rp_pr(fds), buf, 4096)
-        include inc/inc02.sov 1508 3 
-    sys_close(rp_pr(fds)) ;; sys_wait(pid)
-    return out
+    buf: _sov_alloc(4096)
+    one: _sov_alloc(1)
+    n: 0
+    going: 1
+    as long as going is 1
+        got: sys_read(0, one, 1)
+        if got < 1
+            going: 0
+            if n is 0
+                RP_EOF: 1
+        if not
+            c: peek_byte(one, 0)
+            if c is 10
+                going: 0
+            if not
+                if c is not 13
+                    if n < 4095
+                        poke_byte(buf, n, c)
+                        n: n + 1
+    poke_byte(buf, n, 0)
+    return as text buf
+rp_compiler:
+    if file_exists("compilers/linux/compiler") is 1
+        return "compilers/linux/compiler"
+    me: arg_at(0)
+    i: str_len(me)
+    as long as i > 0
+        i: i - 1
+        if peek_byte(me, i) is 47
+            root: str_cut(me, 0, i)
+            path: str_cat(root, "/compilers/linux/compiler")
+            if file_exists(path) is 1
+                return as text path
+    return "compilers/linux/compiler"
 rp_compile uses line want:
     src: str_cat(uses, "main:\n")
-    if want = 1 -> src: str_cat:
-            '    print '
-            line
-            "\n"
-    if not -> src: str_cat:
-            '    '
-            line
-            "\n"
-    file_write_all(RP_SRC, src) ;; args: _sov_alloc(40)
-    poke_i64(args, 0, rp_compiler()) ;; poke_i64(args, 8, RP_SRC)
-    poke_i64(args, 16, '-o')
-    args: poke_i64 24 + 8 * i: RP_BIN 0 ;; return rp_run(rp_compiler(), args)
-rp_compiler:
-    me: arg_at(0) ;; root: rp_dir(me)
-    if file_exists(str_cat(str_cat(root, '/compilers/linux/compiler'), '')) = 1 -> return str_cat(str_cat(root, '/compilers/linux/compiler'), '')
-    if file_exists(str_cat(str_cat(root, '/compilers/apple/macos/compiler'), '')) = 1 -> return str_cat(str_cat(root, '/compilers/apple/macos/compiler'), '')
-    if file_exists(str_cat(str_cat(root, '/compilers/windows/compiler'), '')) = 1 -> return str_cat(str_cat(root, '/compilers/windows/compiler'), '')
-    return 'compilers/linux/compiler'
-rp_dir p:
-    include inc/inc03.sov 91 3 
-        b: peek_byte(p, i) ;; if b = 47 -> if i = 0
-                return '/'
-            return str_cut(p, 0, i)
-    return '.'
-rp_err o:
-    i: str_find(o, 'Error')
-    if i > 0 - 1 -> write_out(str_cut(o, i, str_len(o))) ;; if not -> write_out(o)
+    if want is 1
+        src: str_cat(src, "    print ")
+    if not
+        src: str_cat(src, "    ")
+    src: str_cat(src, str_cat(line, "\n"))
+    file_delete(RP_BIN)
+    if file_write_all(RP_SRC, src) is 0
+        return "Error: cannot write REPL input"
+    args: list_new()
+    args: list_add(args, RP_SRC)
+    args: list_add(args, "-o")
+    args: list_add(args, RP_BIN)
+    return as text tool_outv(rp_compiler(), args)
+rp_error output:
+    p: str_find(output, "Error")
+    if p >= 0
+        write_out(str_cut(output, p, str_len(output)))
+    if not
+        write_out(output)
     write_out("\n")
-rp_show o:
-    if str_has(o, 'Error') = 1 -> rp_err(o)
+rp_show output:
+    if str_has(output, "Error") is 1
+        rp_error(output)
         return 0
-    if file_exists(RP_BIN) = 0 -> return 0 ;; args: _sov_alloc(16)
-    args: poke_i64 0 + 8 * i: RP_BIN 0 ;; o2: rp_run(RP_BIN, args)
-    write_out(o2)
-    if str_len(o2) = 0 -> write_out("ok\n")
+    if file_exists(RP_BIN) is 0
+        print "Error: REPL compilation produced no executable"
+        return 0
+    got: tool_outv(RP_BIN, list_new())
+    write_out(got)
+    if str_len(got) is 0
+        write_out("ok\n")
+    return 1
 rp_try uses line:
-    o1: rp_compile(uses, line, 1)
-    if str_has(o1, 'Error') = 1 -> o2: rp_compile(uses, line, 0)
-        if str_has(o2, 'Error') = 1 -> rp_err(o1)
+    first: rp_compile(uses, line, 1)
+    if str_has(first, "Error") is 1
+        second: rp_compile(uses, line, 0)
+        if str_has(second, "Error") is 1
+            rp_error(first)
             return 0
-        rp_show(o2) ;; return 0
-    rp_show(o1)
+        return rp_show(second)
+    return rp_show(first)
 main:
-    uses: ''
-    sc: arg_at(1) ;; if str_len(sc) > 0 -> RP_LTXT: file_read_all(sc)
-        RP_FILE: 1
-    if RP_FILE = 0 -> write_out("Sovren. An expression a line; `use name` opens a library; `quit` leaves.\n")
-    more: 1 ;; as long as more = 1 -> if RP_FILE = 0
-            write_out('sovren> ')
-        line: rp_src()
-        if RP_EOF = 1 -> write_out("\n")
-            more: 0
-        if not -> if str_eq(line, 'quit') = 1
-                more: 0
-            if not -> if str_eq(line, 'exit') = 1
-                    more: 0
-                if not -> if str_eq(line, 'help') = 1
-                        write_out("an expression, `use name`, or `quit`. `use` carries over;\n")
-                        write_out("other values do not: `x: 5 ; print x` needs one line.\n")
-                    if not -> if str_starts(line, 'use ') = 1
-                            uses: str_cat:
-                                line
-                                "\n"
-                            write_out("ok\n")
-                        if not -> if str_len(line) = 0
-                                more: more
-                            if not -> rp_try(uses, line)
+    tag: str_cat("/tmp/sov-repl-", num_text(sys_getpid()))
+    RP_SRC: str_cat(tag, ".sov")
+    RP_BIN: str_cat(tag, ".bin")
+    uses: ""
+    script: arg_at(1)
+    scripted: 0
+    lines: list_new()
+    if str_len(script) > 0
+        data: file_read_all(script)
+        if data is 0
+            print "Error: cannot read REPL script"
+            sys_exit(1)
+        lines: str_lines(data)
+        scripted: 1
+    if scripted is 0
+        print "Sovren. An expression a line; use name opens a library; quit leaves."
+    index: 0
+    going: 1
+    as long as going is 1
+        line: ""
+        if scripted is 1
+            if index >= list_len(lines)
+                going: 0
+            if not
+                line: list_get(lines, index)
+                index: index + 1
+        if not
+            write_out("sovren> ")
+            line: rp_line()
+            if RP_EOF is 1
+                going: 0
+        if going is 1
+            if str_eq(line, "quit") is 1
+                going: 0
+            if str_eq(line, "exit") is 1
+                going: 0
+            if going is 1
+                if str_starts(line, "use ") is 1
+                    uses: str_cat(uses, str_cat(line, "\n"))
+                    print "ok"
+                if not
+                    if str_len(line) > 0
+                        rp_try(uses, line)
+    file_delete(RP_SRC)
+    file_delete(RP_BIN)
+    return 0

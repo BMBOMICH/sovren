@@ -1554,13 +1554,13 @@ _sov_thread_spawn fn a0 a1 a2 a3 a4 a5:
     poke_i64(base, 56, a5)
     poke_i64(base, 80, 773411)
     dummy: _sov_ctx_reserve(base)
-    e: addr_of _sov_thread_entry_stack
+    e: addr_of _sov_thread_entry_param
     # Always try the real clone first.  The old /proc Seccomp probe
     # treated any filter as "clone blocked" and silently degraded to
     # fork (copy-on-write), which gives wrong results for shared
     # memory on systems where clone works fine (e.g. Docker).  A
     # failed clone returns < 0 and only then do we fork.
-    r: syscall(56, e, top, 12032, 0, 0, 0)
+    r: thread_create(e, top, 69376, 0, 0, 0)
     if r < 0
         g_no_clone: 1
         g_thread_cb: base

@@ -1,38 +1,19 @@
 #!/usr/bin/env python3
-"""Maintain a real-file layout. No symlinks or duplicated implementations."""
-import hashlib,json,os
+"""Refresh file identities without overwriting implementations or creating aliases."""
+import hashlib,json
 from pathlib import Path
-R=Path(__file__).resolve().parents[1];path=R/'compilers/registry.json';manifest=json.loads(path.read_text());entries=manifest['entries'];ids=set()
-def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
-def facade(dst,source):
- dst.parent.mkdir(parents=True,exist_ok=True)
- text='# Compatibility facade; the implementation is a real file at '+str(source.relative_to(R))+'.\ninclude '+'../'+str(source.relative_to(R))+'\n'
- if dst==source:raise RuntimeError('cannot overwrite implementation')
- if dst.is_symlink():dst.unlink()
- dst.write_text(text)
-def launcher(directory,executable):
- dst=directory/'compiler';relative=os.path.relpath(executable,directory)
- if dst==executable:return
- dst.write_text('#!/bin/sh\n# Real-file entry point; the installed binary is not duplicated.\nHERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec "$HERE/'+relative+'" "$@"\n');dst.chmod(0o755)
+R=Path(__file__).resolve().parents[1];p=R/'compilers/registry.json'
+data=json.loads(p.read_text(encoding='utf-8'));entries=data['entries']
+assert len({e['id'] for e in entries})==len(entries)
+def sha(name):
+    f=R/name
+    if f.is_symlink():raise ValueError('unexpected link: '+name)
+    return hashlib.sha256(f.read_bytes()).hexdigest() if f.is_file() else None
 for e in entries:
- name=e['id']
- if name in ids:raise RuntimeError('duplicate backend '+name)
- ids.add(name);source=R/e['source'];binary=R/e['executable'];directory=R/e['canonical_directory']
- assert source.is_file() and not source.is_symlink()
- facade(R/e['compatibility_source'],source)
- launcher(directory,binary)
- e['source_sha256']=sha(source);e['executable_sha256']=sha(binary);e['compatibility_source_sha256']=sha(R/e['compatibility_source'])
- e['shared_source_sha256']={s:sha(R/s) for s in e.get('shared_sources',[])}
- e['entrypoint_sha256']={str((directory/'compiler').relative_to(R)):sha(directory/'compiler')}
- for view in e.get('views',[]):
-  folder=R/view;folder.mkdir(parents=True,exist_ok=True);facade(folder/'compiler.sov',source);launcher(folder,binary)
-  for f in ['compiler.sov','compiler']:e['entrypoint_sha256'][str((folder/f).relative_to(R))]=sha(folder/f)
-manifest['generated_note']='Real implementation files and regular-file compatibility facades; hashes do not certify full semantics.'
-path.write_text(json.dumps(manifest,indent=2)+'\n')
-for directory,kinds in [('compilers',['native','ir-emitter','evaluator','partial']),('transpilers',['transpiler'])]:
- folder=R/directory;folder.mkdir(parents=True,exist_ok=True)
- text=['# '+directory,'','This directory contains real files, not directory symlinks. Transpiler implementations live under top-level `transpilers/`; `backends/transpilers/` contains shared lowering and compatibility entry points. Other backend implementations live in their respective `backends/` families. Installed binaries remain under `compilers/` for existing launchers.','', 'The authoritative inventory is `compilers/registry.json`. No incomplete implementation is renamed to claim completeness.','', '| Backend | Availability |','|---|---|']
- for e in entries:
-  if e['kind'] in kinds:text.append(f"| [{e['id']}]({e['id']}/compiler.sov) | {e['availability']} |")
- (folder/'README.md').write_text('\n'.join(text)+'\n')
-print('Verified/refreshed',len(entries),'physical implementations and real-file compatibility entry points')
+    assert (R/e['source']).is_file(),e['id']
+    for k in ['source','executable','compatibility_source']:e[k+'_sha256']=sha(e[k])
+    e['shared_source_sha256']={s:sha(s) for s in e.get('shared_sources',e.get('shared_source_sha256',{}))}
+    e['entrypoint_sha256']={s:sha(s) for s in {e['source'],e['executable'],e['compatibility_source']}}
+    if e['executable_sha256'] is None:e['full_language_certified']=False
+p.write_text(json.dumps(data,indent=2)+'\n',encoding='utf-8')
+print('Refreshed',len(entries),'retained entries; missing binaries remain uncertified')

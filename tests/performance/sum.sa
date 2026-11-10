@@ -1,0 +1,12 @@
+segment readable executable
+_start:
+    xor edi, edi
+    xor ecx, ecx
+again:
+    add rdi, rcx
+    inc rcx
+    cmp rcx, 5000
+    jl again
+    and edi, 255
+    mov eax, 60
+    syscall

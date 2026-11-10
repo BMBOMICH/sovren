@@ -26,6 +26,10 @@ ocgrow:
     as long as k < oc_n
         dummy: poke_byte(nb, k, peek_byte(oc, k))
         k: k + 1
+    # C.13/C.22: every consumer addresses oc by offset (ocget/put/here),
+    # so the superseded arena can be released instead of leaked.
+    if oc_cap > 0
+        dummy: _sov_free(oc)
     oc: nb
     oc_cap: n
 ocd: 0
@@ -1035,6 +1039,10 @@ emit_strlen:
     fn_names: _sov_list_add(fn_names, "_sov_strlen")
     fn_offs: _sov_list_add(fn_offs, here())
     dhl0: plog_h0()
+    if prof_codegen is 1
+        prof_strlen_stub()
+        dhlc: plog_h1("_sov_strlen")
+        return
     # strlen stub: page-safe SWAR. first block is the aligned word
     # containing ptr with pre-ptr bytes forced to 0xff (aligned 8b loads
     # never cross a page); constants hoisted out of the loop; the nul
@@ -1215,7 +1223,7 @@ fx_leaf_ok s:
     if fx_strict is 1 -> return 0
     if fx_lp1(s) is 1
         fx_lp: cfind1(s, 40)
-        if intern_kid(strip(cut(s, 0, fx_lp))) is kid_peek_i64
+        if intern_kid(scut(s, 0, fx_lp)) is kid_peek_i64
             return 1
     return 0
 
@@ -1226,7 +1234,7 @@ fx_parse s:
     if peek_byte(s, n - 1) is not 41 -> return 0
     lp: cfind1(s, 40)
     if lp < 2 -> return 0
-    nm: strip(cut(s, 0, lp))
+    nm: scut(s, 0, lp)
     if plain_name(nm) is 0 -> return 0
     dep: 0
     ok: 0
@@ -1268,21 +1276,23 @@ fx_opc pk:
     return 94
 
 fx_ok e k:
+    return fx_ok_ir(e, k, 0, 0)
+fx_ok_ir e k sx_tree sx_node:
     e: strip(e)
-    if fx_parse(e) is 1
+    if syntax_fx_parse(e, sx_tree, sx_node) is 1
         pk: fx_pk
         if fx_binop(pk) is 1
             if fx_ac is not 2 -> return 0
             if k + 2 > 7 -> return 0
             a0: peek_i64(fx_al, 16)
             a1: peek_i64(fx_al, 24)
-            if fx_ok(a0, k + 1) is 0 -> return 0
-            return fx_ok(a1, k + 2)
+            if syntax_fx_ok_child(sx_tree, sx_node, 0, a0, k + 1) is 0 -> return 0
+            return syntax_fx_ok_child(sx_tree, sx_node, 1, a1, k + 2)
         if pk is kid_f64_sqrt
             if fx_ac is not 1 -> return 0
             if k + 1 > 7 -> return 0
             a0: peek_i64(fx_al, 16)
-            return fx_ok(a0, k + 1)
+            return syntax_fx_ok_child(sx_tree, sx_node, 0, a0, k + 1)
         if pk is kid_f64_from_i64
             if fx_ac is not 1 -> return 0
             a0: peek_i64(fx_al, 16)
@@ -1431,6 +1441,11 @@ fx_cvt_bits v:
     as long as sh > 0
         man: man * 2
         sh: sh - 1
+    # 2^53 is exactly representable but needs a right shift: leaving
+    # its 54-bit significand here carries into the exponent twice.
+    as long as sh < 0
+        man: man / 2
+        sh: sh + 1
     man: man - 4503599627370496
     bits: (p + 1023) * 4503599627370496 + man
     if sign is 1
@@ -1502,8 +1517,10 @@ fx_emit_fromi a0 k:
     return 1
 
 fx_emit e k:
+    return fx_emit_ir(e, k, 0, 0)
+fx_emit_ir e k sx_tree sx_node:
     e: strip(e)
-    if fx_parse(e) is 1
+    if syntax_fx_parse(e, sx_tree, sx_node) is 1
         pk: fx_pk
         if fx_binop(pk) is 1
             a0: peek_i64(fx_al, 16)
@@ -1515,7 +1532,7 @@ fx_emit e k:
             # the same xmm as both sources (canon reads it for x and y).
             if _sov_str_eq(strip(a0), strip(a1)) is 1
                 if fx_leaf_ok(a0) is 1
-                    dummy: fx_emit(a0, k + 1)
+                    dummy: syntax_fx_emit_child(sx_tree, sx_node, 0, a0, k + 1)
                     emit(15)
                     emit(40)
                     emit(192 + k * 8 + k + 1)
@@ -1537,19 +1554,19 @@ fx_emit e k:
                         dummy: fx_opsd(k, 8 + va1, fx_opc(pk))
                         dummy: fx_canon_xmm2(k, 8 + va0, 8 + va1, fl)
                         return 1
-                    dummy: fx_emit(a1, k + 2)
+                    dummy: syntax_fx_emit_child(sx_tree, sx_node, 1, a1, k + 2)
                     dummy: fx_movaps(k, 8 + va0)
                     dummy: fx_opsd(k, k + 2, fx_opc(pk))
                     dummy: fx_canon_xmm2(k, 8 + va0, k + 2, fl)
                     return 1
                 if va1 > 0 - 1
-                    dummy: fx_emit(a0, k + 1)
+                    dummy: syntax_fx_emit_child(sx_tree, sx_node, 0, a0, k + 1)
                     dummy: fx_movaps(k, k + 1)
                     dummy: fx_opsd(k, 8 + va1, fx_opc(pk))
                     dummy: fx_canon_xmm2(k, k + 1, 8 + va1, fl)
                     return 1
-            dummy: fx_emit(a0, k + 1)
-            dummy: fx_emit(a1, k + 2)
+            dummy: syntax_fx_emit_child(sx_tree, sx_node, 0, a0, k + 1)
+            dummy: syntax_fx_emit_child(sx_tree, sx_node, 1, a1, k + 2)
             emit(15)
             emit(40)
             emit(192 + k * 8 + k + 1)
@@ -1571,7 +1588,7 @@ fx_emit e k:
                     emit(192 + k * 8 + k)
                     dummy: fx_canon1_xmm2(k, 8 + vs0)
                     return 1
-            dummy: fx_emit(a0, k + 1)
+            dummy: syntax_fx_emit_child(sx_tree, sx_node, 0, a0, k + 1)
             emit(15)
             emit(40)
             emit(192 + k * 8 + k + 1)
@@ -1609,7 +1626,7 @@ fx_emit e k:
         # would let the planted f64_from_frac clobber xmm slots that
         # hold already-evaluated siblings.
         return fx_emit(fl_expand(e), k)
-    dummy: fx_leaf_rax(e)
+    dummy: syntax_fx_leaf(e, sx_tree, sx_node)
     emit3(102, 72, 15)
     emit(110)
     emit(192 + k * 8)
@@ -1668,9 +1685,9 @@ fx_assign_parts s:
     # s = `name: rhs` with plain name; f64 trees contain no ':' early
     ci: cfind1(s, 58)
     if ci < 1 -> return 0
-    nm: strip(cut(s, 0, ci))
+    nm: scut(s, 0, ci)
     if plain_name(nm) is 0 -> return 0
-    rhs: strip(cut(s, ci + 1, length(s)))
+    rhs: scutr(s, ci + 1)
     if length(rhs) < 3 -> return 0
     fx_at: nm
     fx_ar: rhs
@@ -1874,9 +1891,11 @@ fx_region_stmt s:
     return 1
 
 fx_tree e:
+    return fx_tree_ir(e, 0, 0)
+fx_tree_ir e sx_tree sx_node:
     if cfind1(e, 34) > 0 - 1 -> return 0
-    if fx_ok(e, 0) is 0 -> return 0
-    dummy: fx_emit(e, 0)
+    if fx_ok_ir(e, 0, sx_tree, sx_node) is 0 -> return 0
+    dummy: fx_emit_ir(e, 0, sx_tree, sx_node)
     emit3(102, 72, 15)
     emit(126)
     emit(192)
@@ -1922,10 +1941,10 @@ try_fx_loop cond blines lines li:
     c0: strip(cops(cond))
     p: look(c0, " < ")
     if p < 0 -> return 0
-    iv: repl(strip(cut(c0, 0, p)), " ", "_")
-    lim: repl(strip(cut(c0, p + 3, length(c0))), " ", "_")
+    iv: repl(scut(c0, 0, p), " ", "_")
+    lim: repl(scutr(c0, p + 3), " ", "_")
     if plain_name(iv) is 0 -> return 0
-    if lsh_find_s(iv) < 0 -> return 0
+    if lshf2(iv) < 0 -> return 0
     limn: 0
     if is_imm(lim) is 0
         if plain_name(lim) is 0 -> return 0
@@ -2132,10 +2151,10 @@ try_fx_loop_brk cond blines lines li:
     c0: strip(cops(cond))
     p: look(c0, " < ")
     if p < 0 -> return 0
-    iv: repl(strip(cut(c0, 0, p)), " ", "_")
-    lim: repl(strip(cut(c0, p + 3, length(c0))), " ", "_")
+    iv: repl(scut(c0, 0, p), " ", "_")
+    lim: repl(scutr(c0, p + 3), " ", "_")
     if plain_name(iv) is 0 -> return 0
-    if lsh_find_s(iv) < 0 -> return 0
+    if lshf2(iv) < 0 -> return 0
     if is_imm(lim) is 0 -> return 0
     limv: num_of(lim)
     wind: nind(_sov_list_get(lines, li))
@@ -2218,17 +2237,17 @@ try_fx_loop_brk cond blines lines li:
     if ecl > 5
         if _sov_str_eq(cut(ec, ecl - 4, ecl), " > 0") is 1
             efl: 1
-            ecore: strip(cut(ec, 0, ecl - 4))
+            ecore: scut(ec, 0, ecl - 4)
     if efl is 0
         if ecl > 6
             if _sov_str_eq(cut(ec, ecl - 5, ecl), " >= 0") is 1
                 efl: 2
-                ecore: strip(cut(ec, 0, ecl - 5))
+                ecore: scut(ec, 0, ecl - 5)
     if efl is 0
         if ecl > 6
             if _sov_str_eq(cut(ec, ecl - 5, ecl), " == 1") is 1
                 efl: 3
-                ecore: strip(cut(ec, 0, ecl - 5))
+                ecore: scut(ec, 0, ecl - 5)
     if efl is 0
         fx_strict: 0
         return 0
@@ -2261,7 +2280,7 @@ try_fx_loop_brk cond blines lines li:
     if _sov_starts_with(xline, xpre) is 0
         fx_strict: 0
         return 0
-    xval: strip(cut(xline, length(xpre), length(xline)))
+    xval: scutr(xline, length(xpre))
     if is_imm(xval) is 0
         fx_strict: 0
         return 0
@@ -2285,8 +2304,8 @@ try_fx_loop_brk cond blines lines li:
     if gp < 0
         fx_strict: 0
         return 0
-    giv: repl(strip(cut(g0, 0, gp)), " ", "_")
-    glim: repl(strip(cut(g0, gp + 3, length(g0))), " ", "_")
+    giv: repl(scut(g0, 0, gp), " ", "_")
+    glim: repl(scutr(g0, gp + 3), " ", "_")
     if _sov_str_eq(giv, iv) is 0
         fx_strict: 0
         return 0
@@ -2508,15 +2527,32 @@ expr_atom_word e:
     return 1
 
 split_args inside argl:
-    # depth/quote-aware argument splitter for call surfaces; identical to the
-    # former inline block in expr_body's call parse.
+    # depth/quote-aware argument splitter for call surfaces.  DESTRUCTIVE:
+    # every caller passes a private cut of the argument text (verified site
+    # by site: p3 la, p4 fx_al/rp_sub/expr_body call parse, p6 tca/rp/ka/kb/
+    # ml/al lanes, p7 sc lane -- all freshly cut, none re-read), so each
+    # trimmed argument becomes an in-place span: the trim-end byte is
+    # NUL-poked and the list stores inside+start pointers.  No per-arg
+    # substring alloc/copy.  Contents identical to the former
+    # scut(inside, start, i) lane: same trim set 32 9 10 13, same bounds,
+    # empty spans yield "" (pointer at a NUL).  The content gate mirrors
+    # length(strip(inside)) > 0 exactly (any byte outside the trim set
+    # before the NUL makes the split run), matching the retired twin.
     sa_nz: 0
     sa_i: 0
-    as long as peek_byte(inside, sa_i) is not 0
-        if peek_byte(inside, sa_i) > 32
-            sa_nz: 1
-            sa_i: 1000000000
-        sa_i: sa_i + 1
+    sa_go: 1
+    as long as sa_go is 1
+        sa_b: peek_byte(inside, sa_i)
+        if sa_b is 0
+            sa_go: 0
+        if not
+            if sa_b is not 32
+                if sa_b is not 9
+                    if sa_b is not 10
+                        if sa_b is not 13
+                            sa_nz: 1
+                            sa_go: 0
+            sa_i: sa_i + 1
     if sa_nz is 1
         depth: 0
         ins: 0
@@ -2548,10 +2584,98 @@ split_args inside argl:
                         if not
                             if c is 44 is 1
                                 if depth is 0
-                                    argl: _sov_list_add(argl, strip(cut(inside, start, i)))
+                                    # trim [start, i) in place; arg = inside+ap
+                                    ap: start
+                                    ago: 1
+                                    as long as ago is 1
+                                        if ap >= i
+                                            ago: 0
+                                        if not
+                                            aw: peek_byte(inside, ap)
+                                            if aw is 32
+                                                ap: ap + 1
+                                            if not
+                                                if aw is 9
+                                                    ap: ap + 1
+                                                if not
+                                                    if aw is 10
+                                                        ap: ap + 1
+                                                    if not
+                                                        if aw is 13
+                                                            ap: ap + 1
+                                                        if not
+                                                            ago: 0
+                                    aq: i
+                                    bgo: 1
+                                    as long as bgo is 1
+                                        if aq <= ap
+                                            bgo: 0
+                                        if not
+                                            aw: peek_byte(inside, aq - 1)
+                                            if aw is 32
+                                                aq: aq - 1
+                                            if not
+                                                if aw is 9
+                                                    aq: aq - 1
+                                                if not
+                                                    if aw is 10
+                                                        aq: aq - 1
+                                                    if not
+                                                        if aw is 13
+                                                            aq: aq - 1
+                                                        if not
+                                                            bgo: 0
+                                    if aq < ap
+                                        aq: ap
+                                    dummy: poke_byte(inside, aq, 0)
+                                    argl: _sov_list_add(argl, inside + ap)
                                     start: i + 1
             i: i + 1
-        argl: _sov_list_add(argl, strip(cut(inside, start, ilen)))
+        # final argument [start, ilen)
+        ap: start
+        ago: 1
+        as long as ago is 1
+            if ap >= ilen
+                ago: 0
+            if not
+                aw: peek_byte(inside, ap)
+                if aw is 32
+                    ap: ap + 1
+                if not
+                    if aw is 9
+                        ap: ap + 1
+                    if not
+                        if aw is 10
+                            ap: ap + 1
+                        if not
+                            if aw is 13
+                                ap: ap + 1
+                            if not
+                                ago: 0
+        aq: ilen
+        bgo: 1
+        as long as bgo is 1
+            if aq <= ap
+                bgo: 0
+            if not
+                aw: peek_byte(inside, aq - 1)
+                if aw is 32
+                    aq: aq - 1
+                if not
+                    if aw is 9
+                        aq: aq - 1
+                    if not
+                        if aw is 10
+                            aq: aq - 1
+                        if not
+                            if aw is 13
+                                aq: aq - 1
+                            if not
+                                bgo: 0
+        if aq < ap
+            aq: ap
+        dummy: poke_byte(inside, aq, 0)
+        argl: _sov_list_add(argl, inside + ap)
     return argl
 
 esp_buf: 0
@@ -2832,6 +2956,10 @@ parse_sq_n s n:
 casc_ret: 0
 
 expr_cascade e en:
+    if syntax_mode > 0
+        if syntax_try(e, en) is 1
+            casc_ret: syntax_type
+            return 1
     # The shared precedence cascade over span [e, e+en): same slot order
     # and emission as the former inline block in expr_body, but operands
     # stay spans (bin_n / expr_span) so compound left operands are never
@@ -2884,32 +3012,32 @@ expr_cascade e en:
         return 1
     ec_p: peek_i64(ec_es, 16 + 5 * 8)
     if ec_p > 0 - 1
-        bin_k(e, ec_p, e + ec_p + 2, en - ec_p - 2, kid_opeq)
+        bin_k(e, ec_p, e + ec_p + 2, en - ec_p - 2, kid_opeq, 0, 0)
         casc_ret: 0
         return 1
     ec_p: peek_i64(ec_es, 16 + 6 * 8)
     if ec_p > 0 - 1
-        bin_k(e, ec_p, e + ec_p + 2, en - ec_p - 2, kid_opne)
+        bin_k(e, ec_p, e + ec_p + 2, en - ec_p - 2, kid_opne, 0, 0)
         casc_ret: 0
         return 1
     ec_p: peek_i64(ec_es, 16 + 7 * 8)
     if ec_p > 0 - 1
-        bin_k(e, ec_p, e + ec_p + 2, en - ec_p - 2, kid_ople)
+        bin_k(e, ec_p, e + ec_p + 2, en - ec_p - 2, kid_ople, 0, 0)
         casc_ret: 0
         return 1
     ec_p: peek_i64(ec_es, 16 + 8 * 8)
     if ec_p > 0 - 1
-        bin_k(e, ec_p, e + ec_p + 2, en - ec_p - 2, kid_opge)
+        bin_k(e, ec_p, e + ec_p + 2, en - ec_p - 2, kid_opge, 0, 0)
         casc_ret: 0
         return 1
     ec_p: peek_i64(ec_es, 16 + 9 * 8)
     if ec_p > 0 - 1
-        bin_k(e, ec_p, e + ec_p + 1, en - ec_p - 1, kid_oplt)
+        bin_k(e, ec_p, e + ec_p + 1, en - ec_p - 1, kid_oplt, 0, 0)
         casc_ret: 0
         return 1
     ec_p: peek_i64(ec_es, 16 + 10 * 8)
     if ec_p > 0 - 1
-        bin_k(e, ec_p, e + ec_p + 1, en - ec_p - 1, kid_opgt)
+        bin_k(e, ec_p, e + ec_p + 1, en - ec_p - 1, kid_opgt, 0, 0)
         casc_ret: 0
         return 1
     ec_p: peek_i64(ec_es, 16 + 11 * 8)
@@ -2927,29 +3055,29 @@ expr_cascade e en:
     ec_p: peek_i64(ec_es, 16 + 14 * 8)
     if ec_p > 0
         if peek_byte(e, ec_p) is 43 is 1
-            bin_k(e, ec_p, e + ec_p + 1, en - ec_p - 1, kid_opadd)
+            bin_k(e, ec_p, e + ec_p + 1, en - ec_p - 1, kid_opadd, 0, 0)
             casc_ret: 0
             return 1
-        bin_k(e, ec_p, e + ec_p + 1, en - ec_p - 1, kid_opsub)
+        bin_k(e, ec_p, e + ec_p + 1, en - ec_p - 1, kid_opsub, 0, 0)
         casc_ret: 0
         return 1
     if ec_p is 0
         if peek_byte(e, ec_p) is 43 is 1
-            bin_k(e, ec_p, e + ec_p + 1, en - ec_p - 1, kid_opadd)
+            bin_k(e, ec_p, e + ec_p + 1, en - ec_p - 1, kid_opadd, 0, 0)
             casc_ret: 0
             return 1
     ec_p: peek_i64(ec_es, 16 + 15 * 8)
     if ec_p > 0 - 1
         ec_ob: peek_byte(e, ec_p)
         if ec_ob is 42
-            bin_k(e, ec_p, e + ec_p + 1, en - ec_p - 1, kid_opmul)
+            bin_k(e, ec_p, e + ec_p + 1, en - ec_p - 1, kid_opmul, 0, 0)
             casc_ret: 0
             return 1
         if ec_ob is 47
-            bin_k(e, ec_p, e + ec_p + 1, en - ec_p - 1, kid_opdiv)
+            bin_k(e, ec_p, e + ec_p + 1, en - ec_p - 1, kid_opdiv, 0, 0)
             casc_ret: 0
             return 1
-        bin_k(e, ec_p, e + ec_p + 1, en - ec_p - 1, kid_opmod)
+        bin_k(e, ec_p, e + ec_p + 1, en - ec_p - 1, kid_opmod, 0, 0)
         casc_ret: 0
         return 1
     return 0
@@ -3167,6 +3295,8 @@ build_inl_set:
     mlc_lhs: _sov_list_new()
     mlc_ls: _sov_list_new()
     mlc_m: _sov_list_new()
+    mlc_tab: 0
+    mlc_tn: 0
     iqsweep: 0
     as long as iqsweep < 2
         bf: 0
@@ -3205,12 +3335,12 @@ inl_try_add bf bpass:
     bl0: strip(peek_i64(bbd, 16))
     if _sov_starts_with(bl0, "return ") is 0
         return 0
-    bee: strip(cut(bl0, 7, length(bl0)))
+    bee: scutr(bl0, 7)
     bhp: cfind1(bee, 35)
     if bhp > 0 - 1
         if cfind1(bee, 34) > 0 - 1
             return 0
-        bee: strip(cut(bee, 0, bhp))
+        bee: scut(bee, 0, bhp)
     if length(bee) is 0
         return 0
     if cfind1(bee, 34) > 0 - 1
@@ -3418,6 +3548,26 @@ mlc_kind: 0
 mlc_lhs: 0
 mlc_ls: 0
 mlc_m: 0
+mlc_tab: 0
+mlc_tn: 0
+
+mlc_tab_ensure bf:
+    # O(1) cache index: mlc_tab[bf] holds ci+1 (0 = absent).  Doubling
+    # keeps total reallocation work linear in the number of bodies.
+    if bf < mlc_tn
+        return 0
+    nn: mlc_tn
+    if nn is 0
+        nn: 128
+    as long as nn <= bf
+        nn: nn + nn
+    nt: _sov_heap_alloc(nn * 8)
+    dummy: _sov_bzero(nt, nn * 8)
+    if mlc_tn > 0
+        dummy: _sov_mem_copy(nt, mlc_tab, mlc_tn * 8)
+    mlc_tab: nt
+    mlc_tn: nn
+    return 0
 
 ml_collect_cached bf:
     if mlc_fi is 0
@@ -3428,17 +3578,18 @@ ml_collect_cached bf:
         mlc_lhs: _sov_list_new()
         mlc_ls: _sov_list_new()
         mlc_m: _sov_list_new()
-    ci: 0
-    as long as ci < _sov_list_len(mlc_fi)
-        if peek_i64(mlc_fi, 16 + ci * 8) is bf
-            mq_txt: peek_i64(mlc_txt, 16 + ci * 8)
-            mq_ind: peek_i64(mlc_ind, 16 + ci * 8)
-            mq_kind: peek_i64(mlc_kind, 16 + ci * 8)
-            mq_lhs: peek_i64(mlc_lhs, 16 + ci * 8)
-            mq_ls: peek_i64(mlc_ls, 16 + ci * 8)
-            return peek_i64(mlc_m, 16 + ci * 8)
-        ci: ci + 1
+    dummy: mlc_tab_ensure(bf)
+    ce: peek_i64(mlc_tab, bf * 8)
+    if ce is not 0
+        ci: ce - 1
+        mq_txt: peek_i64(mlc_txt, 16 + ci * 8)
+        mq_ind: peek_i64(mlc_ind, 16 + ci * 8)
+        mq_kind: peek_i64(mlc_kind, 16 + ci * 8)
+        mq_lhs: peek_i64(mlc_lhs, 16 + ci * 8)
+        mq_ls: peek_i64(mlc_ls, 16 + ci * 8)
+        return peek_i64(mlc_m, 16 + ci * 8)
     cm: ml_collect(bf)
+    ci: _sov_list_len(mlc_fi)
     mlc_fi: _sov_list_add(mlc_fi, bf)
     mlc_txt: _sov_list_add(mlc_txt, mq_txt)
     mlc_ind: _sov_list_add(mlc_ind, mq_ind)
@@ -3446,6 +3597,7 @@ ml_collect_cached bf:
     mlc_lhs: _sov_list_add(mlc_lhs, mq_lhs)
     mlc_ls: _sov_list_add(mlc_ls, mq_ls)
     mlc_m: _sov_list_add(mlc_m, cm)
+    dummy: poke_i64(mlc_tab, bf * 8, ci + 1)
     return cm
 
 ml_collect bf:
@@ -3467,7 +3619,7 @@ ml_collect bf:
         if hp is 0
             txt: blank
         if hp > 0
-            txt: strip(cut(txt, 0, hp))
+            txt: scut(txt, 0, hp)
         if length(txt) > 0
             if cfind1(txt, 34) > 0 - 1
                 return 0 - 1
@@ -3491,7 +3643,7 @@ ml_collect bf:
                 cp2: look(txt, ":")
                 if cp2 < 1
                     return 0 - 1
-                lhsv: strip(cut(txt, 0, cp2))
+                lhsv: scut(txt, 0, cp2)
                 ln2: length(lhsv)
                 if ln2 is 0
                     return 0 - 1
@@ -3632,11 +3784,11 @@ inl_try_add_ml bf:
         txt: peek_i64(mq_txt, 16 + li * 8)
         kind: peek_i64(mq_kind, 16 + li * 8)
         if kind is 1
-            if ml_validate_expr(strip(cut(txt, 3, length(txt))), bnm) is 0
+            if ml_validate_expr(scutr(txt, 3), bnm) is 0
                 return 0
         if kind is 2
             seenret: 1
-            re: strip(cut(txt, 7, length(txt)))
+            re: scutr(txt, 7)
             if ml_validate_expr(re, bnm) is 0
                 return 0
             lt: 1
@@ -3652,7 +3804,7 @@ inl_try_add_ml bf:
             seenret: 1
         if kind is 0
             cp2: look(txt, ":")
-            if ml_validate_expr(strip(cut(txt, cp2 + 1, length(txt))), bnm) is 0
+            if ml_validate_expr(scutr(txt, cp2 + 1), bnm) is 0
                 return 0
         li: li + 1
     if seenret is 0
@@ -3743,7 +3895,7 @@ ml_rename txt pfx:
                     if digitb(peek_byte(rtok, 0)) is 0
                         if inl_wordop(rtok) is 0
                             if gn_lookup(rtok) > 0 - 1
-                                if lsh_find_s(rtok) > 0 - 1
+                                if lshf2(rtok) > 0 - 1
                                     ml_abort: 1
                 oi: inl_put(ob, oi, rtok)
             ri: rj
@@ -4006,10 +4158,10 @@ try_stmt_inline var rhs:
             if qwab is 44
                 if qwdp is 0
                     if qwbk is 0
-                        qwag: _sov_list_add(qwag, strip(cut(qwat, qwst, qwai)))
+                        qwag: _sov_list_add(qwag, scut(qwat, qwst, qwai))
                         qwst: qwai + 1
             qwai: qwai + 1
-        qwag: _sov_list_add(qwag, strip(cut(qwat, qwst, qwan)))
+        qwag: _sov_list_add(qwag, scut(qwat, qwst, qwan))
     if _sov_list_len(qwag) is not qwpc
         return 0
     qwai: 0
@@ -4052,7 +4204,7 @@ try_stmt_inline var rhs:
         inl_ctr: inl_ctr + 1
         qwfx: join("zz", join(inl_itos(inl_ctr), "_"))
         qwtn: join(qwfx, "zzr")
-        if lsh_find_s(qwtn) < 0
+        if lshf2(qwtn) < 0
             if gn_lookup(qwtn) < 0
                 qwgo: 0
         if inl_ctr > 100000
@@ -4072,7 +4224,7 @@ try_stmt_inline var rhs:
             qwkn: peek_i64(mq_kind, 16 + qwli * 8)
             qwone: 0
             if qwkn is 1
-                qwone: ml_rename(strip(cut(qwtx, 3, length(qwtx))), qwfx)
+                qwone: ml_rename(scutr(qwtx, 3), qwfx)
             if qwkn is 0
                 qwcp: look(qwtx, ":")
                 qwlh: peek_i64(mq_lhs, 16 + qwli * 8)
@@ -4087,12 +4239,12 @@ try_stmt_inline var rhs:
                         qwlr: join(qwfx, qwlh)
                         qwlrn: 1
                 if qwlrn is 0
-                    if lsh_find_s(qwlh) > 0 - 1
+                    if lshf2(qwlh) > 0 - 1
                         ml_abort: 1
-                qwrv: ml_rename(strip(cut(qwtx, qwcp + 1, length(qwtx))), qwfx)
+                qwrv: ml_rename(scutr(qwtx, qwcp + 1), qwfx)
                 qwone: join(qwlr, join(": ", qwrv))
             if qwkn is 2
-                qwone: join(join(qwfx, "zzr: "), ml_rename(strip(cut(qwtx, 7, length(qwtx))), qwfx))
+                qwone: join(join(qwfx, "zzr: "), ml_rename(scutr(qwtx, 7), qwfx))
             qwlt: _sov_list_add(qwlt, qwone)
             qwkd: _sov_list_add(qwkd, peek_i64(mq_kind, 16 + qwli * 8))
             qwdi: _sov_list_add(qwdi, peek_i64(mq_ind, 16 + qwli * 8))
@@ -4217,7 +4369,7 @@ rp_is_assign rpl rpnm2:
     # C-style "name =" / "name=" at line start).
     rfc: find_col(rpl)
     if rfc > 0
-        rlh: repl(strip(cut(rpl, 0, rfc)), " ", "_")
+        rlh: repl(scut(rpl, 0, rfc), " ", "_")
         if _sov_str_eq(rlh, rpnm2) is 1
             return 1
     if _sov_starts_with(rpl, rpnm2) is 1
@@ -4252,7 +4404,7 @@ rp_scan fi:
                 if word_id(rpl) is kid_return
                     if length(rpl) < 8
                         return 0 - 1
-                    rpr: strip(cut(rpl, 7, length(rpl)))
+                    rpr: scutr(rpl, 7)
                     if rp_atom_ok(rpr) is 0
                         return 0 - 1
                     if ratom is 0
@@ -4322,7 +4474,7 @@ rp_scan fi:
     rpfc: find_col(rpl)
     if rpfc < 1
         return 0 - 1
-    rprh: strip(cut(rpl, rpfc + 1, length(rpl)))
+    rprh: scutr(rpl, rpfc + 1)
     rpi2: 0
     as long as rpi2 < rpc
         if _sov_str_eq(rprh, peek_i64(rps, 16 + rpi2 * 8)) is 1
@@ -4365,7 +4517,7 @@ rp_arg_str rpa rpdep:
         return 0
     if peek_byte(rpa, length(rpa) - 1) is not 41
         return 0
-    rpn2: strip(cut(rpa, 0, rplp))
+    rpn2: scut(rpa, 0, rplp)
     if sf_lookup(rpn2) > 0 - 1
         return 1
     rp_sub: _sov_list_new()
@@ -4407,6 +4559,9 @@ try_inline_call name argc argl:
     iqf: nm_lookup(name)
     if iqf < 0
         return 0 - 1
+    return try_inline_call_idx(iqsi, iqf, name, argc, argl)
+
+try_inline_call_idx iqsi iqf name argc argl:
     iqp: peek_i64(params, 16 + iqf * 8)
     if _sov_list_len(iqp) is not argc
         return 0 - 1
@@ -4498,7 +4653,7 @@ try_inline_call name argc argl:
                         if inl_wordop(iqtok) is 0
                             if gn_lookup(iqtok) < 0
                                 iqok2: 0
-                            if lsh_find_s(iqtok) > 0 - 1
+                            if lshf2(iqtok) > 0 - 1
                                 iqok2: 0
                         iqoi: inl_put(iqob, iqoi, iqtok)
             iqii: iqij
@@ -4565,7 +4720,7 @@ atom_str_type av:
     # by a local of the same name), else 0.
     if sv_lookup(av) > 0 - 1
         return 1
-    if lsh_find_s(av) < 0
+    if lshf2(av) < 0
         if sg_lookup(av) > 0 - 1
             return 1
     return 0
@@ -4610,35 +4765,7 @@ expr_body e0:
                 if cfind1(bb_f, 91) is 0 - 1
                     if cfind1(bb_f, 93) is 0 - 1
                         if cfind1(bb_f, 34) is 0 - 1
-                            qb_done: 0
-                            if nat_gate is 1
-                                qb_args: _sov_list_new()
-                                qb_args: _sov_list_add(qb_args, ix_nm)
-                                qb_args: _sov_list_add(qb_args, bb_f)
-                                if try_inline_pkb("_sov_list_get", 2, qb_args) is 1
-                                    qb_done: 1
-                            if qb_done is 0
-                                qm0: reg_slot(ix_nm)
-                                qm1: reg_slot(bb_f)
-                                qmemd: 0
-                                if has_vm is 1
-                                    if try_mem("_sov_list_get", 2, qm0, qm1, 0 - 1, 0, 0) is 1
-                                        qmemd: 1
-                                if qmemd is 0
-                                    if is_imm(ix_nm) is 1
-                                        expr(ix_nm)
-                                        mov_rdi_rax()
-                                    if not
-                                        if try_lea_arg(ix_nm, 0) is 0
-                                            loadv_rdi(ix_nm)
-                                    if is_imm(bb_f) is 1
-                                        expr(bb_f)
-                                        mov_rsi_rax()
-                                    if not
-                                        if try_lea_arg(bb_f, 1) is 0
-                                            loadv_rsi(bb_f)
-                                    call_args("_sov_list_get", 2, 1)
-                            return
+                            return expr_index(ix_nm, bb_f, 0, 0)
                 rem: cut(e, ix_p, en)
                 cur: ix_nm
                 good: 1
@@ -4731,7 +4858,7 @@ expr_body e0:
             return atom_str_type(e)
     if en >= 8
         if peek_byte(e, en - 1) is 116
-            if peek_byte(e, en - 2) is 116
+            if peek_byte(e, en - 2) is 120
                 if sg_match(e, en - 8, " as text") is 1
                     expr(cutn(e, 0, en - 8, en))
                     return 1
@@ -4754,10 +4881,10 @@ expr_body e0:
             arn: length(ar)
             aw: word_id(ar)
             if aw is kid_text
-                expr(strip(cut(ar, 5, arn)))
+                expr(scut(ar, 5, arn))
                 return 1
             if aw is kid_ptr
-                expr(strip(cut(ar, 4, arn)))
+                expr(scut(ar, 4, arn))
                 return 1
         if eid is kid_addr_of
             emit2(72, 184)
@@ -4781,7 +4908,7 @@ expr_body e0:
         if word_id(e) is kid_length
             lr: strip(cutn(e, 7, en, en))
             if word_id(lr) is kid_of
-                lo_a: strip(cut(lr, 3, length(lr)))
+                lo_a: scutr(lr, 3)
                 lo_c: cp_len_of(lo_a)
                 if lo_c > 0 - 1
                     rax_imm(lo_c)
@@ -4791,6 +4918,8 @@ expr_body e0:
                 used_sl: 1
                 calln("_sov_strlen")
                 return 0
+    if syntax_mode is 1
+        if syntax_try(e, en) is 1 -> return syntax_type
     c2: cops(e)
     if c2 is not e
         e: strip(c2)
@@ -4814,10 +4943,10 @@ expr_body e0:
         if peek_byte(e, en - 1) is 41 is 1
             name: strip(cutn(e, 0, lp, en))
             is_spawn: 0
-            if peek_byte(name, 0) is 115
-                if word_id(name) is kid_spawn
-                    name: strip(cut(name, 6, length(name)))
-                    if name is blank
+            if starts(e, "spawn ") is 1
+                if lp > 6
+                    name: strip(cutn(e, 6, lp, en))
+                    if length(name) is 0
                         print "Error: spawn needs a task name"
                         err_where()
                         had_err: 1
@@ -4828,259 +4957,7 @@ expr_body e0:
             argc: 0
             argl: _sov_list_new()
             argl: split_args(inside, argl)
-            argc: _sov_list_len(argl)
-            nid: intern_kid(name)
-            ik_nm_ptr: name
-            ik_nm_kid: nid
-            # fx: pure f64 op trees evaluate register-resident in xmm
-            # (fx_ok declines anything else, leaving the generic path).
-            if is_spawn is 0
-                if argc is 2
-                    if fx_binop(nid) is 1
-                        if fx_tree(e) is 1
-                            return 0
-                if argc is 1
-                    if nid is kid_f64_sqrt
-                        if fx_tree(e) is 1
-                            return 0
-            # wrapping arithmetic builtins: same add/sub/imul as the checked
-            # operators but no chk_ov trap, so hash/prng/crypto code that
-            # relies on mod-2^64 wraparound is expressible. checked + - *
-            # remain the default everywhere else.
-            if nid is kid_wrap_add
-                if argc is 2
-                    bin(peek_i64(argl, 16), peek_i64(argl, 24), "wadd")
-                    return 0
-            if nid is kid_wrap_sub
-                if argc is 2
-                    bin(peek_i64(argl, 16), peek_i64(argl, 24), "wsub")
-                    return 0
-            if nid is kid_wrap_mul
-                if argc is 2
-                    bin(peek_i64(argl, 16), peek_i64(argl, 24), "wmul")
-                    return 0
-            if nid is kid_opband
-                if argc is 2
-                    bin(peek_i64(argl, 16), peek_i64(argl, 24), "band")
-                    return 0
-            if nid is kid_opbor
-                if argc is 2
-                    bin(peek_i64(argl, 16), peek_i64(argl, 24), "bor")
-                    return 0
-            if nid is kid_opbxor
-                if argc is 2
-                    bin(peek_i64(argl, 16), peek_i64(argl, 24), "bxor")
-                    return 0
-            if nid is kid_opbshl
-                if argc is 2
-                    bin(peek_i64(argl, 16), peek_i64(argl, 24), "bshl")
-                    return 0
-            if nid is kid_opbshr
-                if argc is 2
-                    bin(peek_i64(argl, 16), peek_i64(argl, 24), "bshr")
-                    return 0
-            if nid is kid_opbsar
-                if argc is 2
-                    bin(peek_i64(argl, 16), peek_i64(argl, 24), "bsar")
-                    return 0
-            if length(fib_nm) > 0
-                if _sov_str_eq(name, fib_nm) is 1
-                    if argc is 1
-                        a0: peek_i64(argl, 16)
-                        if is_imm(a0) is 1
-                            fv: num_of(a0)
-                            if fv < 2
-                                rax_imm(fv)
-                                return 0
-                            if fv < 93
-                                rax_imm(fib_of(fv))
-                                return 0
-            if kern_mode is 1
-                if nid is kid_fn_addr
-                    if argc is 1
-                        fa0: peek_i64(argl, 16)
-                        if length(fa0) > 1
-                            if peek_byte(fa0, 0) is 34
-                                emit2(72, 184)
-                                fadr: here()
-                                emit8(0)
-                                addp(fadr, "fnaddr", strip(cut(fa0, 1, length(fa0) - 1)))
-                                return 0
-            if peek_byte(name, 0) is 115
-                if argc is 1
-                    if _sov_str_eq(name, "str_len") is 1
-                        sf0: strip(peek_i64(argl, 16))
-                        if is_lit(sf0) is 1
-                            rax_imm(lit_len(sf0))
-                            return 0
-                        cpl2: cp_len_of(sf0)
-                        if cpl2 > 0 - 1
-                            rax_imm(cpl2)
-                            return 0
-                if argc is 2
-                    if _sov_str_eq(name, "str_cat") is 1
-                        sf1: strip(peek_i64(argl, 16))
-                        sf2: strip(peek_i64(argl, 24))
-                        ok1: 0
-                        i1: blank
-                        if is_lit(sf1) is 1
-                            i1: cut(sf1, 1, length(sf1) - 1)
-                            ok1: 1
-                        if not
-                            if cp_len_of(sf1) > 0 - 1
-                                i1: cp_txt_of(sf1)
-                                ok1: 1
-                        ok2: 0
-                        i2: blank
-                        if is_lit(sf2) is 1
-                            i2: cut(sf2, 1, length(sf2) - 1)
-                            ok2: 1
-                        if not
-                            if cp_len_of(sf2) > 0 - 1
-                                i2: cp_txt_of(sf2)
-                                ok2: 1
-                        if ok1 is 1
-                            if ok2 is 1
-                                rax_str(join(i1, i2))
-                                return 1
-            inr: try_inline_call(name, argc, argl)
-            if inr > 0 - 1
-                return inr
-            if try_scaled_mem(name, argc, argl) is 1
-                return 0
-            if nat_gate is 1
-                if try_inline_pkb(name, argc, argl) is 1
-                    return 0
-            all_s: 1
-            ai: 0
-            as long as ai < argc
-                ag: peek_i64(argl, 16 + ai * 8)
-                if digitb(peek_byte(ag, 0)) is 1
-                    if cfind1(ag, 46) > 0 - 1
-                        all_s: 0
-                if is_imm(ag) is 0
-                    if plain_name(ag) is 0
-                        if lea_ok(ag) is 0
-                            all_s: 0
-                ai: ai + 1
-            if nid is kid_syscall
-                all_s: 0
-            if nid is kid_sovcall
-                all_s: 0
-            if nid is kid_cfunc
-                all_s: 0
-            if nid is kid_thread_create
-                all_s: 0
-            if nid is kid_thread_wait
-                all_s: 0
-            if nid is kid_thread_wake
-                all_s: 0
-            if is_spawn is 1
-                all_s: 0
-                if argc > 6
-                    print "Error: spawn takes at most six values"
-                    err_where()
-                    had_err: 1
-                    xor_rax()
-                    return 0
-            if argc > 6
-                all_s: 0
-            if all_s is 1
-                m0: 0 - 1
-                m1: 0 - 1
-                m2: 0 - 1
-                p2: 0
-                i2: 0
-                ai: 0
-                as long as ai < argc
-                    ag: peek_i64(argl, 16 + ai * 8)
-                    if ai is 0
-                        m0: reg_slot(ag)
-                    if ai is 1
-                        m1: reg_slot(ag)
-                    if ai is 2
-                        m2: reg_slot(ag)
-                        if is_imm(ag) is 1
-                            p2: num_of(ag)
-                            i2: 1
-                    ai: ai + 1
-                if has_vm is 1
-                    if try_mem(name, argc, m0, m1, m2, i2, p2) is 1
-                        return 0
-                ai: 0
-                as long as ai < argc
-                    ag: peek_i64(argl, 16 + ai * 8)
-                    if ai is 0
-                        if is_imm(ag) is 1
-                            expr(ag)
-                            mov_rdi_rax()
-                        if not
-                            if try_lea_arg(ag, 0) is 0
-                                loadv_rdi(ag)
-                    if ai is 1
-                        if is_imm(ag) is 1
-                            expr(ag)
-                            mov_rsi_rax()
-                        if not
-                            if try_lea_arg(ag, 1) is 0
-                                loadv_rsi(ag)
-                    if ai is 2
-                        if is_imm(ag) is 1
-                            expr(ag)
-                            emit3(72, 137, 194)
-                        if not
-                            if try_lea_arg(ag, 2) is 0
-                                loadv_rdx(ag)
-                    if ai is 3
-                        if try_lea_arg(ag, 3) is 0
-                            expr(ag)
-                            emit3(72, 137, 193)
-                    if ai is 4
-                        if try_lea_arg(ag, 4) is 0
-                            expr(ag)
-                            emit3(73, 137, 192)
-                    if ai is 5
-                        if try_lea_arg(ag, 5) is 0
-                            expr(ag)
-                            emit3(73, 137, 193)
-                    ai: ai + 1
-                call_args(name, argc, 1)
-            if not
-                ai: 0
-                as long as ai < argc
-                    expr(peek_i64(argl, 16 + ai * 8))
-                    push_rax()
-                    ai: ai + 1
-                if is_spawn is 1
-                    spawn_emit(name, argc)
-                if not
-                    call_args(name, argc, 0)
-            axi: list_find(ar_names, name)
-            if axi > 0 - 1
-                if peek_i64(ar_cnt, 16 + axi * 8) is not argc
-                    print "Error: wrong number of values"
-                    _sov_print(name)
-                    err_where()
-                    had_err: 1
-            if nid is kid_cat
-                return 1
-            if nid is kid_strcat
-                return 1
-            if nid is kid__sov_strcat
-                return 1
-            if nid is kid_sub
-                return 1
-            if nid is kid_trim
-                return 1
-            if nid is kid_ch
-                return 1
-            if nid is kid__sov_substring
-                return 1
-            if sf_lookup(name) > 0 - 1
-                return 1
-            if rp_type_of(name, argl, argc, 0) is 1
-                return 1
-            return 0
+            return expr_call(e, en, name, argl, is_spawn, 0, 0)
     if digitb(peek_byte(e, 0)) is 1
         dq: 0
         as long as dq < en
@@ -5109,6 +4986,323 @@ expr_body e0:
     vn: e
     loadv(vn)
     return atom_str_type(vn)
+expr_index ix_nm bb_f sx_tree sx_node:
+    qb_done: 0
+    if nat_gate is 1
+        qb_args: _sov_list_new()
+        qb_args: _sov_list_add(qb_args, ix_nm)
+        qb_args: _sov_list_add(qb_args, bb_f)
+        if try_inline_pkb("_sov_list_get", 2, qb_args) is 1
+            qb_done: 1
+    if qb_done is 0
+        qm0: regslot2(ix_nm)
+        qm1: regslot2(bb_f)
+        qmemd: 0
+        if has_vm is 1
+            if try_mem("_sov_list_get", 2, qm0, qm1, 0 - 1, 0, 0) is 1
+                qmemd: 1
+        if qmemd is 0
+            if is_imm(ix_nm) is 1
+                expr_index_operand(sx_tree, sx_node, 0, ix_nm)
+                mov_rdi_rax()
+            if not
+                if try_lea_arg(ix_nm, 0) is 0
+                    loadv_rdi(ix_nm)
+            if is_imm(bb_f) is 1
+                expr_index_operand(sx_tree, sx_node, 1, bb_f)
+                mov_rsi_rax()
+            if not
+                if try_lea_arg(bb_f, 1) is 0
+                    loadv_rsi(bb_f)
+            call_args("_sov_list_get", 2, 1)
+    return
+expr_index_operand sx_tree sx_node sx_side sx_text:
+    if sx_tree is 0 -> return expr(sx_text)
+    return syntax_operand(sx_tree, sx_node, sx_side, 0, 0)
+expr_call e en name argl is_spawn sx_ctree sx_cnode:
+    argc: _sov_list_len(argl)
+    nid: 0
+    if sx_ctree is not 0
+        nid: name
+    if not
+        nid: intern_kid(name)
+    ik_nm_ptr: nid
+    ik_nm_kid: nid
+    name: nid
+    fsem_v: 0
+    if fsem_key is not 0
+        fsem_s0: fsem_slot(nid)
+        if fsem_s0 >= 0
+            fsem_v: peek_i64(fsem_val, fsem_s0 * 8)
+    # fx: pure f64 op trees evaluate register-resident in xmm
+    # (fx_ok declines anything else, leaving the generic path).
+    if is_spawn is 0
+        if argc is 2
+            if fx_binop(nid) is 1
+                if sx_ctree is not 0 -> e: syntax_call_text(sx_ctree, sx_cnode)
+                if fx_tree_ir(e, sx_ctree, sx_cnode) is 1
+                    return 0
+        if argc is 1
+            if nid is kid_f64_sqrt
+                if sx_ctree is not 0 -> e: syntax_call_text(sx_ctree, sx_cnode)
+                if fx_tree_ir(e, sx_ctree, sx_cnode) is 1
+                    return 0
+    # wrapping arithmetic builtins: same add/sub/imul as the checked
+    # operators but no chk_ov trap, so hash/prng/crypto code that
+    # relies on mod-2^64 wraparound is expressible. checked + - *
+    # remain the default everywhere else.
+    if nid is kid_wrap_add
+        if argc is 2
+            syntax_call_bin(sx_ctree, sx_cnode, argl, "wadd")
+            return 0
+    if nid is kid_wrap_sub
+        if argc is 2
+            syntax_call_bin(sx_ctree, sx_cnode, argl, "wsub")
+            return 0
+    if nid is kid_wrap_mul
+        if argc is 2
+            syntax_call_bin(sx_ctree, sx_cnode, argl, "wmul")
+            return 0
+    if nid is kid_opband
+        if argc is 2
+            syntax_call_bin(sx_ctree, sx_cnode, argl, "band")
+            return 0
+    if nid is kid_opbor
+        if argc is 2
+            syntax_call_bin(sx_ctree, sx_cnode, argl, "bor")
+            return 0
+    if nid is kid_opbxor
+        if argc is 2
+            syntax_call_bin(sx_ctree, sx_cnode, argl, "bxor")
+            return 0
+    if nid is kid_opbshl
+        if argc is 2
+            syntax_call_bin(sx_ctree, sx_cnode, argl, "bshl")
+            return 0
+    if nid is kid_opbshr
+        if argc is 2
+            syntax_call_bin(sx_ctree, sx_cnode, argl, "bshr")
+            return 0
+    if nid is kid_opbsar
+        if argc is 2
+            syntax_call_bin(sx_ctree, sx_cnode, argl, "bsar")
+            return 0
+    if length(fib_nm) > 0
+        if _sov_str_eq(name, fib_nm) is 1
+            if argc is 1
+                a0: peek_i64(argl, 16)
+                if is_imm(a0) is 1
+                    fv: num_of(a0)
+                    if fv < 2
+                        rax_imm(fv)
+                        return 0
+                    if fv < 93
+                        rax_imm(fib_of(fv))
+                        return 0
+    if kern_mode is 1
+        if nid is kid_fn_addr
+            if argc is 1
+                fa0: peek_i64(argl, 16)
+                if length(fa0) > 1
+                    if peek_byte(fa0, 0) is 34
+                        emit2(72, 184)
+                        fadr: here()
+                        emit8(0)
+                        addp(fadr, "fnaddr", scut(fa0, 1, length(fa0) - 1))
+                        return 0
+    if peek_byte(name, 0) is 115
+        if argc is 1
+            if _sov_str_eq(name, "str_len") is 1
+                sf0: strip(peek_i64(argl, 16))
+                if is_lit(sf0) is 1
+                    rax_imm(lit_len(sf0))
+                    return 0
+                cpl2: cp_len_of(sf0)
+                if cpl2 > 0 - 1
+                    rax_imm(cpl2)
+                    return 0
+        if argc is 2
+            if _sov_str_eq(name, "str_cat") is 1
+                sf1: strip(peek_i64(argl, 16))
+                sf2: strip(peek_i64(argl, 24))
+                ok1: 0
+                i1: blank
+                if is_lit(sf1) is 1
+                    i1: cut(sf1, 1, length(sf1) - 1)
+                    ok1: 1
+                if not
+                    if cp_len_of(sf1) > 0 - 1
+                        i1: cp_txt_of(sf1)
+                        ok1: 1
+                ok2: 0
+                i2: blank
+                if is_lit(sf2) is 1
+                    i2: cut(sf2, 1, length(sf2) - 1)
+                    ok2: 1
+                if not
+                    if cp_len_of(sf2) > 0 - 1
+                        i2: cp_txt_of(sf2)
+                        ok2: 1
+                if ok1 is 1
+                    if ok2 is 1
+                        rax_str(join(i1, i2))
+                        return 1
+    if is_spawn is 0
+        inr: 0 - 1
+        if fsem_key is not 0
+            fsem_iq: band(bshr(fsem_v, 17), 65535)
+            if fsem_iq > 0
+                inr: try_inline_call_idx(fsem_iq - 1, band(bshr(fsem_v, 33), 65535) - 1, name, argc, argl)
+        if not
+            inr: try_inline_call(name, argc, argl)
+        if inr > 0 - 1
+            return inr
+        if try_scaled_mem(name, argc, argl) is 1
+            return 0
+        if nat_gate is 1
+            if try_inline_pkb(name, argc, argl) is 1
+                return 0
+    all_s: 1
+    ai: 0
+    as long as ai < argc
+        ag: peek_i64(argl, 16 + ai * 8)
+        if digitb(peek_byte(ag, 0)) is 1
+            if cfind1(ag, 46) > 0 - 1
+                all_s: 0
+        if is_imm(ag) is 0
+            if plain_name(ag) is 0
+                if lea_ok(ag) is 0
+                    all_s: 0
+        ai: ai + 1
+    if nid is kid_syscall
+        all_s: 0
+    if nid is kid_sovcall
+        all_s: 0
+    if nid is kid_cfunc
+        all_s: 0
+    if nid is kid_thread_create
+        all_s: 0
+    if nid is kid_thread_wait
+        all_s: 0
+    if nid is kid_thread_wake
+        all_s: 0
+    if is_spawn is 1
+        all_s: 0
+        if argc > 6
+            print "Error: spawn takes at most six values"
+            err_where()
+            had_err: 1
+            xor_rax()
+            return 0
+    if argc > 6
+        all_s: 0
+    if all_s is 1
+        m0: 0 - 1
+        m1: 0 - 1
+        m2: 0 - 1
+        p2: 0
+        i2: 0
+        ai: 0
+        as long as ai < argc
+            ag: peek_i64(argl, 16 + ai * 8)
+            if ai is 0
+                m0: regslot2(ag)
+            if ai is 1
+                m1: regslot2(ag)
+            if ai is 2
+                m2: regslot2(ag)
+                if is_imm(ag) is 1
+                    p2: num_of(ag)
+                    i2: 1
+            ai: ai + 1
+        if has_vm is 1
+            if try_mem(name, argc, m0, m1, m2, i2, p2) is 1
+                return 0
+        ai: 0
+        as long as ai < argc
+            ag: peek_i64(argl, 16 + ai * 8)
+            if ai is 0
+                if is_imm(ag) is 1
+                    syntax_call_operand(sx_ctree, sx_cnode, ai, ag)
+                    mov_rdi_rax()
+                if not
+                    if try_lea_arg(ag, 0) is 0
+                        loadv_rdi(ag)
+            if ai is 1
+                if is_imm(ag) is 1
+                    syntax_call_operand(sx_ctree, sx_cnode, ai, ag)
+                    mov_rsi_rax()
+                if not
+                    if try_lea_arg(ag, 1) is 0
+                        loadv_rsi(ag)
+            if ai is 2
+                if is_imm(ag) is 1
+                    syntax_call_operand(sx_ctree, sx_cnode, ai, ag)
+                    emit3(72, 137, 194)
+                if not
+                    if try_lea_arg(ag, 2) is 0
+                        loadv_rdx(ag)
+            if ai is 3
+                if try_lea_arg(ag, 3) is 0
+                    syntax_call_operand(sx_ctree, sx_cnode, ai, ag)
+                    emit3(72, 137, 193)
+            if ai is 4
+                if try_lea_arg(ag, 4) is 0
+                    syntax_call_operand(sx_ctree, sx_cnode, ai, ag)
+                    emit3(73, 137, 192)
+            if ai is 5
+                if try_lea_arg(ag, 5) is 0
+                    syntax_call_operand(sx_ctree, sx_cnode, ai, ag)
+                    emit3(73, 137, 193)
+            ai: ai + 1
+        ca_nid: nid
+        call_args(name, argc, 1)
+    if not
+        ai: 0
+        as long as ai < argc
+            syntax_call_operand(sx_ctree, sx_cnode, ai, peek_i64(argl, 16 + ai * 8))
+            push_rax()
+            ai: ai + 1
+        if is_spawn is 1
+            spawn_emit(name, argc)
+        if not
+            ca_nid: nid
+            call_args(name, argc, 0)
+    if peek_i64(ar_names, 8) > 0
+        axi: list_find(ar_names, name)
+        if axi > 0 - 1
+            if peek_i64(ar_cnt, 16 + axi * 8) is not argc
+                print "Error: wrong number of values"
+                _sov_print(name)
+                err_where()
+                had_err: 1
+    if fsem_key is not 0
+        if band(fsem_v, 1) is 1
+            return 1
+        fsem_rp: band(bshr(fsem_v, 1), 255)
+        if fsem_rp > 0
+            if fsem_rp - 1 < argc
+                return rp_arg_str(strip(peek_i64(argl, 16 + (fsem_rp - 1) * 8)), 0)
+        return 0
+    if nid is kid_cat
+        return 1
+    if nid is kid_strcat
+        return 1
+    if nid is kid__sov_strcat
+        return 1
+    if nid is kid_sub
+        return 1
+    if nid is kid_trim
+        return 1
+    if nid is kid_ch
+        return 1
+    if nid is kid__sov_substring
+        return 1
+    if sf_lookup(name) > 0 - 1
+        return 1
+    if rp_type_of(name, argl, argc, 0) is 1
+        return 1
+    return 0
 fail:
     sys_exit(1)
 err_count: 0
@@ -5190,7 +5384,7 @@ fib_call_var line nm:
         c: look(inn, ")")
         if c < 0
             return 0
-        arg: strip(cut(inn, 0, c))
+        arg: scut(inn, 0, c)
         if is_imm(arg) is 0
             return 1
         if num_of(arg) > 92
@@ -5433,7 +5627,7 @@ bitop e p opn wide:
     return 0
 
 bitop_n e en p opn wide:
-    bin_k(e, p, e + p + wide, en - p - wide, opn)
+    bin_k(e, p, e + p + wide, en - p - wide, opn, 0, 0)
     return 0
 binary_sign e i:
     p: i - 1

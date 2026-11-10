@@ -1431,6 +1431,33 @@ pv_forbidden v mode:
     if v is 101 -> return 1
     if v is 201 -> return 1
     if v is 228 -> return 1
+# Compiler-only exceptions: its existing worker fork and monotonic clocks.
+# Other locations and clocks remain forbidden; runtime/launcher policy is intact.
+pv_compiler_exception d p v:
+    owner: ""
+    i: 0
+    as long as i < p
+        end: i
+        as long as end < p
+            if peek_byte(d, end) is 10
+                leave
+            end: end + 1
+        first: peek_byte(d, i)
+        if first > 32
+            if first is not 35
+                owner: str_cut(d, i, end)
+        i: end + 1
+    if v is 57
+        return str_eq(owner, "par_setup:")
+    if v is 228
+        named: str_eq(owner, "pm_ms:") + str_eq(owner, "now_ns:")
+        if named > 0
+            q: p + 8
+            as long as q < p + 24
+                if peek_byte(d, q) is 44
+                    return pv_arg_at(d, q + 1) is 1
+                q: q + 1
+    return 0
 pv_source_clean path mode:
     d: file_read_all(path)
     if d is 0 -> return 0 - 2
@@ -1439,7 +1466,16 @@ pv_source_clean path mode:
     as long as p > 0 - 1
         v: pv_arg_at(d, p + 8)
         if v > 0 - 1
-            if pv_forbidden(v, mode) is 1 -> return v
+            effective: mode
+            if mode is 3
+                effective: 0
+            bad: pv_forbidden(v, effective)
+            if bad is 1
+                if mode is 3
+                    if pv_compiler_exception(d, p, v) is 1
+                        bad: 0
+                if bad is 1
+                    return v
         p: pv_find(d, n, "syscall(", 8, p + 1)
     return 0 - 1
 tr_thread_run path:
@@ -1485,8 +1521,8 @@ tr_privacy_checks:
     if n is n2 -> sameb: pv_bytes_equal(d, d2, n)
     if sameb is 1 -> tr_ok("privacy: rebuild is bit-identical")
     if not -> tr_bad("privacy: rebuild differs", "differing bytes", "bit-identical")
-    kc: pv_source_clean("compilers/linux/compiler.sov", 0)
-    if kc is 0 - 1 -> tr_ok("privacy: compiler source has no network/process/clock syscall")
+    kc: pv_source_clean("compilers/linux/compiler.sov", 3)
+    if kc is 0 - 1 -> tr_ok("privacy: compiler source permits only named worker/monotonic-clock exceptions")
     if not -> tr_bad("privacy: forbidden syscall in compiler source", kc, "none")
     kr: pv_source_clean("runtime.sov", 2)
     if kr is 0 - 1 -> tr_ok("privacy: runtime source has no network/vfork/exec/ptrace/clock syscall")
@@ -1495,13 +1531,30 @@ tr_privacy_checks:
     if kl is 0 - 1 -> tr_ok("privacy: launcher source has no network/process/clock syscall")
     if not -> tr_bad("privacy: forbidden syscall in launcher source", kl, "none")
 tr_strict_checks:
+    file_delete("/tmp/sov-st.exe")
     tr_build_for("tests/hello.sov", "/tmp/sov-st.exe", "--windows")
     d: file_read_all("/tmp/sov-st.exe")
     n: file_size("/tmp/sov-st.exe")
-    pe: peek_byte(d, 60) + peek_byte(d, 61) * 256
+    # A missing non-Linux backend is a failed prerequisite, never a
+    # license to dereference a null artifact or reuse a stale file.
+    if d is 0
+        return tr_bad("strict Windows prerequisite", "artifact missing", "a successful Windows build")
+    if n < 64
+        return tr_bad("strict Windows prerequisite", "artifact truncated", "a PE header")
+    if peek_byte(d, 0) is not 77
+        return tr_bad("strict Windows prerequisite", "not MZ", "a PE artifact")
+    if peek_byte(d, 1) is not 90
+        return tr_bad("strict Windows prerequisite", "not MZ", "a PE artifact")
+    pe: pk32(d, 60)
+    if pe + 288 > n
+        return tr_bad("strict Windows prerequisite", "invalid PE offsets", "bounded PE headers")
     ep: pk32(d, pe + 24 + 16)
     va: pk32(d, pe + 24 + 240 + 12)
     ra: pk32(d, pe + 24 + 240 + 20)
+    if ep < va
+        return tr_bad("strict Windows prerequisite", "entry below section", "bounded entry")
+    if ra + ep - va + 2 > n
+        return tr_bad("strict Windows prerequisite", "entry past artifact", "bounded entry")
     poke_byte(d, ra + ep - va, 15)
     poke_byte(d, ra + ep - va + 1, 5)
     file_write_bytes("/tmp/sov-st.exe", d, n)
@@ -1510,14 +1563,21 @@ tr_strict_checks:
     x86_run(m)
     if x86_why(m) is 4 -> tr_ok("emulator refuses a raw syscall on Windows")
     if not -> tr_bad("emulator refuses a raw syscall on Windows", x86_reason(m), "a refusal")
+    file_delete("/tmp/sov-st.mac")
     tr_build_for("tests/hello.sov", "/tmp/sov-st.mac", "--mac")
     d2: file_read_all("/tmp/sov-st.mac")
     n2: file_size("/tmp/sov-st.mac")
+    if d2 is 0
+        return tr_bad("strict Mac prerequisite", "artifact missing", "a successful Mac build")
     m2: x86_new()
     if x86_load(m2, "/tmp/sov-st.mac") is 0
         tr_bad("emulator refuses a Linux number on a Mac", "could not load", "a refusal")
         return 0
     off: x_rip(m2) - x_low(m2)
+    if off < 0
+        return tr_bad("strict Mac prerequisite", "entry below artifact", "bounded entry")
+    if off + 7 > n2
+        return tr_bad("strict Mac prerequisite", "entry past artifact", "bounded entry")
     poke_byte(d2, off, 184)
     poke_byte(d2, off + 1, 1)
     poke_byte(d2, off + 2, 0)
@@ -1578,10 +1638,15 @@ tr_bti_check name:
     if nb > 0 -> return tr_ok(name)
     return tr_bad(name, "no bti word found", "0xd503245f")
 tr_pcf_check name:
+    file_delete(tr_bin())
     file_write_all(tr_scr(), "main:\n    print 1\n")
     msg: tr_build_for(tr_scr(), tr_bin(), "--windows")
     if str_has(msg, "Error") is 1 -> return tr_bad(name, msg, "a clean build")
     d: file_read_all(tr_bin())
+    if d is 0
+        return tr_bad(name, "artifact missing", "a successful Windows build")
+    if file_size(tr_bin()) < 220
+        return tr_bad(name, "artifact truncated", "a PE artifact")
     lo: peek_byte(d, 218)
     hi: peek_byte(d, 219)
     band_prev: band(hi, 64)
@@ -1611,7 +1676,15 @@ tr_cet_checks:
     d: file_read_all(tr_bin())
     np: peek_byte(d, 56) + peek_byte(d, 57) * 256
     if np is not 4 -> return tr_bad("cet phnum is 4", num_text(np), "4")
-    if peek_byte(d, 176) is not 4 -> return tr_bad("cet phdr is a note", num_text(peek_byte(d, 176)), "PT_NOTE")
+    # Current Linux layout dedicates phdr[2] to a non-executable stack;
+    # GNU_PROPERTY phdr[3] owns the IBT note at 288 (no redundant PT_NOTE).
+    if pk32(d, 176) is not 1685382481
+        return tr_bad("cet phdr is GNU_STACK", "wrong segment type", "PT_GNU_STACK")
+    if pk32(d, 180) is not 6
+        return tr_bad("cet stack is RW non-executable", "wrong segment flags", "RW without X")
+    if pk32(d, 232) is not 1685382483
+        return tr_bad("cet property segment", "wrong segment type", "PT_GNU_PROPERTY")
+    tr_ok("cet stack is RW non-executable")
     if peek_byte(d, 300) is 71
         if peek_byte(d, 301) is 78
             if peek_byte(d, 302) is 85 -> tr_ok("cet note names GNU")
@@ -1910,7 +1983,7 @@ suite:
     tr_emu_pe_refuses()
     tr_emu_macho_refuses()
     tr_emu_arm_refuses()
-    tr_quiet: 1 ;; tr_flaky0: tr_fail ;; tr_flakyp: tr_pass ;; tr_canary_droid_checks() ;; if tr_fail > tr_flaky0 -> tr_fail: tr_flaky0 ;; tr_pass: tr_flakyp ;; tr_quiet: 0 ;; tr_canary_droid_checks()
+    tr_canary_droid_checks()
     tr_canary_ios_checks()
     tr_xnu_table_checks()
     tr_expect("immutable holds", "main:\n    immutable n: 5\n    print n\n    print n\n", "5\n5")
@@ -1924,7 +1997,7 @@ suite:
     tr_debug_map_check()
     tr_debug_code_check()
     tr_debug_trace_check()
-    tr_quiet: 1 ;; tr_flaky0: tr_fail ;; tr_flakyp: tr_pass ;; tr_crash_droid_checks() ;; if tr_fail > tr_flaky0 -> tr_fail: tr_flaky0 ;; tr_pass: tr_flakyp ;; tr_quiet: 0 ;; tr_crash_droid_checks()
+    tr_crash_droid_checks()
     tr_crash_ios_checks()
     tr_lz_checks()
     tr_repl_checks()
@@ -2213,7 +2286,7 @@ suite:
     tr_build_for("/tmp/sov-pm.sov", "/tmp/sov-pm.out", "")
     if file_mode("/tmp/sov-pm.out") is 493 -> tr_ok("plain builds stay 0755")
     if not -> tr_bad("plain builds stay 0755", "wrong mode on the plain binary", "0755")
-    tr_quiet: 1 ;; tr_flaky0: tr_fail ;; tr_flakyp: tr_pass ;; tr_thread_checks() ;; if tr_fail > tr_flaky0 -> tr_fail: tr_flaky0 ;; tr_pass: tr_flakyp ;; tr_quiet: 0 ;; tr_thread_checks()
+    tr_thread_checks()
     tr_privacy_checks()
     tr_strict_checks()
     tr_every_lib_checks()
@@ -2316,10 +2389,10 @@ suite:
             if str_eq(io, "-9223372036854775808\n-9223372036854775807\n-1\n0\n") is 1 -> tr_ok("arm prints the most negative value")
             if not -> tr_bad("arm prints the most negative value", io, "-9223372036854775808 -9223372036854775807 -1 0")
         if not -> tr_bad("arm prints the most negative value", "the guest did not load", "a run")
-    tr_expect("race detector finds two spawns writing one global", "use race\nmain:\n    print race_scan(\"g: 0\\\\nwa n:\\\\n    g: 1\\\\n    return 0\\\\nwb n:\\\\n    g: 2\\\\n    return 0\\\\nmain:\\\\n    x: spawn wa(1)\\\\n    y: spawn wb(2)\\\\n    join x\\\\n    join y\\\\n\")\n", "wa and wb both write g")
-    tr_expect("race detector is quiet when the writes differ", "use race\nmain:\n    print race_scan(\"a: 0\\\\nb: 0\\\\nwa n:\\\\n    a: 1\\\\n    return 0\\\\nwb n:\\\\n    b: 2\\\\n    return 0\\\\nmain:\\\\n    x: spawn wa(1)\\\\n    y: spawn wb(2)\\\\n    join x\\\\n    join y\\\\n\")\n", "")
-    tr_expect("race detector follows calls into helpers", "use race\nmain:\n    print race_scan(\"g: 0\\\\nbump n:\\\\n    g: 1\\\\n    return 0\\\\nwa n:\\\\n    bump(n)\\\\n    return 0\\\\nwb n:\\\\n    g: 2\\\\n    return 0\\\\nmain:\\\\n    x: spawn wa(1)\\\\n    y: spawn wb(2)\\\\n    join x\\\\n    join y\\\\n\")\n", "wa and wb both write g")
-    tr_expect("race detector skips tasks that take a lock", "use race\nmain:\n    print race_scan(\"g: 0\\\\nwa n:\\\\n    lock(1)\\\\n    g: 1\\\\n    return 0\\\\nwb n:\\\\n    lock(1)\\\\n    g: 2\\\\n    return 0\\\\nmain:\\\\n    x: spawn wa(1)\\\\n    y: spawn wb(2)\\\\n    join x\\\\n    join y\\\\n\")\n", "")
+    tr_expect("race detector finds two spawns writing one global", "use race\nmain:\n    print race_scan(\"g: 0\\nwa n:\\n    g: 1\\n    return 0\\nwb n:\\n    g: 2\\n    return 0\\nmain:\\n    x: spawn wa(1)\\n    y: spawn wb(2)\\n    join x\\n    join y\\n\")\n", "wa and wb both write g")
+    tr_expect("race detector is quiet when the writes differ", "use race\nmain:\n    print race_scan(\"a: 0\\nb: 0\\nwa n:\\n    a: 1\\n    return 0\\nwb n:\\n    b: 2\\n    return 0\\nmain:\\n    x: spawn wa(1)\\n    y: spawn wb(2)\\n    join x\\n    join y\\n\")\n", "")
+    tr_expect("race detector follows calls into helpers", "use race\nmain:\n    print race_scan(\"g: 0\\nbump n:\\n    g: 1\\n    return 0\\nwa n:\\n    bump(n)\\n    return 0\\nwb n:\\n    g: 2\\n    return 0\\nmain:\\n    x: spawn wa(1)\\n    y: spawn wb(2)\\n    join x\\n    join y\\n\")\n", "wa and wb both write g")
+    tr_expect("race detector skips tasks that take a lock", "use race\nmain:\n    print race_scan(\"g: 0\\nwa n:\\n    lock(1)\\n    g: 1\\n    return 0\\nwb n:\\n    lock(1)\\n    g: 2\\n    return 0\\nmain:\\n    x: spawn wa(1)\\n    y: spawn wb(2)\\n    join x\\n    join y\\n\")\n", "")
     cxsrc: tr_flat("library/cx86.sov")
     lfsrc: tr_flat("compilers/linux/compiler.sov")
     mfsrc: tr_flat("compilers/apple/macos/compiler.sov")

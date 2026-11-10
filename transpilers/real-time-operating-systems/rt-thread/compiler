@@ -1,4 +1,0 @@
-#!/bin/sh
-# Real-file entry point; the installed binary is not duplicated.
-HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-exec "$HERE/../../../compilers/real-time-operating-systems/rt-thread/compiler" "$@"

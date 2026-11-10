@@ -14,7 +14,7 @@ popblk:
         thread_tail(here())
         wcond: peek_i64(bw, 16 + last * 8)
         tt: here()
-        zb: fuse_cmp(wcond, 0)
+        zb: syntax_loop_fuse(last, wcond, 0)
         if zb is 0 - 1
             expr(wcond)
             test_rax()
@@ -113,7 +113,7 @@ print_const arg:
             mark: join(fib_nm, "(")
             if _sov_starts_with(arg, mark) is 1
                 if peek_byte(arg, length(arg) - 1) is 41 is 1
-                    inn: strip(cut(arg, length(mark), length(arg) - 1))
+                    inn: scut(arg, length(mark), length(arg) - 1)
                     if is_imm(inn) is 1
                         fv: num_of(inn)
                         if fv < 2
@@ -271,11 +271,11 @@ pull_uses pu_src:
                             pu_bgo: 0
                     if pu_bgo is 1
                         err_line: pu_ln + 1
-                        pu_tail: strip(cut(pu_src, pu_bj, pu_be))
+                        pu_tail: scut(pu_src, pu_bj, pu_be)
                         pu_sp: look(pu_tail, " as ")
                         pu_chunk: blank
                         if pu_sp > 0 - 1
-                            pu_chunk: take_use(strip(cut(pu_tail, 0, pu_sp)), strip(cut(pu_tail, pu_sp + 4, length(pu_tail))))
+                            pu_chunk: take_use(scut(pu_tail, 0, pu_sp), scutr(pu_tail, pu_sp + 4))
                         if pu_sp < 0
                             pu_chunk: take_use(pu_tail, "")
                         ch: _sov_list_add(ch, pu_chunk)
@@ -287,12 +287,12 @@ pull_uses pu_src:
             pu_e: pu_i
         if pu_hit is 1
             err_line: pu_ln + 1
-            pu_line: strip(cut(pu_src, pu_j, pu_e))
-            pu_tail: strip(cut(pu_line, 4, length(pu_line)))
+            pu_line: scut(pu_src, pu_j, pu_e)
+            pu_tail: scutr(pu_line, 4)
             pu_sp: look(pu_tail, " as ")
             pu_chunk: blank
             if pu_sp > 0 - 1
-                pu_chunk: take_use(strip(cut(pu_tail, 0, pu_sp)), strip(cut(pu_tail, pu_sp + 4, length(pu_tail))))
+                pu_chunk: take_use(scut(pu_tail, 0, pu_sp), scutr(pu_tail, pu_sp + 4))
             if pu_sp < 0
                 pu_chunk: take_use(pu_tail, "")
             ch: _sov_list_add(ch, pu_chunk)
@@ -325,8 +325,8 @@ pure_mul_term t:
     p1: look(t, " * ")
     if p1 < 0
         return 0
-    l: strip(cut(t, 0, p1))
-    r: strip(cut(t, p1 + 3, length(t)))
+    l: scut(t, 0, p1)
+    r: scutr(t, p1 + 3)
     if look(l, " ") > 0 - 1
         return 0
     if pure_mul_atom(l) is 0
@@ -336,8 +336,8 @@ pure_mul_term t:
         if look(r, " ") > 0 - 1
             return 0
         return pure_mul_atom(r)
-    l2: strip(cut(r, 0, p2))
-    r2: strip(cut(r, p2 + 3, length(r)))
+    l2: scut(r, 0, p2)
+    r2: scutr(r, p2 + 3)
     if look(r2, " ") > 0 - 1
         return 0
     if pure_mul_atom(l2) is 0
@@ -406,13 +406,13 @@ raw_scaled e:
         return 0 - 1
     if sg_match(e, length(e) - 4, " * 8") is 0
         return 0 - 1
-    head: strip(cut(e, 0, length(e) - 4))
+    head: scut(e, 0, length(e) - 4)
     if length(head) is 0
         return 0 - 1
     if peek_byte(head, 0) is 40 is 1
         if peek_byte(head, length(head) - 1) is 41 is 0
             return 0 - 1
-        inn: strip(cut(head, 1, length(head) - 1))
+        inn: scut(head, 1, length(head) - 1)
         pp: look(inn, " + ")
         sg: 1
         if pp < 0
@@ -420,13 +420,13 @@ raw_scaled e:
             sg: 0 - 1
         if pp < 0
             return 0 - 1
-        l2: strip(cut(inn, 0, pp))
-        r2: strip(cut(inn, pp + 3, length(inn)))
+        l2: scut(inn, 0, pp)
+        r2: scutr(inn, pp + 3)
         if name_ok(l2) is 0
             return 0 - 1
         if is_imm(r2) is 0
             return 0 - 1
-        sl: reg_slot(l2)
+        sl: regslot2(l2)
         if sl < 0
             return 0 - 1
         kk: sg * num_of(r2) * 8
@@ -440,7 +440,7 @@ raw_scaled e:
         return 0 - 1
     if name_ok(head) is 0
         return 0 - 1
-    sl: reg_slot(head)
+    sl: regslot2(head)
     if sl < 0
         return 0 - 1
     cflush(head)
@@ -485,8 +485,8 @@ rdi_imm n:
             return
     emit2(72, 191)
     emit8(n)
-reg_slot name:
-    sl: lsh_find_s(name)
+regslot2 name:
+    sl: lshf2(name)
     if sl > 0 - 1
         if sl < 5
             return sl
@@ -615,12 +615,12 @@ same a b:
 scaled_rdx e:
     if sg_match(e, length(e) - 4, " * 8") is 0
         return 0
-    head: strip(cut(e, 0, length(e) - 4))
+    head: scut(e, 0, length(e) - 4)
     if length(head) is 0
         return 0
     if peek_byte(head, 0) is 40 is 1
         if peek_byte(head, length(head) - 1) is 41 is 1
-            inn: strip(cut(head, 1, length(head) - 1))
+            inn: scut(head, 1, length(head) - 1)
             pp: look(inn, " + ")
             sg: 1
             if pp < 0
@@ -628,8 +628,8 @@ scaled_rdx e:
                 sg: 0 - 1
             if pp < 0
                 return 0
-            l2: strip(cut(inn, 0, pp))
-            r2: strip(cut(inn, pp + 3, length(inn)))
+            l2: scut(inn, 0, pp)
+            r2: scutr(inn, pp + 3)
             if name_ok(l2) is 1
                 if is_imm(r2) is 1
                     loadv_rdx(l2)
@@ -647,12 +647,12 @@ scaled_rdx e:
 scaled_rsi e:
     if sg_match(e, length(e) - 4, " * 8") is 0
         return 0
-    head: strip(cut(e, 0, length(e) - 4))
+    head: scut(e, 0, length(e) - 4)
     if length(head) is 0
         return 0
     if peek_byte(head, 0) is 40 is 1
         if peek_byte(head, length(head) - 1) is 41 is 1
-            inn: strip(cut(head, 1, length(head) - 1))
+            inn: scut(head, 1, length(head) - 1)
             pp: look(inn, " + ")
             sg: 1
             if pp < 0
@@ -660,8 +660,8 @@ scaled_rsi e:
                 sg: 0 - 1
             if pp < 0
                 return 0
-            l2: strip(cut(inn, 0, pp))
-            r2: strip(cut(inn, pp + 3, length(inn)))
+            l2: scut(inn, 0, pp)
+            r2: scutr(inn, pp + 3)
             if name_ok(l2) is 1
                 if is_imm(r2) is 1
                     loadv_rsi(l2)
@@ -673,8 +673,8 @@ scaled_rsi e:
             return 0
     if look(head, " + ") > 0 - 1
         p: look(head, " + ")
-        l: strip(cut(head, 0, p))
-        r: strip(cut(head, p + 3, length(head)))
+        l: scut(head, 0, p)
+        r: scutr(head, p + 3)
         if is_imm(l) is 1
             if name_ok(r) is 1
                 return 0
@@ -689,7 +689,7 @@ scaled_rsi e:
 sc_disp e:
     if sg_match(e, length(e) - 4, " * 8") is 0
         return 0 - 1
-    head: strip(cut(e, 0, length(e) - 4))
+    head: scut(e, 0, length(e) - 4)
     if length(head) is 0
         return 0 - 1
     if peek_byte(head, 0) is 40 is 1
@@ -697,8 +697,8 @@ sc_disp e:
     p: look(head, " + ")
     if p < 0
         return 0 - 1
-    l: strip(cut(head, 0, p))
-    r: strip(cut(head, p + 3, length(head)))
+    l: scut(head, 0, p)
+    r: scutr(head, p + 3)
     if length(l) is 0
         return 0 - 1
     if length(r) is 0
@@ -718,7 +718,7 @@ sc_disp e:
 scaled_shape e:
     if sg_match(e, length(e) - 4, " * 8") is 0
         return 0
-    head: strip(cut(e, 0, length(e) - 4))
+    head: scut(e, 0, length(e) - 4)
     if length(head) is 0
         return 0
     if peek_byte(head, 0) is 40 is 1
@@ -783,6 +783,9 @@ setcc_k oid:
 sibx h:
     return 199 + (h % 8) * 8
 skip_body lines start bind:
+    if syntax_mode > 0
+        sx_end: syntax_block_end(lines, start, bind)
+        if sx_end >= 0 -> return sx_end
     j: start
     n: _sov_list_len(lines)
     as long as j < n
@@ -800,10 +803,10 @@ skip_body lines start bind:
                     return j
     return j
 slot name:
-    i: lsh_find_s(name)
+    i: lshf2(name)
     if i > 0 - 1
         return i
-    d6: lsh_add(name)
+    d6: lsha2(name)
     return _sov_list_len(locals) - 1
 sq_square:
     if sq_acc is 1
@@ -930,9 +933,9 @@ bin L R op:
     return bin_n(L, length(L), R, length(R), op)
 
 bin_n L Ln R Rn op:
-    return bin_k(L, Ln, R, Rn, intern_kid(op))
+    return bin_k(L, Ln, R, Rn, intern_kid(op), 0, 0)
 
-bin_k L Ln R Rn oid:
+bin_k L Ln R Rn oid sx_tree sx_node:
     as long as Ln > 0
         bn_bb: peek_byte(L, 0)
         if bn_bb is 32 or bn_bb is 9 or bn_bb is 10 or bn_bb is 13
@@ -977,7 +980,7 @@ bin_k L Ln R Rn oid:
         if opt_peep is 1
             if Rimm is 1
                 if plain_name_n(L, Ln) is 1
-                    sl2: reg_slot(span_str(L, Ln))
+                    sl2: regslot2(span_str(L, Ln))
                     if sl2 > 0 - 1
                         vv: num_of_n(R, Rn)
                         if vv < 128
@@ -989,7 +992,7 @@ bin_k L Ln R Rn oid:
         if opt_peep is 1
             if Rimm is 1
                 if plain_name_n(L, Ln) is 1
-                    sl2: reg_slot(span_str(L, Ln))
+                    sl2: regslot2(span_str(L, Ln))
                     if sl2 > 0 - 1
                         vv: 0 - num_of_n(R, Rn)
                         if vv > 0 - 128
@@ -1001,7 +1004,7 @@ bin_k L Ln R Rn oid:
         if opt_peep is 1
             if Rimm is 1
                 if plain_name_n(L, Ln) is 1
-                    sl2: reg_slot(span_str(L, Ln))
+                    sl2: regslot2(span_str(L, Ln))
                     if sl2 > 0 - 1
                         vv: num_of_n(R, Rn)
                         if vv < 2147483648
@@ -1012,7 +1015,7 @@ bin_k L Ln R Rn oid:
                                 return 0
             if Limm is 1
                 if plain_name_n(R, Rn) is 1
-                    sl2: reg_slot(span_str(R, Rn))
+                    sl2: regslot2(span_str(R, Rn))
                     if sl2 > 0 - 1
                         vv: num_of_n(L, Ln)
                         if vv < 2147483648
@@ -1025,7 +1028,7 @@ bin_k L Ln R Rn oid:
         if opt_peep is 1
             if Rimm is 1
                 if plain_name_n(L, Ln) is 1
-                    sl2: reg_slot(span_str(L, Ln))
+                    sl2: regslot2(span_str(L, Ln))
                     if sl2 > 0 - 1
                         vv: num_of_n(R, Rn)
                         if vv < 2147483648
@@ -1035,7 +1038,7 @@ bin_k L Ln R Rn oid:
                                 return 0
             if Limm is 1
                 if plain_name_n(R, Rn) is 1
-                    sl2: reg_slot(span_str(R, Rn))
+                    sl2: regslot2(span_str(R, Rn))
                     if sl2 > 0 - 1
                         vv: num_of_n(L, Ln)
                         if vv < 2147483648
@@ -1082,18 +1085,18 @@ bin_k L Ln R Rn oid:
                         return 0
     if oid is kid_opeq
         if Rb0 is 34
-            expr_span(L, Ln)
+            syntax_operand(sx_tree, sx_node, 0, L, Ln)
             push_rax()
-            expr_span(R, Rn)
+            syntax_operand(sx_tree, sx_node, 1, R, Rn)
             mov_rsi_rax()
             pop_rax()
             mov_rdi_rax()
             calln("_sov_txt_eq")
             return 0
         if Lb0 is 34
-            expr_span(R, Rn)
+            syntax_operand(sx_tree, sx_node, 1, R, Rn)
             push_rax()
-            expr_span(L, Ln)
+            syntax_operand(sx_tree, sx_node, 0, L, Ln)
             mov_rsi_rax()
             pop_rax()
             mov_rdi_rax()
@@ -1101,9 +1104,9 @@ bin_k L Ln R Rn oid:
             return 0
     if oid is kid_opne
         if Rb0 is 34
-            expr_span(L, Ln)
+            syntax_operand(sx_tree, sx_node, 0, L, Ln)
             push_rax()
-            expr_span(R, Rn)
+            syntax_operand(sx_tree, sx_node, 1, R, Rn)
             mov_rsi_rax()
             pop_rax()
             mov_rdi_rax()
@@ -1114,9 +1117,9 @@ bin_k L Ln R Rn oid:
             emit(1)
             return 0
         if Lb0 is 34
-            expr_span(R, Rn)
+            syntax_operand(sx_tree, sx_node, 1, R, Rn)
             push_rax()
-            expr_span(L, Ln)
+            syntax_operand(sx_tree, sx_node, 0, L, Ln)
             mov_rsi_rax()
             pop_rax()
             mov_rdi_rax()
@@ -1135,16 +1138,16 @@ bin_k L Ln R Rn oid:
                     q: fop2(Lsq, "+", "-")
                     if q > 0 - 1
                         if peek_byte(Lsq, q) is 43 is 1
-                            la: strip(cut(Lsq, 0, q))
-                            ra: strip(cut(Lsq, q + 1, length(Lsq)))
+                            la: scut(Lsq, 0, q)
+                            ra: scutr(Lsq, q + 1)
                             if parse_sq(ra) is 1
                                 ran: sq_name
                                 if parse_sq(la) is 1
                                     la9: sq_name
                                     sq9: 0
-                                    if reg_slot(rt) > 0 - 1
-                                        if reg_slot(ran) > 0 - 1
-                                            if reg_slot(la9) > 0 - 1
+                                    if regslot2(rt) > 0 - 1
+                                        if regslot2(ran) > 0 - 1
+                                            if regslot2(la9) > 0 - 1
                                                 sq9: 1
                                     if sq9 is 1
                                         cflush(rt)
@@ -1167,8 +1170,8 @@ bin_k L Ln R Rn oid:
                     if parse_sq(Lsq) is 1
                         lat: sq_name
                         sq9: 0
-                        if reg_slot(rt) > 0 - 1
-                            if reg_slot(lat) > 0 - 1
+                        if regslot2(rt) > 0 - 1
+                            if regslot2(lat) > 0 - 1
                                 sq9: 1
                         if sq9 is 1
                             cflush(rt)
@@ -1216,7 +1219,7 @@ bin_k L Ln R Rn oid:
                 br2: bin_rslot(span_str(R, Rn))
                 if br2 > 0 - 1
                     cflush(span_str(R, Rn))
-                    expr_span(L, Ln)
+                    syntax_operand(sx_tree, sx_node, 0, L, Ln)
                     bin_regop_k(oid, br2)
                     return 0
     if Rimm is 0
@@ -1224,7 +1227,7 @@ bin_k L Ln R Rn oid:
             if plain_name_n(R, Rn) is 1
                 if bin_mem_ok_k(oid, span_str(R, Rn)) is 1
                     cflush(span_str(R, Rn))
-                    expr_span(L, Ln)
+                    syntax_operand(sx_tree, sx_node, 0, L, Ln)
                     bin_memop_k(oid, span_str(R, Rn))
                     return 0
     bc: 0
@@ -1253,20 +1256,20 @@ bin_k L Ln R Rn oid:
                     bl2: bin_rslot(span_str(L, Ln))
                     if bl2 > 0 - 1
                         cflush(span_str(L, Ln))
-                        expr_span(R, Rn)
+                        syntax_operand(sx_tree, sx_node, 1, R, Rn)
                         bin_regop_k(oid, bl2)
                         return 0
                     if bin_mem_ok_k(oid, span_str(L, Ln)) is 1
                         cflush(span_str(L, Ln))
-                        expr_span(R, Rn)
+                        syntax_operand(sx_tree, sx_node, 1, R, Rn)
                         bin_memop_k(oid, span_str(L, Ln))
                         return 0
     # a plain local that lives in the frame (bin_rslot already took the ones in
     # registers) is a one-instruction load.  Do the left side first and then
     # load %rcx directly: emitting `push %rax; ...; mov %rax,%rcx; pop %rax`
     # around it was pure overhead.  (Pass 8 tried the reverse order - %rcx
-    # loaded before expr_span(L, Ln) - and expr_span(L, Ln) clobbered it.)
-    expr_span(L, Ln)
+    # loaded before syntax_operand(sx_tree, sx_node, 0, L, Ln) - and syntax_operand(sx_tree, sx_node, 0, L, Ln) clobbered it.)
+    syntax_operand(sx_tree, sx_node, 0, L, Ln)
     push_rax()
     if oid is kid_opadd
         if Rimm is 1
@@ -1373,7 +1376,7 @@ bin_k L Ln R Rn oid:
             rcx_imm(num_of_n(R, Rn))
             emit_op("wmul")
             return
-    expr_span(R, Rn)
+    syntax_operand(sx_tree, sx_node, 1, R, Rn)
     mov_rcx_rax()
     pop_rax()
     emit_op_k(oid)
@@ -1447,7 +1450,7 @@ storev name:
     ci: cn_lookup(name)
     if ci > 0 - 1
         cemt: _sov_list_set(cemt, ci, 1)
-    i: lsh_find_s(name)
+    i: lshf2(name)
     if i > 0 - 1
         store_loc(i)
         return
@@ -1777,16 +1780,16 @@ strip_span t:
         return strip(t)
     return s
 sub_into dest src:
-    sd: reg_slot(src)
+    sd: regslot2(src)
     if sd > 0 - 1
-        dd: reg_slot(dest)
+        dd: regslot2(dest)
         if dd > 0 - 1
             cflush(dest)
             cflush(src)
             emit_addsub_slot(dd, sd, 1)
             return
     loadv(src)
-    sl: lsh_find_s(dest)
+    sl: lshf2(dest)
     if sl is 0
         emit(72)
         emit(41)
@@ -2151,23 +2154,23 @@ tidy_path s:
 tname line:
     s: strip(line)
     if is_task_hdr(s) is 1
-        s: strip(cut(s, 0, length(s) - 1))
+        s: scut(s, 0, length(s) - 1)
         if _sov_starts_with(s, "task ") is 1
-            s: strip(cut(s, 5, length(s)))
+            s: scutr(s, 5)
         wp: look(s, " with ")
         if wp > 0 - 1
-            return repl(strip(cut(s, 0, wp)), " ", "_")
+            return repl(scut(s, 0, wp), " ", "_")
         sp: look(s, " ")
         if sp > 0 - 1
-            return strip(cut(s, 0, sp))
+            return scut(s, 0, sp)
         return s
-    rest: strip(cut(line, 5, length(line)))
+    rest: scutr(line, 5)
     wp: look(rest, " with ")
     if wp > 0 - 1
-        return repl(strip(cut(rest, 0, wp)), " ", "_")
+        return repl(scut(rest, 0, wp), " ", "_")
     sp: look(rest, " ")
     if sp > 0 - 1
-        return repl(strip(cut(rest, 0, sp)), " ", "_")
+        return repl(scut(rest, 0, sp), " ", "_")
     return repl(rest, " ", "_")
 try_count_while cond blines lines li:
     if _sov_list_len(blines) is not 3
@@ -2176,8 +2179,8 @@ try_count_while cond blines lines li:
     p: look(c0, " < ")
     if p < 0
         return 0
-    iv: repl(strip(cut(c0, 0, p)), " ", "_")
-    lim0: strip(cut(c0, p + 3, length(c0)))
+    iv: repl(scut(c0, 0, p), " ", "_")
+    lim0: scutr(c0, p + 3)
     lim: repl(lim0, " ", "_")
     if plain_name(iv) is 0
         return 0
@@ -2196,8 +2199,8 @@ try_count_while cond blines lines li:
     c1: look(inn, ",")
     if c1 < 0
         return 0
-    base: repl(strip(cut(inn, 0, c1)), " ", "_")
-    idx2: repl(strip(cut(inn, c1 + 1, length(inn))), " ", "_")
+    base: repl(scut(inn, 0, c1), " ", "_")
+    idx2: repl(scutr(inn, c1 + 1), " ", "_")
     if _sov_str_eq(idx2, iv) is 0
         return 0
     if plain_name(base) is 0
@@ -2205,7 +2208,7 @@ try_count_while cond blines lines li:
     tc2: look(l2, ": ")
     if tc2 < 0
         return 0
-    cn: repl(strip(cut(l2, 0, tc2)), " ", "_")
+    cn: repl(scut(l2, 0, tc2), " ", "_")
     if _sov_str_eq(l2, join(cn, join(": ", join(cn, " + 1")))) is 0
         return 0
     if plain_name(cn) is 0
@@ -2544,12 +2547,12 @@ try_fp_dot cond blines lines li:
     p: look(c0, " < ")
     if p < 0
         return 0
-    iv: repl(strip(cut(c0, 0, p)), " ", "_")
-    lim0: strip(cut(c0, p + 3, length(c0)))
+    iv: repl(scut(c0, 0, p), " ", "_")
+    lim0: scutr(c0, p + 3)
     lim: repl(lim0, " ", "_")
     if plain_name(iv) is 0
         return 0
-    ivsl: lsh_find_s(iv)
+    ivsl: lshf2(iv)
     if ivsl < 0
         return 0
     limn: 0
@@ -2564,10 +2567,10 @@ try_fp_dot cond blines lines li:
     tc: look(l1, ": ")
     if tc < 1
         return 0
-    snm: repl(strip(cut(l1, 0, tc)), " ", "_")
+    snm: repl(scut(l1, 0, tc), " ", "_")
     if plain_name(snm) is 0
         return 0
-    rhs: strip(cut(l1, tc + 2, length(l1)))
+    rhs: scutr(l1, tc + 2)
     if _sov_starts_with(rhs, "f64_add(") is 0
         return 0
     if peek_byte(rhs, length(rhs) - 1) is not 41
@@ -3955,7 +3958,7 @@ inl2_body_ok cb cps:
         if k is nl - 1
             if look(s, "return ") is not 0
                 return 0
-            inl2_ret: strip(cut(s, 7, length(s)))
+            inl2_ret: scutr(s, 7)
             if length(inl2_ret) is 0
                 return 0
             exprs: _sov_list_add(exprs, inl2_ret)
@@ -4073,6 +4076,120 @@ inl2_callfind rhs:
 inl2_cnm: 0
 inl2_cb1: 0
 
+# --- inl2 determinism probe (2026-11-02): env-gated decision trace ---
+# Gate: /tmp/sov_inl2log must exist (opened O_WRONLY|O_APPEND, no O_CREAT).
+# One line per inl2_one decision (fire&&argo): caller f, site k, callee i,
+# callee name n, caller name cn, body ptr cb, body fingerprint
+# c = lines*1e12 + total-line-bytes, task_user u, argo a, memo-hit m,
+# decision K. Written with ONE write syscall (O_APPEND) so parallel
+# parent/child lines interleave without tearing. The trace only peeks
+# existing state and writes to its own static buffer: no allocation on
+# the decision path, no string-heap churn, decision inputs untouched.
+inl2_lfd: 0
+inl2_lbuf: 0
+inl2_lc: 0
+inl2_lnl: 0
+inl2_lnb: 0
+inl2_lns: 0
+
+inl2_lopen:
+    if inl2_lfd is 0
+        inl2_lfd: syscall(2, "/tmp/sov_inl2log", 1025, 420, 0)
+        if inl2_lfd < 1
+            inl2_lfd: 0 - 1
+        if inl2_lfd > 0
+            inl2_lbuf: _sov_heap_alloc(768)
+    return 0
+
+inl2_lp s:
+    if inl2_lc > 700
+        return 0
+    k2: 0
+    as long as peek_byte(s, k2) > 0
+        poke_byte(inl2_lbuf, inl2_lc, peek_byte(s, k2))
+        inl2_lc: inl2_lc + 1
+        k2: k2 + 1
+    return 0
+
+inl2_lnum v:
+    if v < 0
+        poke_byte(inl2_lbuf, inl2_lc, 45)
+        inl2_lc: inl2_lc + 1
+        v: 0 - v
+    dv: 1000000000000000
+    nz: 0
+    as long as dv > 0
+        d2: v / dv % 10
+        if d2 > 0
+            nz: 1
+        if nz is 1
+            poke_byte(inl2_lbuf, inl2_lc, 48 + d2)
+            inl2_lc: inl2_lc + 1
+        dv: dv / 10
+    if nz is 0
+        poke_byte(inl2_lbuf, inl2_lc, 48)
+        inl2_lc: inl2_lc + 1
+    return 0
+
+inl2_lmeas cb:
+    inl2_lnl: _sov_list_len(cb)
+    inl2_lnb: 0
+    mi: 0
+    as long as mi < inl2_lnl
+        ln3: peek_i64(cb, 16 + mi * 8)
+        if ln3 > 0
+            inl2_lnb: inl2_lnb + par_slen(ln3)
+        mi: mi + 1
+    return 0
+
+inl2_lsum cb:
+    return 0
+
+inl2_ldec ci k idx cb argo mhit bok:
+    if inl2_lfd < 1
+        return 0
+    inl2_lc: 0
+    inl2_lp("T")
+    inl2_lnum(par_child)
+    inl2_lp(" f")
+    inl2_lnum(ci)
+    inl2_lp(" k")
+    inl2_lnum(k)
+    inl2_lp(" i")
+    inl2_lnum(idx)
+    inl2_lp(" n")
+    nn: peek_i64(names, 16 + idx * 8)
+    if nn > 0
+        inl2_lp(nn)
+    if not
+        inl2_lp("0")
+    inl2_lp(" cn")
+    nc: peek_i64(names, 16 + ci * 8)
+    if nc > 0
+        inl2_lp(nc)
+    if not
+        inl2_lp("0")
+    inl2_lp(" cb")
+    inl2_lnum(cb)
+    dummy: inl2_lmeas(cb)
+    inl2_lp(" L")
+    inl2_lnum(inl2_lnl)
+    inl2_lp(" B")
+    inl2_lnum(inl2_lnb)
+    inl2_lp(" u")
+    inl2_lnum(peek_i64(task_user, 16 + idx * 8))
+    inl2_lp(" a")
+    inl2_lnum(argo)
+    inl2_lp(" m")
+    inl2_lnum(mhit)
+    inl2_lp(" K")
+    inl2_lnum(bok)
+    poke_byte(inl2_lbuf, inl2_lc, 10)
+    inl2_lc: inl2_lc + 1
+    syscall(1, inl2_lfd, inl2_lbuf, inl2_lc, 0)
+    return 0
+# --- end inl2 determinism probe ---
+
 inl2_one ls sln ci:
     # inline the first eligible site; success sets inl2_out/inl2_sln.
     n: _sov_list_len(ls)
@@ -4095,18 +4212,20 @@ inl2_one ls sln ci:
                             rhs: ""
                             if length(dst) > 0
                                 p: look(s, ":")
-                                rhs: strip(cut(s, p + 2, length(s)))
+                                rhs: scutr(s, p + 2)
                             if length(dst) is 0
                                 if starts(s, "return ") is 1
                                     kind: 1
                                     pre: "return "
-                                    rhs: strip(cut(s, 7, length(s)))
+                                    rhs: scutr(s, 7)
                             if length(dst) is 0
                                 if kind is 0
                                     if starts(s, "if ") is 1
                                         kind: 2
                                         pre: "if "
-                                        rhs: strip(cut(s, 3, length(s)))
+                                        rhs: scutr(s, 3)
+                            if _sov_find_text(rhs, "spawn ") >= 0
+                                rhs: ""
                             if length(rhs) > 0
                                 if cfind1(rhs, 34) > 0 - 1
                                     rhs: ""
@@ -4140,15 +4259,18 @@ inl2_one ls sln ci:
                 ai: ai + 1
             if argo is 1
                 bok: 0
+                mhit: 0
                 if _sov_list_len(inl2_okm) > idx
                     if peek_i64(inl2_okb, 16 + idx * 8) is cb
                         if peek_i64(inl2_okm, 16 + idx * 8) is not 9
                             bok: peek_i64(inl2_okm, 16 + idx * 8)
+                            mhit: 1
                 if bok is 0
                     bok: inl2_body_ok(cb, cps)
                     if _sov_list_len(inl2_okm) > idx
                         dummy: _sov_list_set(inl2_okm, idx, bok)
                         dummy: _sov_list_set(inl2_okb, idx, cb)
+                dummy: inl2_ldec(ci, k, idx, cb, argo, mhit, bok)
                 if bok is 1
                     dummy: inl2_body_ok(cb, cps)
                     ind: cut(lk, 0, nsp)
@@ -4259,6 +4381,7 @@ inl2_mkcn lines ci:
             inl2_cn: licm_add(inl2_cn, nm)
         k: k + 1
 inl2_scan lines sln ci:
+    dummy: inl2_lopen()
     if inl2_okm is 0
         inl2_okm: _sov_list_new()
         inl2_okb: _sov_list_new()
@@ -4372,13 +4495,13 @@ try_peekscan_while cond blines lines li:
             op: 3
     if op is 0
         return 0
-    lhs: strip(cut(c0, 0, pp))
+    lhs: scut(c0, 0, pp)
     rhsp: pp + 3
     if op is 2
         rhsp: pp + 4
     if op is 4
         rhsp: pp + 4
-    rhs: strip(cut(c0, rhsp, length(c0)))
+    rhs: scutr(c0, rhsp)
     if _sov_starts_with(lhs, "peek_i64(") is 0
         return 0
     if peek_byte(lhs, length(lhs) - 1) is not 41
@@ -4401,10 +4524,10 @@ try_peekscan_while cond blines lines li:
     isep: look(l1, ": ")
     if isep < 1
         return 0
-    iv: repl(strip(cut(l1, 0, isep)), " ", "_")
+    iv: repl(scut(l1, 0, isep), " ", "_")
     if plain_name(iv) is 0
         return 0
-    if lsh_find_s(iv) < 0
+    if lshf2(iv) < 0
         return 0
     step: 0
     if _sov_str_eq(l1, join(iv, join(": ", join(iv, " + 1")))) is 1
@@ -4479,11 +4602,11 @@ try_bytecount_while cond blines lines li:
     p: look(c0, " < ")
     if p < 0
         return 0
-    iv: repl(strip(cut(c0, 0, p)), " ", "_")
-    lim: repl(strip(cut(c0, p + 3, length(c0))), " ", "_")
+    iv: repl(scut(c0, 0, p), " ", "_")
+    lim: repl(scutr(c0, p + 3), " ", "_")
     if plain_name(iv) is 0
         return 0
-    if lsh_find_s(iv) < 0
+    if lshf2(iv) < 0
         return 0
     limn: 0
     if is_imm(lim) is 0
@@ -4528,10 +4651,10 @@ try_bytecount_while cond blines lines li:
         return 0
     if _sov_str_eq(ix, iv) is 0
         return 0
-    rest: strip(cut(l1, cp + 1, length(l1)))
+    rest: scutr(l1, cp + 1)
     if _sov_starts_with(rest, "is ") is 0
         return 0
-    ktxt: strip(cut(rest, 3, length(rest)))
+    ktxt: scutr(rest, 3)
     if is_imm(ktxt) is 0
         return 0
     bc_kv: num_of(ktxt)
@@ -4540,10 +4663,10 @@ try_bytecount_while cond blines lines li:
     tc: look(l2, ": ")
     if tc < 1
         return 0
-    cnm: repl(strip(cut(l2, 0, tc)), " ", "_")
+    cnm: repl(scut(l2, 0, tc), " ", "_")
     if plain_name(cnm) is 0
         return 0
-    if _sov_str_eq(strip(cut(l2, tc + 2, length(l2))), join(cnm, " + 1")) is 0
+    if _sov_str_eq(scutr(l2, tc + 2), join(cnm, " + 1")) is 0
         return 0
     if _sov_str_eq(cnm, iv) is 1
         return 0
@@ -4691,11 +4814,11 @@ try_listsum_while cond blines lines li:
     p: look(c0, " < ")
     if p < 0
         return 0
-    iv: repl(strip(cut(c0, 0, p)), " ", "_")
-    lim: repl(strip(cut(c0, p + 3, length(c0))), " ", "_")
+    iv: repl(scut(c0, 0, p), " ", "_")
+    lim: repl(scutr(c0, p + 3), " ", "_")
     if plain_name(iv) is 0
         return 0
-    if lsh_find_s(iv) < 0
+    if lshf2(iv) < 0
         return 0
     if plain_name(lim) is 0
         return 0
@@ -4708,14 +4831,14 @@ try_listsum_while cond blines lines li:
     tc: look(l1, ": ")
     if tc < 1
         return 0
-    snm: repl(strip(cut(l1, 0, tc)), " ", "_")
+    snm: repl(scut(l1, 0, tc), " ", "_")
     if plain_name(snm) is 0
         return 0
-    rhs: strip(cut(l1, tc + 2, length(l1)))
+    rhs: scutr(l1, tc + 2)
     pfx: join(snm, " + ")
     if _sov_starts_with(rhs, pfx) is 0
         return 0
-    ge: strip(cut(rhs, length(pfx), length(rhs)))
+    ge: scutr(rhs, length(pfx))
     if _sov_starts_with(ge, "list_get(") is 0
         if _sov_starts_with(ge, "_sov_list_get(") is 0
             if _sov_starts_with(ge, "vec_get(") is 0
@@ -4859,12 +4982,12 @@ try_append_while cond blines lines li:
     p: look(c0, " < ")
     if p < 0
         return 0
-    iv: repl(strip(cut(c0, 0, p)), " ", "_")
-    lim0: strip(cut(c0, p + 3, length(c0)))
+    iv: repl(scut(c0, 0, p), " ", "_")
+    lim0: scutr(c0, p + 3)
     lim: repl(lim0, " ", "_")
     if plain_name(iv) is 0
         return 0
-    if lsh_find_s(iv) < 0
+    if lshf2(iv) < 0
         return 0
     limn: 0
     if is_imm(lim) is 0
@@ -4878,10 +5001,10 @@ try_append_while cond blines lines li:
     tc: look(l1, ": ")
     if tc < 1
         return 0
-    lnm: repl(strip(cut(l1, 0, tc)), " ", "_")
+    lnm: repl(scut(l1, 0, tc), " ", "_")
     if plain_name(lnm) is 0
         return 0
-    rhs: strip(cut(l1, tc + 2, length(l1)))
+    rhs: scutr(l1, tc + 2)
     fnm: blank
     if _sov_starts_with(rhs, "list_add(") is 1
         fnm: "list_add"
@@ -5067,12 +5190,12 @@ try_cat_while cond blines lines li:
     p: look(c0, " < ")
     if p < 0
         return 0
-    iv: repl(strip(cut(c0, 0, p)), " ", "_")
-    lim0: strip(cut(c0, p + 3, length(c0)))
+    iv: repl(scut(c0, 0, p), " ", "_")
+    lim0: scutr(c0, p + 3)
     lim: repl(lim0, " ", "_")
     if plain_name(iv) is 0
         return 0
-    if lsh_find_s(iv) < 0
+    if lshf2(iv) < 0
         return 0
     limn: 0
     if is_imm(lim) is 0
@@ -5086,14 +5209,14 @@ try_cat_while cond blines lines li:
     tc: look(l1, ": ")
     if tc < 1
         return 0
-    snm: repl(strip(cut(l1, 0, tc)), " ", "_")
+    snm: repl(scut(l1, 0, tc), " ", "_")
     if plain_name(snm) is 0
         return 0
     if _sov_str_eq(snm, iv) is 1
         return 0
-    if lsh_find_s(snm) < 0
+    if lshf2(snm) < 0
         return 0
-    rhs: strip(cut(l1, tc + 2, length(l1)))
+    rhs: scutr(l1, tc + 2)
     if _sov_starts_with(rhs, "str_cat(") is 0
         return 0
     if peek_byte(rhs, length(rhs) - 1) is not 41
@@ -5225,8 +5348,8 @@ try_def_peek var rhs:
     if opc is not 43
         if opc is not 45
             return 0
-    dl: strip(cut(rhs, 0, q))
-    dr: strip(cut(rhs, q + 1, length(rhs)))
+    dl: scut(rhs, 0, q)
+    dr: scutr(rhs, q + 1)
     if pkpeek(dl) is 0
         return 0
     dg: pk_g
@@ -5259,8 +5382,8 @@ try_fill_while cond blines lines li:
     p: look(c, " < ")
     if p < 0
         return 0
-    iv: repl(strip(cut(c, 0, p)), " ", "_")
-    lim0: strip(cut(c, p + 3, length(c)))
+    iv: repl(scut(c, 0, p), " ", "_")
+    lim0: scutr(c, p + 3)
     lim: repl(lim0, " ", "_")
     if plain_name(iv) is 0
         return 0
@@ -5302,13 +5425,13 @@ try_fill_while cond blines lines li:
     c1: look(inn, ",")
     if c1 < 0
         return 0
-    base: repl(strip(cut(inn, 0, c1)), " ", "_")
+    base: repl(scut(inn, 0, c1), " ", "_")
     rest: cut(inn, c1 + 1, length(inn))
     c2: look(rest, ",")
     if c2 < 0
         return 0
-    idx2: repl(strip(cut(rest, 0, c2)), " ", "_")
-    vvv: strip(cut(rest, c2 + 1, length(rest)))
+    idx2: repl(scut(rest, 0, c2), " ", "_")
+    vvv: scutr(rest, c2 + 1)
     if _sov_str_eq(idx2, iv) is 0
         return 0
     if is_imm(vvv) is 0
@@ -5349,8 +5472,8 @@ try_lea_arg ag ai:
         neg: 0
     if p < 0
         return 0
-    nm: strip(cut(ag, 0, p))
-    cs: strip(cut(ag, p + 3, length(ag)))
+    nm: scut(ag, 0, p)
+    cs: scutr(ag, p + 3)
     if plain_name(nm) is 0
         return 0
     if is_imm(cs) is 0
@@ -5364,7 +5487,7 @@ try_lea_arg ag ai:
         return 0
     if v is 0
         return 0
-    sl: reg_slot(nm)
+    sl: regslot2(nm)
     if sl < 0
         return 0
     cflush(nm)
@@ -5424,8 +5547,8 @@ try_inline_pkb nm ac al:
         return 0
     ap: look(a1, " + ")
     if ap > 0 - 1
-        h: strip(cut(a1, 0, ap))
-        k2: strip(cut(a1, ap + 3, length(a1)))
+        h: scut(a1, 0, ap)
+        k2: scutr(a1, ap + 3)
         if plain_name(h) is 1
             if is_imm(k2) is 1
                 pk_kv: num_of(k2)
@@ -5442,8 +5565,8 @@ try_inline_pkb nm ac al:
                         return 1
     am: look(a1, " - ")
     if am > 0 - 1
-        h: strip(cut(a1, 0, am))
-        k2: strip(cut(a1, am + 3, length(a1)))
+        h: scut(a1, 0, am)
+        k2: scutr(a1, am + 3)
         if plain_name(h) is 1
             if is_imm(k2) is 1
                 pk_kv: num_of(k2)
@@ -5474,8 +5597,8 @@ try_opt_while cond blines:
     p: look(c, " < ")
     if p < 0
         return 0
-    iv: repl(strip(cut(c, 0, p)), " ", "_")
-    lim: repl(strip(cut(c, p + 3, length(c))), " ", "_")
+    iv: repl(scut(c, 0, p), " ", "_")
+    lim: repl(scutr(c, p + 3), " ", "_")
     l1: strip(_sov_list_get(blines, 0))
     l2: strip(_sov_list_get(blines, 1))
     inc_r: join(iv, ": ")
@@ -5500,8 +5623,8 @@ try_opt_while cond blines:
     if tc < 0
         return 0
     if tc > 0 - 1
-        acc: repl(strip(cut(work, 0, tc)), " ", "_")
-        rhs: strip(cut(work, tc + 2, length(work)))
+        acc: repl(scut(work, 0, tc), " ", "_")
+        rhs: scutr(work, tc + 2)
             if lim_const(lim) is 0
                 return 0
             if _sov_str_eq(rhs, join(join(acc, " + "), iv)) is 1
@@ -5518,8 +5641,8 @@ try_opt_while cond blines:
                     inn: cut(rhs, length(pfx), length(rhs) - 1)
                     cm: look(inn, ",")
                     if cm > 0
-                        ap: strip(cut(inn, 0, cm))
-                        ix: strip(cut(inn, cm + 1, length(inn)))
+                        ap: scut(inn, 0, cm)
+                        ix: scutr(inn, cm + 1)
                         if _sov_str_eq(ix, join(iv, " times 8")) is 1
                             if _sov_str_eq(ap, iota_ptr) is 1
                                 if _sov_str_eq(lim, iota_lim) is 1
@@ -5646,20 +5769,20 @@ try_opt_while cond blines:
             inside: cut(work, 10, length(work) - 1)
             p1: look(inside, ",")
             if p1 > 0
-                ptr: strip(cut(inside, 0, p1))
+                ptr: scut(inside, 0, p1)
                 rest: cut(inside, p1 + 1, length(inside))
                 p2: look(rest, ",")
                 if p2 > 0
-                    ix: strip(cut(rest, 0, p2))
-                    bv: strip(cut(rest, p2 + 1, length(rest)))
+                    ix: scut(rest, 0, p2)
+                    bv: scutr(rest, p2 + 1)
                     if _sov_str_eq(ix, iv) is 1
                         if _sov_starts_with(bv, "peek_byte(") is 1
                             if peek_byte(bv, length(bv) - 1) is 41 is 1
                                 inn: cut(bv, 10, length(bv) - 1)
                                 q: look(inn, ",")
                                 if q > 0
-                                    src: strip(cut(inn, 0, q))
-                                    ix2: strip(cut(inn, q + 1, length(inn)))
+                                    src: scut(inn, 0, q)
+                                    ix2: scutr(inn, q + 1)
                                     if _sov_str_eq(ix2, iv) is 1
                                         emit_rep_movs(ptr, src, iv, lim)
                                         return 1
@@ -5672,12 +5795,12 @@ try_opt_while cond blines:
             inside: cut(work, 9, length(work) - 1)
             p1: look(inside, ",")
             if p1 > 0
-                ptr: strip(cut(inside, 0, p1))
+                ptr: scut(inside, 0, p1)
                 rest: cut(inside, p1 + 1, length(inside))
                 p2: look(rest, ",")
                 if p2 > 0
-                    ix: strip(cut(rest, 0, p2))
-                    vv: strip(cut(rest, p2 + 1, length(rest)))
+                    ix: scut(rest, 0, p2)
+                    vv: scutr(rest, p2 + 1)
                     if _sov_str_eq(ix, join(iv, " times 8")) is 1
                         if _sov_str_eq(vv, iv) is 1
                             iota_ptr: ptr
@@ -5695,8 +5818,8 @@ try_patfill_while cond blines lines li:
     p: look(c, " < ")
     if p < 0
         return 0
-    iv: repl(strip(cut(c, 0, p)), " ", "_")
-    lim: repl(strip(cut(c, p + 3, length(c))), " ", "_")
+    iv: repl(scut(c, 0, p), " ", "_")
+    lim: repl(scutr(c, p + 3), " ", "_")
     if plain_name(iv) is 0
         return 0
     if is_imm(lim) is 0
@@ -5742,29 +5865,29 @@ try_patfill_while cond blines lines li:
     c1: look(inn, ",")
     if c1 < 0
         return 0
-    dstb: repl(strip(cut(inn, 0, c1)), " ", "_")
+    dstb: repl(scut(inn, 0, c1), " ", "_")
     rest: cut(inn, c1 + 1, length(inn))
     c2: look(rest, ",")
     if c2 < 0
         return 0
-    idx2: repl(strip(cut(rest, 0, c2)), " ", "_")
+    idx2: repl(scut(rest, 0, c2), " ", "_")
     if _sov_str_eq(idx2, iv) is 0
         return 0
-    vvv: strip(cut(rest, c2 + 1, length(rest)))
+    vvv: scutr(rest, c2 + 1)
     if _sov_starts_with(vvv, "peek_byte(") is 0
         return 0
     if peek_byte(vvv, length(vvv) - 1) is 41 is 0
         return 0
-    vinn: strip(cut(vvv, 10, length(vvv) - 1))
+    vinn: scut(vvv, 10, length(vvv) - 1)
     c3: look(vinn, ",")
     if c3 < 0
         return 0
-    srcb: repl(strip(cut(vinn, 0, c3)), " ", "_")
-    midx: strip(cut(vinn, c3 + 1, length(vinn)))
+    srcb: repl(scut(vinn, 0, c3), " ", "_")
+    midx: scutr(vinn, c3 + 1)
     mpre: join(iv, " % ")
     if _sov_starts_with(midx, mpre) is 0
         return 0
-    ptxt: strip(cut(midx, length(mpre), length(midx)))
+    ptxt: scutr(midx, length(mpre))
     if length(ptxt) is 0
         return 0
     if is_imm(ptxt) is 0

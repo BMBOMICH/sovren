@@ -2,11 +2,11 @@
 """Fail-closed global completion accounting. A local subset can never turn it green."""
 import argparse,hashlib,json
 from pathlib import Path
-R=Path(__file__).resolve().parents[1];p=argparse.ArgumentParser();p.add_argument('--evidence-dir',type=Path,default='/tmp/v58');a=p.parse_args();D=a.evidence_dir;D.mkdir(parents=True,exist_ok=True);blockers=[]
+R=Path(__file__).resolve().parents[1];p=argparse.ArgumentParser();p.add_argument('--evidence-dir',type=Path,default='/tmp/v58');p.add_argument('--sa',type=Path,default=Path('/tmp/sa'));a=p.parse_args();D=a.evidence_dir;D.mkdir(parents=True,exist_ok=True);blockers=[]
 def read(path):
- if not path.is_file():blockers.append({'missing_evidence':str(path.relative_to(R))});return None
+ if not path.is_file():blockers.append({'missing_evidence':str(path)});return None
  try:return json.loads(path.read_text())
- except (ValueError,OSError) as e:blockers.append({'invalid_evidence':str(path.relative_to(R)),'error':str(e)});return None
+ except (ValueError,OSError) as e:blockers.append({'invalid_evidence':str(path),'error':str(e)});return None
 registry=read(R/'compilers/registry.json');policy=read(R/'compilers/required-matrix.json');H=lambda p:hashlib.sha256(p.read_bytes()).hexdigest();hosted=read(D/'host-coverage.json')
 if registry:
  for e in registry['entries']:
@@ -32,11 +32,12 @@ for filename in ['conformance.json','output-safety.json','parallel-sugar.json']:
 coverage=read(D/'coverage-cells.json')
 if coverage and registry and policy:
  from itertools import product
- cells=coverage.get('cells',[]);seen={};pinned=H('/tmp/sa')
+ cells=coverage.get('cells',[]);seen={};pinned=H(a.sa) if a.sa.is_file() else None
+ if pinned is None:blockers.append({'reason':'SA binary absent; benchmark identity cannot be verified'})
  for c in cells:
   key=tuple(c.get(k) for k in ['target','host','workload','mode'])
   if key in seen:blockers.append({'reason':'duplicate coverage cell','cell':key})
-  valid=c.get('semantics_pass',False) and c.get('artifact_valid',False) and c.get('latency_upper_95ci',float('inf'))<=1 and c.get('throughput_lower_95ci',0)>=1 and c.get('sa_sha256')==pinned
+  valid=c.get('semantics_pass',False) and c.get('artifact_valid',False) and c.get('latency_upper_95ci',float('inf'))<=1 and c.get('throughput_lower_95ci',0)>=1 and pinned is not None and c.get('sa_sha256')==pinned
   seen[key]=valid
  expected=product([e['id'] for e in registry['entries']],policy['required_hosts'],policy['workload_families'],policy['modes'])
  missing=[key for key in expected if not seen.get(key,False)]

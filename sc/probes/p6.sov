@@ -1,0 +1,16 @@
+check n:
+    if n > 10 -> return 1
+    if not -> return 0
+main:
+    i: 0
+    s: 0
+    as long as i < 100
+        s: s + i % 7 * 2
+        i: i + 1
+    print s
+    print check(5)
+    print check(50)
+    print check(fib2(6))
+fib2 n:
+    if n < 2 -> return n
+    return fib2(n - 1) + fib2(n - 2)

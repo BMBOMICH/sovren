@@ -36,66 +36,25 @@ emit_nt_digitb:
 
 emit_nt_cfind1n:
     # rdi=s rsi=st rdx=lim rcx=ch -> rax = first index in [st, lim) whose
-    # byte equals ch, else -1 (0 when s is 0). leaf: rax/r8/r10/r11 only,
-    # no pushes (sg_cut_at discipline).
-    emit(72)
-    emit(133)
-    emit(255)
-    z0: jz()
-    emit(72)
-    emit(137)
-    emit(240)
-    emit(76)
-    emit(141)
-    emit(28)
-    emit(23)
-    emit(65)
-    emit(137)
-    emit(200)
-    emit(73)
-    emit(137)
-    emit(194)
-    emit(73)
-    emit(1)
-    emit(250)
-    lp: here()
-    emit(77)
-    emit(57)
-    emit(218)
-    nxo: jae()
-    emit(65)
-    emit(15)
-    emit(182)
-    emit(2)
-    emit(68)
-    emit(56)
-    emit(192)
-    e1: jz()
-    emit(73)
-    emit(255)
-    emit(194)
-    emit(233)
-    jb: here()
-    emit4(0)
-    put(jb, lp - (jb + 4))
-    patch(e1)
-    emit(73)
-    emit(41)
-    emit(250)
-    emit(76)
-    emit(137)
-    emit(208)
-    leave()
-    ret()
-    patch(nxo)
-    emit(72)
-    emit(199)
-    emit(192)
-    emit(255)
-    emit(255)
-    emit(255)
-    emit(255)
-    patch(z0)
+    # byte equals ch, else -1 (0 when s is 0). SWAR 8-byte scan: xor the
+    # qword with ch broadcast, classic haszero mask ((x-0x0101..)&~x&
+    # 0x8080..); the LOWEST set byte of that mask is always a real match
+    # (borrows only flag bytes after a true zero), so bsf+shr3 gives the
+    # first hit directly. 8-byte loads stay inside [st,lim), so there is
+    # no NUL overread and no alignment requirement. Volatile-only leaf
+    # (rax rcx rdx r8-r11); assembled+diff-verified in scripts/swar_twins.s
+    # (550k randomized differential cases vs the byte-loop reference).
+    emit:
+        72 137 248 72 133 255 15 132 136 0 0 0 15 182 201 73
+        184 1 1 1 1 1 1 1 1 76 15 175 193 73 185 1
+        1 1 1 1 1 1 1 73 186 128 128 128 128 128 128 128
+        128 76 141 28 55 72 141 20 23 73 141 67 8 72 57 208
+        119 46 73 139 3 76 49 192 72 137 193 76 41 201 72 247
+        208 72 33 193 76 33 209 116 17 72 15 188 201 72 193 233
+        3 73 141 4 11 72 41 248 235 42 73 131 195 8 235 201
+        73 57 211 115 22 65 15 182 3 68 56 192 116 5 73 255
+        195 235 237 76 137 216 72 41 248 235 9 72 199 192 255 255
+        255 255 235 0
     leave()
     ret()
     return 1
@@ -126,6 +85,171 @@ emit_nt_find_col:
     leave()
     ret()
     return 1
+
+emit_nt_strip_span:
+    # rdi = t -> rax. if t is 0 -> blank; skip leading spaces; tab at the
+    # stop byte or trailing blank (< 33) -> strip(t) twin; else t+a.
+    # Assembled/diff-verified in scripts/linefam_tw.s (session 9).
+    emit:
+        72 133 255
+    ssz: jz()
+    emit:
+        49 201
+    sslp: here()
+    emit:
+        15 182 20 15 128 250 32
+    ssn: jne()
+    emit:
+        72 255 193 233
+    ssj: here()
+    emit4(0)
+    put(ssj, sslp - (ssj + 4))
+    patch(ssn)
+    emit:
+        128 250 9
+    sst: jz()
+    emit:
+        72 141 52 15 69 49 192
+    sssl: here()
+    emit:
+        66 15 182 20 6 132 210
+    ssz2: jz()
+    emit:
+        73 255 192 233
+    ssj2: here()
+    emit4(0)
+    put(ssj2, sssl - (ssj2 + 4))
+    patch(ssz2)
+    emit:
+        77 133 192
+    ssz3: jz()
+    emit:
+        66 128 124 6 255 33
+    ssb: jb()
+    patch(ssz3)
+    emit:
+        72 137 240
+    leave()
+    ret()
+    patch(sst)
+    patch(ssb)
+    calln("strip")
+    leave()
+    ret()
+    patch(ssz)
+    load_glob("blank")
+    leave()
+    ret()
+    return 1
+
+emit_nt_indent_of:
+    # rdi = t -> rax = indent weight (space 1, tab 4, stop at the first
+    # other byte; the NUL bound subsumes length()).
+    emit:
+        49 192 49 201
+    iolp: here()
+    emit:
+        15 182 20 15 132 210
+    iod: jz()
+    emit:
+        128 250 32
+    iot: jne()
+    emit:
+        255 192 72 255 193 233
+    ioj1: here()
+    emit4(0)
+    put(ioj1, iolp - (ioj1 + 4))
+    patch(iot)
+    emit:
+        128 250 9
+    ioe: jne()
+    emit:
+        131 192 4 72 255 193 233
+    ioj2: here()
+    emit4(0)
+    put(ioj2, iolp - (ioj2 + 4))
+    patch(ioe)
+    patch(iod)
+    leave()
+    ret()
+    return 1
+
+emit_nt_nl_count_lines:
+    # rdi = t -> rax = newline count, +1 when the last byte is not a
+    # newline (lines_of_fast's tail rule). Plain byte loop: the SWAR
+    # variant's extra complexity is not worth it at this share.
+    emit:
+        49 201
+    ncsl: here()
+    emit:
+        15 182 20 15 132 210
+    ncz: jz()
+    emit:
+        72 255 193 233
+    ncj: here()
+    emit4(0)
+    put(ncj, ncsl - (ncj + 4))
+    patch(ncz)
+    emit:
+        73 137 200 49 192 77 133 192
+    ncz2: jz()
+    emit:
+        49 201
+    nclp: here()
+    emit:
+        76 57 193
+    nct: jae()
+    emit:
+        128 60 15 10
+    ncn: jne()
+    emit:
+        72 255 192
+    patch(ncn)
+    emit:
+        72 255 193 233
+    ncj2: here()
+    emit4(0)
+    put(ncj2, nclp - (ncj2 + 4))
+    patch(nct)
+    emit:
+        66 128 124 7 255 10
+    ncd: jz()
+    emit:
+        72 255 192
+    patch(ncd)
+    patch(ncz2)
+    leave()
+    ret()
+    return 1
+
+emit_nt_rpx_nonspace:
+    # rdi = s -> rax = index of the first non-space byte, else -1.
+    emit:
+        49 201
+    rplp: here()
+    emit:
+        15 182 20 15 132 210
+    rpz: jz()
+    emit:
+        128 250 32
+    rpn: jne()
+    emit:
+        72 255 193 233
+    rpj: here()
+    emit4(0)
+    put(rpj, rplp - (rpj + 4))
+    patch(rpn)
+    emit:
+        72 137 200
+    leave()
+    ret()
+    patch(rpz)
+    emit:
+        72 199 192 255 255 255 255
+    leave()
+    ret()
+    return 1
+
 
 emit_nt_find_col_q:
     emit(49)
@@ -867,12 +991,145 @@ emit_nt_cut:
     ret()
     return 1
 
+emit_nt_rax_imm:
+    # Volatile-arg twin of rax_imm (cx86_p6), ABI-faithful:
+    #   rbx saved/restored (the .sov body pushes it; callers keep live
+    #   values there across the call), result 0 (the .sov epilogue's
+    #   xor eax,eax), rdi/rsi/r9/rax scratch as the arg registers are.
+    #   if n is 0 -> emit2(49,192); return 0
+    #   if n >= 0 and n < 2^32 -> emit(184); emit4(n); return 0
+    #   emit2(72,191); emit8(n) [inlined: a literal calln("emit8") trips
+    #   the hex-block sugar's generated zz-temp numbering in the parse]
+    emit(83)
+    emit(72)
+    emit(137)
+    emit(251)
+    emit(72)
+    emit(133)
+    emit(219)
+    ri0: jnz()
+    emit(72)
+    emit(199)
+    emit(199)
+    emit4(49)
+    emit(72)
+    emit(199)
+    emit(198)
+    emit4(192)
+    calln("emit2")
+    emit(72)
+    emit(49)
+    emit(192)
+    emit(91)
+    ret()
+    patch(ri0)
+    emit(72)
+    emit(137)
+    emit(216)
+    emit(72)
+    emit(193)
+    emit(232)
+    emit(32)
+    rib: jnz()
+    emit(72)
+    emit(199)
+    emit(199)
+    emit4(184)
+    calln("emit")
+    emit(72)
+    emit(137)
+    emit(223)
+    calln("emit4")
+    emit(72)
+    emit(49)
+    emit(192)
+    emit(91)
+    ret()
+    patch(rib)
+    emit(72)
+    emit(199)
+    emit(199)
+    emit4(72)
+    emit(72)
+    emit(199)
+    emit(198)
+    emit4(184)
+    calln("emit2")
+    # emit8(rbx) inlined
+    load_glob("oc_n")
+    emit(76)
+    emit(141)
+    emit(72)
+    emit(8)
+    load_glob("oc_cap")
+    emit(76)
+    emit(57)
+    emit(200)
+    ri8g: jae()
+    emit(83)
+    calln("ocgrow")
+    emit(91)
+    patch(ri8g)
+    load_glob("oc_n")
+    emit(73)
+    emit(137)
+    emit(193)
+    load_glob("oc")
+    emit(76)
+    emit(1)
+    emit(200)
+    emit(72)
+    emit(137)
+    emit(24)
+    emit(73)
+    emit(131)
+    emit(193)
+    emit(8)
+    emit(76)
+    emit(137)
+    emit(200)
+    store_glob("oc_n")
+    emit(72)
+    emit(49)
+    emit(192)
+    emit(91)
+    ret()
+    return 1
+emit_nt_reg_slot:
+    # Volatile-only frameless twin of regslot2 (cx86_p6):
+    #   sl: lshf2(name); if sl > -1 and sl < 5 -> return sl; return -1
+    # rdi is name on entry, rax the result; signed compares (the > 0-1
+    # idiom is a signed >= 0 test).  lshf2 itself twin-plants
+    # (emit_nt_lsh_find), so calln resolves to that body.
+    calln("lshf2")
+    emit(72)
+    emit(131)
+    emit(248)
+    emit(255)
+    rs1: jle()
+    emit(72)
+    emit(131)
+    emit(248)
+    emit(5)
+    rs2: jge()
+    ret()
+    patch(rs1)
+    patch(rs2)
+    emit(72)
+    emit(199)
+    emit(192)
+    emit4(0 - 1)
+    ret()
+    return 1
 emit_nt_lsh_find:
-    # rbx is v, the name string.  fast path of lsh_find_s:
-    #   locals and lh_tab nonzero, probe the 1048576-slot open table:
-    #   s is nhash(v) and 1048575 forward, ve is keys[s], ve2 is tags[1048576+s]
-    #   hit requires ve2 / 1048576 is lh_gen, then ve is v or str_eq(ve, v)
-    # slow shapes (locals is 0, lh_tab is 0 build case, table full walk)
+    # rbx is v, the name string.  fast path of lshf2 over the
+    # pre-sized table (Phase-3 layout): s is nhash(v) & lh_mask forward,
+    # ve is keys[s] at lh_tab, ve2 is tags[s] at lh_tgs; a hit requires
+    # ve2 >> 32 == lh_gen, then ve is v or str_eq(ve, v); idx is
+    # (ve2 & 0xffffffff) - 1. lh_slots/lh_mask are stashed at
+    # [rbp-0x30]/[rbp-0x38] (the twin wrapper's scratch under the five
+    # saved regs); r13 is the probe counter and r15 the tags base.
+    # Slow shapes (locals is 0, lh_tab is 0 build case, full walk)
     # delegate to lsh_find_full which owns the original body verbatim.
     load_glob("locals")
     test_rax()
@@ -889,13 +1146,25 @@ emit_nt_lsh_find:
     emit(73)
     emit(137)
     emit(196)
+    load_glob("lh_slots")
+    emit(72)
+    emit(137)
+    emit(69)
+    emit(208)
+    emit(72)
+    emit(255)
+    emit(200)
+    emit(72)
+    emit(137)
+    emit(69)
+    emit(200)
     emit(73)
-    emit(129)
-    emit(228)
-    emit(255)
-    emit(255)
-    emit(0)
-    emit(0)
+    emit(33)
+    emit(196)
+    load_glob("lh_tgs")
+    emit(73)
+    emit(137)
+    emit(199)
     emit(73)
     emit(199)
     emit(197)
@@ -914,47 +1183,30 @@ emit_nt_lsh_find:
     s3: jz()
     emit(79)
     emit(139)
-    emit(140)
-    emit(230)
-    emit(0)
-    emit(0)
-    emit(8)
-    emit(0)
+    emit(12)
+    emit(231)
     emit(77)
     emit(137)
     emit(202)
     emit(73)
     emit(193)
     emit(250)
-    emit(16)
+    emit(32)
     load_glob("lh_gen")
     emit(73)
     emit(57)
     emit(194)
     s4: jne()
-    emit(73)
-    emit(129)
-    emit(225)
-    emit(255)
-    emit(255)
-    emit(0)
-    emit(0)
+    emit(69)
+    emit(137)
+    emit(201)
     emit(73)
     emit(255)
     emit(201)
-    emit(73)
-    emit(57)
-    emit(216)
-    s5: jne()
     emit(76)
-    emit(137)
-    emit(200)
-    leave()
-    ret()
-    patch(s5)
-    emit(77)
-    emit(137)
-    emit(207)
+    emit(57)
+    emit(195)
+    s5: jz()
     emit(76)
     emit(137)
     emit(199)
@@ -964,33 +1216,28 @@ emit_nt_lsh_find:
     calln("_sov_str_eq")
     test_rax()
     s6: jz()
+    patch(s5)
     emit(76)
     emit(137)
-    emit(248)
+    emit(200)
     leave()
     ret()
-    patch(s4)
     patch(s6)
+    patch(s4)
     emit(73)
     emit(255)
     emit(196)
-    emit(73)
-    emit(129)
-    emit(228)
-    emit(255)
-    emit(255)
-    emit(0)
-    emit(0)
+    emit(76)
+    emit(35)
+    emit(101)
+    emit(200)
     emit(73)
     emit(255)
     emit(197)
-    emit(73)
-    emit(129)
-    emit(253)
-    emit(0)
-    emit(0)
-    emit(1)
-    emit(0)
+    emit(76)
+    emit(59)
+    emit(109)
+    emit(208)
     emit(15)
     emit(140)
     emit4(lt - (here() + 4))
@@ -1606,14 +1853,16 @@ emit_nt_lb_words:
     return 1
 
 emit_nt_lsh_add:
-    # rbx is v.  fast path of lsh_add over the 1048576-slot table:
-    # s is nhash(v) and 1048575 forward, ve is keys[s] at lh_tab,
-    # ve2 is tags[1048576+s] (tag = lh_gen<<20 | idx+1).  Empty or
-    # stale-generation slot inserts here (list_len/list_add calls);
-    # a current-generation byte-equal name returns its idx.  lh_tab
-    # unset or a full-table walk delegates to lsh_add_full, the
-    # verbatim original body.  The shadow warnings in the original
-    # sit behind nat_gate is 0 and this twin only fires under it.
+    # rbx is v.  fast path of lsha2 over the pre-sized table (Phase-3
+    # layout): s is nhash(v) & lh_mask forward, ve is keys[s] at lh_tab,
+    # ve2 is tags[s] at lh_tgs (tag = lh_gen<<32 | idx+1).  Empty or
+    # stale-generation slot inserts here (list_len/list_add calls); a
+    # current-generation byte-equal name returns (ve2 & 0xffffffff) - 1.
+    # lh_slots/lh_mask live at [rbp-0x30]/[rbp-0x38]; r13 is the probe
+    # counter and r15 the tags base (reused for idx after the loop).
+    # lh_tab unset or a full-table walk delegates to lsh_add_full, the
+    # verbatim body (which grows the table).  The shadow warnings in the
+    # original sit behind nat_gate is 0 and this twin only fires under it.
     load_glob("lh_tab")
     emit(73)
     emit(137)
@@ -1627,13 +1876,25 @@ emit_nt_lsh_add:
     emit(73)
     emit(137)
     emit(196)
+    load_glob("lh_slots")
+    emit(72)
+    emit(137)
+    emit(69)
+    emit(208)
+    emit(72)
+    emit(255)
+    emit(200)
+    emit(72)
+    emit(137)
+    emit(69)
+    emit(200)
     emit(73)
-    emit(129)
-    emit(228)
-    emit(255)
-    emit(255)
-    emit(0)
-    emit(0)
+    emit(33)
+    emit(196)
+    load_glob("lh_tgs")
+    emit(73)
+    emit(137)
+    emit(199)
     emit(73)
     emit(199)
     emit(197)
@@ -1652,37 +1913,26 @@ emit_nt_lsh_add:
     si0: jz()
     emit(79)
     emit(139)
-    emit(140)
-    emit(230)
-    emit(0)
-    emit(0)
-    emit(8)
-    emit(0)
+    emit(12)
+    emit(231)
     emit(77)
     emit(137)
     emit(202)
     emit(73)
     emit(193)
     emit(250)
-    emit(16)
+    emit(32)
     load_glob("lh_gen")
     emit(73)
     emit(57)
     emit(194)
     si1: jne()
-    emit(77)
+    emit(69)
     emit(137)
-    emit(207)
-    emit(73)
-    emit(129)
-    emit(239)
-    emit(255)
-    emit(255)
-    emit(0)
-    emit(0)
+    emit(201)
     emit(73)
     emit(255)
-    emit(207)
+    emit(201)
     emit(76)
     emit(57)
     emit(195)
@@ -1699,30 +1949,24 @@ emit_nt_lsh_add:
     patch(sh0)
     emit(76)
     emit(137)
-    emit(248)
+    emit(200)
     leave()
     ret()
     patch(sn0)
     emit(73)
     emit(255)
     emit(196)
-    emit(73)
-    emit(129)
-    emit(228)
-    emit(255)
-    emit(255)
-    emit(0)
-    emit(0)
+    emit(76)
+    emit(35)
+    emit(101)
+    emit(200)
     emit(73)
     emit(255)
     emit(197)
-    emit(73)
-    emit(129)
-    emit(253)
-    emit(0)
-    emit(0)
-    emit(1)
-    emit(0)
+    emit(76)
+    emit(59)
+    emit(109)
+    emit(208)
     emit(15)
     emit(140)
     emit4(lt - (here() + 4))
@@ -1757,25 +2001,25 @@ emit_nt_lsh_add:
     emit(137)
     emit(28)
     emit(230)
+    load_glob("lh_tgs")
+    emit(72)
+    emit(137)
+    emit(193)
     load_glob("lh_gen")
     emit(72)
     emit(193)
     emit(224)
-    emit(16)
+    emit(32)
     emit(76)
     emit(1)
     emit(248)
     emit(72)
     emit(255)
     emit(192)
-    emit(75)
+    emit(74)
     emit(137)
-    emit(132)
-    emit(230)
-    emit(0)
-    emit(0)
-    emit(8)
-    emit(0)
+    emit(4)
+    emit(225)
     emit(76)
     emit(137)
     emit(248)
@@ -2417,70 +2661,67 @@ emit_nt_sg_thresh:
     return 1
 
 emit_nt_expr_atom:
-    # byte-exact with expr_atom: 1 iff every byte of the NUL-terminated
-    # string is in [A-Za-z0-9_]; empty string returns 0.  rdi = e, rax = out.
-    # Clobbers rax/rcx/rdi only (same set as emit_nt_sg_marks).
+    # Exact [A-Za-z0-9_]+ predicate. Every accepted character, including
+    # lowercase letters, advances to the next byte; all failures return 0.
     emit(49)
     emit(192)
     emit(72)
     emit(133)
     emit(255)
     emit(116)
-    emit(59)
+    emit(57)
     emit(128)
     emit(63)
     emit(0)
     emit(116)
-    emit(54)
+    emit(52)
     emit(15)
     emit(182)
     emit(15)
     emit(132)
     emit(201)
     emit(116)
-    emit(42)
+    emit(40)
     emit(128)
     emit(249)
     emit(95)
     emit(116)
-    emit(32)
+    emit(30)
     emit(128)
     emit(249)
     emit(48)
     emit(114)
-    emit(25)
-    emit(128)
-    emit(249)
-    emit(122)
-    emit(119)
-    emit(20)
+    emit(35)
     emit(128)
     emit(249)
     emit(57)
     emit(118)
-    emit(17)
+    emit(20)
     emit(128)
     emit(249)
     emit(65)
     emit(114)
-    emit(10)
+    emit(25)
     emit(128)
     emit(249)
     emit(90)
     emit(118)
-    emit(7)
+    emit(10)
     emit(128)
     emit(249)
     emit(97)
     emit(114)
-    emit(0)
-    emit(235)
+    emit(15)
+    emit(128)
+    emit(249)
+    emit(122)
+    emit(119)
     emit(10)
     emit(72)
     emit(255)
     emit(199)
     emit(235)
-    emit(207)
+    emit(209)
     emit(184)
     emit(1)
     emit(0)
@@ -3077,134 +3318,6 @@ emit_nt_sg_plain:
     ret()
     return 1
 
-emit_nt_lines_of_fast:
-    emit(87)
-    calln("_sov_strlen")
-    emit(72)
-    emit(133)
-    emit(192)
-    lnz: jnz()
-    emit(88)
-    calln("_sov_list_new")
-    leave()
-    ret()
-    patch(lnz)
-    emit(80)
-    emit(72)
-    emit(141)
-    emit(120)
-    emit(1)
-    calln("_sov_heap_alloc")
-    emit(89)
-    emit(94)
-    emit(81)
-    emit(80)
-    emit(72)
-    emit(137)
-    emit(199)
-    emit(243)
-    emit(164)
-    emit(198)
-    emit(7)
-    emit(0)
-    emit(65)
-    emit(88)
-    emit(89)
-    emit(72)
-    emit(141)
-    emit(60)
-    emit(205)
-    emit(24)
-    emit(0)
-    emit(0)
-    emit(0)
-    emit(65)
-    emit(80)
-    emit(81)
-    calln("_sov_heap_alloc")
-    emit(89)
-    emit(65)
-    emit(88)
-    emit(72)
-    emit(137)
-    emit(8)
-    emit(72)
-    emit(255)
-    emit(0)
-    emit(49)
-    emit(210)
-    emit(77)
-    emit(49)
-    emit(201)
-    emit(77)
-    emit(49)
-    emit(210)
-    scn: here()
-    emit(72)
-    emit(57)
-    emit(202)
-    scd: jae()
-    emit(65)
-    emit(128)
-    emit(60)
-    emit(16)
-    emit(10)
-    nlf: jnz()
-    emit(65)
-    emit(198)
-    emit(4)
-    emit(16)
-    emit(0)
-    emit(79)
-    emit(141)
-    emit(28)
-    emit(16)
-    emit(78)
-    emit(137)
-    emit(92)
-    emit(200)
-    emit(16)
-    emit(73)
-    emit(255)
-    emit(193)
-    emit(76)
-    emit(141)
-    emit(82)
-    emit(1)
-    patch(nlf)
-    emit(72)
-    emit(255)
-    emit(194)
-    emit(233)
-    snx: here()
-    emit4(0)
-    put(snx, scn - (snx + 4))
-    patch(scd)
-    emit(73)
-    emit(57)
-    emit(202)
-    more: jae()
-    emit(79)
-    emit(141)
-    emit(28)
-    emit(16)
-    emit(78)
-    emit(137)
-    emit(92)
-    emit(200)
-    emit(16)
-    emit(73)
-    emit(255)
-    emit(193)
-    patch(more)
-    emit(76)
-    emit(137)
-    emit(72)
-    emit(8)
-    leave()
-    ret()
-    return 1
-
 emit_nt_bt_prep:
     # native twin of bt_prep(lines): fills bt_m/ind/col/eq/tab/tr
     # (quote idx, indent, first colon, first =, has tab, trailing ws)
@@ -3556,7 +3669,7 @@ emit_nt_ocgrow:
     emit(192)
     emit(0)
     emit(0)
-    emit(16)
+    emit(64)
     emit(0)
     emit(233)
     gotn: here()
@@ -3700,7 +3813,9 @@ emit_nt_emit3:
     emit(81)
     emit(86)
     emit(87)
+    emit(82)
     calln("ocgrow")
+    emit(90)
     emit(95)
     emit(94)
     emit(89)
@@ -4543,6 +4658,83 @@ emit_nt_dir_of:
     ret()
     return 1
 
+emit_nt_intern_kid_n:
+    # Volatile-only frameless hit path for intern_kid_n(rdi=s, rsi=n).
+    prof_emit("prof_bytes_scanned", 6)
+    load_glob("kid_ht")
+    test_rax()
+    iknd1: jz()
+    emit3(73, 137, 192)
+    load_glob("kid_slots")
+    prof_emit("prof_hash_probes", 0 - 1)
+    emit:
+        76 141 72 255 184 5 21 0 0 49 201 72 133 246 116 19
+        15 182 20 15 72 107 192 33 72 1 208 72 255 193 72 57 241 114 237
+        73 137 194 77 33 202 69 49 219 75 139 4 208 72 133 192 116 44
+        128 60 48 0 117 24 72 133 246 116 18 49 201 138 20 15 58 20 8
+        117 9 72 255 193 72 57 241 114 240 195 73 255 194 77 33 202 73 255 195
+        77 57 203 118 203
+    # --- run end reached two ways: the empty-slot je (rax = 0, the loaded
+    # slot value) or probe exhaustion (rax != 0: the last probed slot was
+    # occupied). Distinguish, then take the native insert path only for the
+    # empty slot. Assembled/diff-verified in scripts/ik_insert.s. Register
+    # map at entry: rdi=s, rsi=n, r8=kid_ht, r9=slots-1, r10=slot. ---
+    emit:
+        72 133 192
+    ikex: jnz()
+    # growth check: kcnt*3 > kid_slots -> delegate
+    load_glob("kcnt")
+    emit:
+        72 107 192 3 73 141 81 1 72 57 208
+    ikng: jg()
+    emit:
+        73 137 243
+    load_glob("kid_pool")
+    emit:
+        72 137 194 72 139 10
+    load_glob("kid_poolcap")
+    emit:
+        74 141 116 25 2 72 57 198
+    iknp: jg()
+    emit:
+        72 137 200 72 141 116 2 8
+        72 135 254 76 137 217 243 164 198 7 0
+        74 141 4 24 72 255 192 72 137 2
+        76 41 216 72 255 200 72 141 68 2 8 73 137 195
+        79 137 28 208
+    load_glob("kcnt")
+    emit:
+        72 255 192
+    store_glob("kcnt")
+    emit:
+        76 137 216
+    emit(195)
+    # --- pool-overflow delegate (iknp): the overflow check computed
+    # off+n+2 INTO RSI (lea rsi,[rcx+r11+2]; cmp rsi,rax), so rsi no
+    # longer holds the caller's n at the branch. Restore it from r11
+    # (saved at the check's head) before the tail-jump, or the verbatim
+    # body hashes off+n+2 bytes and walks off the line buffer -- the
+    # 5k-locals segfault cliff (measured: n = poolcur + namelen + 2,
+    # e.g. 65524+5+2 = 65531; self-compile never reaches this path,
+    # small tests never fill the pool, so both gates stay byte-stable).
+    # Exhaustion (ikex), growth (ikng) and init (iknd1) arrive with
+    # rdi/rsi intact and share the plain tail. ---
+    patch(iknp)
+    emit:
+        76 137 222
+    emit(233)
+    iknpj: here()
+    emit4(0)
+    addp(iknpj, "rel", "intern_kid_n_full")
+    patch(ikex)
+    patch(ikng)
+    patch(iknd1)
+    emit(233)
+    iknj: here()
+    emit4(0)
+    addp(iknj, "rel", "intern_kid_n_full")
+    return 1
+
 emit_nt_intern_kid:
     # fast HIT path of intern_kid (rbx = s after copyargs): djb2 the
     # string, probe the CURRENT table, return the canonical pointer on
@@ -4561,6 +4753,7 @@ emit_nt_intern_kid:
         73 137 198
         72 137 222 184 5 21 0 0 49 201
     ikhl: here()
+    prof_emit("prof_bytes_scanned", 0 - 1)
     emit:
         15 182 20 14 132 210
     ikdn: jz()
@@ -4576,6 +4769,7 @@ emit_nt_intern_kid:
     emit:
         73 137 197 76 137 234 72 255 202 73 33 212 69 49 255
     ikpb: here()
+    prof_emit("prof_hash_probes", 0 - 1)
     emit:
         79 139 4 230 77 133 192
     ikd2: jz()
@@ -4589,11 +4783,65 @@ emit_nt_intern_kid:
     leave()
     ret()
     patch(ikne)
+    # advance block + probe loop backedge
     emit:
         73 255 196 76 137 234 72 255 202 73 33 212 73 255 199 77 57 239 15 140
     emit4(ikpb - (here() + 4))
-    patch(ikd1)
+    # probe-loop exhaustion falls through here -> delegate (never happens;
+    # the guard is slots, the load factor is < 1/3, but keep it exact).
+    ikexf: jmp()
+    # --- native INSERT path (ikd2 = first empty slot; assembled in
+    # scripts/ik_insert.s and diff-verified with as/objdump). Growth
+    # (kcnt*3 > kid_slots) and pool overflow (off+n+2 > kid_poolcap)
+    # still delegate to intern_kid_full, which re-hashes, grows and
+    # re-probes the way the Sovren body always did. Register map at
+    # entry: rbx=s, r14=kid_ht, r13=kid_slots, r12=slot, r15=guard. ---
     patch(ikd2)
+    load_glob("kcnt")
+    emit:
+        72 107 192 3
+        76 57 232
+    ikig: jg()
+    emit:
+        72 49 201
+    iknl: here()
+    emit:
+        15 182 20 11 132 210
+    iknz: jz()
+    emit:
+        72 255 193 233
+    iknx2: here()
+    emit4(0)
+    put(iknx2, iknl - (iknx2 + 4))
+    patch(iknz)
+    emit:
+        73 137 200
+    load_glob("kid_pool")
+    emit:
+        73 137 193 73 139 17
+    load_glob("kid_poolcap")
+    emit:
+        78 141 84 2 2 73 57 194
+    ikp1: jg()
+    emit:
+        78 141 84 10 8 76 137 215 72 137 222 76 137 193
+        243 164 198 7 0
+        74 141 4 2 72 255 192 73 137 1
+        79 137 20 230
+    load_glob("kcnt")
+    emit:
+        72 255 192
+    store_glob("kcnt")
+    emit:
+        76 137 208
+    leave()
+    ret()
+    # --- delegate block: init (ikd1), exhaustion (ikexf), growth (ikig),
+    # pool overflow (ikp1) all run the verbatim Sovren body. ---
+    patch(ikexf)
+    patch(ikig)
+    patch(ikp1)
+    patch(ikd1)
     emit:
         72 137 223
     calln("intern_kid_full")

@@ -1,206 +1,81 @@
-use:
-    include inc/px00.sov 6 4 (arg string file proc)
-    sys ;; dir
-    num
+# unsafe-module
+use arg
+use string
+use file
+use proc
+use sys
+use num
+use dir
 
 lc_version:
     print 'Sovren 0.1.0'
 lc_help:
-    print 'Usage: sovren <file.sov> [-o out] [target]' ;; print ''
-    print 'Targets:'
-    print:
-        '  (none)         Linux, ELF x86-64'
-        '  --freebsd      FreeBSD, ELF x86-64'
-        '  --netbsd       NetBSD, ELF x86-64'
-        '  --openbsd      OpenBSD, ELF x86-64'
-        '  --dragonfly    DragonFly BSD, ELF x86-64'
-        '  --redox        Redox OS, ELF x86-64'
-        '  --qnx          QNX Neutrino, ELF x86-64'
-        '  --serenityos   SerenityOS, ELF x86-64'
-        '  --menuetos     MenuetOS 64, MENUET64 image (int 0x60)'
-        '  --sovrenos     SovrenOS, ELF x86-64 (the native schema)'
-        '  --illumos      illumos (OpenSolaris), ELF x86-64'
-        '  --haiku        Haiku, ELF x86-64'
-        '  --windows      Windows, PE32+ x86-64'
-        '  --windows-arm64 Windows, PE32+ ARM64'
-        '  --windows-dll Windows shared library, PE32+ x86-64 DLL'
-        '  --mac          macOS, Mach-O x86-64'
-        '  --macos-arm64  macOS, Mach-O arm64'
-        '  --arm64e       macOS arm64e, Mach-O with pointer-authentication ABI'
-        '  --arm64_32     watchOS arm64_32, Mach-O LP32 (64-bit hardware, 32-bit types)'
-        '  --linux-arm64  Linux, ELF aarch64'
-        '  --linux-armv7  Linux, ELF ARMv7 EABI'
-        '  --armv5        Linux armv5 old-ABI (OABI) ELF32 executable'
-        '  --armv7a-armel  Linux armv7a EABI5 soft-float ELF32 (armel)'
-        '  --a / --lib     static archive (.a): ar(1) around an ELF relocatable object'
-        '  --so / --shared  shared object (.so): reuse the ELF .so writer'
-        '  --dll           import library / dynamic library (.dll)'
-        '  --hypervisor    hypervisor image: ELF64 + PT_NOTE entry ABI'
-        '  --eh-frame      ELF with a real .eh_frame (CIE + FDE) section'
-        '  --pdata         PE with a real .pdata exception directory'
-        '  --windows-store Microsoft Store packaged app'
-        '  --windows-arm64ec  ARM64EC (x64 code under ARM64 emulation)'
-        '  --harmonyos     HarmonyOS/OpenHarmony HAP package (ZIP + module.json)'
-        '  --avr           ELF32 Atmel AVR (8-bit)'
-        '  --msp430        ELF32 TI MSP430 (16-bit)'
-        '  --arc           ELF32 Synopsys ARC (ARCompact)'
-        '  --xtensa        ELF32 Tensilica Xtensa (ESP32)'
-        '  --dex           Dalvik .dex bytecode container (Adler-32 + SHA-1)'
-        '  --aix           XCOFF64 (AIX, magic 0x01F7)'
-        '  --plan9         Plan 9 a.out (amd64 S_MAGIC)'
-        '  --fuchsia       Fuchsia FAR archive (Zircon package container)'
-        '  --hexagon       ELF32 Qualcomm Hexagon DSP6 (e_machine=164)'
-        '  --riscv64-be    ELF64 RISC-V, big-endian'
-        '  --arm64-sve     ELF64 AArch64 + SVE (v8.2-A) attributes'
-        '  --arm64-sve2    ELF64 AArch64 + SVE2 (v9.0-A) attributes'
-        '  --arm64-mte     ELF64 AArch64 + MTE (v8.5-A) attributes'
-        '  --evm           Ethereum VM bytecode (PUSH1/STOP)'
-        '  --hpux          HP-UX SOM executable (PA-RISC 1.1, a_magic 0x0108)'
-        '  --c166          Infineon C166 OMF166 object module (absolute)'
-        '  --8051          8051 raw image (MOV A,#n; SJMP .)'
-        '  --z80           Zilog Z80 raw image (LD A,n; HALT)'
-        '  --ez80          Zilog eZ80 raw image'
-        '  --6502          6502 raw image (LDA #n; BRK)'
-        '  --pic16         Microchip PIC16 raw image (MOVLW)'
-        '  --pic18         Microchip PIC18 raw image (MOVLW)'
-        '  --linux-riscv64 Linux, ELF riscv64gc'
-        '  --riscv64v      Linux riscv64 + Vector (V) extension ELF64 (.riscv.attributes)'
-        '  --riscv64h      Linux riscv64 + Hypervisor (H) extension ELF64 (.riscv.attributes)'
-        '  --riscv32zfinx  Linux riscv32 + Zfinx extension ELF32 (.riscv.attributes)'
-        '  --riscv32zdinx  Linux riscv32 + Zdinx extension ELF32 (.riscv.attributes)'
-        '  --linux-ppc64le Linux, ELF ppc64le ELFv2'
-        '  --linux-s390x Linux, ELF IBM Z/s390x'
-        '  --linux-mips64 Linux, ELF MIPS64 N64 big-endian'
-        '  --linux-mips64el Linux, ELF MIPS64 N64 little-endian'
-        '  --linux-loongarch64 Linux, ELF LoongArch64'
-        '  --linux-so     Linux shared library, ELF x86-64 .so'
-        '  --linux-arm64-so Linux shared library, ELF aarch64 .so'
-        '  --android      Android, ELF aarch64'
-        '  --android-so   Android shared library'
-        '  --wasi         WebAssembly wasm32-wasi command module'
-        '  --wasm32       WebAssembly wasm32 unknown-unknown pure module'
-        '  --wasm32-simd  WebAssembly wasm32 module with SIMD v128 probe'
-        '  --wasm64       WebAssembly memory64 module with exported memory'
-        '  --wasm32-threads WebAssembly wasm32 module with shared memory and atomics probe'
-        '  --wasm32-browser Browser HTML wrapper with embedded wasm32 module'
-        '  --wasm32-emscripten Emscripten-style HTML shell with Module/ccall/cwrap'
-        '  --wasm32-edge Edge-worker JS module with embedded wasm32 module'
-        '  --wasm-component WebAssembly component-model package with WIT/canonical ABI metadata'
-        '  --wat          WebAssembly text module emitter'
-        '  --js           JavaScript emitter for Node and browsers'
-        '  --ts           TypeScript emitter'
-        '  --jvm          JVM .class emitter'
-        '  --csharp       C# source emitter for CLR/.NET-style runtimes'
-        '  --cil          CIL/IL source emitter for CLR/.NET-style runtimes'
-        '  --cil-pe       CIL PE/CLI assembly emitter for CLR/Mono runtimes'
-        '  --metal        Metal Shading Language compute kernel emitter'
-        '  --wgsl         WGSL compute shader source emitter'
-        '  --glsl         GLSL 450 compute shader source emitter'
-        '  --hlsl         HLSL compute shader source emitter'
-        '  --metal-air    Packaged Metal AIR seed artifact'
-        '  --metallib     Packaged Metal library seed artifact'
-        '  --ptx          NVIDIA PTX kernel text emitter'
-        '  --amdgcn       AMD GCN/RDNA kernel assembly text emitter'
-        '  --intel-xe     Intel Xe/GEN kernel assembly text emitter'
-        '  --spirv        SPIR-V compute module emitter'
-        '  --ios          iOS, Mach-O arm64, code signed'
-        '  --ios-framework iOS framework binary, Mach-O arm64 dylib'
-        '  --ipados       iPadOS, the same file: it reports the iOS platform'
-        '  --tvos         tvOS, Mach-O arm64'
-        '  --watchos      watchOS, Mach-O arm64'
-        '  --visionos     visionOS, Mach-O arm64'
-        '  --ios-simulator      iOS simulator, the arm64 slice'
-        '  --tvos-simulator     tvOS simulator'
-        '  --watchos-simulator  watchOS simulator'
-        '  --visionos-simulator visionOS simulator'
-        '  --universal    macOS fat binary: x86_64 + arm64 slices'
-        '  --uefi         UEFI x86-64 PE/COFF .efi application'
-        '  --bare         Bare metal x86-64 flat image, no OS'
-        '  --kernel       Alias for the bare x86-64 flat image'
-        '  --cortex-m     ARM Cortex-M Thumb vector-table firmware image'
-        '  --riscv64-bare RISC-V RV64 freestanding flat firmware image'
-        '  --riscv32-bare RISC-V RV32IMAC freestanding flat firmware image'
-        '  --riscv32e     RISC-V RV32E (16-register) freestanding flat firmware image'
-        '  --thumbv7m     ARM Thumb ARMv7-M (Cortex-M3) vector-table firmware image'
-        '  --thumbv7em    ARM Thumb ARMv7E-M (Cortex-M4/M7) vector-table firmware image'
-        '  --thumbv6m     ARM Thumb ARMv6-M (Cortex-M0/M0+) vector-table firmware image'
-        '  --thumbv8m     ARM Thumb ARMv8-M (Cortex-M23/M33) vector-table firmware image'
-        '  --ihex         Intel HEX firmware packaging for the bare payload'
-        '  --srec         Motorola S-record firmware packaging for the bare payload'
-        '  --uf2          UF2 firmware packaging for the bare payload'
-        '  --dfu          USB DFU/DfuSe firmware packaging for the bare payload'
-        '  --firmware-img MCUboot IMG packaging for the bare payload'
-        '  --freertos     FreeRTOS C task shim over the freestanding profile'
-        '  --zephyr       Zephyr C thread shim over the freestanding profile'
-        '  --nuttx        NuttX pthread-style C shim over the freestanding profile'
-        '  --riot         RIOT thread_create C shim over the freestanding profile'
-        '  --rt-thread    RT-Thread C shim over the freestanding profile'
-        '  --mbed         Mbed OS C++ Thread shim over the freestanding profile'
-        '  --threadx      Azure RTOS ThreadX C shim over the freestanding profile'
-        '  --ti-rtos      TI-RTOS/SYS-BIOS Task shim over the freestanding profile'
-        '  --embos        SEGGER embOS task shim over the freestanding profile'
-        '  --chromium-ec  Chromium EC task shim over the freestanding profile'
-        '  --kernel       Freestanding flat kernel payload'
-        '  --sxe          Sovren Executable v1 container'
-        '  --c            C source emitter (portable subset backend)'
-        '  --llvm-ir      LLVM IR emitter (portable subset backend)'
-        '  --ebpf         eBPF assembly emitter (EM_BPF, command subset)'
-        '  --qbe          QBE IR emitter (portable reach-multiplier backend)'
-        '  --multiboot    Multiboot1 bootable image (address-fields header)'
-        '  --dos          DOS .COM program (x86-16 real mode, flat image)'
-        '  --com          alias for --dos (DOS .COM)'
-        '  --x86-16       alias for --dos (16-bit real mode)'
-        '  --mz           DOS MZ .EXE executable (MZ header + code)'
-        '  --dos-exe      alias for --mz (DOS .EXE)'
-        '  --obj          COFF object file (.obj, x86-64 .text)'
-        '  --coff         alias for --obj (COFF object)'
-        '  --i386         Linux i386 ELF32 executable (int 0x80 syscall ABI)'
-        '  --x32          Linux x32 ABI ELF32 (ILP32 on the x86-64 ISA)'
-        '  --x86-64-v2    Linux x86-64-v2 ELF64 (GNU property marks ISA level v2)'
-        '  --x86-64-v3    Linux x86-64-v3 ELF64 (GNU property marks ISA level v3)'
-        '  --x86-64-v4    Linux x86-64-v4 ELF64 (GNU property marks ISA level v4)'
-        '  --riscv32      Linux riscv32 (RV32IMAC) ELF32 executable'
-        '  --mipsel       Linux mipsel (mips32el) ELF32 executable (o32 ABI)'
-        '  --ppc64        Linux ppc64 (big-endian PowerPC64) ELF64 executable'
-        '  --armhf        Linux armv7a hard-float ARM EABI5 ELF32 executable'
-        '  --ppc32        Linux ppc32 (big-endian PowerPC32) ELF32 executable'
-        '  --mips         Linux mips (big-endian mips32) ELF32 executable (o32 ABI)'
-        '  --thumbv7a     Linux armv7a Thumb-2 ELF32 executable (Thumb entry bit)'
-        '  --sparc64      Linux sparc64 (SPARC V9, big-endian) ELF64 executable'
-        '  --sparc-v8     Linux sparc_v8 (SPARC V8, big-endian) ELF32 executable'
-        '  --m68k         Linux m68k (Motorola 68000, big-endian) ELF32 executable'
-        '  --microblaze   Linux microblaze (Xilinx MicroBlaze, big-endian) ELF32 executable'
-        '  --openrisc     Linux openrisc (OpenRISC 1000, big-endian) ELF32 executable'
-        '  --nios2        Linux nios2 (Altera Nios II, little-endian) ELF32 executable'
-        '  --sh4          Linux sh4 (Renesas SuperH SH-4, big-endian) ELF32 executable'
-        ''
-        '  --arm64 is another name for --android.'
-        '  --macos is another name for --mac.'
-        '  --wasm32-wasi and --wasm are another name for --wasi.'
-        ''
-        'The same file, under the name that platform has for it:'
-        '  --chromeos     ChromeOS, the Linux ABI'
-        '  --linux-musl   Linux, musl systems (the output has no libc at all)'
-        '  --linux-static Linux, static'
-        '  --darwin       the Darwin POSIX layer, without the AppKit size of it'
-        '  --android-tv   Android TV'
-        '  --wear-os      Wear OS'
-        '  --wine         the same PE file under Wine'
-        '  --reactos      the same PE file under ReactOS'
-        ''
-        'Other:'
-        '  --release        Run whole-program dead-code elimination (smaller output, slower build)'
-        '  --debug          Trace the program line by line'
-        '                     (add --interactive to step)'
-        '  --version, -v  Print the version'
-        '  --help, -h  Print this'
+    print 'Usage: sovren <file.sov> [-o out] [target]'
+    print 'Retained compiler targets:'
+    print '  --android  android'
+    print '  --android-so  android/shared-object'
+    print '  --arm64_32  apple/arm64_32'
+    print '  --arm64e  apple/arm64e'
+    print '  --ios  apple/ios'
+    print '  --ios-simulator  apple/ios-simulator'
+    print '  --mac  apple/macos'
+    print '  --macos-arm64  apple/macos-arm64'
+    print '  --tvos  apple/tvos'
+    print '  --tvos-simulator  apple/tvos-simulator'
+    print '  --visionos  apple/visionos'
+    print '  --visionos-simulator  apple/visionos-simulator'
+    print '  --watchos  apple/watchos'
+    print '  --watchos-simulator  apple/watchos-simulator'
+    print '  --linux-arm64  linux/arm64'
+    print '  --linux-arm64-so  linux/arm64-shared-object'
+    print '  --linux  linux'
+    print '  --dragonfly  operating-systems/dragonfly'
+    print '  --freebsd  operating-systems/freebsd'
+    print '  --haiku  operating-systems/haiku'
+    print '  --illumos  operating-systems/illumos'
+    print '  --menuetos  operating-systems/menuetos'
+    print '  --netbsd  operating-systems/netbsd'
+    print '  --openbsd  operating-systems/openbsd'
+    print '  --qnx  operating-systems/qnx'
+    print '  --redox  operating-systems/redox'
+    print '  --serenityos  operating-systems/serenityos'
+    print '  --sovrenos  operating-systems/sovrenos'
+    print '  --wasm32-browser  webassembly/browser'
+    print '  --wasm-component  webassembly/component-model'
+    print '  --wasm32-edge  webassembly/edge'
+    print '  --wasm32-emscripten  webassembly/emscripten'
+    print '  --wasm32-simd  webassembly/wasm32-single-instruction-multiple-data'
+    print '  --wasm32-threads  webassembly/wasm32-threads-atomics'
+    print '  --wasm32  webassembly/wasm32-unknown-unknown'
+    print '  --wasm64  webassembly/wasm64-memory64'
+    print '  --wasi  webassembly/webassembly-system-interface'
+    print '  --wat  webassembly/webassembly-text'
+    print '  --windows  windows'
+    print '  --windows-store  windows/store'
+    print 'See TARGETS.md for source and build availability.'
+    print 'Other options: --release, --debug, --version, --help'
 lc_pairs:
     t: _sov_list_new()
-    include inc/px00.sov 1349 4 (linux linux windows windows)
-    include inc/px00.sov 1349 4 (freebsd operating-systems/freebsd netbsd operating-systems/netbsd)
-    include inc/px00.sov 1349 4 (openbsd operating-systems/openbsd bsd operating-systems/freebsd)
-    include inc/px00.sov 1349 4 (dragonfly operating-systems/dragonfly dfly operating-systems/dragonfly)
-    include inc/px00.sov 1349 4 (illumos operating-systems/illumos solaris operating-systems/illumos)
+    t: _sov_list_add(t, '--linux')
+    t: _sov_list_add(t, 'linux')
+    t: _sov_list_add(t, '--windows')
+    t: _sov_list_add(t, 'windows')
+    t: _sov_list_add(t, '--freebsd')
+    t: _sov_list_add(t, 'operating-systems/freebsd')
+    t: _sov_list_add(t, '--netbsd')
+    t: _sov_list_add(t, 'operating-systems/netbsd')
+    t: _sov_list_add(t, '--openbsd')
+    t: _sov_list_add(t, 'operating-systems/openbsd')
+    t: _sov_list_add(t, '--bsd')
+    t: _sov_list_add(t, 'operating-systems/freebsd')
+    t: _sov_list_add(t, '--dragonfly')
+    t: _sov_list_add(t, 'operating-systems/dragonfly')
+    t: _sov_list_add(t, '--dfly')
+    t: _sov_list_add(t, 'operating-systems/dragonfly')
+    t: _sov_list_add(t, '--illumos')
+    t: _sov_list_add(t, 'operating-systems/illumos')
+    t: _sov_list_add(t, '--solaris')
+    t: _sov_list_add(t, 'operating-systems/illumos')
     t: _sov_list_add(t, '--haiku')
     t: _sov_list_add(t, 'operating-systems/haiku')
     t: _sov_list_add(t, '--redox')
@@ -213,69 +88,18 @@ lc_pairs:
     t: _sov_list_add(t, 'operating-systems/menuetos')
     t: _sov_list_add(t, '--sovrenos')
     t: _sov_list_add(t, 'operating-systems/sovrenos')
-    t: _sov_list_add(t, '--windows-arm64')
-    t: _sov_list_add(t, 'windows/arm64')
-    t: _sov_list_add(t, '--win-arm64')
-    t: _sov_list_add(t, 'windows/arm64')
-    t: _sov_list_add(t, '--aarch64-windows')
-    t: _sov_list_add(t, 'windows/arm64')
     t: _sov_list_add(t, '--mac')
     t: _sov_list_add(t, 'apple/macos')
     t: _sov_list_add(t, '--macos')
     t: _sov_list_add(t, 'apple/macos')
     t: _sov_list_add(t, '--darwin')
     t: _sov_list_add(t, 'apple/macos')
-    include inc/px00.sov 1349 4 (mac macos macos macos)
-    t: _sov_list_add(t, '--macos-dylib')
-    t: _sov_list_add(t, 'apple/macos-dynamic-library')
-    t: _sov_list_add(t, '--mac-dylib')
-    t: _sov_list_add(t, 'apple/macos-dynamic-library')
-    t: _sov_list_add(t, '--dylib')
-    t: _sov_list_add(t, 'apple/macos-dynamic-library')
     t: _sov_list_add(t, '--macos-arm64')
     t: _sov_list_add(t, 'apple/macos-arm64')
     t: _sov_list_add(t, '--arm64e')
     t: _sov_list_add(t, 'apple/arm64e')
     t: _sov_list_add(t, '--arm64_32')
     t: _sov_list_add(t, 'apple/arm64_32')
-    t: _sov_list_add(t, '--ppc64')
-    t: _sov_list_add(t, 'linux/ppc64')
-    t: _sov_list_add(t, '--powerpc64')
-    t: _sov_list_add(t, 'linux/ppc64')
-    t: _sov_list_add(t, '--armhf')
-    t: _sov_list_add(t, 'linux/armhf')
-    t: _sov_list_add(t, '--armv7a-armhf')
-    t: _sov_list_add(t, 'linux/armhf')
-    t: _sov_list_add(t, '--ppc32')
-    t: _sov_list_add(t, 'linux/ppc32')
-    t: _sov_list_add(t, '--powerpc')
-    t: _sov_list_add(t, 'linux/ppc32')
-    t: _sov_list_add(t, '--mips')
-    t: _sov_list_add(t, 'linux/mips')
-    t: _sov_list_add(t, '--mips-be')
-    t: _sov_list_add(t, 'linux/mips')
-    t: _sov_list_add(t, '--thumbv7a')
-    t: _sov_list_add(t, 'linux/thumbv7a')
-    t: _sov_list_add(t, '--sparc64')
-    t: _sov_list_add(t, 'linux/sparc64')
-    t: _sov_list_add(t, '--sparc')
-    t: _sov_list_add(t, 'linux/sparc64')
-    t: _sov_list_add(t, '--sparc-v8')
-    t: _sov_list_add(t, 'linux/sparc_v8')
-    t: _sov_list_add(t, '--sparc_v8')
-    t: _sov_list_add(t, 'linux/sparc_v8')
-    t: _sov_list_add(t, '--sparcv8')
-    t: _sov_list_add(t, 'linux/sparc_v8')
-    t: _sov_list_add(t, '--m68k')
-    t: _sov_list_add(t, 'linux/m68k')
-    t: _sov_list_add(t, '--microblaze')
-    t: _sov_list_add(t, 'linux/microblaze')
-    t: _sov_list_add(t, '--openrisc')
-    t: _sov_list_add(t, 'linux/openrisc')
-    t: _sov_list_add(t, '--nios2')
-    t: _sov_list_add(t, 'linux/nios2')
-    t: _sov_list_add(t, '--sh4')
-    t: _sov_list_add(t, 'linux/sh4')
     t: _sov_list_add(t, '--mac-arm64')
     t: _sov_list_add(t, 'apple/macos-arm64')
     t: _sov_list_add(t, '--darwin-arm64')
@@ -286,168 +110,8 @@ lc_pairs:
     t: _sov_list_add(t, 'linux/arm64')
     t: _sov_list_add(t, '--arm64-linux')
     t: _sov_list_add(t, 'linux/arm64')
-    t: _sov_list_add(t, '--linux-armv7')
-    t: _sov_list_add(t, 'linux/armv7')
-    t: _sov_list_add(t, '--armv7-linux')
-    t: _sov_list_add(t, 'linux/armv7')
-    t: _sov_list_add(t, '--armv7')
-    t: _sov_list_add(t, 'linux/armv7')
-    t: _sov_list_add(t, '--armv5')
-    t: _sov_list_add(t, 'linux/armv5')
-    t: _sov_list_add(t, '--linux-armv5')
-    t: _sov_list_add(t, 'linux/armv5')
-    t: _sov_list_add(t, '--armv7a-armel')
-    t: _sov_list_add(t, 'linux/armv7a_armel')
-    t: _sov_list_add(t, '--armel')
-    t: _sov_list_add(t, 'linux/armv7a_armel')
-    t: _sov_list_add(t, '--linux-armv7a-armel')
-    t: _sov_list_add(t, 'linux/armv7a_armel')
-    t: _sov_list_add(t, '--a')
-    t: _sov_list_add(t, 'linux/static-archive')
-    t: _sov_list_add(t, '--lib')
-    t: _sov_list_add(t, 'linux/static-archive')
-    t: _sov_list_add(t, '--static-lib')
-    t: _sov_list_add(t, 'linux/static-archive')
-    t: _sov_list_add(t, '--hypervisor')
-    t: _sov_list_add(t, 'linux/hypervisor')
-    t: _sov_list_add(t, '--eh-frame')
-    t: _sov_list_add(t, 'linux/eh-frame')
-    t: _sov_list_add(t, '--eh_frame')
-    t: _sov_list_add(t, 'linux/eh-frame')
-    t: _sov_list_add(t, '--pdata')
-    t: _sov_list_add(t, 'windows/pdata')
     t: _sov_list_add(t, '--windows-store')
     t: _sov_list_add(t, 'windows/store')
-    t: _sov_list_add(t, '--windows-arm64ec')
-    t: _sov_list_add(t, 'windows/arm64ec')
-    t: _sov_list_add(t, '--arm64ec')
-    t: _sov_list_add(t, 'windows/arm64ec')
-    t: _sov_list_add(t, '--harmonyos')
-    t: _sov_list_add(t, 'harmonyos')
-    t: _sov_list_add(t, '--openharmony')
-    t: _sov_list_add(t, 'harmonyos')
-    t: _sov_list_add(t, '--hap')
-    t: _sov_list_add(t, 'harmonyos')
-    t: _sov_list_add(t, '--avr')
-    t: _sov_list_add(t, 'linux/avr')
-    t: _sov_list_add(t, '--avr32')
-    t: _sov_list_add(t, 'linux/avr')
-    t: _sov_list_add(t, '--msp430')
-    t: _sov_list_add(t, 'linux/msp430')
-    t: _sov_list_add(t, '--msp430x')
-    t: _sov_list_add(t, 'linux/msp430')
-    t: _sov_list_add(t, '--arc')
-    t: _sov_list_add(t, 'linux/arc')
-    t: _sov_list_add(t, '--arcompact')
-    t: _sov_list_add(t, 'linux/arc')
-    t: _sov_list_add(t, '--xtensa')
-    t: _sov_list_add(t, 'linux/xtensa')
-    t: _sov_list_add(t, '--xtensa-esp32')
-    t: _sov_list_add(t, 'linux/xtensa')
-    t: _sov_list_add(t, '--dex')
-    t: _sov_list_add(t, 'dex')
-    t: _sov_list_add(t, '--dalvik')
-    t: _sov_list_add(t, 'dex')
-    t: _sov_list_add(t, '--aix')
-    t: _sov_list_add(t, 'aix')
-    t: _sov_list_add(t, '--plan9')
-    t: _sov_list_add(t, 'plan9')
-    t: _sov_list_add(t, '--9front')
-    t: _sov_list_add(t, 'plan9')
-    t: _sov_list_add(t, '--inferno')
-    t: _sov_list_add(t, 'plan9')
-    t: _sov_list_add(t, '--fuchsia')
-    t: _sov_list_add(t, 'fuchsia')
-    t: _sov_list_add(t, '--fuchsia-far')
-    t: _sov_list_add(t, 'fuchsia')
-    t: _sov_list_add(t, '--hexagon')
-    t: _sov_list_add(t, 'hexagon')
-    t: _sov_list_add(t, '--riscv64-be')
-    t: _sov_list_add(t, 'riscv64-be')
-    t: _sov_list_add(t, '--riscv64-big-endian')
-    t: _sov_list_add(t, 'riscv64-be')
-    t: _sov_list_add(t, '--arm64-sve')
-    t: _sov_list_add(t, 'arm64-sve')
-    t: _sov_list_add(t, '--arm64-sve2')
-    t: _sov_list_add(t, 'arm64-sve2')
-    t: _sov_list_add(t, '--arm64-mte')
-    t: _sov_list_add(t, 'arm64-mte')
-    t: _sov_list_add(t, '--evm')
-    t: _sov_list_add(t, 'evm')
-    t: _sov_list_add(t, '--hpux')
-    t: _sov_list_add(t, 'hpux')
-    t: _sov_list_add(t, '--c166')
-    t: _sov_list_add(t, 'c166')
-    t: _sov_list_add(t, '--8051')
-    t: _sov_list_add(t, '8051')
-    t: _sov_list_add(t, '--z80')
-    t: _sov_list_add(t, 'z80')
-    t: _sov_list_add(t, '--ez80')
-    t: _sov_list_add(t, 'ez80')
-    t: _sov_list_add(t, '--6502')
-    t: _sov_list_add(t, '6502')
-    t: _sov_list_add(t, '--pic16')
-    t: _sov_list_add(t, 'pic16')
-    t: _sov_list_add(t, '--pic18')
-    t: _sov_list_add(t, 'pic18')
-    t: _sov_list_add(t, '--linux-riscv64')
-    t: _sov_list_add(t, 'linux/riscv64')
-    t: _sov_list_add(t, '--riscv64-linux')
-    t: _sov_list_add(t, 'linux/riscv64')
-    t: _sov_list_add(t, '--riscv64')
-    t: _sov_list_add(t, 'linux/riscv64')
-    t: _sov_list_add(t, '--riscv64v')
-    t: _sov_list_add(t, 'linux/riscv64_v')
-    t: _sov_list_add(t, '--rv64v')
-    t: _sov_list_add(t, 'linux/riscv64_v')
-    t: _sov_list_add(t, '--riscv64h')
-    t: _sov_list_add(t, 'linux/riscv64_h')
-    t: _sov_list_add(t, '--rv64h')
-    t: _sov_list_add(t, 'linux/riscv64_h')
-    t: _sov_list_add(t, '--riscv32zfinx')
-    t: _sov_list_add(t, 'linux/riscv32_zfinx')
-    t: _sov_list_add(t, '--rv32zfinx')
-    t: _sov_list_add(t, 'linux/riscv32_zfinx')
-    t: _sov_list_add(t, '--riscv32zdinx')
-    t: _sov_list_add(t, 'linux/riscv32_zdinx')
-    t: _sov_list_add(t, '--rv32zdinx')
-    t: _sov_list_add(t, 'linux/riscv32_zdinx')
-    t: _sov_list_add(t, '--linux-ppc64le')
-    t: _sov_list_add(t, 'linux/ppc64le')
-    t: _sov_list_add(t, '--ppc64le-linux')
-    t: _sov_list_add(t, 'linux/ppc64le')
-    t: _sov_list_add(t, '--powerpc64le-linux')
-    t: _sov_list_add(t, 'linux/ppc64le')
-    t: _sov_list_add(t, '--linux-s390x')
-    t: _sov_list_add(t, 'linux/s390x')
-    t: _sov_list_add(t, '--s390x-linux')
-    t: _sov_list_add(t, 'linux/s390x')
-    t: _sov_list_add(t, '--ibmz-linux')
-    t: _sov_list_add(t, 'linux/s390x')
-    t: _sov_list_add(t, '--linux-mips64')
-    t: _sov_list_add(t, 'linux/mips64')
-    t: _sov_list_add(t, '--mips64-linux')
-    t: _sov_list_add(t, 'linux/mips64')
-    t: _sov_list_add(t, '--mips64')
-    t: _sov_list_add(t, 'linux/mips64')
-    t: _sov_list_add(t, '--linux-mips64el')
-    t: _sov_list_add(t, 'linux/mips64el')
-    t: _sov_list_add(t, '--mips64el-linux')
-    t: _sov_list_add(t, 'linux/mips64el')
-    t: _sov_list_add(t, '--mips64el')
-    t: _sov_list_add(t, 'linux/mips64el')
-    t: _sov_list_add(t, '--linux-loongarch64')
-    t: _sov_list_add(t, 'linux/loongarch64')
-    t: _sov_list_add(t, '--loongarch64-linux')
-    t: _sov_list_add(t, 'linux/loongarch64')
-    t: _sov_list_add(t, '--loong64')
-    t: _sov_list_add(t, 'linux/loongarch64')
-    t: _sov_list_add(t, '--linux-so')
-    t: _sov_list_add(t, 'linux/x86-64-shared-object')
-    t: _sov_list_add(t, '--linux-x86_64-so')
-    t: _sov_list_add(t, 'linux/x86-64-shared-object')
-    t: _sov_list_add(t, '--x86_64-linux-so')
-    t: _sov_list_add(t, 'linux/x86-64-shared-object')
     t: _sov_list_add(t, '--linux-arm64-so')
     t: _sov_list_add(t, 'linux/arm64-shared-object')
     t: _sov_list_add(t, '--aarch64-linux-so')
@@ -455,14 +119,13 @@ lc_pairs:
     t: _sov_list_add(t, '--android')
     t: _sov_list_add(t, 'android')
     t: _sov_list_add(t, '--android-so')
-    t: _sov_list_add(t, 'linux')
+    t: _sov_list_add(t, 'android/shared-object')
     t: _sov_list_add(t, '--wasi')
     t: _sov_list_add(t, 'webassembly/webassembly-system-interface')
     t: _sov_list_add(t, '--wasm32-wasi')
     t: _sov_list_add(t, 'webassembly/webassembly-system-interface')
     t: _sov_list_add(t, '--wasm')
     t: _sov_list_add(t, 'webassembly/webassembly-system-interface')
-    include inc/px00.sov 1349 4 (wasm32-wasi wasi wasm wasi)
     t: _sov_list_add(t, '--wasm32')
     t: _sov_list_add(t, 'webassembly/wasm32-unknown-unknown')
     t: _sov_list_add(t, '--wasm32-unknown')
@@ -517,82 +180,6 @@ lc_pairs:
     t: _sov_list_add(t, 'webassembly/webassembly-text')
     t: _sov_list_add(t, '--emit-wat')
     t: _sov_list_add(t, 'webassembly/webassembly-text')
-    t: _sov_list_add(t, '--js')
-    t: _sov_list_add(t, 'javascript')
-    t: _sov_list_add(t, '--javascript')
-    t: _sov_list_add(t, 'javascript')
-    t: _sov_list_add(t, '--node')
-    t: _sov_list_add(t, 'javascript')
-    t: _sov_list_add(t, '--jvm')
-    t: _sov_list_add(t, 'java-virtual-machine')
-    t: _sov_list_add(t, '--class')
-    t: _sov_list_add(t, 'java-virtual-machine')
-    t: _sov_list_add(t, '--java-class')
-    t: _sov_list_add(t, 'java-virtual-machine')
-    t: _sov_list_add(t, '--csharp')
-    t: _sov_list_add(t, 'csharp')
-    t: _sov_list_add(t, '--cs')
-    t: _sov_list_add(t, 'csharp')
-    t: _sov_list_add(t, '--dotnet')
-    t: _sov_list_add(t, 'csharp')
-    t: _sov_list_add(t, '--cil')
-    t: _sov_list_add(t, 'common-intermediate-language')
-    t: _sov_list_add(t, '--il')
-    t: _sov_list_add(t, 'common-intermediate-language')
-    t: _sov_list_add(t, '--msil')
-    t: _sov_list_add(t, 'common-intermediate-language')
-    t: _sov_list_add(t, '--cil-pe')
-    t: _sov_list_add(t, 'common-intermediate-language/portable-executable')
-    t: _sov_list_add(t, '--clr-pe')
-    t: _sov_list_add(t, 'common-intermediate-language/portable-executable')
-    t: _sov_list_add(t, '--dotnet-pe')
-    t: _sov_list_add(t, 'common-intermediate-language/portable-executable')
-    t: _sov_list_add(t, '--metal')
-    t: _sov_list_add(t, 'graphics-processing-units/msl')
-    t: _sov_list_add(t, '--msl')
-    t: _sov_list_add(t, 'graphics-processing-units/msl')
-    t: _sov_list_add(t, '--msl')
-    t: _sov_list_add(t, 'graphics-processing-units/msl')
-    t: _sov_list_add(t, '--wgsl')
-    t: _sov_list_add(t, 'graphics-processing-units/webgpu-shading-language')
-    t: _sov_list_add(t, '--webgpu')
-    t: _sov_list_add(t, 'graphics-processing-units/webgpu-shading-language')
-    t: _sov_list_add(t, '--glsl')
-    t: _sov_list_add(t, 'graphics-processing-units/opengl-shading-language')
-    t: _sov_list_add(t, '--glsl450')
-    t: _sov_list_add(t, 'graphics-processing-units/opengl-shading-language')
-    t: _sov_list_add(t, '--hlsl')
-    t: _sov_list_add(t, 'graphics-processing-units/high-level-shading-language')
-    t: _sov_list_add(t, '--directx-shader')
-    t: _sov_list_add(t, 'graphics-processing-units/high-level-shading-language')
-    t: _sov_list_add(t, '--metal-air')
-    t: _sov_list_add(t, 'graphics-processing-units/metal-apple-intermediate-representation')
-    t: _sov_list_add(t, '--air')
-    t: _sov_list_add(t, 'graphics-processing-units/metal-apple-intermediate-representation')
-    t: _sov_list_add(t, '--metallib')
-    t: _sov_list_add(t, 'graphics-processing-units/metal-library')
-    t: _sov_list_add(t, '--metal-lib')
-    t: _sov_list_add(t, 'graphics-processing-units/metal-library')
-    t: _sov_list_add(t, '--ptx')
-    t: _sov_list_add(t, 'graphics-processing-units/parallel-thread-execution')
-    t: _sov_list_add(t, '--cuda-ptx')
-    t: _sov_list_add(t, 'graphics-processing-units/parallel-thread-execution')
-    t: _sov_list_add(t, '--amdgcn')
-    t: _sov_list_add(t, 'graphics-processing-units/amd-graphics-core-next')
-    t: _sov_list_add(t, '--amd-gcn')
-    t: _sov_list_add(t, 'graphics-processing-units/amd-graphics-core-next')
-    t: _sov_list_add(t, '--rdna')
-    t: _sov_list_add(t, 'graphics-processing-units/amd-graphics-core-next')
-    t: _sov_list_add(t, '--intel-xe')
-    t: _sov_list_add(t, 'graphics-processing-units/intel-xe')
-    t: _sov_list_add(t, '--xe')
-    t: _sov_list_add(t, 'graphics-processing-units/intel-xe')
-    t: _sov_list_add(t, '--intel-gen')
-    t: _sov_list_add(t, 'graphics-processing-units/intel-xe')
-    t: _sov_list_add(t, '--spirv')
-    t: _sov_list_add(t, 'graphics-processing-units/standard-portable-intermediate-representation-v')
-    t: _sov_list_add(t, '--spv')
-    t: _sov_list_add(t, 'graphics-processing-units/standard-portable-intermediate-representation-v')
     t: _sov_list_add(t, '--ios')
     t: _sov_list_add(t, 'apple/ios')
     t: _sov_list_add(t, '--iphoneos')
@@ -613,191 +200,22 @@ lc_pairs:
     t: _sov_list_add(t, 'apple/watchos-simulator')
     t: _sov_list_add(t, '--visionos-simulator')
     t: _sov_list_add(t, 'apple/visionos-simulator')
-    include inc/px00.sov 1349 4 (ios ios arm64 android)
-    include inc/px00.sov 1349 4 (ipados ios tvos tvos)
-    include inc/px00.sov 1349 4 (visionos visionos ios-simulator ios-simulator)
-    include inc/px00.sov 1349 4 (watchos watchos watchos-simulator watchos-simulator)
-    include inc/px00.sov 1349 4 (tvos-simulator tvos-simulator visionos-simulator visionos-simulator)
-    t: _sov_list_add(t, '--c')
-    t: _sov_list_add(t, 'c-language')
-    t: _sov_list_add(t, '--emit-c')
-    t: _sov_list_add(t, 'c-language')
-    t: _sov_list_add(t, '--llvm-ir')
-    t: _sov_list_add(t, 'llvm-intermediate-representation')
-    t: _sov_list_add(t, '--emit-llvm')
-    t: _sov_list_add(t, 'llvm-intermediate-representation')
-    t: _sov_list_add(t, '--ll')
-    t: _sov_list_add(t, 'llvm-intermediate-representation')
-    t: _sov_list_add(t, '--ebpf')
-    t: _sov_list_add(t, 'extended-berkeley-packet-filter')
-    t: _sov_list_add(t, '--qbe')
-    t: _sov_list_add(t, 'qbe-intermediate-representation')
-    t: _sov_list_add(t, '--multiboot')
-    t: _sov_list_add(t, 'boot/multiboot')
-    t: _sov_list_add(t, '--multiboot1')
-    t: _sov_list_add(t, 'boot/multiboot')
-    t: _sov_list_add(t, '--dos')
-    t: _sov_list_add(t, 'dos/com-image')
-    t: _sov_list_add(t, '--com')
-    t: _sov_list_add(t, 'dos/com-image')
-    t: _sov_list_add(t, '--x86-16')
-    t: _sov_list_add(t, 'dos/com-image')
-    t: _sov_list_add(t, '--x86_16')
-    t: _sov_list_add(t, 'dos/com-image')
-    t: _sov_list_add(t, '--mz')
-    t: _sov_list_add(t, 'dos/mz-executable')
-    t: _sov_list_add(t, '--dos-exe')
-    t: _sov_list_add(t, 'dos/mz-executable')
-    t: _sov_list_add(t, '--obj')
-    t: _sov_list_add(t, 'windows/coff-object')
-    t: _sov_list_add(t, '--coff')
-    t: _sov_list_add(t, 'windows/coff-object')
-    t: _sov_list_add(t, '--i386')
-    t: _sov_list_add(t, 'linux/i386')
-    t: _sov_list_add(t, '--i686')
-    t: _sov_list_add(t, 'linux/i386')
-    t: _sov_list_add(t, '--x32')
-    t: _sov_list_add(t, 'linux/x32')
-    t: _sov_list_add(t, '--x86-64-v2')
-    t: _sov_list_add(t, 'linux/x86_64_v2')
-    t: _sov_list_add(t, '--x86_64_v2')
-    t: _sov_list_add(t, 'linux/x86_64_v2')
-    t: _sov_list_add(t, '--x86-64-v3')
-    t: _sov_list_add(t, 'linux/x86_64_v3')
-    t: _sov_list_add(t, '--x86_64_v3')
-    t: _sov_list_add(t, 'linux/x86_64_v3')
-    t: _sov_list_add(t, '--x86-64-v4')
-    t: _sov_list_add(t, 'linux/x86_64_v4')
-    t: _sov_list_add(t, '--x86_64_v4')
-    t: _sov_list_add(t, 'linux/x86_64_v4')
-    t: _sov_list_add(t, '--riscv32')
-    t: _sov_list_add(t, 'linux/riscv32')
-    t: _sov_list_add(t, '--riscv32imac')
-    t: _sov_list_add(t, 'linux/riscv32')
-    t: _sov_list_add(t, '--mipsel')
-    t: _sov_list_add(t, 'linux/mipsel')
-    t: _sov_list_add(t, '--mips32')
-    t: _sov_list_add(t, 'linux/mipsel')
-    t: _sov_list_add(t, '--mips32el')
-    t: _sov_list_add(t, 'linux/mipsel')
-    t: _sov_list_add(t, '--uefi')
-    t: _sov_list_add(t, 'unified-extensible-firmware-interface')
-    t: _sov_list_add(t, '--uefi-x86_64')
-    t: _sov_list_add(t, 'unified-extensible-firmware-interface')
-    t: _sov_list_add(t, '--uefi-arm64')
-    t: _sov_list_add(t, 'unified-extensible-firmware-interface/arm64')
-    t: _sov_list_add(t, '--uefi-aarch64')
-    t: _sov_list_add(t, 'unified-extensible-firmware-interface/arm64')
-    t: _sov_list_add(t, '--bare')
-    t: _sov_list_add(t, 'firmware/x86-64-bare')
-    t: _sov_list_add(t, '--bare-metal')
-    t: _sov_list_add(t, 'firmware/x86-64-bare')
-    t: _sov_list_add(t, '--kernel')
-    t: _sov_list_add(t, 'firmware/x86-64-bare')
-    t: _sov_list_add(t, '--cortex-m')
-    t: _sov_list_add(t, 'firmware/cortex-m')
-    t: _sov_list_add(t, '--thumb-cortexm')
-    t: _sov_list_add(t, 'firmware/cortex-m')
-    t: _sov_list_add(t, '--thumb-cortex-m')
-    t: _sov_list_add(t, 'firmware/cortex-m')
-    t: _sov_list_add(t, '--armv7m-bare')
-    t: _sov_list_add(t, 'firmware/cortex-m')
-    t: _sov_list_add(t, '--riscv64-bare')
-    t: _sov_list_add(t, 'firmware/riscv64-bare')
-    t: _sov_list_add(t, '--bare-riscv64')
-    t: _sov_list_add(t, 'firmware/riscv64-bare')
-    t: _sov_list_add(t, '--riscv64gc-bare')
-    t: _sov_list_add(t, 'firmware/riscv64-bare')
-    t: _sov_list_add(t, '--riscv-bare')
-    t: _sov_list_add(t, 'firmware/riscv64-bare')
-    t: _sov_list_add(t, '--riscv32-bare')
-    t: _sov_list_add(t, 'firmware/riscv32-bare')
-    t: _sov_list_add(t, '--bare-riscv32')
-    t: _sov_list_add(t, 'firmware/riscv32-bare')
-    t: _sov_list_add(t, '--riscv32imac-bare')
-    t: _sov_list_add(t, 'firmware/riscv32-bare')
-    t: _sov_list_add(t, '--riscv32e')
-    t: _sov_list_add(t, 'firmware/riscv32e')
-    t: _sov_list_add(t, '--rv32ec')
-    t: _sov_list_add(t, 'firmware/riscv32e')
-    t: _sov_list_add(t, '--thumbv7m')
-    t: _sov_list_add(t, 'firmware/thumbv7m')
-    t: _sov_list_add(t, '--thumbv7em')
-    t: _sov_list_add(t, 'firmware/thumbv7em')
-    t: _sov_list_add(t, '--thumbv6m')
-    t: _sov_list_add(t, 'firmware/thumbv6m')
-    t: _sov_list_add(t, '--thumbv8m')
-    t: _sov_list_add(t, 'firmware/thumbv8m')
-    t: _sov_list_add(t, '--ihex')
-    t: _sov_list_add(t, 'firmware/intel-hex')
-    t: _sov_list_add(t, '--intel-hex')
-    t: _sov_list_add(t, 'firmware/intel-hex')
-    t: _sov_list_add(t, '--firmware-hex')
-    t: _sov_list_add(t, 'firmware/intel-hex')
-    t: _sov_list_add(t, '--srec')
-    t: _sov_list_add(t, 'firmware/s-record')
-    t: _sov_list_add(t, '--s-record')
-    t: _sov_list_add(t, 'firmware/s-record')
-    t: _sov_list_add(t, '--motorola-srec')
-    t: _sov_list_add(t, 'firmware/s-record')
-    t: _sov_list_add(t, '--uf2')
-    t: _sov_list_add(t, 'firmware/usb-flashing-format')
-    t: _sov_list_add(t, '--firmware-uf2')
-    t: _sov_list_add(t, 'firmware/usb-flashing-format')
-    t: _sov_list_add(t, '--dfu')
-    t: _sov_list_add(t, 'firmware/device-firmware-upgrade')
-    t: _sov_list_add(t, '--firmware-dfu')
-    t: _sov_list_add(t, 'firmware/device-firmware-upgrade')
-    t: _sov_list_add(t, '--dfuse')
-    t: _sov_list_add(t, 'firmware/device-firmware-upgrade')
-    t: _sov_list_add(t, '--firmware-img')
-    t: _sov_list_add(t, 'firmware/mcuboot-image')
-    t: _sov_list_add(t, '--mcuboot-img')
-    t: _sov_list_add(t, 'firmware/mcuboot-image')
-    t: _sov_list_add(t, '--img')
-    t: _sov_list_add(t, 'firmware/mcuboot-image')
-    t: _sov_list_add(t, '--freertos')
-    t: _sov_list_add(t, 'real-time-operating-systems/freertos')
-    t: _sov_list_add(t, '--free-rtos')
-    t: _sov_list_add(t, 'real-time-operating-systems/freertos')
-    t: _sov_list_add(t, '--zephyr')
-    t: _sov_list_add(t, 'real-time-operating-systems/zephyr')
-    t: _sov_list_add(t, '--zephyr-rtos')
-    t: _sov_list_add(t, 'real-time-operating-systems/zephyr')
-    t: _sov_list_add(t, '--nuttx')
-    t: _sov_list_add(t, 'real-time-operating-systems/nuttx')
-    t: _sov_list_add(t, '--riot')
-    t: _sov_list_add(t, 'real-time-operating-systems/riot')
-    t: _sov_list_add(t, '--rt-thread')
-    t: _sov_list_add(t, 'real-time-operating-systems/rt-thread')
-    t: _sov_list_add(t, '--rtthread')
-    t: _sov_list_add(t, 'real-time-operating-systems/rt-thread')
-    t: _sov_list_add(t, '--mbed')
-    t: _sov_list_add(t, 'real-time-operating-systems/mbed')
-    t: _sov_list_add(t, '--mbed-os')
-    t: _sov_list_add(t, 'real-time-operating-systems/mbed')
-    t: _sov_list_add(t, '--threadx')
-    t: _sov_list_add(t, 'real-time-operating-systems/threadx')
-    t: _sov_list_add(t, '--azure-threadx')
-    t: _sov_list_add(t, 'real-time-operating-systems/threadx')
-    t: _sov_list_add(t, '--ti-rtos')
-    t: _sov_list_add(t, 'real-time-operating-systems/ti-rtos')
-    t: _sov_list_add(t, '--tirtos')
-    t: _sov_list_add(t, 'real-time-operating-systems/ti-rtos')
-    t: _sov_list_add(t, '--sysbios')
-    t: _sov_list_add(t, 'real-time-operating-systems/ti-rtos')
-    t: _sov_list_add(t, '--embos')
-    t: _sov_list_add(t, 'real-time-operating-systems/embos')
-    t: _sov_list_add(t, '--segger-embos')
-    t: _sov_list_add(t, 'real-time-operating-systems/embos')
-    t: _sov_list_add(t, '--chromium-ec')
-    t: _sov_list_add(t, 'real-time-operating-systems/chromium-ec')
-    t: _sov_list_add(t, '--chrome-ec')
-    t: _sov_list_add(t, 'real-time-operating-systems/chromium-ec')
-    include inc/px00.sov 1349 4 (chromeos linux linux-musl linux)
-    include inc/px00.sov 1349 4 (linux-static linux darwin macos)
-    include inc/px00.sov 1349 4 (android-tv android wear-os android)
-    include inc/px00.sov 1349 4 (wine windows reactos windows)
+    t: _sov_list_add(t, '--arm64')
+    t: _sov_list_add(t, 'android')
+    t: _sov_list_add(t, '--chromeos')
+    t: _sov_list_add(t, 'linux')
+    t: _sov_list_add(t, '--linux-musl')
+    t: _sov_list_add(t, 'linux')
+    t: _sov_list_add(t, '--linux-static')
+    t: _sov_list_add(t, 'linux')
+    t: _sov_list_add(t, '--android-tv')
+    t: _sov_list_add(t, 'android')
+    t: _sov_list_add(t, '--wear-os')
+    t: _sov_list_add(t, 'android')
+    t: _sov_list_add(t, '--wine')
+    t: _sov_list_add(t, 'windows')
+    t: _sov_list_add(t, '--reactos')
+    t: _sov_list_add(t, 'windows')
     return t
 lc_find a:
     t: lc_pairs()
@@ -806,355 +224,52 @@ lc_find a:
             return i
         i: i + 2
     return 0 - 1
-lc_is_winarm64 a:
-    if str_eq(a, '--windows-arm64') = 1 -> return 1
-    if str_eq(a, '--win-arm64') = 1 -> return 1
-    if str_eq(a, '--aarch64-windows') = 1 -> return 1
-    return 0
-lc_is_riscv64 a:
-    if str_eq(a, '--linux-riscv64') = 1 -> return 1
-    if str_eq(a, '--riscv64-linux') = 1 -> return 1
-    if str_eq(a, '--riscv64') = 1 -> return 1
-    return 0
-lc_is_riscv64v a:
-    if str_eq(a, '--riscv64v') = 1 -> return 1
-    if str_eq(a, '--rv64v') = 1 -> return 1
-    if str_eq(a, '--riscv64-v') = 1 -> return 1
-    return 0
-lc_is_riscv64h a:
-    if str_eq(a, '--riscv64h') = 1 -> return 1
-    if str_eq(a, '--rv64h') = 1 -> return 1
-    if str_eq(a, '--riscv64-h') = 1 -> return 1
-    return 0
-lc_is_riscv32zf a:
-    if str_eq(a, '--riscv32zfinx') = 1 -> return 1
-    if str_eq(a, '--rv32zfinx') = 1 -> return 1
-    return 0
-lc_is_riscv32zd a:
-    if str_eq(a, '--riscv32zdinx') = 1 -> return 1
-    if str_eq(a, '--rv32zdinx') = 1 -> return 1
-    return 0
-lc_is_armv7 a:
-    if str_eq(a, '--linux-armv7') = 1 -> return 1
-    if str_eq(a, '--armv7-linux') = 1 -> return 1
-    if str_eq(a, '--armv7') = 1 -> return 1
-    return 0
-lc_is_armv5 a:
-    if str_eq(a, '--armv5') = 1 -> return 1
-    if str_eq(a, '--linux-armv5') = 1 -> return 1
-    if str_eq(a, '--armv5-linux') = 1 -> return 1
-    return 0
-lc_is_armv7a_armel a:
-    if str_eq(a, '--armv7a-armel') = 1 -> return 1
-    if str_eq(a, '--armel') = 1 -> return 1
-    if str_eq(a, '--linux-armv7a-armel') = 1 -> return 1
-    return 0
-lc_is_arch a:
-    if str_eq(a, '--a') = 1 -> return 1
-    if str_eq(a, '--lib') = 1 -> return 1
-    if str_eq(a, '--static-lib') = 1 -> return 1
-    return 0
-lc_is_hyp a:
-    if str_eq(a, '--hypervisor') = 1 -> return 1
-    return 0
-lc_is_ehf a:
-    if str_eq(a, '--eh-frame') = 1 -> return 1
-    if str_eq(a, '--eh_frame') = 1 -> return 1
-    return 0
-lc_is_pd a:
-    if str_eq(a, '--pdata') = 1 -> return 1
-    return 0
-lc_is_store a:
-    if str_eq(a, '--windows-store') = 1 -> return 1
-    return 0
-lc_is_ec a:
-    if str_eq(a, '--windows-arm64ec') = 1 -> return 1
-    if str_eq(a, '--arm64ec') = 1 -> return 1
-    return 0
-lc_is_ohos a:
-    if str_eq(a, '--harmonyos') = 1 -> return 1
-    if str_eq(a, '--openharmony') = 1 -> return 1
-    if str_eq(a, '--hap') = 1 -> return 1
-    return 0
-lc_is_avr a:
-    if str_eq(a, '--avr') = 1 -> return 1
-    if str_eq(a, '--avr32') = 1 -> return 1
-    return 0
-lc_is_msp a:
-    if str_eq(a, '--msp430') = 1 -> return 1
-    if str_eq(a, '--msp430x') = 1 -> return 1
-    return 0
-lc_is_arcx a:
-    if str_eq(a, '--arc') = 1 -> return 1
-    if str_eq(a, '--arcompact') = 1 -> return 1
-    return 0
-lc_is_xtn a:
-    if str_eq(a, '--xtensa') = 1 -> return 1
-    if str_eq(a, '--xtensa-esp32') = 1 -> return 1
-    return 0
-lc_is_dex a:
-    if str_eq(a, '--dex') = 1 -> return 1
-    if str_eq(a, '--dalvik') = 1 -> return 1
-    return 0
-lc_is_aix a:
-    if str_eq(a, '--aix') = 1 -> return 1
-    return 0
-lc_is_p9 a:
-    if str_eq(a, '--plan9') = 1 -> return 1
-    if str_eq(a, '--9front') = 1 -> return 1
-    if str_eq(a, '--inferno') = 1 -> return 1
-    return 0
-lc_is_fux a:
-    if str_eq(a, '--fuchsia') = 1 -> return 1
-    if str_eq(a, '--fuchsia-far') = 1 -> return 1
-    return 0
-lc_is_hx a:
-    if str_eq(a, '--hexagon') = 1 -> return 1
-    return 0
-lc_is_rvbe a:
-    if str_eq(a, '--riscv64-be') = 1 -> return 1
-    if str_eq(a, '--riscv64-big-endian') = 1 -> return 1
-    return 0
-lc_is_sve a:
-    if str_eq(a, '--arm64-sve') = 1 -> return 1
-    if str_eq(a, '--arm64-sve2') = 1 -> return 1
-    if str_eq(a, '--arm64-mte') = 1 -> return 1
-    return 0
-lc_is_evm a:
-    if str_eq(a, '--evm') = 1 -> return 1
-    return 0
-lc_is_hpux a:
-    if str_eq(a, '--hpux') = 1 -> return 1
-    return 0
-lc_is_c16 a:
-    if str_eq(a, '--c166') = 1 -> return 1
-    return 0
-lc_is_51 a:
-    if str_eq(a, '--8051') = 1 -> return 1
-    return 0
-lc_is_z8 a:
-    if str_eq(a, '--z80') = 1 -> return 1
-    if str_eq(a, '--ez80') = 1 -> return 1
-    return 0
-lc_is_65 a:
-    if str_eq(a, '--6502') = 1 -> return 1
-    return 0
-lc_is_pic a:
-    if str_eq(a, '--pic16') = 1 -> return 1
-    if str_eq(a, '--pic18') = 1 -> return 1
-    return 0
-lc_is_uefiarm64 a:
-    if str_eq(a, '--uefi-arm64') = 1 -> return 1
-    if str_eq(a, '--uefi-aarch64') = 1 -> return 1
-    return 0
-lc_is_linuxso a:
-    if str_eq(a, '--linux-so') = 1 -> return 1
-    if str_eq(a, '--linux-x86_64-so') = 1 -> return 1
-    if str_eq(a, '--x86_64-linux-so') = 1 -> return 1
-    if str_eq(a, '--so') = 1 -> return 1
-    if str_eq(a, '--shared') = 1 -> return 1
-    return 0
-lc_is_windll a:
-    if str_eq(a, '--windows-dll') = 1 -> return 1
-    if str_eq(a, '--win-dll') = 1 -> return 1
-    if str_eq(a, '--dll') = 1 -> return 1
-    return 0
-lc_is_macosdylib a:
-    if str_eq(a, '--macos-dylib') = 1 -> return 1
-    if str_eq(a, '--mac-dylib') = 1 -> return 1
-    if str_eq(a, '--dylib') = 1 -> return 1
-    return 0
-lc_is_iosframework a:
-    if str_eq(a, '--ios-framework') = 1 -> return 1
-    if str_eq(a, '--iphoneos-framework') = 1 -> return 1
-    return 0
-lc_is_wat a:
-    if str_eq(a, '--wat') = 1 -> return 1
-    if str_eq(a, '--wasm-text') = 1 -> return 1
-    if str_eq(a, '--emit-wat') = 1 -> return 1
-    return 0
-lc_is_wasmbrowser a:
-    if str_eq(a, '--wasm32-browser') = 1 -> return 1
-    if str_eq(a, '--wasm-browser') = 1 -> return 1
-    if str_eq(a, '--browser-wasm') = 1 -> return 1
-    return 0
-lc_is_wasmedge a:
-    if str_eq(a, '--wasm32-edge') = 1 -> return 1
-    if str_eq(a, '--edge-wasm') = 1 -> return 1
-    if str_eq(a, '--wasm-edge') = 1 -> return 1
-    return 0
-lc_is_js a:
-    if str_eq(a, '--js') = 1 -> return 1
-    if str_eq(a, '--javascript') = 1 -> return 1
-    if str_eq(a, '--node') = 1 -> return 1
-    return 0
-lc_is_jvm a:
-    if str_eq(a, '--jvm') = 1 -> return 1
-    if str_eq(a, '--class') = 1 -> return 1
-    if str_eq(a, '--java-class') = 1 -> return 1
-    return 0
-lc_is_ts a:
-    if str_eq(a, '--ts') = 1 -> return 1
-    if str_eq(a, '--typescript') = 1 -> return 1
-    return 0
-lc_is_csharp a:
-    if str_eq(a, '--csharp') = 1 -> return 1
-    if str_eq(a, '--cs') = 1 -> return 1
-    if str_eq(a, '--dotnet') = 1 -> return 1
-    return 0
-lc_is_cil a:
-    if str_eq(a, '--cil') = 1 -> return 1
-    if str_eq(a, '--il') = 1 -> return 1
-    if str_eq(a, '--msil') = 1 -> return 1
-    return 0
-lc_is_cilpe a:
-    if str_eq(a, '--cil-pe') = 1 -> return 1
-    if str_eq(a, '--clr-pe') = 1 -> return 1
-    if str_eq(a, '--dotnet-pe') = 1 -> return 1
-    return 0
-lc_is_metal a:
-    if str_eq(a, '--metal') = 1 -> return 1
-    if str_eq(a, '--msl') = 1 -> return 1
-    if str_eq(a, '--msl') = 1 -> return 1
-    return 0
-lc_is_ptx a:
-    if str_eq(a, '--ptx') = 1 -> return 1
-    if str_eq(a, '--cuda-ptx') = 1 -> return 1
-    return 0
-lc_is_spirv a:
-    if str_eq(a, '--spirv') = 1 -> return 1
-    if str_eq(a, '--spv') = 1 -> return 1
-    return 0
 lc_is_target a:
-    if lc_is_winarm64(a) = 1 -> return 1
-    if lc_is_riscv64(a) = 1 -> return 1
-    if lc_is_riscv64v(a) = 1 -> return 1
-    if lc_is_riscv64h(a) = 1 -> return 1
-    if lc_is_riscv32zf(a) = 1 -> return 1
-    if lc_is_riscv32zd(a) = 1 -> return 1
-    if lc_is_armv7(a) = 1 -> return 1
-    if lc_is_armv5(a) = 1 -> return 1
-    if lc_is_armv7a_armel(a) = 1 -> return 1
-    if lc_is_arch(a) = 1 -> return 1
-    if lc_is_hyp(a) = 1 -> return 1
-    if lc_is_ehf(a) = 1 -> return 1
-    if lc_is_pd(a) = 1 -> return 1
-    if lc_is_store(a) = 1 -> return 1
-    if lc_is_ec(a) = 1 -> return 1
-    if lc_is_ohos(a) = 1 -> return 1
-    if lc_is_avr(a) = 1 -> return 1
-    if lc_is_msp(a) = 1 -> return 1
-    if lc_is_arcx(a) = 1 -> return 1
-    if lc_is_xtn(a) = 1 -> return 1
-    if lc_is_dex(a) = 1 -> return 1
-    if lc_is_aix(a) = 1 -> return 1
-    if lc_is_p9(a) = 1 -> return 1
-    if lc_is_fux(a) = 1 -> return 1
-    if lc_is_hx(a) = 1 -> return 1
-    if lc_is_rvbe(a) = 1 -> return 1
-    if lc_is_sve(a) = 1 -> return 1
-    if lc_is_evm(a) = 1 -> return 1
-    if lc_is_hpux(a) = 1 -> return 1
-    if lc_is_c16(a) = 1 -> return 1
-    if lc_is_51(a) = 1 -> return 1
-    if lc_is_z8(a) = 1 -> return 1
-    if lc_is_65(a) = 1 -> return 1
-    if lc_is_pic(a) = 1 -> return 1
-    if lc_is_uefiarm64(a) = 1 -> return 1
-    if lc_is_linuxso(a) = 1 -> return 1
-    if lc_is_windll(a) = 1 -> return 1
-    if lc_is_macosdylib(a) = 1 -> return 1
-    if lc_is_iosframework(a) = 1 -> return 1
-    if lc_is_wat(a) = 1 -> return 1
-    if lc_is_wasmbrowser(a) = 1 -> return 1
-    if lc_is_wasmedge(a) = 1 -> return 1
-    if lc_is_js(a) = 1 -> return 1
-    if lc_is_ts(a) = 1 -> return 1
-    if lc_is_jvm(a) = 1 -> return 1
-    if lc_is_csharp(a) = 1 -> return 1
-    if lc_is_cil(a) = 1 -> return 1
-    if lc_is_cilpe(a) = 1 -> return 1
-    if lc_is_metal(a) = 1 -> return 1
-    if lc_is_ptx(a) = 1 -> return 1
-    if lc_is_spirv(a) = 1 -> return 1
     k: lc_find(a) ;; if k < 0 -> return 0
     return 1
 lc_dir_for a:
-    if lc_is_winarm64(a) = 1 -> return as text 'windows/arm64'
-    if lc_is_riscv64(a) = 1 -> return as text 'linux/riscv64'
-    if lc_is_riscv64v(a) = 1 -> return as text 'linux/riscv64_v'
-    if lc_is_riscv64h(a) = 1 -> return as text 'linux/riscv64_h'
-    if lc_is_riscv32zf(a) = 1 -> return as text 'linux/riscv32_zfinx'
-    if lc_is_riscv32zd(a) = 1 -> return as text 'linux/riscv32_zdinx'
-    if lc_is_armv7(a) = 1 -> return as text 'linux/armv7'
-    if lc_is_armv5(a) = 1 -> return as text 'linux/armv5'
-    if lc_is_armv7a_armel(a) = 1 -> return as text 'linux/armv7a_armel'
-    if lc_is_arch(a) = 1 -> return as text 'linux/static-archive'
-    if lc_is_hyp(a) = 1 -> return as text 'linux/hypervisor'
-    if lc_is_ehf(a) = 1 -> return as text 'linux/eh-frame'
-    if lc_is_pd(a) = 1 -> return as text 'windows/pdata'
-    if lc_is_store(a) = 1 -> return as text 'windows/store'
-    if lc_is_ec(a) = 1 -> return as text 'windows/arm64ec'
-    if lc_is_ohos(a) = 1 -> return as text 'harmonyos'
-    if lc_is_avr(a) = 1 -> return as text 'linux/avr'
-    if lc_is_msp(a) = 1 -> return as text 'linux/msp430'
-    if lc_is_arcx(a) = 1 -> return as text 'linux/arc'
-    if lc_is_xtn(a) = 1 -> return as text 'linux/xtensa'
-    if lc_is_dex(a) = 1 -> return as text 'dex'
-    if lc_is_aix(a) = 1 -> return as text 'aix'
-    if lc_is_p9(a) = 1 -> return as text 'plan9'
-    if lc_is_fux(a) = 1 -> return as text 'fuchsia'
-    if lc_is_hx(a) = 1 -> return as text 'hexagon'
-    if lc_is_rvbe(a) = 1 -> return as text 'riscv64-be'
-    if str_eq(a, '--arm64-sve') = 1 -> return as text 'arm64-sve'
-    if str_eq(a, '--arm64-sve2') = 1 -> return as text 'arm64-sve2'
-    if str_eq(a, '--arm64-mte') = 1 -> return as text 'arm64-mte'
-    if lc_is_hpux(a) = 1 -> return as text 'hpux'
-    if lc_is_c16(a) = 1 -> return as text 'c166'
-    if lc_is_evm(a) = 1 -> return as text 'evm'
-    if lc_is_51(a) = 1 -> return as text '8051'
-    if str_eq(a, '--z80') = 1 -> return as text 'z80'
-    if str_eq(a, '--ez80') = 1 -> return as text 'ez80'
-    if lc_is_65(a) = 1 -> return as text '6502'
-    if str_eq(a, '--pic16') = 1 -> return as text 'pic16'
-    if str_eq(a, '--pic18') = 1 -> return as text 'pic18'
-    if lc_is_uefiarm64(a) = 1 -> return as text 'unified-extensible-firmware-interface/arm64'
-    if lc_is_linuxso(a) = 1 -> return as text 'linux/x86-64-shared-object'
-    if lc_is_windll(a) = 1 -> return as text 'windows/dynamic-link-library'
-    if lc_is_macosdylib(a) = 1 -> return as text 'apple/macos-dynamic-library'
-    if lc_is_iosframework(a) = 1 -> return as text 'apple/ios-framework'
-    if lc_is_wat(a) = 1 -> return as text 'webassembly/webassembly-text'
-    if lc_is_wasmbrowser(a) = 1 -> return as text 'webassembly/browser'
-    if lc_is_wasmedge(a) = 1 -> return as text 'webassembly/edge'
-    if lc_is_js(a) = 1 -> return as text 'javascript'
-    if lc_is_ts(a) = 1 -> return as text 'typescript'
-    if lc_is_jvm(a) = 1 -> return as text 'java-virtual-machine'
-    if lc_is_csharp(a) = 1 -> return as text 'csharp'
-    if lc_is_cil(a) = 1 -> return as text 'common-intermediate-language'
-    if lc_is_cilpe(a) = 1 -> return as text 'common-intermediate-language/portable-executable'
-    if lc_is_metal(a) = 1 -> return as text 'graphics-processing-units/msl'
-    if lc_is_ptx(a) = 1 -> return as text 'graphics-processing-units/parallel-thread-execution'
-    if lc_is_spirv(a) = 1 -> return as text 'graphics-processing-units/standard-portable-intermediate-representation-v'
     t: lc_pairs() ;; k: lc_find(a)
     if k < 0 -> return as text 'linux'
     return as text _sov_list_get(t, k + 1)
-    include inc/px00.sov 6 4 (STP BOK BBAD RES)
+STP: 0
+BOK: 0
+BBAD: 0
+RES: 0
 lc_job cdir line argv:
     ln: str_len(line) ;; i: 0
-    include inc/inc03.sov 1388 3 #2927231222293351373
+    as long as i < ln
+        if peek_byte(line, i) is not 32
+            leave
+        i: i + 1
     s0: i
-    include inc/inc03.sov 1391 3 #5707144409570055158
+    as long as i < ln
+        if peek_byte(line, i) is 32
+            leave
+        i: i + 1
     src: str_cut(line, s0, i)
-    include inc/inc03.sov 1388 3 #2927231222293351373
+    as long as i < ln
+        if peek_byte(line, i) is not 32
+            leave
+        i: i + 1
     o0: i
-    include inc/inc03.sov 1391 3 #5707144409570055158
+    as long as i < ln
+        if peek_byte(line, i) is 32
+            leave
+        i: i + 1
     out: str_cut(line, o0, i)
-    include inc/inc03.sov 1388 3 #2927231222293351373
+    as long as i < ln
+        if peek_byte(line, i) is not 32
+            leave
+        i: i + 1
     t0: i
-    include inc/inc03.sov 1391 3 #5707144409570055158
+    as long as i < ln
+        if peek_byte(line, i) is 32
+            leave
+        i: i + 1
     tgt: str_cut(line, t0, i)
     which: 'linux'
-    if str_len(tgt) > 0 -> which: lc_dir_for(tgt) ;; path: str_cat(cdir, which)
+    if str_len(tgt) > 0 -> which: lc_dir_for(tgt)
+    path: str_cat(cdir, which)
     path: str_cat(path, '/compiler')
     syscall(90, path, 493, 0, 0, 0, 0)
     pid: proc_fork() ;; if pid = 0 -> poke_i64(argv, 0, path)
@@ -1184,15 +299,28 @@ lc_batch cdir jobs:
     write_out(' ok, ') ;; write_out(num_text(BBAD))
     write_out(" failed\n")
     if BBAD = 0 -> sys_exit(0) ;; sys_exit(1)
-include inc/px00.sov 3832 4 (lc_be4 buf at buf at buf at buf at)
+lc_be4 buf at v:
+    poke_byte(buf, at, (v / 16777216) % 256)
+    poke_byte(buf, at + 1, (v / 65536) % 256)
+    poke_byte(buf, at + 2, (v / 256) % 256)
     poke_byte(buf, at + 3, v % 256)
 lc_universal root src out:
     STP: _sov_alloc(8) ;; uargv: _sov_alloc(64)
     tx: as text '/tmp/sov-univ-x86_64'
     ta: as text '/tmp/sov-univ-arm64'
-    include inc/px00.sov 1941 6 (lx lx tx macos lx x86_64)
+    lx: str_cat(src, ' ')
+    lx: str_cat:
+        tx
+        ' --macos'
+    lc_job(str_cat(root, '/compilers/'), lx, uargv)
+    if RES != 0 -> write_out("Error: the x86_64 slice failed to build\n")
         return 1
-    include inc/px00.sov 1941 6 (la la ta ios la arm64)
+    la: str_cat(src, ' ')
+    la: str_cat:
+        ta
+        ' --ios'
+    lc_job(str_cat(root, '/compilers/'), la, uargv)
+    if RES != 0 -> write_out("Error: the arm64 slice failed to build\n")
         return 1
     dx: file_read_all(tx)
     if dx = 0 -> write_out("Error: cannot read the x86_64 slice\n")
@@ -1210,7 +338,12 @@ lc_universal root src out:
     i: 0 ;; as long as i < total -> poke_byte(fat, i, 0)
         i: i + 1
     fat: lc_be4 0 + 4 * i: 3405691582 2 7 3 offx fx 12 16777228 0 offa fa 12
-    include inc/px00.sov 1948 6 (fx fat offx dx fa fat offa da)
+    i: 0
+    as long as i < fx -> poke_byte(fat, offx + i, peek_byte(dx, i))
+        i: i + 1
+    i: 0
+    as long as i < fa -> poke_byte(fat, offa + i, peek_byte(da, i))
+        i: i + 1
     w: file_write_bytes(out, fat, total)
     if w = 0 -> write_out("Error: cannot write the universal binary\n")
         return 1
@@ -1223,13 +356,19 @@ main:
         print 'sovren — native x86-64, self-contained'
         stop
     i: 1 ;; as long as i < n -> a: as text arg_at(i)
-        include inc/px00.sov 3837 4 (version lc_version v lc_version)
-        include inc/px00.sov 3837 4 (help lc_help h lc_help)
+        if str_eq(a, '--version') = 1 -> lc_version()
+            stop
+        if str_eq(a, '-v') = 1 -> lc_version()
+            stop
+        if str_eq(a, '--help') = 1 -> lc_help()
+            stop
+        if str_eq(a, '-h') = 1 -> lc_help()
+            stop
         i: i + 1
     which: 'linux'
     explicit_target: 0
-    0:
-        host_win ;; host_mac
+    host_win: 0
+    host_mac: 0
     me0: lc_unquote(as text arg_at(0))
     if str_ends(me0, '.exe') = 1 -> host_win: 1
         which: 'windows'
@@ -1264,13 +403,21 @@ main:
                 which: lc_dir_for(a)
         i: i + 1
     me: me0 ;; root: as text dir_of(me)
-    include inc/px00.sov 1131 5 (bt batch bt i)
+    bt: 0
+    i: 1
+    as long as i < n -> if str_eq(as text arg_at(i), '--batch') = 1
+            bt: i
+        i: i + 1
     if bt != 0 -> if n < bt + 2
             print 'Usage: sovren --batch jobs.txt'
             stop
         lc_batch(str_cat(root, '/compilers/'), as text arg_at(bt + 1))
         stop
-    include inc/px00.sov 1131 5 (un universal un 1)
+    un: 0
+    i: 1
+    as long as i < n -> if str_eq(as text arg_at(i), '--universal') = 1
+            un: 1
+        i: i + 1
     if un = 1 -> usrc: as text ''
         uout: as text ''
         i: 1 ;; as long as i < n -> ua: as text arg_at(i)
@@ -1297,7 +444,7 @@ main:
             pexe: str_cat(path, '.exe')
             if file_exists(pexe) = 1 -> path: pexe
     if file_exists(path) = 0 -> write_out('Error: no compiler at ')
-        print path ;; stop
+        print as text path ;; stop
     dbgf: 0
     di: 1
     as long as di < n -> if str_eq(as text arg_at(di), '--debug') = 1
@@ -1305,7 +452,10 @@ main:
         di: di + 1
     if dbgf = 1 -> lc_exec_dbg(str_cat(root, '/sovren-dbg'), n)
     lc_exec(path, n)
-include inc/px00.sov 3842 4 (lc_unquote s str_len s s a)
+lc_unquote s:
+    n: str_len(s)
+    if n = 0 -> return s
+    a: 0
     b: n ;; if peek_byte(s, 0) = 34 -> a: 1
     if n > a -> if peek_byte(s, n - 1) = 34
             b: n - 1
@@ -1324,16 +474,21 @@ dir_of p:
             return as text str_cut(p, 0, i)
     return as text '.'
 lc_exec_dbg path n:
-    argv: _sov_alloc(256) ;; poke_i64(argv, 0, path)
+    argv: _sov_alloc((n + 1) * 8) ;; poke_i64(argv, 0, path)
     i: 1 ;; as long as i < n -> poke_i64(argv, i * 8, as text arg_at(i))
         i: i + 1
     syscall(90, path, 493, 0, 0, 0, 0)
-    include inc/px00.sov 1955 6 (n sovren-dbg sovren-dbg)
+    poke_i64(argv, n * 8, 0)
+    if str_ends(path, '.exe') = 1 -> _sov_win_exec(path, argv)
+        print 'Error: could not start the sovren-dbg'
+        return 1
+    syscall(59, path, argv, 0, 0, 0, 0)
+    print 'Error: could not start the sovren-dbg'
     return 1
 lc_exec path n:
-    argv: _sov_alloc(256) ;; poke_i64(argv, 0, path)
-    1:
-        k ;; i
+    argv: _sov_alloc((n + 1) * 8) ;; poke_i64(argv, 0, path)
+    k: 1
+    i: 1
     as long as i < n -> a: as text arg_at(i)
         keep: 1 ;; if lc_is_target(a) = 1 -> keep: 0
         if str_eq(a, '--android-so') = 1 -> keep: 0
@@ -1341,7 +496,12 @@ lc_exec path n:
             k: k + 1
         i: i + 1
     syscall(90, path, 493, 0, 0, 0, 0)
-    include inc/px00.sov 1955 6 (k compiler compiler)
+    poke_i64(argv, k * 8, 0)
+    if str_ends(path, '.exe') = 1 -> _sov_win_exec(path, argv)
+        print 'Error: could not start the compiler'
+        return 1
+    syscall(59, path, argv, 0, 0, 0, 0)
+    print 'Error: could not start the compiler'
     return 1
 
 

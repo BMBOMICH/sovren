@@ -16,9 +16,19 @@ for d in drvs:
                         capture_output=True, timeout=300)
     ok = os.path.exists('/tmp/fsg_drv.bin') and os.path.getsize('/tmp/fsg_drv.bin') > 1000
     if not ok:
+        # C.30/C.32: never silently skip. Every non-building driver MUST carry
+        # the shipped .build-failed marker; record the marker text, the full
+        # first error and the process return code as explicit evidence.
+        marker = os.path.join(os.path.dirname(d), '.build-failed')
+        mark = open(marker).read().strip()[:120] if os.path.isfile(marker) else None
+        raw = (rc.stderr or rc.stdout).decode('utf-8', 'replace')
+        first = next((l.strip() for l in raw.splitlines() if l.startswith('Error:')), '')
         rows.append({"driver": rel, "status": "lineage-pending",
-                     "err": (rc.stderr or rc.stdout).decode('utf-8', 'replace').split('Error:')[-1].strip()[:60]})
-        print(f"{rel:60s} lineage-pending")
+                     "err": raw.split('Error:')[-1].strip()[:60],
+                     "first_error": first[:120], "rc": rc.returncode,
+                     "build_failed_marker": mark,
+                     "classified": mark is not None})
+        print(f"{rel:60s} lineage-pending (marker={'yes' if mark else 'NO'})")
         continue
     blob = os.path.getsize('/tmp/fsg_drv.bin'); os.unlink('/tmp/fsg_drv.bin')
     times = []
@@ -38,4 +48,16 @@ out = {"at": __import__('datetime').datetime.now().isoformat(timespec='seconds')
        "host": platform.uname()._asdict(), "runs_per_driver": RUNS, "rows": rows}
 os.makedirs(ROOT+'/tests/gates', exist_ok=True)
 json.dump(out, open(ROOT+'/tests/gates/fleet_speed_gate.json', 'w'), indent=1)
-print("->", "tests/gates/fleet_speed_gate.json", f"({sum(1 for r in rows if r['status']=='builds')}/{len(rows)} build)")
+builds = sum(1 for r in rows if r['status'] == 'builds')
+pending = sum(1 for r in rows if r['status'] == 'lineage-pending')
+unmarked = [r['driver'] for r in rows
+            if r['status'] == 'lineage-pending' and not r.get('build_failed_marker')]
+print("->", "tests/gates/fleet_speed_gate.json", f"({builds}/{len(rows)} build)")
+print(f"fleet census: {len(drvs)} drivers discovered, {len(rows)} rows recorded, "
+      f"{builds} build, {pending} lineage-pending, {len(unmarked)} UNMARKED")
+assert len(rows) == len(drvs), 'driver skipped'
+# A pending driver without the shipped marker is a harness/source regression,
+# not an acceptable lineage-pending row.
+if unmarked:
+    print("UNMARKED lineage-pending (fail):", unmarked)
+    sys.exit(1)

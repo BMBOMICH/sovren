@@ -2,23 +2,54 @@
 # A line taken from a shared block may carry %1 %2 ... ; each is swapped for the value
 # the include line handed over, so one copy of a block can serve many call sites.
 sg_psub l pars:
+    # Two-pass single-allocation rewrite (the old body appended one
+    # character per _sov_strcat: an alloc and a full recopy of the
+    # accumulated text for every byte of every parameterized include
+    # line).  Byte-level scan; pass 1 sizes the result, pass 2 fills
+    # one buffer with bulk copies.  Lines without a % hand back the
+    # input pointer unchanged - the expansion is read-only downstream,
+    # and the include cache's line strings are never mutated.
     if _sov_list_len(pars) is 0
         return l
-    out: ""
-    i: 0
-    n: _sov_strlen(l)
-    as long as i < n
-        c: _sov_char_at(l, i)
-        hit: 0
-        if c is "%"
-            if i + 1 < n
-                k: _sov_atoi(_sov_char_at(l, i + 1))
-                if k > 0
-                    if k <= _sov_list_len(pars)
-                        out: _sov_strcat(out, _sov_list_get(pars, k - 1))
-                        i: i + 2
-                        hit: 1
-        if hit is 0
-            out: _sov_strcat(out, c)
-            i: i + 1
-    return out
+    if cfind1(l, 37) < 0
+        return l
+    ps_n: _sov_strlen(l)
+    ps_i: 0
+    ps_tot: 0
+    as long as ps_i < ps_n
+        ps_hit: 0
+        ps_b: peek_byte(l, ps_i)
+        if ps_b is 37
+            if ps_i + 1 < ps_n
+                ps_k: _sov_atoi(_sov_char_at(l, ps_i + 1))
+                if ps_k > 0
+                    if ps_k <= _sov_list_len(pars)
+                        ps_tot: ps_tot + _sov_strlen(_sov_list_get(pars, ps_k - 1))
+                        ps_i: ps_i + 2
+                        ps_hit: 1
+        if ps_hit is 0
+            ps_tot: ps_tot + 1
+            ps_i: ps_i + 1
+    ps_buf: _sov_heap_alloc(ps_tot + 1)
+    ps_w: 0
+    ps_i: 0
+    as long as ps_i < ps_n
+        ps_hit: 0
+        ps_b: peek_byte(l, ps_i)
+        if ps_b is 37
+            if ps_i + 1 < ps_n
+                ps_k: _sov_atoi(_sov_char_at(l, ps_i + 1))
+                if ps_k > 0
+                    if ps_k <= _sov_list_len(pars)
+                        ps_pv: _sov_list_get(pars, ps_k - 1)
+                        ps_pn: _sov_strlen(ps_pv)
+                        dummy: _sov_mem_copy(ps_buf + ps_w, ps_pv, ps_pn)
+                        ps_w: ps_w + ps_pn
+                        ps_i: ps_i + 2
+                        ps_hit: 1
+        if ps_hit is 0
+            dummy: poke_byte(ps_buf, ps_w, ps_b)
+            ps_w: ps_w + 1
+            ps_i: ps_i + 1
+    dummy: poke_byte(ps_buf, ps_w, 0)
+    return ps_buf

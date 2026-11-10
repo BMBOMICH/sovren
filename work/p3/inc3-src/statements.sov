@@ -1,0 +1,262 @@
+# unsafe-module
+# Per-body structured statement IR, freshly constructed before emission.
+# No source keys, result reuse, cross-compilation state, or artifact caching.
+syntax_body_lines: 0
+syntax_body_ir: 0
+syntax_statement_trees: 0
+syntax_statement_native_trees: 0
+syntax_statement_nodes: 0
+syntax_statement_build sx_lines sx_out sx_arena sx_parser:
+    if sx_out is 0
+        sx_budget: 0
+        sx_i: 0
+        as long as sx_i < _sov_list_len(sx_lines)
+            sx_ptr: peek_i64(sx_lines, 16 + sx_i * 8)
+            sx_budget: sx_budget + 128 + (length(sx_ptr) + 1) * 64
+            sx_i: sx_i + 1
+        return sx_budget
+    # Source reference for the native metadata builder.
+    bt_prep(sx_lines)
+    sx_n: _sov_list_len(sx_lines)
+    poke_i64(sx_out, 0, sx_lines)
+    poke_i64(sx_out, 8, sx_n)
+    sx_depth: 0
+    sx_i: 0
+    as long as sx_i < sx_n
+        sx_ptr: peek_i64(sx_lines, 16 + sx_i * 8)
+        sx_len: length(sx_ptr)
+        sx_ind: peek_i64(bt_ind, 16 + sx_i * 8)
+        poke_i64(sx_out, 16 + sx_i * 8, peek_i64(bt_m, 16 + sx_i * 8))
+        poke_i64(sx_out, 16 + (sx_n + sx_i) * 8, sx_ind)
+        poke_i64(sx_out, 16 + (sx_n * 2 + sx_i) * 8, peek_i64(bt_col, 16 + sx_i * 8))
+        poke_i64(sx_out, 16 + (sx_n * 3 + sx_i) * 8, peek_i64(bt_eq, 16 + sx_i * 8))
+        poke_i64(sx_out, 16 + (sx_n * 4 + sx_i) * 8, peek_i64(bt_tab, 16 + sx_i * 8))
+        poke_i64(sx_out, 16 + (sx_n * 5 + sx_i) * 8, peek_i64(bt_tr, 16 + sx_i * 8))
+        poke_i64(sx_out, 16 + (sx_n * 6 + sx_i) * 8, sx_len)
+        poke_i64(sx_out, 16 + (sx_n * 7 + sx_i) * 8, 0 - 1)
+        poke_i64(sx_out, 16 + (sx_n * 8 + sx_i) * 8, sx_n)
+        sx_first: sx_ind
+        as long as sx_first < sx_len
+            if peek_byte(sx_ptr, sx_first) > 32 -> leave
+            sx_first: sx_first + 1
+        sx_head: sx_first
+        as long as sx_head < sx_len
+            sx_c: peek_byte(sx_ptr, sx_head)
+            if sx_c <= 32 -> leave
+            if sx_c is 58 or sx_c is 40 -> leave
+            sx_head: sx_head + 1
+        poke_i64(sx_out, 16 + (sx_n * 10 + sx_i) * 8, sx_head)
+        sx_live: 0
+        if sx_first < sx_len
+            if peek_byte(sx_ptr, sx_first) is not 35 -> sx_live: 1
+        poke_i64(sx_out, 16 + (sx_n * 9 + sx_i) * 8, sx_live)
+        if sx_live is 1
+            as long as sx_depth > 0
+                sx_parent: peek_i64(sx_out, 16 + (sx_n * 11 + sx_depth - 1) * 8)
+                if peek_i64(sx_out, 16 + (sx_n + sx_parent) * 8) < sx_ind -> leave
+                poke_i64(sx_out, 16 + (sx_n * 8 + sx_parent) * 8, sx_i)
+                sx_depth: sx_depth - 1
+            if sx_depth > 0
+                sx_parent: peek_i64(sx_out, 16 + (sx_n * 11 + sx_depth - 1) * 8)
+                poke_i64(sx_out, 16 + (sx_n * 7 + sx_i) * 8, sx_parent)
+            poke_i64(sx_out, 16 + (sx_n * 11 + sx_depth) * 8, sx_i)
+            sx_depth: sx_depth + 1
+        poke_i64(sx_out, 16 + (sx_n * 12 + sx_i) * 8, 0)
+        poke_i64(sx_out, 16 + (sx_n * 13 + sx_i) * 8, 0)
+        sx_i: sx_i + 1
+    sx_bad: 0
+    sx_i: 0
+    as long as sx_i < sx_n
+        if peek_i64(sx_out, 16 + (sx_n * 4 + sx_i) * 8) is not 0 -> sx_bad: sx_bad + 1
+        poke_i64(sx_out, 16 + (sx_n * 11 + sx_i) * 8, sx_bad)
+        sx_i: sx_i + 1
+    return sx_n
+syntax_prepare_statements sx_lines:
+    sx_n: _sov_list_len(sx_lines)
+    syntax_loop_trees: list_reuse(syntax_loop_trees)
+    syntax_body_lines: sx_lines
+    if syntax_body_ir is 0 or sx_n > syntax_body_ir_cap
+        syntax_body_ir_cap: 16
+        as long as syntax_body_ir_cap < sx_n
+            syntax_body_ir_cap: syntax_body_ir_cap * 2
+        syntax_body_ir: _sov_heap_alloc(16 + syntax_body_ir_cap * 112)
+    if syntax_body_arena is 0
+        syntax_body_arena_cap: 4194304
+        syntax_body_arena: _sov_heap_alloc(syntax_body_arena_cap)
+    poke_i64(syntax_body_ir, 0, 773411)
+    poke_i64(syntax_body_ir, 8, syntax_body_arena_cap)
+    if syntax_statement_build(sx_lines, syntax_body_ir, syntax_body_arena, addr_of syntax_build) is 0 - 1
+        sx_bytes: syntax_statement_build(sx_lines, 0, 0, 0)
+        as long as syntax_body_arena_cap < sx_bytes + 164096
+            syntax_body_arena_cap: syntax_body_arena_cap * 2
+        syntax_body_arena: _sov_heap_alloc(syntax_body_arena_cap)
+        poke_i64(syntax_body_ir, 0, 773411)
+        poke_i64(syntax_body_ir, 8, syntax_body_arena_cap)
+        syntax_statement_build(sx_lines, syntax_body_ir, syntax_body_arena, addr_of syntax_build)
+    if prof_mode is 1
+        sx_pi: 0
+        as long as sx_pi < sx_n
+            sx_pt: peek_i64(syntax_body_ir, 16 + (sx_n * 12 + sx_pi) * 8)
+            if sx_pt is not 0
+                syntax_statement_trees: syntax_statement_trees + 1
+                syntax_statement_nodes: syntax_statement_nodes + peek_i64(sx_pt, 16)
+                if peek_i64(sx_pt, 56) is 86042493933125
+                    syntax_statement_native_trees: syntax_statement_native_trees + 1
+            sx_pi: sx_pi + 1
+    bt_n: sx_n
+    bt_m: syntax_body_ir
+    bt_ind: syntax_body_ir + sx_n * 8
+    bt_col: syntax_body_ir + sx_n * 16
+    bt_eq: syntax_body_ir + sx_n * 24
+    bt_tab: syntax_body_ir + sx_n * 32
+    bt_tr: syntax_body_ir + sx_n * 40
+    bt_cap: 0
+    return 0
+syntax_block_end sx_lines sx_start sx_indent:
+    if sx_lines is not syntax_body_lines -> return 0 - 1
+    if syntax_body_ir is 0 -> return 0 - 1
+    sx_n: peek_i64(syntax_body_ir, 8)
+    if sx_start < 1 -> return 0 - 1
+    if sx_start > sx_n -> return 0 - 1
+    sx_header: sx_start - 1
+    if peek_i64(syntax_body_ir, 16 + (sx_n * 9 + sx_header) * 8) is 0 -> return 0 - 1
+    if peek_i64(syntax_body_ir, 16 + (sx_n + sx_header) * 8) is not sx_indent -> return 0 - 1
+    sx_end: peek_i64(syntax_body_ir, 16 + (sx_n * 8 + sx_header) * 8)
+    if sx_end > sx_start
+        sx_before: peek_i64(syntax_body_ir, 16 + (sx_n * 11 + sx_header) * 8)
+        sx_after: peek_i64(syntax_body_ir, 16 + (sx_n * 11 + sx_end - 1) * 8)
+        if sx_after > sx_before -> return 0 - 1
+    return sx_end
+include statements_native.sov
+
+syntax_body_ir_cap: 0
+syntax_body_arena: 0
+syntax_body_arena_cap: 0
+syntax_stmt_tree: 0
+syntax_stmt_role: 0
+syntax_stmt_line: 0
+syntax_stmt_roots: 0
+syntax_select_statement sx_lines sx_index sx_raw sx_text:
+    syntax_stmt_tree: 0
+    syntax_stmt_role: 0
+    syntax_stmt_line: 0
+    if syntax_mode is not 1 -> return 0
+    if sx_lines is not syntax_body_lines -> return 0
+    sx_n: peek_i64(syntax_body_ir, 8)
+    if sx_index >= sx_n -> return 0
+    if peek_i64(sx_lines, 16 + sx_index * 8) is not sx_raw -> return 0
+    syntax_stmt_tree: peek_i64(syntax_body_ir, 16 + (sx_n * 12 + sx_index) * 8)
+    syntax_stmt_role: peek_i64(syntax_body_ir, 16 + (sx_n * 13 + sx_index) * 8)
+    syntax_stmt_line: sx_text
+    return 0
+syntax_stmt_expr sx_tree sx_role sx_expected sx_text:
+    if sx_tree is 0 -> return expr(sx_text)
+    if sx_role is not sx_expected -> return expr(sx_text)
+    return syntax_stmt_lower(sx_tree)
+syntax_stmt_lower sx_tree:
+    if prof_mode is 1 -> syntax_stmt_roots: syntax_stmt_roots + 1
+    ex_depth: ex_depth + 1
+    if ex_depth > 150
+        if had_err is 0
+            print "Error: expression too long, split it up"
+            err_where()
+            had_err: 1
+        ex_depth: ex_depth - 1
+        xor_rax()
+        return 0
+    sx_result: syntax_emit(sx_tree, peek_i64(sx_tree, 48))
+    ex_depth: ex_depth - 1
+    return sx_result
+
+syntax_loop_trees: 0
+syntax_stmt_fuse sx_tree sx_role sx_text sx_inverse:
+    if sx_tree is 0 -> return fuse_cmp(sx_text, sx_inverse)
+    if sx_role is not 2 -> return fuse_cmp(sx_text, sx_inverse)
+    if prof_mode is 1 -> syntax_stmt_roots: syntax_stmt_roots + 1
+    return syntax_fuse_tree(sx_tree, sx_inverse)
+syntax_set_loop_tree sx_index sx_tree sx_role:
+    if syntax_mode is not 1 -> return 0
+    as long as _sov_list_len(syntax_loop_trees) <= sx_index
+        syntax_loop_trees: _sov_list_add(syntax_loop_trees, 0)
+    if sx_role is not 2 -> sx_tree: 0
+    poke_i64(syntax_loop_trees, 16 + sx_index * 8, sx_tree)
+    return 0
+syntax_loop_fuse sx_index sx_text sx_inverse:
+    if syntax_mode is 1
+        if sx_index < _sov_list_len(syntax_loop_trees)
+            sx_tree: peek_i64(syntax_loop_trees, 16 + sx_index * 8)
+            poke_i64(syntax_loop_trees, 16 + sx_index * 8, 0)
+            if sx_tree is not 0
+                if prof_mode is 1 -> syntax_stmt_roots: syntax_stmt_roots + 1
+                return syntax_fuse_tree(sx_tree, sx_inverse)
+    return fuse_cmp(sx_text, sx_inverse)
+
+syntax_fast_assignment sx_tree sx_role sx_var sx_rhs:
+    if sx_tree is 0 -> return 0
+    if sx_role is not 1 -> return 0
+    sx_rec: sx_tree + 128 + peek_i64(sx_tree, 48) * 40
+    sx_kind: peek_i64(sx_rec, 0)
+    if sx_kind is 264
+        if cp_nm is not 0
+            if _sov_str_eq(cp_nm, sx_var) is 1 -> cp_nm: 0
+        sx_value: peek_i64(sx_rec, 24)
+        if digitb(peek_byte(sx_rhs, 0)) is 1
+            if br_depth is 0 and has_vm is 0
+                if prof_mode is 1 -> syntax_stmt_roots: syntax_stmt_roots + 1
+                cset(sx_var, sx_value)
+                if sx_value > 0
+                    kn: sx_var
+                    kv: sx_value
+                    plog_kn(sx_value, sx_var)
+                drop_str(sx_var)
+                return 1
+            if peek_byte(sx_rhs, 0) is 48 and peek_byte(sx_rhs, 1) is 0
+                sx_zl: lsh_find_s(sx_var)
+                if sx_zl > 0 - 1
+                    if gn_lookup(sx_var) < 0
+                        if sx_zl < 5
+                            if prof_mode is 1 -> syntax_stmt_roots: syntax_stmt_roots + 1
+                            cset(sx_var, 0)
+                            if sx_zl is 0
+                                emit3(72, 49, 219)
+                            if not
+                                emit2(77, 49)
+                                emit(192 + 9 * (sx_zl + 3))
+                            sx_zi: cn_lookup(sx_var)
+                            cemt: _sov_list_set(cemt, sx_zi, 1)
+                            plog_str(4, sx_var)
+                            drop_str(sx_var)
+                            return 1
+                        if leaf8 is 1 and sx_zl < 9
+                            if prof_mode is 1 -> syntax_stmt_roots: syntax_stmt_roots + 1
+                            cset(sx_var, 0)
+                            emit2(77, 49)
+                            emit(192 + 9 * (sx_zl - 5))
+                            sx_zi: cn_lookup(sx_var)
+                            cemt: _sov_list_set(cemt, sx_zi, 1)
+                            plog_str(4, sx_var)
+                            drop_str(sx_var)
+                            return 1
+        if prof_mode is 1 -> syntax_stmt_roots: syntax_stmt_roots + 1
+        rax_imm(sx_value)
+        storev(sx_var)
+        drop_str(sx_var)
+        return 1
+    if sx_kind is 265
+        if expr_atom_word(sx_rhs) is 1
+            if prof_mode is 1 -> syntax_stmt_roots: syntax_stmt_roots + 1
+            if cp_nm is not 0
+                if _sov_str_eq(cp_nm, sx_var) is 1 -> cp_nm: 0
+            if sv_lookup(sx_var) < 0 and sv_lookup(sx_rhs) < 0
+                sx_dst: reg_slot(sx_var)
+                sx_src: reg_slot(sx_rhs)
+                if sx_dst >= 0 and sx_src >= 0
+                    cflush(sx_rhs)
+                    emit_mov_slot(sx_src, sx_dst)
+                    drop_str(sx_var)
+                    return 1
+            loadv(sx_rhs)
+            storev(sx_var)
+            drop_str(sx_var)
+            return 1
+    return 0

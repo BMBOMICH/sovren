@@ -24,8 +24,9 @@ Caveats, stated because they matter:
 import os, re, shutil, subprocess, sys, tempfile, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FREE = ["library/cx86.sov", "library/ccore.sov", "library/carm.sov",
-        "compilers/linux/compiler.sov"]
+FREE = ["compilers/linux/compiler.sov", "compilers/shared/ccore.sov",
+        *["compilers/shared/cx86_p%d.sov" % i for i in range(1, 8)],
+        "compilers/shared/carm.sov"]
 SRC_REL = "compilers/linux/compiler.sov"
 BUILD_TIMEOUT = 90
 RUN_TIMEOUT = 25
