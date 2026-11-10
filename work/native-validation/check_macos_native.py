@@ -33,5 +33,25 @@ for generation in range(1,4):
     command(f'execute-tiny-generation-{generation}',[root/'generated-tiny.macho'],7)
 report['generation_sha256']=identities
 assert len(set(identities))==1 and identities[0]==sha(root/'self.macho'),identities
-report['passed']=True
+report['language_cases']=[]
+for case in json.loads((root/'corpus.json').read_text()):
+    src=root/'corpus'/case['source'];out=root/'case.macho';out.unlink(missing_ok=True)
+    row={'name':case['name'],'passed':False}
+    try:
+        q=subprocess.run([cc,src,'-o',out],cwd=root,capture_output=True,timeout=30)
+        row['build_exit_code']=q.returncode
+        if q.returncode==0 and out.is_file():
+            out.chmod(0o700)
+            q=subprocess.run([out,*case['argv']],cwd=root,capture_output=True,timeout=90)
+            row.update(exit_code=q.returncode,stdout=q.stdout.decode(errors='replace'),stderr=q.stderr.decode(errors='replace'))
+            row['passed']=q.returncode==case['exit_code'] and (row['stdout']+row['stderr']).strip()==case['stdout']
+        else:row['diagnostic']=(q.stdout+q.stderr).decode(errors='replace')[-3000:]
+    except (OSError,subprocess.TimeoutExpired) as error:row['error']=str(error)
+    report['language_cases'].append(row)
+    if not row['passed']:print('Language failure',row,flush=True)
+    (root/'macos-native-report.json').write_text(json.dumps(report,indent=2)+'\n')
+report['language_passed']=sum(r['passed'] for r in report['language_cases'])
+report['passed']=all(r['passed'] for r in report['language_cases'])
 (root/'macos-native-report.json').write_text(json.dumps(report,indent=2)+'\n')
+print('Native macOS language cases',report['language_passed'],'/',len(report['language_cases']),flush=True)
+raise SystemExit(0 if report['passed'] else 1)
