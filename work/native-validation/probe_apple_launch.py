@@ -17,7 +17,7 @@ def probe(root):
         for i in range(struct.unpack_from('<I',b,16)[0]):
             cmd,size=struct.unpack_from('<II',b,at)
             if cmd==29:
-                off=struct.unpack_from('<I',b,at+8)[0]; cd=off+20
+                off=struct.unpack_from('<I',b,at+8)[0]; cd=off+struct.unpack_from('>I',b,off+16)[0]
                 ho=struct.unpack_from('>I',b,cd+16)[0]
                 slots=struct.unpack_from('>I',b,cd+28)[0]
                 for pg in range(slots):b[cd+ho+pg*32:cd+ho+(pg+1)*32]=hashlib.sha256(b[pg*4096:min((pg+1)*4096,off)]).digest()
