@@ -23,7 +23,7 @@ for name,code,out in [('arithmetic',30,''),('raw-write',0,'raw\n'),('allocation'
     except SystemExit: pass
 try: run('compiler-probe',[R/'self.macho',R/'tiny.sov','-o',R/'native-tiny.macho'])
 except SystemExit:
-    try: run('compiler-debugger',['lldb','--batch','-o','settings set target.disable-aslr false','-o','run tiny.sov -o native-tiny.macho','-o','register read','-o','disassemble --pc --count 16','-o','image list -o -f','-o','bt',R/'self.macho'],timeout=90)
+    try: run('compiler-debugger',['lldb','--batch','-o','settings set target.disable-aslr false','-o','run tiny.sov -o native-tiny.macho','-k','register read','-k','disassemble --pc --count 16','-k','image list -o -f','-k','bt',R/'self.macho'],timeout=90)
     except SystemExit: pass
 run('hello',[R/'hello.macho'],0,'Hello from Sovren! Fully self-hosted!\n30\nz is big\nloop\nloop\nloop\n')
 compiler=R/'self.macho';generations=[sha(compiler)]
