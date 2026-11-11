@@ -14,19 +14,8 @@ def run(name,args,code=0,out=None,timeout=240):
     if not row['passed']:raise SystemExit(1)
 def sha(p):return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 save();assert platform.system()=='Darwin' and platform.machine()=='arm64',platform.platform()
-import probe_apple_launch
-probe_apple_launch.probe(R)
 for name in ('tiny.macho','hello.macho','self.macho'):(R/name).chmod(0o755)
 run('verify-ad-hoc-signature',['codesign','--verify','--strict','--verbose=4',R/'tiny.macho'])
-run('load-commands',['otool','-l',R/'tiny.macho'])
-run('signature-details',['codesign','-d','--verbose=4',R/'tiny.macho'])
-try:
-    run('launch-probe',[R/'tiny.macho'],7,'')
-except SystemExit:
-    for label,args in [('kernel-log',['sudo','log','show','--last','2m','--style','compact','--predicate','process == "kernel"']),('signature-log',['sudo','log','show','--last','2m','--style','compact','--predicate','eventMessage CONTAINS[c] "tiny.macho"'])]:
-        try: run(label,args,timeout=40)
-        except SystemExit: pass
-    raise
 run('tiny',[R/'tiny.macho'],7,'')
 run('hello',[R/'hello.macho'],0,'Hello from Sovren! Fully self-hosted!\n30\nz is big\nloop\nloop\nloop\n')
 compiler=R/'self.macho';generations=[sha(compiler)]
