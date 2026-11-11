@@ -43,6 +43,24 @@ def probe(root):
     sig=struct.pack('>5I',0xfade0cc0,28+len(cd)+8,2,0,28)+struct.pack('>2I',0x10000,28+len(cd))+cd+struct.pack('>2I',0xfade0b01,8)
     b[start:]=sig;struct.pack_into('<I',b,572,len(sig));struct.pack_into('<Q',b,624,len(sig))
     cases.append(('cms-slot',b))
+    for tables in (False,True):
+        for direct in (False,True):
+            b=bytearray(original)
+            commands=[original[32:104],original[104:176],original[176:248],original[576:648]]
+            def lc_string(cmd,path,header):
+                raw=path.encode()+b'\0';size=(header+len(raw)+7)//8*8
+                return struct.pack('<II',cmd,size)+struct.pack('<I',header)+bytes(header-12)+raw+bytes(size-header-len(raw))
+            commands.append(lc_string(0xe,'/usr/lib/dyld',12))
+            commands.append(lc_string(0xc,'/usr/lib/libSystem.B.dylib',24))
+            commands.append(struct.pack('<IIQQ',0x80000028,24,16384,0))
+            if tables:
+                commands.append(struct.pack('<12I',0x80000022,48,*([0]*10)))
+                commands.append(struct.pack('<6I',2,24,0,0,0,0))
+                commands.append(struct.pack('<20I',11,80,*([0]*18)))
+            commands.extend([original[536:560],original[560:576]])
+            blob=b''.join(commands);b[32:16384]=blob+bytes(16384-32-len(blob));struct.pack_into('<II',b,16,len(commands),len(blob));struct.pack_into('<I',b,24,0x200085)
+            if direct:struct.pack_into('<III',b,16384,0xd28000e0,0xd2800030,0xd4001001)
+            cases.append(('dyld-'+str(tables)+'-'+str(direct),b))
     rows=[]
     for name,b in cases:
         signature(b);p=root/(name+'.macho');p.write_bytes(b);p.chmod(0o755)
