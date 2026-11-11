@@ -1,0 +1,29 @@
+name: ARM64 native compiler repair checks
+on:
+  push:
+    branches: ['codex/arm64-repair-checks-20261112']
+    paths: ['work/native-validation/**', '.github/workflows/arm64-native-repair.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  macos-arm64:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check actual Apple ARM64 execution and compiler generations
+        run: |
+          mkdir -p "$RUNNER_TEMP/sovren-arm64-repair"
+          tar -xzf work/native-validation/macos-arm64-validation.tar.gz -C "$RUNNER_TEMP/sovren-arm64-repair"
+          cp work/native-validation/check_apple_arm64_native.py "$RUNNER_TEMP/sovren-arm64-repair/"
+          python3 "$RUNNER_TEMP/sovren-arm64-repair/check_apple_arm64_native.py"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-arm64-repair-report
+          path: |
+            ${{ runner.temp }}/sovren-arm64-repair/macos-arm64-report.json
+            ${{ runner.temp }}/sovren-arm64-repair/positive.json
