@@ -15,6 +15,7 @@ def run(name,args,code=0,out=None,timeout=240):
 def sha(p):return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 save();assert platform.system()=='Darwin' and platform.machine()=='arm64',platform.platform()
 for name in ('tiny.macho','hello.macho','self.macho'):(R/name).chmod(0o755)
+run('verify-ad-hoc-signature',['codesign','--verify','--strict','--verbose=4',R/'tiny.macho'])
 run('tiny',[R/'tiny.macho'],7,'')
 run('hello',[R/'hello.macho'],0,'Hello from Sovren! Fully self-hosted!\n30\nz is big\nloop\nloop\nloop\n')
 compiler=R/'self.macho';generations=[sha(compiler)]
