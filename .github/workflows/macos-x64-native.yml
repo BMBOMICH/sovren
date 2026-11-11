@@ -1,0 +1,29 @@
+name: macOS x86-64 native compiler repair checks
+on:
+  push:
+    branches: ['codex/arm64-repair-checks-20261112']
+    paths: ['work/macos-x64-native/**', '.github/workflows/macos-x64-native.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-macos-x64:
+    runs-on: macos-15-intel
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Execute native x86-64 images and compiler generations
+        run: |
+          mkdir -p "$RUNNER_TEMP/sovren-macos-x64"
+          tar -xzf work/macos-x64-native/validation.tar.gz -C "$RUNNER_TEMP/sovren-macos-x64"
+          cp work/macos-x64-native/check_macos_x64_native.py "$RUNNER_TEMP/sovren-macos-x64/"
+          python3 "$RUNNER_TEMP/sovren-macos-x64/check_macos_x64_native.py"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-x64-repair-report
+          path: |
+            ${{ runner.temp }}/sovren-macos-x64/macos-x64-report.json
+            ${{ runner.temp }}/sovren-macos-x64/positive.json
