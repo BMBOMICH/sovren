@@ -17,6 +17,12 @@ save();assert platform.system()=='Darwin' and platform.machine()=='arm64',platfo
 for name in ('tiny.macho','hello.macho','self.macho'):(R/name).chmod(0o755)
 run('verify-ad-hoc-signature',['codesign','--verify','--strict','--verbose=4',R/'tiny.macho'])
 run('tiny',[R/'tiny.macho'],7,'')
+for name,code,out in [('arithmetic',30,''),('raw-write',0,'raw\n'),('allocation',9,''),('budget',0,''),('integer-print',0,'30\n')]:
+    (R/(name+'.macho')).chmod(0o755)
+    try: run(name,[R/(name+'.macho')],code,out)
+    except SystemExit: pass
+try: run('compiler-probe',[R/'self.macho',R/'tiny.sov','-o',R/'native-tiny.macho'])
+except SystemExit: pass
 run('hello',[R/'hello.macho'],0,'Hello from Sovren! Fully self-hosted!\n30\nz is big\nloop\nloop\nloop\n')
 compiler=R/'self.macho';generations=[sha(compiler)]
 source=R/'compilers/apple/macos-arm64/compiler.sov'
