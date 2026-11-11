@@ -1,0 +1,27 @@
+name: Apple native CPU compatibility repair checks
+on:
+  push:
+    branches: ['codex/arm64-repair-checks-20261112']
+    paths: ['work/apple-compatibility/**', '.github/workflows/apple-compatibility-native.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-cpu-compatibility:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Execute ARM64 code and Darwin runtime with compatibility launch copies
+        run: |
+          mkdir -p "$RUNNER_TEMP/apple-cpu-compatibility"
+          tar -xzf work/apple-compatibility/validation.tar.gz -C "$RUNNER_TEMP/apple-cpu-compatibility"
+          cp work/apple-compatibility/check_apple_compatibility_native.py "$RUNNER_TEMP/apple-cpu-compatibility/"
+          python3 "$RUNNER_TEMP/apple-cpu-compatibility/check_apple_compatibility_native.py"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: apple-cpu-compatibility-report
+          path: ${{ runner.temp }}/apple-cpu-compatibility/apple-compatibility-native.json
